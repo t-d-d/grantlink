@@ -82,6 +82,17 @@ describe("cutting a paper to its funding sections", () => {
     });
   });
 
+  it("reads a paragraph that holds a list of paragraphs whole", () => {
+    expect(
+      fundingSections(
+        "<article><back><ack><p>Supported by <list><list-item><p>grant A1</p></list-item><list-item><p>grant B2</p></list-item></list> and grant A2.</p><p>Thanks to Example Lab.</p></ack></back></article>",
+      ).text,
+    ).toEqual([
+      "Supported by grant A1 grant B2 and grant A2.",
+      "Thanks to Example Lab.",
+    ]);
+  });
+
   it("leaves a character reference past Unicode's range as written", () => {
     expect(
       fundingSections(

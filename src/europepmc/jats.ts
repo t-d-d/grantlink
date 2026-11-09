@@ -37,14 +37,31 @@ function plain(xml: string): string {
     .trim();
 }
 
-// Every element with this name, as its inner XML. JATS does not nest any of
-// the elements read here inside one of the same name.
+// Every outermost element with this name, as its inner XML. JATS nests some
+// of them, such as a paragraph in a list item in a paragraph, so each one
+// runs to the closing tag that balances its opening tag, and the elements
+// inside it are read as part of it.
 function elements(xml: string, name: string, attributes = ""): string[] {
-  const pattern = new RegExp(
-    `<${name}\\b(?=[^>]*${attributes})[^>]*>([\\s\\S]*?)</${name}>`,
-    "gu",
-  );
-  return [...xml.matchAll(pattern)].map((match) => match[1] ?? "");
+  const tags = new RegExp(`<(/?)${name}\\b([^>]*)>`, "gu");
+  const wanted = new RegExp(attributes, "u");
+  const found: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (const tag of xml.matchAll(tags)) {
+    const [whole, closing, rest = ""] = tag;
+    if (rest.endsWith("/")) continue;
+    if (closing) {
+      if (depth === 0) continue;
+      depth -= 1;
+      if (depth === 0) found.push(xml.slice(start, tag.index));
+    } else if (depth > 0) {
+      depth += 1;
+    } else if (wanted.test(rest)) {
+      depth = 1;
+      start = tag.index + whole.length;
+    }
+  }
+  return found;
 }
 
 // The paragraphs of a section, or its whole text less its title if it has
