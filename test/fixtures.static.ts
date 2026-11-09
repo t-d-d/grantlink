@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { strayParts } from "./fixture-parts.ts";
 import { FIXTURES, RECORDED, fixture, sources } from "./fixtures.ts";
 import { repoFiles } from "./repo.ts";
 
@@ -44,6 +45,17 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
       expect(open).toContain('sec-type="funding"');
     }
   });
+
+  // Nor may it keep the author list, the affiliations, the title, the
+  // reference list or any text outside its funding sections, where real
+  // names would be (#140). The names test cannot see these: it checks the
+  // replacement names are there, not that no others are.
+  it.each(RECORDED)(
+    "$file, recorded from a paper, keeps nothing outside its ids, licence and funding sections",
+    (entry) => {
+      expect(strayParts(fixture(entry.file))).toEqual([]);
+    },
+  );
 
   // The licence a recorded paper carries, in its own licence element, is
   // the one its entry lists.
