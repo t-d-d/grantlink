@@ -133,6 +133,21 @@ export function comment(
   ].join("\n");
 }
 
+// The comment command on file contents (#154). CI's own report must parse,
+// so a bad one throws and fails the eval check. The live one is only
+// compared with, so a bad one shows CI's scores alone.
+export function commentFrom(
+  ciRaw: string,
+  live: { live: string } | { noLive: string | undefined },
+  warn?: (line: string) => void,
+): string {
+  const ci = report.parse(JSON.parse(ciRaw));
+  return comment(
+    ci,
+    "live" in live ? readLive(live.live, warn) : noLive.parse(live.noLive),
+  );
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [command, path, extra, reason] = process.argv.slice(2);
   if (command === "gate" && path !== undefined && extra !== undefined) {
@@ -144,13 +159,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     path !== undefined &&
     extra !== undefined
   ) {
-    // CI's own report must parse. The live one is only compared with.
-    const ci = report.parse(JSON.parse(readFileSync(path, "utf8")));
-    const live =
-      extra === "--no-live"
-        ? noLive.parse(reason)
-        : readLive(readFileSync(extra, "utf8"));
-    console.log(comment(ci, live));
+    console.log(
+      commentFrom(
+        readFileSync(path, "utf8"),
+        extra === "--no-live"
+          ? { noLive: reason }
+          : { live: readFileSync(extra, "utf8") },
+      ),
+    );
   } else {
     throw new Error(
       "usage: node evals/check.ts gate <report.json> <fingerprint> | comment <report.json> <live.json> | comment <report.json> --no-live <reason>",
