@@ -2,10 +2,29 @@ import { describe, expect, it } from "vitest";
 import { readRepoFile, repoFiles } from "./repo.ts";
 
 // The repo is public, and an account id is a secret (CLAUDE.md, #15). An
-// account id is twelve digits standing alone.
-const accountId = /(?<![\w.+/=-])\d{12}(?![\w.+/=-])/u;
+// account id is twelve digits standing alone. A dot next to the digits
+// counts as joined only when a digit sits past it, so a decimal is passed
+// over but an id ending a sentence is still found.
+const accountId = /(?<![\w+/=-]|\d\.)\d{12}(?![\w+/=-]|\.\d)/u;
 
 describe("no file holds an account id", () => {
+  // Built here so this file holds no id for the scan below to find.
+  const id = "1234567890" + "12";
+
+  it.each([`is ${id}.`, `id: ${id}`, `(${id})`])(
+    "sees the id in %s",
+    (text) => {
+      expect(accountId.test(text)).toBe(true);
+    },
+  );
+
+  it.each(["1700000000.000200", `sha512-${id}`, `0.${id}`])(
+    "passes over %s",
+    (text) => {
+      expect(accountId.test(text)).toBe(false);
+    },
+  );
+
   it("finds none in any file in the repo", () => {
     const holding = repoFiles()
       .filter((path) => path !== "package-lock.json")

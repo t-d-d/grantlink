@@ -115,7 +115,9 @@ Resources:
 
   # The role CloudFormation takes to build the app stack, so the deploy role
   # itself holds no rights to create resources. It manages buckets but no
-  # objects, and only the app stack's own roles.
+  # objects, and only the app stack's own roles. Those roles have no
+  # permissions boundary yet, so what the app stack declares, reviewed and
+  # merged to main, bounds what a deploy can reach.
   DeployExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -190,11 +192,14 @@ Resources:
                   - iam:DetachRolePolicy
                   - iam:GetRole
                   - iam:GetRolePolicy
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRolePolicies
                   - iam:PassRole
                   - iam:PutRolePolicy
                   - iam:TagRole
                   - iam:UntagRole
                   - iam:UpdateAssumeRolePolicy
+                  - iam:UpdateRole
                 Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/grantlink-prod-*
 
   # Runs the eval in CI, in the eval environment only (#9). It reads the
@@ -228,7 +233,9 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval/*
                   - !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval-reports/*
-              # Listing lets a missing report read as missing, not as refused.
+              # Listing with a prefix is how the eval asks whether a report
+              # exists. A HeadObject on a missing key carries no prefix, so it
+              # is refused, not answered with 404.
               - Sid: ListEvalPrefixes
                 Effect: Allow
                 Action: s3:ListBucket

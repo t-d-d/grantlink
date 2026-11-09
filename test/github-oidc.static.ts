@@ -27,6 +27,13 @@ const resources = (statement: Statement): string[] =>
 const allows = (statements: Statement[]): Statement[] =>
   statements.filter((statement) => statement.Effect === "Allow");
 
+// Whether an IAM action pattern, wildcards and all, covers an action.
+const covers = (pattern: string, action: string): boolean =>
+  new RegExp(
+    `^${pattern.replace(/[.+?^${}()|[\]\\]/gu, "\\$&").replace(/\*/gu, ".*")}$`,
+    "iu",
+  ).test(action);
+
 // The trust a role gets from GitHub's OIDC provider for one environment.
 const githubTrust = (environment: string): Statement[] => [
   {
@@ -117,15 +124,31 @@ describe("the deploy execution role", () => {
   });
 
   it("manages buckets but never touches an object", () => {
-    const objectActions = allows(rightsOf(execution))
+    const objectActions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:RestoreObject",
+    ];
+    const reaching = allows(rightsOf(execution))
       .flatMap(actions)
-      .filter(
-        (action) =>
-          action === "s3:*" ||
-          /^s3:(Get|Put|Delete|Restore)Object/u.test(action) ||
-          action === "*",
+      .filter((pattern) =>
+        objectActions.some((action) => covers(pattern, action)),
       );
-    expect(objectActions).toEqual([]);
+    expect(reaching).toEqual([]);
+  });
+
+  it("can read, update and delete the roles it creates", () => {
+    const granted = allows(rightsOf(execution)).flatMap(actions);
+    for (const action of [
+      "iam:GetRole",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListRolePolicies",
+      "iam:UpdateRole",
+      "iam:DeleteRole",
+    ]) {
+      expect(granted).toContain(action);
+    }
   });
 
   it("creates and passes only the app stack's own roles", () => {
@@ -280,5 +303,20 @@ describe("every role", () => {
   it.each(Object.entries(roles))("%s has inline rights only", (_name, role) => {
     expect(role.Type).toBe("AWS::IAM::Role");
     expect(role.Properties.ManagedPolicyArns).toBeUndefined();
+  });
+
+  // An Allow with NotAction grants everything it does not name, past every
+  // check above that reads Action.
+  it.each(Object.entries(roles))("%s allows by Action only", (_name, role) => {
+    const notActions = allows(rightsOf(role)).filter(
+      (statement) => statement.NotAction !== undefined,
+    );
+    expect(notActions).toEqual([]);
+  });
+
+  it("knows a wildcard covers the actions it names", () => {
+    expect(covers("s3:Get*", "s3:GetObject")).toBe(true);
+    expect(covers("s3:*Object", "s3:PutObject")).toBe(true);
+    expect(covers("s3:GetBucket*", "s3:GetObject")).toBe(false);
   });
 });

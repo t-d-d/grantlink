@@ -21,7 +21,7 @@ Apply them in this order.
 
    The stack waits until ACM has validated the certificate, which needs the registrar to point at the new zone. While it waits, read the zone's nameservers in the Route 53 console, or with `aws route53 get-hosted-zone`, and set them at the registrar. The stack outputs them too, once it finishes. The zone is kept if the stack is deleted, so the nameservers never change under the registrar.
 
-2. **The roles stack**, [infra/github-oidc.cfn.yml](infra/github-oidc.cfn.yml): GitHub's OIDC provider, the deploy role and the role CloudFormation takes to build the app stack, the CI eval role, and `access-eval` for aws-access's `grantlink-eval` profile. It needs the SSM parameter `/access/account-id` in us-east-1 to hold the access account's id, and the private bucket's name, which the app stack uses too.
+2. **The roles stack**, [infra/github-oidc.cfn.yml](infra/github-oidc.cfn.yml): GitHub's OIDC provider, the deploy role and the role CloudFormation takes to build the app stack, the CI eval role, and `access-eval` for aws-access's `grantlink-eval` profile. It creates GitHub's OIDC provider, and an account holds only one, so the stack fails if the account already has it. It needs the SSM parameter `/access/account-id` in us-east-1 to hold the access account's id, and the private bucket's name, which the app stack uses too.
 
    ```sh
    aws cloudformation deploy --region us-east-1 \
@@ -43,7 +43,7 @@ Then give GitHub what the deploy and the eval read. Role ARNs and the certificat
 
 The `AccessEvalRoleArn` output goes to aws-access, for the `grantlink-eval` profile.
 
-The deploy role trusts only the `prod` environment and the CI eval role only the `eval` environment, so a workflow job must name its environment to reach either. The gate checks both templates with [cfn-lint](https://github.com/aws-cloudformation/cfn-lint), so running the gate locally needs it installed (`pipx install cfn-lint`).
+The deploy role trusts only the `prod` environment and the CI eval role only the `eval` environment, so a workflow job must name its environment to reach either. The gate checks both templates with [cfn-lint](https://github.com/aws-cloudformation/cfn-lint), so running the gate locally needs the version CI pins in [gate.yml](.github/workflows/gate.yml) (`pipx install cfn-lint==1.60.0`).
 
 ## Licence
 

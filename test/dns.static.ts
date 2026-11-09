@@ -30,9 +30,12 @@ describe("the DNS stack", () => {
     });
   });
 
-  it("outputs the nameservers and the certificate's ARN", () => {
+  it("outputs the nameservers, the zone's id and the certificate's ARN", () => {
     expect(template.Outputs?.NameServers?.Value).toEqual({
       "Fn::Join": [", ", { "Fn::GetAtt": ["HostedZone", "NameServers"] }],
+    });
+    expect(template.Outputs?.HostedZoneId?.Value).toEqual({
+      Ref: "HostedZone",
     });
     expect(template.Outputs?.CertificateArn?.Value).toEqual({
       Ref: "Certificate",

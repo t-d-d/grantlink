@@ -27,8 +27,13 @@ function longName(name: string): string {
 
 function tagsFor(name: string): (ScalarTag | CollectionTag)[] {
   const key = longName(name);
-  const scalar: ScalarTag["resolve"] = (value) =>
-    name === "GetAtt" ? { [key]: value.split(".", 2) } : { [key]: value };
+  // A GetAtt splits at its first dot only: `Db.Endpoint.Address` names the
+  // attribute `Endpoint.Address`.
+  const scalar: ScalarTag["resolve"] = (value) => {
+    if (name !== "GetAtt") return { [key]: value };
+    const [resourceName, ...attribute] = value.split(".");
+    return { [key]: [resourceName, attribute.join(".")] };
+  };
   const collection: CollectionTag["resolve"] = (value) => ({
     [key]: value.toJSON() as unknown,
   });
@@ -72,8 +77,12 @@ export interface Template {
   Outputs?: Record<string, { Value: unknown }>;
 }
 
+export function parseTemplate(text: string): Template {
+  return parse(text, { customTags }) as Template;
+}
+
 export function readTemplate(path: string): Template {
-  return parse(readRepoFile(path), { customTags }) as Template;
+  return parseTemplate(readRepoFile(path));
 }
 
 export function resource(template: Template, name: string): Resource {
