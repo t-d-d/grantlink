@@ -113,6 +113,15 @@ describe("fitness: requests back off (europe-pmc.md)", () => {
     expect(requests.length).toBeLessThanOrEqual(5);
   });
 
+  it("passes the last Retry-After on when it gives up, so the run waits that long too", async () => {
+    const { client } = harness(
+      () => new Response("", { status: 429, headers: { "Retry-After": "60" } }),
+    );
+    const error = await client.fullText("PMC1").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(EuropePmcError);
+    expect(error).toMatchObject({ waitSeconds: 60 });
+  });
+
   it("retries a request that fails on the network", async () => {
     const { client, requests } = harness((_, call) => {
       if (call === 0) throw new TypeError("fetch failed");

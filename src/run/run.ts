@@ -24,18 +24,24 @@ import { batches } from "../shared/batches.ts";
 // finished batch whole.
 export const BATCH = 50;
 
-// Europe PMC's client already paces and backs off within one try, waiting
-// at most 16 seconds between its own tries. A step that still fails waits
-// longer before the next: 30 seconds, then a minute, or as long as Europe
-// PMC asked if that is longer. There is no jitter, so no step retry comes
-// sooner than the client's own last wait (docs/constraints/europe-pmc.md).
+// Europe PMC's client already paces and backs off within one try. A step
+// that still fails waits longer before the next: 30 seconds, then a
+// minute, or as long as Europe PMC's last refusal asked if that is longer.
+// There is no jitter, so no step retry comes sooner than Europe PMC asked
+// (docs/constraints/europe-pmc.md). A step asked to wait more than an hour
+// does not ask again in this run: its paper waits for the next run, and a
+// search fails the run, which publishes nothing.
 const STEP_TRIES = 3;
 const FIRST_STEP_WAIT_SECONDS = 30;
+const LONGEST_STEP_WAIT_SECONDS = 3_600;
 
 function europePmcRetry(error: Error, attempt: number): RetryDecision {
   if (attempt >= STEP_TRIES) return { shouldRetry: false };
   const backoff = FIRST_STEP_WAIT_SECONDS * 2 ** (attempt - 1);
   const asked = error instanceof EuropePmcError ? error.waitSeconds : undefined;
+  if (asked !== undefined && asked > LONGEST_STEP_WAIT_SECONDS) {
+    return { shouldRetry: false };
+  }
   return {
     shouldRetry: true,
     delay: { seconds: Math.max(backoff, asked ?? 0) },
