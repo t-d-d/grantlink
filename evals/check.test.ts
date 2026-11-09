@@ -83,6 +83,10 @@ describe("the pull request's comment", () => {
       "The live release's commit is not in this repository's history",
     ],
     ["history-unread", "GitHub's deploy history could not be read"],
+    [
+      "fingerprint-failed",
+      "The live release's fingerprint could not be worked out",
+    ],
   ] as const)(
     "says why a live release has nothing to compare with (%s), without saying none is live",
     (reason, words) => {
@@ -93,6 +97,12 @@ describe("the pull request's comment", () => {
       );
     },
   );
+
+  it("blames a failed fingerprint on the release only when an input is missing (#90)", () => {
+    const text = comment(report({ spend: 0 }), "fingerprint-failed");
+    expect(text).not.toContain("predates");
+    expect(text).toContain("the eval job's log");
+  });
 
   it("refuses a reason it does not know", () => {
     expect(() => noLive.parse("gone")).toThrow();

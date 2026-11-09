@@ -46,6 +46,7 @@ export const noLive = z.enum([
   "history-unread",
   "unknown-commit",
   "predates-eval",
+  "fingerprint-failed",
   "no-report",
 ]);
 export type NoLive = z.infer<typeof noLive>;
@@ -59,6 +60,8 @@ const NO_LIVE: Record<NoLive, string> = {
     "The live release's commit is not in this repository's history, so there is nothing to compare with.",
   "predates-eval":
     "The live release predates the eval's inputs, so it has no report to compare with.",
+  "fingerprint-failed":
+    "The live release's fingerprint could not be worked out, so its report could not be looked up. The error is in the eval job's log.",
   "no-report":
     "The live release has no report filed, so there is nothing to compare with.",
 };

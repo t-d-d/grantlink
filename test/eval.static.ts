@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { noLive } from "../evals/check.ts";
-import { INPUTS } from "../evals/fingerprint.ts";
+import { INPUTS, MISSING_INPUT } from "../evals/fingerprint.ts";
 import { deploy, type Step, type Workflow } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
 
@@ -14,6 +14,10 @@ const steps: Step[] = job?.steps ?? [];
 const at = (pattern: RegExp) =>
   steps.findIndex((step) => pattern.test(step.run ?? ""));
 const named = (name: string) => steps.find((step) => step.name === name);
+// The live release's fingerprint, its exit status kept rather than tested
+// with `if !`, so a missing input can be told from any other failure (#90).
+const fingerprintCall =
+  /\w+="\$\(node evals\/fingerprint\.ts "\$live"\)" \|\| (\w+)=\$\?/u;
 
 describe("the eval workflow", () => {
   it("runs on every pull request, and on main when deploy.yml calls it", () => {
@@ -97,9 +101,28 @@ describe("the gate and the comment", () => {
     // A live commit from before the eval, or before an input was added,
     // has no git hash for every input, so its fingerprint cannot be read.
     const live = named("Read the live release's report")?.run ?? "";
-    expect(live).toMatch(
-      /if ! \w+="\$\(node evals\/fingerprint\.ts "\$live"[^)]*\)"; then[\s\S]*?exit 0/u,
+    expect(live).toMatch(fingerprintCall);
+  });
+
+  // #90: only a missing input means the live release predates the eval.
+  // Any other failure has its own reason, and its error stays in the log.
+  it("says the live release predates the eval only when an input is missing", () => {
+    const live = named("Read the live release's report")?.run ?? "";
+    const call = fingerprintCall.exec(live);
+    const status = call?.[1] ?? "";
+    expect(status).not.toBe("");
+    const after = live.slice(call?.index ?? 0);
+    const missing = new RegExp(
+      String.raw`if \[ "\$${status}" -eq ${String(MISSING_INPUT)} \]; then\n.*\n\s*echo "reason=predates-eval"`,
+      "u",
     );
+    const other = new RegExp(
+      String.raw`elif \[ "\$${status}" -ne 0 \]; then\n[\s\S]*?echo "reason=fingerprint-failed"[\s\S]*?exit 0`,
+      "u",
+    );
+    expect(after).toMatch(missing);
+    expect(after).toMatch(other);
+    expect(live).not.toMatch(/fingerprint\.ts[^\n]*2>/u);
   });
 
   it("hands the comment the reason it has no live report to compare with", () => {
