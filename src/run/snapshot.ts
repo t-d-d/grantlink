@@ -73,18 +73,21 @@ async function takeBatch(
 }
 
 // `owed` is a wait the run's last refusal left, which the snapshot waits
-// out before it first asks Europe PMC.
+// out before it first asks Europe PMC. It returns whatever wait is still
+// owed when it ends, which the run waits out before it ends, so no run
+// started after it asks Europe PMC too soon.
 export async function takeSnapshot(
   ctx: DurableContext,
   deps: Deps,
   owed: Owed,
-): Promise<SnapshotSummary> {
+): Promise<{ snapshot: SnapshotSummary; owed: Owed }> {
   const done = await ctx.step(
     "snapshot-check",
     async () => snapshotTaken(deps),
     { retryStrategy: storeRetry },
   );
-  if (done) return { taken: false, reason: "already taken" };
+  if (done)
+    return { snapshot: { taken: false, reason: "already taken" }, owed };
   let due = owed;
 
   // The order gold set A is drawn in.
@@ -142,7 +145,13 @@ export async function takeSnapshot(
     );
     due = outcome.owed;
     if (outcome.failed > 0 || outcome.entries.length < batch.length) {
-      return { taken: false, reason: "a gold set B paper could not be read" };
+      return {
+        snapshot: {
+          taken: false,
+          reason: "a gold set B paper could not be read",
+        },
+        owed: due,
+      };
     }
     entries.push(...outcome.entries);
   }
@@ -153,8 +162,11 @@ export async function takeSnapshot(
     { retryStrategy: storeRetry },
   );
   return {
-    taken: true,
-    papers: entries.length,
-    manifestSha256: written.manifestSha256,
+    snapshot: {
+      taken: true,
+      papers: entries.length,
+      manifestSha256: written.manifestSha256,
+    },
+    owed: due,
   };
 }

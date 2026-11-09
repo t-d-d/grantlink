@@ -34,6 +34,8 @@ async function runWith(fake: ReturnType<typeof fakeDeps>) {
   const status = execution.getStatus();
   return {
     status,
+    // The local runner's clock when the run ended.
+    ended: Date.now(),
     result: status === "SUCCEEDED" ? execution.getResult() : undefined,
   };
 }
@@ -97,6 +99,24 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
       expect(fake.text.has("eval/s1/manifest.json")).toBe(false);
     },
   );
+
+  it("ends only once a labelled paper's refusal has been waited out", async () => {
+    let notBefore = 0;
+    const { fake } = failingFirstLabelled(() => {
+      notBefore = Date.now() + 7_200_000;
+      return Promise.reject(
+        new EuropePmcError(
+          "Europe PMC answered 429, asked to wait 7200s",
+          429,
+          7200,
+        ),
+      );
+    });
+    const { status, ended } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(notBefore).toBeGreaterThan(0);
+    expect(ended).toBeGreaterThanOrEqual(notBefore);
+  });
 
   it("asks Europe PMC nothing more once one labelled paper has no funding text", async () => {
     const { fake, asked } = failingFirstLabelled(() =>

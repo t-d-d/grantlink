@@ -148,13 +148,22 @@ export function makeRun(deps: Deps) {
     // snapshot waits that out before it asks Europe PMC. A snapshot that
     // fails is left for the next run.
     let snapshot: SnapshotSummary;
+    let last: Owed;
     try {
-      snapshot = await ctx.runInChildContext("snapshot", async (child) =>
-        takeSnapshot(child, deps, owed),
-      );
+      ({ snapshot, owed: last } = await ctx.runInChildContext(
+        "snapshot",
+        async (child) => takeSnapshot(child, deps, owed),
+      ));
     } catch {
       snapshot = { taken: false, reason: "failed" };
+      // The snapshot may have waited this out under its own name already,
+      // so waiting again takes a name of its own.
+      last =
+        owed === null ? null : { ...owed, name: `${owed.name}-after-snapshot` };
     }
+    // A wait still owed is waited out before the run ends, so a run started
+    // after this one never asks Europe PMC before it has passed.
+    if (last !== null) await ctx.wait(last.name, { seconds: last.seconds });
     return { runId, found, read, failed, published, snapshot };
   };
 }
