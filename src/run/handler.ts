@@ -1,0 +1,41 @@
+import { readFile } from "node:fs/promises";
+import { withDurableExecution } from "@aws/durable-execution-sdk-js";
+import { z } from "zod";
+import { europePmc } from "../europepmc/client.ts";
+import type { Deps } from "../pipeline/steps.ts";
+import { siteBucket, textBucket } from "../store/bucket.ts";
+import { dynamoTable } from "../store/table.ts";
+import { makeRun } from "./run.ts";
+
+// The Lambda function's handler. serverless.yml sets the environment.
+const env = z
+  .object({
+    TABLE_NAME: z.string().min(1),
+    TEXT_BUCKET: z.string().min(1),
+    SITE_BUCKET: z.string().min(1),
+    CODE_VERSION: z.string().min(1).max(40),
+  })
+  .parse(process.env);
+
+// The page's template is deployed with the function.
+const TEMPLATE = new URL("../../site/index.html", import.meta.url);
+
+// Made for each invocation, so no state, such as the Europe PMC client's
+// pace, carries from one run into the next.
+function liveDeps(): Deps {
+  return {
+    europePmc: europePmc(),
+    table: dynamoTable(env.TABLE_NAME),
+    text: textBucket(env.TEXT_BUCKET),
+    site: siteBucket(env.SITE_BUCKET),
+    template: () => readFile(TEMPLATE, "utf8"),
+    codeVersion: env.CODE_VERSION,
+    // Only a step's helpers call this, so every clock read sits in a step.
+    // eslint-disable-next-line grantlink/no-non-deterministic-outside-step -- called only from inside steps
+    now: () => new Date().toISOString(),
+  };
+}
+
+export const handler = withDurableExecution(async (event, ctx) =>
+  makeRun(liveDeps())(event, ctx),
+);

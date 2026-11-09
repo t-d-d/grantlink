@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<article xmlns:xlink="http://www.w3.org/1999/xlink" article-type="research-article">
+  <front>
+    <article-meta>
+      <article-id pub-id-type="pmcid">PMC0000001</article-id>
+      <title-group><article-title>A made-up study of <italic>EXMP1</italic> in cell lines</article-title></title-group>
+      <contrib-group>
+        <contrib contrib-type="author"><name><surname>Quillfeather</surname><given-names>Morwenna</given-names></name></contrib>
+      </contrib-group>
+      <abstract><p>An abstract that must never reach the bucket or the page.</p></abstract>
+      <funding-group>
+        <award-group>
+          <funding-source>Cancer Research UK</funding-source>
+          <award-id>C1234/A56789</award-id>
+        </award-group>
+        <funding-statement>Morwenna Quillfeather is funded by Cancer Research UK (C1234/A56789).</funding-statement>
+      </funding-group>
+    </article-meta>
+  </front>
+  <body>
+    <sec><title>Results</title><p>Body text that must never reach the bucket or the page.</p></sec>
+  </body>
+  <back>
+    <ack>
+      <title>Acknowledgements</title>
+      <p>We thank Tobias Wrenfield-Oakes for help. This work was supported by Cancer Research UK grant CTRQQR-2021\100010 and by CRUK award A28707.</p>
+    </ack>
+    <fn-group>
+      <fn fn-type="financial-disclosure"><p>The Example Trust funded grant A12345.</p></fn>
+    </fn-group>
+  </back>
+</article>

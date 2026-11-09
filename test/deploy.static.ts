@@ -117,3 +117,43 @@ describe("governor's CI workflow", () => {
     expect(Object.keys(workflow.on)).toContain("pull_request");
   });
 });
+
+describe("the deploy and the run (#19)", () => {
+  const all = steps("deploy");
+  const at = (pattern: RegExp) =>
+    all.findIndex((step) => pattern.test(step.run ?? ""));
+
+  it("keeps the first run's time from the stack, or sets one soon after the first deploy", () => {
+    const firstAt = all.findIndex((step) => step.id === "first");
+    const first = all[firstAt];
+    expect(first?.run).toContain("OutputKey=='FirstRunAt'");
+    expect(first?.run).toMatch(/date -u -d '\+\d+ minutes'/u);
+    expect(firstAt).toBeGreaterThan(-1);
+    expect(firstAt).toBeLessThan(at(/\bsls deploy\b/u));
+    const deployStep = all[at(/\bsls deploy\b/u)];
+    expect(deployStep?.env?.FIRST_RUN_AT).toBe("${{ steps.first.outputs.at }}");
+  });
+
+  it("sets a new first run time only when the stack does not exist, and stops on any other error", () => {
+    const first = all.find((step) => step.id === "first")?.run ?? "";
+    expect(first).not.toMatch(/2>\/dev\/null \|\| true/u);
+    expect(first).toContain("does not exist");
+    expect(first).toMatch(/exit 1/u);
+  });
+
+  it("builds the page again from the last run's data, so a deploy keeps the findings", () => {
+    const publish = runs("deploy");
+    expect(publish).toMatch(
+      /aws s3 cp "s3:\/\/\$BUCKET\/found\.json" found\.json/u,
+    );
+    expect(publish).toContain(
+      "node src/page/build.ts found.json site/index.html",
+    );
+    expect(publish).toMatch(
+      /aws s3 sync site\/ "s3:\/\/\$BUCKET\/" --delete --exclude found\.json/u,
+    );
+    expect(at(/node src\/page\/build\.ts/u)).toBeLessThanOrEqual(
+      at(/aws s3 sync/u),
+    );
+  });
+});

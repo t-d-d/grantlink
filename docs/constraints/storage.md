@@ -21,6 +21,9 @@ funding text or a name cannot slip into the table through a second writer.
   for each paper's funding sections, `eval/` for the fixed eval snapshot,
   and `eval-reports/` for eval reports.
 - Both stores live in eu-west-2.
+- `src/store/bucket.ts` also publishes the page to the page's own bucket,
+  since it alone may import the S3 clients. It writes only `index.html` and
+  `found.json` there.
 - A paper removed on request goes from both stores.
 
 ## Do not
@@ -35,11 +38,11 @@ funding text or a name cannot slip into the table through a second writer.
 
 ## Judgment
 
-Two checks need the stores, and land with them in #19: a unit test that
-the table module refuses a row with a field outside its schema, and a
-scheduled conformance check that the bucket blocks all public access and
-is encrypted. Until then they are for review. Tests are left out of the
-lint rule, because a conformance check reads the bucket with S3's own
-client.
+`src/store/table.test.ts` checks that the table module refuses a row with
+a field outside its schema. `test/run.static.ts` reads the template for a
+private, encrypted bucket, and `test/text-bucket.conformance.ts` reads the
+deployed bucket for the same, since a setting changed in the console does
+not show in the template. Tests are left out of the lint rule, because a
+conformance check reads the bucket with S3's own client.
 
 History: #6

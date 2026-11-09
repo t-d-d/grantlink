@@ -15,6 +15,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "isolatedModules": true,
+    "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
