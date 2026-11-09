@@ -102,13 +102,9 @@ export function searchQuery(): string {
   ].join(" AND ");
 }
 
-// A paper's first publication date, as Europe PMC gives it and the table
-// keeps it.
-const isoDate = z.iso.date();
-
-// Each result's PMCID and date are read as any string and checked one by
-// one, so a malformed result is left out, or loses its date, and the rest
-// of the page is kept.
+// Each result's PMCID is read as any string and checked in search(), so a
+// result with a malformed one is left out and counted, and the rest of the
+// page is kept. A malformed date is read as no date.
 const searchReply = z.object({
   hitCount: z.number().int().nonnegative(),
   nextCursorMark: z.string().optional(),
@@ -117,7 +113,7 @@ const searchReply = z.object({
       z.object({
         pmcid: z.string().optional(),
         title: z.string().optional(),
-        firstPublicationDate: z.string().optional(),
+        firstPublicationDate: z.iso.date().optional().catch(undefined),
       }),
     ),
   }),
@@ -288,12 +284,13 @@ export function europePmc(
           skipped += 1;
           return [];
         }
-        const date = isoDate.safeParse(result.firstPublicationDate);
         return [
           {
             pmcid: result.pmcid,
             title: plainTitle(result.title ?? ""),
-            ...(date.success ? { firstPublished: date.data } : {}),
+            ...(result.firstPublicationDate === undefined
+              ? {}
+              : { firstPublished: result.firstPublicationDate }),
           },
         ];
       });
