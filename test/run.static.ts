@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { serverless } from "./app.ts";
+import { serverless, site } from "./app.ts";
 import {
+  list,
   readTemplate,
   resource,
   rightsOf,
   subText,
   trustOf,
+  type PolicyDocument,
   type Statement,
 } from "./cfn.ts";
 import { readRepoFile } from "./repo.ts";
@@ -82,9 +84,13 @@ describe("fitness: the bucket stays private (storage.md)", () => {
   });
 
   // The deploy role may put any policy on this bucket (#59), so the
-  // template is where a grant to read or write funding text would show.
+  // template is where a policy granting funding text would show.
   it("has a policy that only denies, so it grants no one its objects", () => {
-    const appStack: Resources = { ...data.Resources, ...inlineResources };
+    const appStack: Resources = {
+      ...site.Resources,
+      ...data.Resources,
+      ...inlineResources,
+    };
     const onTextBucket = Object.entries(appStack).filter(
       ([, r]) =>
         r.Type === "AWS::S3::BucketPolicy" &&
@@ -92,10 +98,9 @@ describe("fitness: the bucket stays private (storage.md)", () => {
     );
     expect(onTextBucket.map(([name]) => name)).toEqual(["TextBucketPolicy"]);
     for (const [name, policy] of onTextBucket) {
-      const { Statement } = policy.Properties.PolicyDocument as {
-        Statement: Statement[];
-      };
-      for (const statement of Statement) {
+      const document = policy.Properties.PolicyDocument as PolicyDocument;
+      // CloudFormation takes a lone statement as well as a list.
+      for (const statement of list<Statement>(document.Statement)) {
         expect(statement.Effect, `${name} ${statement.Sid ?? ""}`).toBe("Deny");
       }
     }
