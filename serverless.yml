@@ -24,6 +24,9 @@ provider:
     # eval/ once, and publish the page. It never reaches the eval reports,
     # which only CI writes (#9).
     role:
+      # The roles stack's boundary, which the execution role requires on
+      # every role it creates (#33).
+      permissionsBoundary: arn:aws:iam::${aws:accountId}:policy/grantlink-app-boundary
       statements:
         - Effect: Allow
           Action:
@@ -140,6 +143,8 @@ resources:
       FirstRunRole:
         Type: AWS::IAM::Role
         Properties:
+          PermissionsBoundary:
+            Fn::Sub: arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/grantlink-app-boundary
           AssumeRolePolicyDocument:
             Version: "2012-10-17"
             Statement:
