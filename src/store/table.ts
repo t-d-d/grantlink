@@ -139,17 +139,19 @@ export function dynamoTable(
       for (const batch of batches(rows, 25)) {
         await Promise.all(
           batch.map(async (row) => {
-            const kept = {
-              "#status": ":status",
-              title: ":title",
-              foundAt: ":foundAt",
-              ...(row.firstPublished === undefined
-                ? {}
-                : { firstPublished: ":firstPublished" }),
-            };
-            const keep = Object.entries(kept).map(
-              ([field, value]) =>
-                `${field} = if_not_exists(${field}, ${value})`,
+            // Fields the table keeps if it holds them already.
+            const kept = Object.entries({
+              status: row.status,
+              title: row.title,
+              foundAt: row.foundAt,
+              firstPublished: row.firstPublished,
+            }).filter(([, value]) => value !== undefined);
+            // status is a DynamoDB reserved word.
+            const path = (field: string) =>
+              field === "status" ? "#status" : field;
+            const keep = kept.map(
+              ([field]) =>
+                `${path(field)} = if_not_exists(${path(field)}, :${field})`,
             );
             await send(
               new UpdateCommand({
@@ -157,15 +159,13 @@ export function dynamoTable(
                 Key: { pmcid: row.pmcid },
                 UpdateExpression: `SET ${[...keep, "foundByRun = :foundByRun"].join(", ")}`,
                 ExpressionAttributeNames: { "#status": "status" },
-                ExpressionAttributeValues: {
-                  ":status": row.status,
-                  ":title": row.title,
-                  ":foundAt": row.foundAt,
-                  ...(row.firstPublished === undefined
-                    ? {}
-                    : { ":firstPublished": row.firstPublished }),
-                  ":foundByRun": row.foundByRun,
-                },
+                ExpressionAttributeValues: Object.fromEntries([
+                  ...kept.map(([field, value]): [string, unknown] => [
+                    `:${field}`,
+                    value,
+                  ]),
+                  [":foundByRun", row.foundByRun],
+                ]),
               }),
             );
           }),
@@ -256,8 +256,11 @@ export function dynamoTable(
       do {
         const reply = scanReply.parse(
           await send(
+            // A strongly consistent read, so the page sees what this run's
+            // own steps wrote just before, such as each row's foundByRun.
             new ScanCommand({
               TableName: name,
+              ConsistentRead: true,
               ...(start === undefined ? {} : { ExclusiveStartKey: start }),
             }),
           ),

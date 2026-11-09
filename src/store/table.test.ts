@@ -249,4 +249,10 @@ describe("the table module", () => {
     expect(rows.map((row) => row.pmcid)).toEqual(["PMC11", "PMC12"]);
     expect(sent).toHaveLength(2);
   });
+
+  it("reads every row as last written, so the page sees this run's own writes", async () => {
+    const { client, sent } = recorder(() => ({ Items: [processed] }));
+    await dynamoTable("results", client).all();
+    expect(sent[0]?.input.ConsistentRead).toBe(true);
+  });
 });

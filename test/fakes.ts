@@ -18,16 +18,21 @@ export function memoryTable(): Table & { rows: Map<string, PaperRow> } {
   };
   return {
     rows,
+    // As the real table: checks every paper before writing any, keeps what
+    // a held row has, fills in what it lacks, and notes this run.
     addFound(papers, at, runId) {
-      for (const paper of papers) {
-        const held = rows.get(paper.pmcid);
+      const found = papers.map((paper) =>
+        paperRow.parse({
+          ...paper,
+          status: "pending",
+          foundAt: at,
+          foundByRun: runId,
+        }),
+      );
+      for (const row of found) {
         rows.set(
-          paper.pmcid,
-          paperRow.parse(
-            held === undefined
-              ? { ...paper, status: "pending", foundAt: at, foundByRun: runId }
-              : { ...held, foundByRun: runId },
-          ),
+          row.pmcid,
+          paperRow.parse({ ...row, ...rows.get(row.pmcid), foundByRun: runId }),
         );
       }
       return Promise.resolve();
