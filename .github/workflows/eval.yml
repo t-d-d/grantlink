@@ -86,11 +86,18 @@ jobs:
             --web-identity-token "$token" \
             --duration-seconds 3600 \
             --output json)"
-          account="$(jq -r .AssumedRoleUser.Arn <<< "$creds" | cut -d: -f5)"
-          key="$(jq -r .Credentials.AccessKeyId <<< "$creds")"
-          secret="$(jq -r .Credentials.SecretAccessKey <<< "$creds")"
-          session="$(jq -r .Credentials.SessionToken <<< "$creds")"
+          # jq -e fails on a missing field, where jq -r prints null and
+          # succeeds (#122). An ARN with no account field leaves it empty.
+          arn="$(jq -er .AssumedRoleUser.Arn <<< "$creds")"
+          account="$(cut -d: -f5 <<< "$arn")"
           echo "::add-mask::$account"
+          if [ -z "$account" ]; then
+            echo "::error::The STS reply's role ARN names no account."
+            exit 1
+          fi
+          key="$(jq -er .Credentials.AccessKeyId <<< "$creds")"
+          secret="$(jq -er .Credentials.SecretAccessKey <<< "$creds")"
+          session="$(jq -er .Credentials.SessionToken <<< "$creds")"
           echo "::add-mask::$key"
           echo "::add-mask::$secret"
           echo "::add-mask::$session"
