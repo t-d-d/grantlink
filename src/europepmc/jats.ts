@@ -72,10 +72,13 @@ export const FUNDING_FOOTNOTE = String.raw`\bfn-type="(?:financial-disclosure|fu
 // must be the whole title, so a body section such as Support vector machines
 // is not kept. A label ends at its own closing tag, so a labelled section
 // is not taken for the labelled funding section after it. A section may open
-// with a <sec-meta> before its label, which ends at its own closing tag in the
-// same way and is not kept (#222). The name must end at whitespace, a slash or
-// the tag's close, so <sec-meta> is not taken for a section itself.
-const FUNDING_SECTION_START = String.raw`<sec(?=[\s/>])(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>|[^>]*>\s*(?:<sec-meta(?=[\s/>])(?:[^>]*\/>|[^>]*>(?:(?!<\/sec-meta>)[\s\S])*<\/sec-meta>)\s*)?(?:<label\b[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>\s*)?<title\b[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
+// with a <sec-meta>, which ends at its own closing tag in the same way. It is
+// part of the match whether the section is found by its type or its title, so
+// it is not kept, since it can name people (#222). The name must end at
+// whitespace, a slash or the tag's close, so <sec-meta> is not taken for a
+// section itself.
+const SEC_META = String.raw`(?:<sec-meta(?=[\s/>])(?:[^>]*\/>|[^>]*>(?:(?!<\/sec-meta>)[\s\S])*<\/sec-meta>)\s*)?`;
+const FUNDING_SECTION_START = String.raw`<sec(?=[\s/>])(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>\s*${SEC_META}|[^>]*>\s*${SEC_META}(?:<label\b[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>\s*)?<title\b[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
 
 const FUNDING_SECTION_AT = new RegExp(FUNDING_SECTION_START, "iuy");
 

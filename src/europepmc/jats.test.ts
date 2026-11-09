@@ -62,6 +62,12 @@ describe("cutting a paper to its funding sections", () => {
         "<sec><sec-meta><contrib-group><contrib><name><surname>Authorname</surname></name></contrib></contrib-group></sec-meta><label>5.</label><title>Acknowledgements</title><p>Grant A1.</p></sec>",
       ],
       ["<sec><sec-meta/><title>Funding</title><p>Grant A1.</p></sec>"],
+      [
+        '<sec sec-type="funding"><sec-meta><contrib-group><contrib><name><surname>Authorname</surname></name></contrib></contrib-group></sec-meta><title>Funding</title>Grant A1.</sec>',
+      ],
+      [
+        '<sec sec-type="ack"><sec-meta><contrib-group><contrib><bio><p>Authorname</p></bio></contrib></contrib-group></sec-meta><p>Grant A1.</p></sec>',
+      ],
     ])("in %s", (section) => {
       const sections = fundingSections(paper(section));
       expect(sections.text).toEqual(["Grant A1."]);
