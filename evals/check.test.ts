@@ -66,13 +66,12 @@ describe("the pull request's comment", () => {
     expect(text).toContain("<!-- grantlink:eval -->");
   });
 
-  it("says when no deploy of main was found to compare with", () => {
+  it("says when main has not been deployed yet", () => {
     const text = comment(report({ spend: 0 }), "no-deploy");
-    expect(text).toContain("No deploy of main was found");
-    // Only deploy.yml's newest runs are read, so an older live release
-    // may still exist.
-    expect(text).toContain("recent runs");
-    expect(text).not.toMatch(/no live release/iu);
+    expect(text).toContain("No deploy of main has run yet");
+    // The live release is read from the page now, not from deploy.yml's
+    // newest runs (#85).
+    expect(text).not.toContain("recent runs");
   });
 
   it.each([
@@ -82,7 +81,7 @@ describe("the pull request's comment", () => {
       "unknown-commit",
       "The live release's commit is not in this repository's history",
     ],
-    ["history-unread", "GitHub's deploy history could not be read"],
+    ["page-unread", "The release record on the live page could not be read"],
     [
       "fingerprint-failed",
       "The live release's fingerprint could not be worked out",
