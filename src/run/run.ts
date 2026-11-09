@@ -88,7 +88,7 @@ export function makeRun(deps: Deps) {
       // under the store's strategy and never asks Europe PMC again.
       const todo = await ctx.step(
         `record-${String(page)}`,
-        async () => recordPage(deps, result.papers),
+        async () => recordPage(deps, result.papers, runId),
         { retryStrategy: storeRetry },
       );
       found += result.papers.length;

@@ -2,7 +2,6 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   BatchGetCommand,
   DynamoDBDocumentClient,
-  PutCommand,
   ScanCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
@@ -42,6 +41,11 @@ const fields = {
   // pending: found by a search, not yet read. processed: read by the rules.
   status: z.enum(["pending", "processed"]),
   foundAt: z.iso.datetime(),
+  // The run whose complete search last returned the paper. The search asks
+  // for papers linked to none of the funder's grants, so a paper a later
+  // search leaves out has since been linked, or dropped. Optional, so rows
+  // written before it read as before (docs/constraints/durable-execution.md).
+  foundByRun: z.string().min(1).max(100).optional(),
   references: result.shape.references.optional(),
   versions: versions.optional(),
   processedAt: z.iso.datetime().optional(),
@@ -71,7 +75,7 @@ export interface FoundPaper {
 }
 
 export interface Table {
-  addFound(papers: FoundPaper[], at: string): Promise<void>;
+  addFound(papers: FoundPaper[], at: string, runId: string): Promise<void>;
   processed(pmcids: string[]): Promise<Set<string>>;
   markProcessed(pmcid: string, result: Result): Promise<void>;
   markFailed(pmcid: string): Promise<void>;
@@ -81,9 +85,6 @@ export interface Table {
 interface Sender {
   send(command: object): Promise<unknown>;
 }
-
-const isConflict = (error: unknown) =>
-  error instanceof Error && error.name === "ConditionalCheckFailedException";
 
 type Sleep = (ms: number) => Promise<void>;
 
@@ -123,25 +124,50 @@ export function dynamoTable(
   const send = (command: object) => client.send(command);
 
   return {
-    // Adds each paper a search found, unless the table holds it already.
-    async addFound(papers, at) {
+    // Records each paper a run's search found: adds it if the table does
+    // not hold it, keeps what the table holds of it if it does, and notes
+    // that this run's search returned it. Safe to run twice.
+    async addFound(papers, at, runId) {
       const rows = papers.map((paper) =>
-        paperRow.parse({ ...paper, status: "pending", foundAt: at }),
+        paperRow.parse({
+          ...paper,
+          status: "pending",
+          foundAt: at,
+          foundByRun: runId,
+        }),
       );
       for (const batch of batches(rows, 25)) {
         await Promise.all(
           batch.map(async (row) => {
-            try {
-              await send(
-                new PutCommand({
-                  TableName: name,
-                  Item: row,
-                  ConditionExpression: "attribute_not_exists(pmcid)",
-                }),
-              );
-            } catch (error) {
-              if (!isConflict(error)) throw error;
-            }
+            const kept = {
+              "#status": ":status",
+              title: ":title",
+              foundAt: ":foundAt",
+              ...(row.firstPublished === undefined
+                ? {}
+                : { firstPublished: ":firstPublished" }),
+            };
+            const keep = Object.entries(kept).map(
+              ([field, value]) =>
+                `${field} = if_not_exists(${field}, ${value})`,
+            );
+            await send(
+              new UpdateCommand({
+                TableName: name,
+                Key: { pmcid: row.pmcid },
+                UpdateExpression: `SET ${[...keep, "foundByRun = :foundByRun"].join(", ")}`,
+                ExpressionAttributeNames: { "#status": "status" },
+                ExpressionAttributeValues: {
+                  ":status": row.status,
+                  ":title": row.title,
+                  ":foundAt": row.foundAt,
+                  ...(row.firstPublished === undefined
+                    ? {}
+                    : { ":firstPublished": row.firstPublished }),
+                  ":foundByRun": row.foundByRun,
+                },
+              }),
+            );
           }),
         );
       }

@@ -95,37 +95,54 @@ describe("reading rows tolerantly (durable-execution.md)", () => {
 });
 
 describe("the table module", () => {
-  it("adds a paper the search found only if it is new", async () => {
+  it("adds a paper the search found, and records that this run's search returned it", async () => {
+    const { client, sent } = recorder();
+    await dynamoTable("results", client).addFound(
+      [{ pmcid: "PMC11", title: "A title", firstPublished: "2021-02-03" }],
+      "2026-11-09T10:00:00.000Z",
+      "run-2",
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.name).toBe("UpdateCommand");
+    expect(sent[0]?.input).toEqual({
+      TableName: "results",
+      Key: { pmcid: "PMC11" },
+      UpdateExpression:
+        "SET #status = if_not_exists(#status, :status), title = if_not_exists(title, :title), foundAt = if_not_exists(foundAt, :foundAt), firstPublished = if_not_exists(firstPublished, :firstPublished), foundByRun = :foundByRun",
+      ExpressionAttributeNames: { "#status": "status" },
+      ExpressionAttributeValues: {
+        ":status": "pending",
+        ":title": "A title",
+        ":foundAt": "2026-11-09T10:00:00.000Z",
+        ":firstPublished": "2021-02-03",
+        ":foundByRun": "run-2",
+      },
+    });
+  });
+
+  it("leaves a paper with no date of first publication without one", async () => {
     const { client, sent } = recorder();
     await dynamoTable("results", client).addFound(
       [{ pmcid: "PMC11", title: "A title" }],
       "2026-11-09T10:00:00.000Z",
+      "run-2",
     );
-    expect(sent).toHaveLength(1);
-    expect(sent[0]?.name).toBe("PutCommand");
-    expect(sent[0]?.input.ConditionExpression).toBe(
-      "attribute_not_exists(pmcid)",
+    expect(sent[0]?.input.UpdateExpression).not.toContain("firstPublished");
+    expect(sent[0]?.input.ExpressionAttributeValues).not.toHaveProperty(
+      ":firstPublished",
     );
-    expect(sent[0]?.input.Item).toEqual({
-      pmcid: "PMC11",
-      title: "A title",
-      status: "pending",
-      foundAt: "2026-11-09T10:00:00.000Z",
-    });
   });
 
-  it("ignores a paper it already holds", async () => {
-    const { client } = recorder(() => {
-      throw Object.assign(new Error("exists"), {
-        name: "ConditionalCheckFailedException",
-      });
-    });
+  it("refuses to record a paper with a field outside the schema", async () => {
+    const { client, sent } = recorder();
     await expect(
       dynamoTable("results", client).addFound(
-        [{ pmcid: "PMC11", title: "A title" }],
+        [{ pmcid: "PMC11", title: "A title", abstract: "x" } as never],
         "2026-11-09T10:00:00.000Z",
+        "run-2",
       ),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow();
+    expect(sent).toEqual([]);
   });
 
   it("names which papers are already processed", async () => {

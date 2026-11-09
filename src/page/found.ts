@@ -16,7 +16,7 @@ export const found = z
     finishedAt: z.iso.datetime(),
     counts: z
       .object({
-        // Every paper a search has found.
+        // Every paper the run's search found.
         papers: z.number().int().nonnegative(),
         processed: z.number().int().nonnegative(),
         withReference: z.number().int().nonnegative(),
@@ -43,10 +43,16 @@ export type Found = z.infer<typeof found>;
 const byPmcid = (a: { pmcid: string }, b: { pmcid: string }) =>
   Number(a.pmcid.slice(3)) - Number(b.pmcid.slice(3));
 
+// Lists and counts only the papers the run's own search returned. The run
+// publishes only once its search is complete, and the search asks for
+// papers linked to none of the funder's grants, so a paper it left out has
+// since been linked, or dropped, and is no longer one the page is about.
+// The table keeps its row.
 export function summarise(
-  rows: PaperRow[],
+  all: PaperRow[],
   run: { runId: string; finishedAt: string },
 ): Found {
+  const rows = all.filter((row) => row.foundByRun === run.runId);
   const processed = rows.filter((row) => row.status === "processed");
   const papers = processed
     .filter((row) => (row.references ?? []).length > 0)
