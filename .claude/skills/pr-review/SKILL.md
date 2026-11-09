@@ -5,10 +5,12 @@ description: The checklist governor's PR review reads for grantlink's pull reque
 
 # PR review
 
-Read the pull request's description, its changed files and the tickets it
-closes, then answer each test in order. The review sees no diff. The
-description follows .github/pull_request_template.md, and the tests follow
-its sections.
+Read the pull request's description, the names of its changed files and
+the tickets it closes, then answer each test in order. The review sees no
+diff and reads no source files. The description follows
+.github/pull_request_template.md, and the tests follow its sections.
+
+A pass merges the pull request.
 
 ## The checklist
 
@@ -37,16 +39,27 @@ its sections.
 6. **Left for later names an issue for each loose end, or says None.** A
    loose end with no issue number fails.
 
-7. **No changed file is on the human-only list.** The list is
-   `prReview.humanOnly` in `.github/governor.json`, and it is empty here. Governor
-   checks this in code.
+7. **The change keeps complexity the same or lower, and adds what the
+   tickets ask for.** Read the Adds / removes section. It passes when its
+   net line says the change is simpler or no more complex, the lines above
+   the net line agree, and the Outcome adds what the tickets ask for. It
+   fails when the net line says more complex, or when a line above it adds
+   a module, a dependency, a config switch or an abstraction that the net
+   line does not account for. A fail here says that no edit to the
+   description can make the pull request pass, so it waits for the owner.
 
-8. **No required status check is red on its head.** Governor checks this in
+8. **No changed file is on the human-only list.** The list is
+   `prReview.humanOnly` in `.github/governor.json`: the stacks in `infra/`,
+   everything under `.github/`, the constraint files, `CLAUDE.md` and
+   `.claude/`. A pull request that changes one waits for the owner, with the
+   entry's reason. Governor checks this in code.
+
+9. **No required status check is red on its head.** Governor checks this in
    code, and a push that turns the check green meets it.
 
 ## Dependabot
 
-A pull request `dependabot[bot]` opened is held to test 7 alone, with the
+A pull request `dependabot[bot]` opened is held to test 8 alone, with the
 Dependabot list (`prReview.dependabot` in `.github/governor.json`) in place of
 the human-only list. That list is empty here, so every Dependabot pull request
 waits for a person.

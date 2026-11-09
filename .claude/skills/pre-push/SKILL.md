@@ -68,4 +68,4 @@ touches, go back to step 1. Then push the branch. Never push to main.
   run it again over the final diff.
 - Confirm the pull request is mergeable, then wait for the `gate` check.
   If it is red, fix it and push again. Finish only on a green gate.
-- Do not merge it. The owner merges.
+- Do not merge it. Governor merges it when its review passes, or the owner does.
