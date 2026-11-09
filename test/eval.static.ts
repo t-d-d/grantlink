@@ -53,7 +53,9 @@ describe("fitness: the same inputs are evaluated once (evals.md)", () => {
       "Run the eval",
       "File the report",
     ]) {
-      expect(named(name)?.if, name).toBe("steps.cached.outputs.hit != 'true'");
+      expect(named(name)?.if, name).toMatch(
+        /^steps\.cached\.outputs\.hit != 'true'/u,
+      );
     }
   });
 
@@ -85,7 +87,7 @@ describe("the gate and the comment", () => {
 
   it("comments only on a pull request, and updates its own comment", () => {
     const comment = named("Comment with CI's scores beside the live release's");
-    expect(comment?.if).toBe("github.event_name == 'pull_request'");
+    expect(comment?.if).toMatch(/^github\.event_name == 'pull_request'/u);
     expect(comment?.run).toContain("<!-- grantlink:eval -->");
     expect(comment?.run).toContain("-X PATCH");
   });
@@ -104,5 +106,33 @@ describe("the gate and the comment", () => {
     const mask = assume.search(/::add-mask::\$account\b/u);
     expect(mask).toBeGreaterThan(-1);
     expect(mask).toBeLessThan(assume.indexOf("GITHUB_ENV"));
+  });
+});
+
+// The app stack creates the private bucket, and the deploy needs the eval,
+// so the eval must not need the bucket before the first deploy.
+describe("before the first deploy creates the private bucket", () => {
+  it("reads a missing bucket as no report filed, and says so", () => {
+    const look =
+      named("Look for the report filed for this fingerprint")?.run ?? "";
+    expect(look).toContain("NoSuchBucket");
+    expect(look).toContain("bucket=missing");
+  });
+
+  it("files nothing and compares with nothing, but still hands its report on", () => {
+    expect(named("File the report")?.if).toBe(
+      "steps.cached.outputs.hit != 'true' && steps.cached.outputs.bucket != 'missing'",
+    );
+    expect(named("Read the live release's report")?.if).toBe(
+      "github.event_name == 'pull_request' && steps.cached.outputs.bucket != 'missing'",
+    );
+    expect(named("Hand the report on")?.if).toBeUndefined();
+  });
+
+  it("needs a pinned snapshot from the bucket all the same", () => {
+    const script = readRepoFile("scripts/eval-snapshot.sh");
+    expect(script.indexOf('"$pin" = "null"')).toBeLessThan(
+      script.indexOf("get-object"),
+    );
   });
 });

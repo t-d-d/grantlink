@@ -98,6 +98,12 @@ jobs:
 
       # The report is a cache keyed by the fingerprint (#9). Listing with
       # the key as a prefix is how the role asks whether it exists.
+      #
+      # The app stack creates the private bucket, and the deploy needs this
+      # job, so before the first deploy there is no bucket. Then nothing is
+      # filed and no snapshot can be pinned, so the eval scores no gold set,
+      # files nothing, and hands its report to the deploy that creates the
+      # bucket. A pinned snapshot still needs the bucket, and fails without.
       - id: cached
         name: Look for the report filed for this fingerprint
         env:
@@ -106,8 +112,17 @@ jobs:
         run: |
           set -euo pipefail
           key="eval-reports/$FINGERPRINT.json"
-          count="$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$key" \
-            --query KeyCount --output text)"
+          if ! count="$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$key" \
+            --query KeyCount --output text 2>list.err)"; then
+            if grep -q NoSuchBucket list.err; then
+              echo "::notice::The private bucket does not exist yet, so no report is filed. The first deploy creates it."
+              echo "hit=false" >> "$GITHUB_OUTPUT"
+              echo "bucket=missing" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            cat list.err >&2
+            exit 1
+          fi
           if [ "$count" = "1" ]; then
             aws s3api get-object --bucket "$BUCKET" --key "$key" report.json >/dev/null
             echo "Reusing the report already filed for this fingerprint."
@@ -134,7 +149,7 @@ jobs:
       # when another run for the same fingerprint filed first. That one
       # stands, and this run takes it.
       - name: File the report
-        if: steps.cached.outputs.hit != 'true'
+        if: steps.cached.outputs.hit != 'true' && steps.cached.outputs.bucket != 'missing'
         env:
           BUCKET: ${{ secrets.PRIVATE_BUCKET_NAME }}
           FINGERPRINT: ${{ steps.fingerprint.outputs.value }}
@@ -159,7 +174,7 @@ jobs:
       # The live release is the commit main last deployed. Its report is
       # the one filed under that commit's fingerprint.
       - name: Read the live release's report
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.cached.outputs.bucket != 'missing'
         env:
           BUCKET: ${{ secrets.PRIVATE_BUCKET_NAME }}
           GH_TOKEN: ${{ github.token }}

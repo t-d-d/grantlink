@@ -35,6 +35,9 @@ text, so it must not get broad AWS access or see the key.
 - Reports live at `eval-reports/<fingerprint>.json`. A run looks there
   first and reuses what it finds. Otherwise it runs the eval and files a
   report with `--if-none-match '*'`. When two runs race, the first stands.
+- Before the first deploy creates the private bucket, nothing can be
+  pinned or filed. The eval then scores no gold set, files nothing, and
+  hands its report to the deploy, so the first deploy is not blocked.
 - Every report names its fingerprint, commit, model id and the URL of the
   run that produced it, and holds every go/no-go row. `evals/report.ts`
   refuses one without them.
