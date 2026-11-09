@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isFundingSectionAt } from "../src/europepmc/jats.ts";
 import { strayParts } from "./fixture-parts.ts";
 import { FIXTURES, RECORDED, fixture, sources } from "./fixtures.ts";
 import { repoFiles } from "./repo.ts";
@@ -41,8 +42,10 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
   )("$file, recorded from a paper, is cut to its funding sections", (entry) => {
     const text = fixture(entry.file);
     expect(text).not.toMatch(/<abstract\b/u);
-    for (const [, open = ""] of text.matchAll(/<sec\b([^>]*)>/gu)) {
-      expect(open).toContain('sec-type="funding"');
+    // Every section, nested ones too, is one the cutter reads as funding
+    // (#159).
+    for (const section of text.matchAll(/<sec\b[^>]*>/gu)) {
+      expect(isFundingSectionAt(text, section.index), section[0]).toBe(true);
     }
   });
 
