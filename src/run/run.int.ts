@@ -476,6 +476,66 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
     },
   );
 
+  it("does not hold back the publish step for a refusal on the run's last paper", async () => {
+    // The order the run reads its papers in.
+    const order: string[] = [];
+    const dry = fakeDeps();
+    const fullText = dry.deps.europePmc.fullText.bind(dry.deps.europePmc);
+    dry.deps.europePmc.fullText = (pmcid) => {
+      order.push(pmcid);
+      return fullText(pmcid);
+    };
+    dry.deps.text.hasSnapshot = () => Promise.resolve(true);
+    await runWith(dry);
+    const last = order.at(-1);
+    expect(last).toBeDefined();
+
+    const fake = fakeDeps();
+    const real = fake.deps.europePmc;
+    let notBefore = 0;
+    const early: string[] = [];
+    const check = (request: string) => {
+      if (Date.now() < notBefore) early.push(request);
+    };
+    fake.deps.europePmc = {
+      search: (cursor, selection, pageSize) => {
+        check("search");
+        return real.search(cursor, selection, pageSize);
+      },
+      grants: (pmcid) => {
+        check(`grants ${pmcid}`);
+        return real.grants(pmcid);
+      },
+      fullText: (pmcid) => {
+        check(`fullText ${pmcid}`);
+        if (pmcid !== last) return real.fullText(pmcid);
+        notBefore = Date.now() + 7_200_000;
+        return Promise.reject(
+          new EuropePmcError(
+            "Europe PMC answered 429, asked to wait 7200s",
+            429,
+            7200,
+          ),
+        );
+      },
+    };
+    let publishedAt = 0;
+    const publish = fake.deps.site.publish.bind(fake.deps.site);
+    fake.deps.site.publish = (files) => {
+      publishedAt = Date.now();
+      return publish(files);
+    };
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.published).toMatchObject({ published: true });
+    expect(notBefore).toBeGreaterThan(0);
+    expect(publishedAt).toBeGreaterThan(0);
+    expect(publishedAt).toBeLessThan(notBefore);
+    // The snapshot, which asks Europe PMC, still waits.
+    expect(result?.snapshot).toMatchObject({ taken: true });
+    expect(early).toEqual([]);
+  });
+
   it("never asks again sooner than its first wait, with no Retry-After", async () => {
     const search = await runWith(fakeDeps({ search: () => reply("", 503) }));
     const paper = await runWith(
