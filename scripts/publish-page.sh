@@ -15,6 +15,10 @@
 # if the ETag has not changed since. If a run has published in between, S3
 # refuses the upload, and the script reads found.json again and builds the
 # page again: the run's findings stay, shown with this deploy's template.
+#
+# The eval reads which release is live from release.json (#85), so the
+# record goes up only once S3 has accepted the page that shows it, and
+# with no-cache, so nobody reads a record older than the page (#119).
 set -euo pipefail
 : "${BUCKET:?}" "${DISTRIBUTION:?}"
 
@@ -82,7 +86,7 @@ put_index() {
 
 build_index
 aws s3 sync "$work/site/" "s3://$BUCKET/" --delete \
-  --exclude found.json --exclude index.html \
+  --exclude found.json --exclude index.html --exclude release.json \
   --cache-control "public, max-age=300" --only-show-errors
 for try in 1 2 3; do
   put_index
@@ -99,6 +103,12 @@ if [ -n "$refused" ]; then
   cat "$work/put.err" >&2
   echo "The page kept changing while the deploy built it." >&2
   exit 1
+fi
+if [ -e "$repo/site/release.json" ]; then
+  aws s3api put-object --bucket "$BUCKET" --key release.json \
+    --body "$repo/site/release.json" \
+    --content-type "application/json" \
+    --cache-control "no-cache" >/dev/null
 fi
 
 id="$(aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" \
