@@ -114,7 +114,11 @@ describe("a run over the back catalogue", () => {
     const again = await runWith(fake);
     expect(again.status).toBe("SUCCEEDED");
     expect(again.result?.read).toBe(0);
-    expect(again.result?.published).toMatchObject({ published: true });
+    expect(again.result?.published).toEqual({
+      published: true,
+      papers: 4,
+      references: 4,
+    });
     expect(fake.site.files?.["index.html"]).toContain("RRCOER-Jun24/100008");
   });
 });
@@ -138,7 +142,7 @@ describe("fitness: no name reaches the table, the logs or the page (personal-dat
   });
 });
 
-describe("a run that fails or finds nothing leaves the page as it was", () => {
+describe("a run that fails, finds nothing, or finds no paper read in the table leaves the page as it was", () => {
   it("publishes nothing when the search fails", async () => {
     const fake = fakeDeps({ search: () => reply("", 503) });
     const { status } = await runWith(fake);
