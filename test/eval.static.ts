@@ -192,8 +192,11 @@ describe("the gate and the comment", () => {
     const run = live?.run ?? "";
     expect(run).toMatch(/curl [^\n]*"\$RELEASE_URL"/u);
     expect(run).toContain("jq -r .commit");
-    // Only a full commit hash counts: anything else is an unread page.
-    expect(run).toContain("^[0-9a-f]{40}$");
+    // Only a full commit hash counts: anything else is an unread page. The
+    // whole value must match, so a reply of several lines with one hash
+    // among them does not pass as a hash.
+    expect(run).toContain('[[ "$live" =~ ^[0-9a-f]{40}$ ]]');
+    expect(run).not.toMatch(/grep [^\n]*<<< "\$live"/u);
     expect(run).not.toContain("deploy.yml/runs");
     expect(run).not.toContain("gh api");
     expect(live?.env?.GH_TOKEN).toBeUndefined();

@@ -183,7 +183,7 @@ jobs:
         run: |
           set -euo pipefail
           if ! live="$(curl -sSf --retry 2 --max-time 30 "$RELEASE_URL" | jq -r .commit)" \
-            || ! grep -Eq '^[0-9a-f]{40}$' <<< "$live"; then
+            || ! [[ "$live" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::warning::Could not read the commit in the live page's release record, so there is nothing to compare with."
             echo "reason=page-unread" >> "$GITHUB_OUTPUT"
             exit 0

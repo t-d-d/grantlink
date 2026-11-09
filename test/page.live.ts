@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { release } from "../src/page/release.ts";
 import {
   CONTACT,
   CREDIT,
@@ -85,5 +86,17 @@ describe("fitness: every release names its report (deploy-gates.md)", () => {
     ].map((match) => match[1]);
     // The deploy's run and the run that filed the report.
     expect(runs.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // A pull request's eval reads which release is live from this record
+  // (#85), so a page without it leaves every comment with nothing to
+  // compare with.
+  it("serves the release record beside the page", async () => {
+    const record = await fetch(new URL("release.json", page), {
+      redirect: "manual",
+    });
+    expect(record.status).toBe(200);
+    expect(record.headers.getSetCookie()).toEqual([]);
+    expect(release.safeParse(await record.json()).success).toBe(true);
   });
 });
