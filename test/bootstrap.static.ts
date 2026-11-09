@@ -48,17 +48,21 @@ const describeValue = (variable: string): string => {
   return `an unknown value in $${variable}`;
 };
 
-// Each row of the README's table, once per environment it names.
+// Each row of the README's table, once per environment it names, or once
+// for the repository when it names none.
 const listed = [
   ...readme.matchAll(
     /^\| `([A-Z_]+)` \| (Secret|Variable) \| ([^|]+) \| ([^|]+) \|$/gmu,
   ),
-].flatMap(([, name = "", kind = "", environments = "", value = ""]) =>
-  [...environments.matchAll(/`([a-z]+)`/gu)].map(
-    ([, environment = ""]) =>
+].flatMap(([, name = "", kind = "", environments = "", value = ""]) => {
+  const named = [...environments.matchAll(/`([a-z]+)`/gu)].map(
+    ([, environment = ""]) => environment,
+  );
+  return (named.length > 0 ? named : ["repository"]).map(
+    (environment) =>
       `${kind.toLowerCase()} ${name} ${environment}: ${value.trim()}`,
-  ),
-);
+  );
+});
 
 // Each value the script gives GitHub, and what it is.
 const given = lines.flatMap((line) => {
@@ -97,15 +101,19 @@ describe("the bootstrap script", () => {
   it("reaches GitHub only through give, which pipes the value to gh, and drop", () => {
     const gh = lines.filter((line) => /(^|[|;&(`]\s*)gh\b/u.test(line));
     expect(gh).toEqual([
+      `printf '%s' "$4" | gh "$1" set "$2" --repo "$REPO"`,
       `printf '%s' "$4" | gh "$1" set "$2" --repo "$REPO" --env "$3"`,
       `if ! err=$(gh "$1" delete "$2" --repo "$REPO" --env "$3" 2>&1 >/dev/null); then`,
     ]);
   });
 
-  // GitHub holds only the role each job assumes (#43). The values earlier
-  // runs set are removed, and none of them is one the script still gives.
-  it("gives GitHub one value per environment, and removes the five it no longer sets", () => {
+  // GitHub holds only the role each job assumes (#43). The conformance
+  // job names no environment, so its role is the repository's (#50). The
+  // values earlier runs set are removed, and none of them is one the
+  // script still gives.
+  it("gives GitHub one value per environment and one for the repository, and removes the five it no longer sets", () => {
     expect([...given].map((value) => value.split(":")[0]).sort()).toEqual([
+      "secret AWS_CONFORMANCE_ROLE_ARN repository",
       "secret AWS_DEPLOY_ROLE_ARN prod",
       "secret AWS_EVAL_ROLE_ARN eval",
     ]);
