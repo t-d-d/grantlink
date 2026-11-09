@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { serverless, site } from "./app.ts";
+import { readRepoFile } from "./repo.ts";
 import {
   list,
+  patternWithin,
+  patternsOverlap,
   readTemplate,
+  renderArn,
   resource,
   rightsOf,
   subText,
@@ -23,7 +27,8 @@ const deploy = resource(template, "DeployRole");
 const execution = resource(template, "DeployExecutionRole");
 const ciEval = resource(template, "CiEvalRole");
 const accessEval = resource(template, "AccessEvalRole");
-const roles = { deploy, execution, ciEval, accessEval };
+const conformance = resource(template, "ConformanceRole");
+const roles = { deploy, execution, ciEval, accessEval, conformance };
 
 const actions = (statement: Statement): string[] => list(statement.Action);
 const resources = (statement: Statement): string[] =>
@@ -31,8 +36,11 @@ const resources = (statement: Statement): string[] =>
 const allows = (statements: Statement[]): Statement[] =>
   statements.filter((statement) => statement.Effect === "Allow");
 
-// The trust a role gets from GitHub's OIDC provider for one environment.
-const githubTrust = (environment: string): Statement[] => [
+// The trust a role gets from GitHub's OIDC provider for one subject: an
+// environment, or a branch for a job that names none.
+const githubTrust = (environment: string): Statement[] =>
+  oidcTrust(`environment:${environment}`);
+const oidcTrust = (context: string): Statement[] => [
   {
     Effect: "Allow",
     Principal: { Federated: provider },
@@ -40,7 +48,7 @@ const githubTrust = (environment: string): Statement[] => [
     Condition: {
       StringEquals: {
         "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-        "token.actions.githubusercontent.com:sub": `${repo}:environment:${environment}`,
+        "token.actions.githubusercontent.com:sub": `${repo}:${context}`,
       },
     },
   },
@@ -451,6 +459,190 @@ describe("the app roles' boundary", () => {
   });
 });
 
+// The run's role and its boundary, both rendered to ARNs, so a pattern in
+// the boundary that drifts from the name a resource is given fails here and
+// not as AccessDenied in production (#104).
+describe("the run's role inside the boundary", () => {
+  const boundary = (
+    template.Resources.AppRoleBoundary?.Properties.PolicyDocument as {
+      Statement: Statement[];
+    }
+  ).Statement;
+  const { service } = serverless;
+  const { region, stage } = serverless.provider;
+  const stack = `${service}-${stage}`;
+  const account = "ACCOUNT";
+  const london = `${region}:${account}`;
+  // CloudFormation names a resource the template leaves unnamed
+  // <stack>-<logical id>-<suffix>, and lowercases the name of a bucket.
+  const generated = (logicalId: string): string =>
+    `${stack}-${logicalId}-1A2B3C4D5E6F`;
+  const names = {
+    "AWS::Partition": "aws",
+    "AWS::Region": region,
+    "AWS::AccountId": account,
+    "ResultsTable.Arn": `arn:aws:dynamodb:${london}:table/${generated("ResultsTable")}`,
+    "SiteBucket.Arn": `arn:aws:s3:::${generated("SiteBucket").toLowerCase()}`,
+  };
+
+  // The functions that run as the role, named as osls names them.
+  const functions = Object.entries(serverless.functions ?? {}).map(
+    ([key, config]) => ({
+      name: `${stack}-${key}`,
+      durable: "durableConfig" in config,
+    }),
+  );
+
+  // What osls adds to the run's role, pinned from osls's
+  // merge-iam-templates.js, since reading it from `serverless package` is
+  // not offline. osls grants the logs on /aws/lambda/grantlink-prod*, which
+  // reaches every function the stack makes, so each function's own log
+  // group stands for that wildcard here.
+  const sub = (text: string): { "Fn::Sub": string } => ({ "Fn::Sub": text });
+  const logGroup = (name: string): string =>
+    `arn:\${AWS::Partition}:logs:\${AWS::Region}:\${AWS::AccountId}:log-group:/aws/lambda/${name}`;
+  const fromOsls: Statement[] = [
+    {
+      Effect: "Allow",
+      Action: [
+        "logs:CreateLogStream",
+        "logs:CreateLogGroup",
+        "logs:TagResource",
+      ],
+      Resource: functions.flatMap(({ name }) => [
+        sub(logGroup(name)),
+        sub(`${logGroup(name)}:*`),
+      ]),
+    },
+    {
+      Effect: "Allow",
+      Action: ["logs:PutLogEvents"],
+      Resource: functions.map(({ name }) => sub(`${logGroup(name)}:*:*`)),
+    },
+    {
+      Effect: "Allow",
+      Action: [
+        "lambda:CheckpointDurableExecution",
+        "lambda:GetDurableExecutionState",
+      ],
+      Resource: functions
+        .filter(({ durable }) => durable)
+        .map(({ name }) =>
+          sub(
+            `arn:\${AWS::Partition}:lambda:\${AWS::Region}:\${AWS::AccountId}:function:${name}:*/durable-execution/*/*`,
+          ),
+        ),
+    },
+  ];
+  const declared = (serverless.provider.iam?.role?.statements ??
+    []) as Statement[];
+  const held = [...declared, ...fromOsls];
+
+  // Each action and resource a statement asks for that no Allow in the
+  // policy covers with the same or no condition, or that a Deny reaches.
+  // An action asked for may itself be a pattern, so a Deny reaches it where
+  // the two share an action, compared without regard to case.
+  const outside = (asked: Statement[], policy: Statement[]): string[] => {
+    const rules = policy.map((rule) => ({
+      rule,
+      arns: list(rule.Resource).map((value) => renderArn(value, names)),
+    }));
+    return asked.flatMap((statement) =>
+      actions(statement).flatMap((action) =>
+        list(statement.Resource)
+          .map((value) => renderArn(value, names))
+          .filter((arn) => {
+            const allowed = rules.some(
+              ({ rule, arns }) =>
+                rule.Effect === "Allow" &&
+                actions(rule).some((pattern) =>
+                  patternWithin(action.toLowerCase(), pattern.toLowerCase()),
+                ) &&
+                (rule.Condition === undefined ||
+                  JSON.stringify(rule.Condition) ===
+                    JSON.stringify(statement.Condition)) &&
+                arns.some((wide) => patternWithin(arn, wide)),
+            );
+            const denied = rules.some(
+              ({ rule, arns }) =>
+                rule.Effect === "Deny" &&
+                actions(rule).some((pattern) =>
+                  patternsOverlap(pattern.toLowerCase(), action.toLowerCase()),
+                ) &&
+                arns.some((other) => patternsOverlap(arn, other)),
+            );
+            return !allowed || denied;
+          })
+          .map((arn) => `${action} ${arn}`),
+      ),
+    );
+  };
+
+  // A change to osls's version may change what it adds to the role.
+  it("pins what the osls version in use adds", () => {
+    const { devDependencies } = JSON.parse(readRepoFile("package.json")) as {
+      devDependencies: Record<string, string>;
+    };
+    expect(devDependencies.osls).toBe("4.5.0");
+  });
+
+  // outside() reads Allows by Action and Resource, and Denies too in the
+  // boundary. A statement written any other way would be misread, so it
+  // fails here first.
+  it("reads every statement the check compares", () => {
+    const unread = (statement: Statement): boolean =>
+      statement.NotAction !== undefined ||
+      statement.NotResource !== undefined ||
+      statement.Action === undefined ||
+      statement.Resource === undefined;
+    expect(held.filter((statement) => statement.Effect !== "Allow")).toEqual(
+      [],
+    );
+    expect(held.filter(unread)).toEqual([]);
+    expect(boundary.filter(unread)).toEqual([]);
+  });
+
+  it("asks for nothing the boundary does not allow", () => {
+    expect(
+      declared.flatMap((statement) => list(statement.Resource)),
+    ).not.toEqual([]);
+    expect(outside(held, boundary)).toEqual([]);
+  });
+
+  it("would fail if the boundary named the page's bucket another way", () => {
+    const drifted = JSON.parse(
+      JSON.stringify(boundary).replaceAll("-sitebucket-", "-site-"),
+    ) as Statement[];
+    expect(outside(held, drifted)).toEqual([
+      `s3:PutObject arn:aws:s3:::${generated("SiteBucket").toLowerCase()}/index.html`,
+      `s3:PutObject arn:aws:s3:::${generated("SiteBucket").toLowerCase()}/found.json`,
+    ]);
+  });
+
+  it("finds a wildcard action that reaches a denied one", () => {
+    const reports = sub(
+      "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval-reports/*",
+    );
+    const asked: Statement[] = [
+      { Effect: "Allow", Action: "s3:Put*", Resource: reports },
+    ];
+    const policy: Statement[] = [
+      { Effect: "Allow", Action: "s3:*", Resource: reports },
+      { Effect: "Deny", Action: "s3:PutObject", Resource: reports },
+    ];
+    expect(outside(asked, policy)).toEqual([
+      `s3:Put* arn:aws:s3:::grantlink-text-${account}/eval-reports/*`,
+    ]);
+  });
+
+  it("would fail if the boundary dropped a log group osls grants", () => {
+    const drifted = boundary.filter((rule) => rule.Sid !== "RunLogs");
+    expect(outside(held, drifted)).toContain(
+      `logs:PutLogEvents arn:aws:logs:${london}:log-group:/aws/lambda/${stack}-run:*:*`,
+    );
+  });
+});
+
 describe("the CI eval role", () => {
   it("trusts only this repo's eval environment", () => {
     expect(trustOf(ciEval)).toEqual(githubTrust("eval"));
@@ -568,6 +760,73 @@ describe("fitness: the session role reads the snapshot and nothing else (evals.m
       },
     ]);
     expect(accessEval.Properties.ManagedPolicyArns).toBeUndefined();
+  });
+});
+
+// The scheduled conformance run reads the private bucket's settings with
+// this role (#50). Its job names no environment, so it trusts runs on main.
+describe("the conformance role", () => {
+  const bucket = {
+    "Fn::Sub": "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}",
+  };
+
+  it("trusts only workflow runs on this repo's main", () => {
+    expect(trustOf(conformance)).toEqual(oidcTrust("ref:refs/heads/main"));
+  });
+
+  it("reads the private bucket's public access block, encryption and policy, and nothing else", () => {
+    expect(allows(rightsOf(conformance))).toEqual([
+      {
+        Sid: "ReadBucketSettings",
+        Effect: "Allow",
+        Action: [
+          "s3:GetBucketPolicy",
+          "s3:GetBucketPublicAccessBlock",
+          "s3:GetEncryptionConfiguration",
+        ],
+        Resource: bucket,
+      },
+    ]);
+  });
+
+  // A Deny holds even if a later Allow is widened by mistake.
+  it("is denied every object in the private bucket", () => {
+    expect(rightsOf(conformance)).toContainEqual({
+      Sid: "NoPrivateObjects",
+      Effect: "Deny",
+      Action: "s3:*",
+      Resource: {
+        "Fn::Sub":
+          "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/*",
+      },
+    });
+  });
+
+  it("can neither list nor read nor write what the bucket holds", () => {
+    const text =
+      "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/cache/PMC1.json";
+    const granted = allows(rightsOf(conformance));
+    for (const action of ["s3:ListBucket", "s3:GetObject", "s3:PutObject"]) {
+      expect(
+        granted.some((statement) =>
+          actions(statement).some((pattern) =>
+            wildcardMatches(pattern, action),
+          ),
+        ),
+        action,
+      ).toBe(false);
+    }
+    expect(
+      granted
+        .flatMap(resources)
+        .some((pattern) => wildcardMatches(pattern, text)),
+    ).toBe(false);
+  });
+
+  it("is an output, for the bootstrap to give GitHub", () => {
+    expect(template.Outputs?.ConformanceRoleArn?.Value).toEqual({
+      "Fn::GetAtt": ["ConformanceRole", "Arn"],
+    });
   });
 });
 

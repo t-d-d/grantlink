@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Applies the two stacks the owner applies by hand, and gives GitHub the
-# role each job assumes: the deploy's in prod and the eval's in eval. A job
-# finds or builds every other value once it has assumed its role (#43). Run
-# it from the repo root on your own machine, with:
+# role each job assumes: the deploy's in prod, the eval's in eval, and the
+# conformance run's for the repository, since its job names no environment.
+# A job finds or builds every other value once it has assumed its role
+# (#43). Run it from the repo root on your own machine, with:
 #
 #   - AWS credentials for grantlink's account, as an administrator, however
 #     you come by them;
@@ -128,16 +129,22 @@ aws cloudformation deploy --region "$REGION" --no-fail-on-empty-changeset \
 # missing, stops the script before GitHub changes.
 deploy_role=$(output "$ROLES_STACK" DeployRoleArn)
 eval_role=$(output "$ROLES_STACK" CiEvalRoleArn)
-for name in deploy_role eval_role; do
+conformance_role=$(output "$ROLES_STACK" ConformanceRoleArn)
+for name in deploy_role eval_role conformance_role; do
   case ${!name} in
     "" | None) echo "The stacks gave no value for $name, so GitHub was not changed."; exit 1 ;;
   esac
 done
 
-# Gives GitHub one value. ARNs carry the account id, so they are secrets,
-# and each value goes to gh on its standard input, never on a command line.
+# Gives GitHub one value, in an environment or, for "repository", to the
+# repository itself. ARNs carry the account id, so they are secrets, and
+# each value goes to gh on its standard input, never on a command line.
 give() {
-  printf '%s' "$4" | gh "$1" set "$2" --repo "$REPO" --env "$3"
+  if [ "$3" = repository ]; then
+    printf '%s' "$4" | gh "$1" set "$2" --repo "$REPO"
+  else
+    printf '%s' "$4" | gh "$1" set "$2" --repo "$REPO" --env "$3"
+  fi
 }
 
 # Removes a value earlier runs gave GitHub and the jobs no longer read. One
@@ -154,6 +161,9 @@ drop() {
 
 give secret AWS_DEPLOY_ROLE_ARN prod "$deploy_role"
 give secret AWS_EVAL_ROLE_ARN eval "$eval_role"
+# The conformance job names no environment, so its role is the
+# repository's (#50).
+give secret AWS_CONFORMANCE_ROLE_ARN repository "$conformance_role"
 
 drop secret AWS_DEPLOY_EXECUTION_ROLE_ARN prod
 drop secret CERTIFICATE_ARN prod
