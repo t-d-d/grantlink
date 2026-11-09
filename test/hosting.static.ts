@@ -9,7 +9,7 @@ import {
   TEMPLATES,
 } from "./app.ts";
 import { readTemplate, resource } from "./cfn.ts";
-import { unreadResources } from "./serverless.ts";
+import { strayVariablesIn, unreadResources } from "./serverless.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The app stack runs serverless in London, its own account's only
@@ -58,6 +58,12 @@ describe("serverless.yml merges only what the static checks read", () => {
   // them applies them as serverless.yml would.
   it.each(TEMPLATES)("finds no extensions in %s", (path) => {
     expect(Object.keys(readTemplate(path))).not.toContain("extensions");
+  });
+
+  // osls resolves the variables in a template it reads, as in an inline
+  // entry, so a template may use no variable but the cf and env ones.
+  it.each(TEMPLATES)("finds no stray variable in %s", (path) => {
+    expect(strayVariablesIn(readTemplate(path))).toEqual([]);
   });
 });
 

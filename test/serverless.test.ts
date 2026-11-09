@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeOver, unreadResources } from "./serverless.ts";
+import { mergeOver, strayVariablesIn, unreadResources } from "./serverless.ts";
 
 const TEMPLATES = ["infra/site.cfn.yml", "infra/data.cfn.yml"];
 const known = TEMPLATES.map((path) => `\${file(./${path})}`);
@@ -163,11 +163,34 @@ describe("inline resources that change what a template or osls declares (#166)",
     "ServerlessDeploymentBucketPolicy",
     "ApiGatewayRestApi",
     "runSchedule",
+    "Base123LambdaLayerPermission",
+    "OrdersStreamConsumer",
+    "AuthApiGatewayAuthorizer",
+    "AuthLambdaAuthorizerPermissionHttpApi",
   ])("finds an inline entry that changes %s, which osls generates", (id) => {
     expect(
       unread([...known, { Resources: { [id]: { Properties: {} } } }]),
     ).toEqual([`entry 3 changes ${id}, which osls generates`]);
   });
+
+  it.each(["ServerlessDeploymentBucketName", "RunLambdaFunctionQualifiedArn"])(
+    "finds an inline entry that changes the output %s, which osls generates",
+    (id) => {
+      expect(unread([...known, { Outputs: { [id]: { Value: 1 } } }])).toEqual([
+        `entry 3 changes the output ${id}, which osls generates`,
+      ]);
+    },
+  );
+
+  it.each(["Parameters", "Resources", "Outputs"])(
+    "finds %s that is not a map, which osls would merge over the whole section",
+    (key) => {
+      expect(unread([...known, { [key]: null }, { [key]: [] }])).toEqual([
+        `entry 3 has ${key} that is not a map`,
+        `entry 4 has ${key} that is not a map`,
+      ]);
+    },
+  );
 
   it("passes a resource of its own, such as FirstRunRole", () => {
     expect(
@@ -190,6 +213,7 @@ describe("variables inside inline entries (#166)", () => {
               Type: "T",
               Properties: {
                 At: "at(${env:FIRST_RUN_AT})",
+                Fallback: "${env:X, 'local'}",
                 Arn: {
                   "Fn::Sub":
                     "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/p",
@@ -259,5 +283,23 @@ describe("variables inside inline entries (#166)", () => {
         { Outputs: { A: { Value: "${env:X, ${file(./a)}}" } } },
       ]),
     ).toEqual(["entry 3 has a variable osls cannot parse at Outputs.A.Value"]);
+  });
+});
+
+// osls resolves the variables in a file it reads too, so a template may
+// hold none but the cf and env ones (#166).
+describe("variables inside a template (#166)", () => {
+  it("passes CloudFormation's own Sub variables", () => {
+    expect(
+      strayVariablesIn({
+        Resources: { R: { Properties: { A: { "Fn::Sub": "${R.Arn}/*" } } } },
+      }),
+    ).toEqual([]);
+  });
+
+  it("finds a self variable, with where it sits", () => {
+    expect(
+      strayVariablesIn({ Outputs: { O: { Value: "${self:custom.x}" } } }),
+    ).toEqual(["a variable from self at Outputs.O.Value"]);
   });
 });

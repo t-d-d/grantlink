@@ -75,7 +75,15 @@ const OSLS_HEADS = [
   "Serverless",
   "Websockets",
 ];
-const OSLS_TAILS = ["EventBridgeEventBus", "EventBridgeRule", "LambdaLayer"];
+const OSLS_TAILS = [
+  "ApiGatewayAuthorizer",
+  "EventBridgeEventBus",
+  "EventBridgeRule",
+  "LambdaAuthorizerPermissionHttpApi",
+  "LambdaLayer",
+  "LambdaLayerPermission",
+  "StreamConsumer",
+];
 
 function normalizedName(name: string): string {
   const replaced = name.replace(/-/gu, "Dash").replace(/_/gu, "Underscore");
@@ -102,8 +110,10 @@ const parseVariables = createRequire(import.meta.url)(
   "osls/lib/configuration/variables/parse.js",
 ) as (value: string) => unknown;
 
+// A literal fallback, such as 'local' in ${env:X, 'local'}, is a source
+// with a value and no type.
 interface Source {
-  type: string;
+  type?: string | undefined;
   params?: { variables?: Variable[] | undefined }[] | undefined;
   address?: { variables?: Variable[] | undefined } | undefined;
 }
@@ -115,7 +125,7 @@ const Variable: z.ZodType<Variable> = z.lazy(() =>
 );
 const Source: z.ZodType<Source> = z.lazy(() =>
   z.object({
-    type: z.string(),
+    type: z.string().optional(),
     params: z
       .array(z.object({ variables: z.array(Variable).optional() }))
       .optional(),
@@ -127,7 +137,7 @@ const Variables = z.array(Variable).nullable();
 function sourcesIn(variables: Variable[]): string[] {
   return variables.flatMap((variable) =>
     (variable.sources ?? []).flatMap((source) => [
-      source.type,
+      ...(source.type === undefined ? [] : [source.type]),
       ...sourcesIn(source.params?.flatMap((p) => p.variables ?? []) ?? []),
       ...sourcesIn(source.address?.variables ?? []),
     ]),
@@ -171,6 +181,12 @@ function variablesIn(value: unknown, path: string[]): string[] {
   return [];
 }
 
+// Each stray variable in a value read from a file, such as a template,
+// which osls resolves as it resolves an inline entry.
+export function strayVariablesIn(value: unknown): string[] {
+  return variablesIn(value, []);
+}
+
 // Each entry of serverless.yml's `resources` that the static checks would
 // not read: the known templates missing from the head of the list or out of
 // order, `extensions`, any key but the three above, and any template but
@@ -178,7 +194,9 @@ function variablesIn(value: unknown, path: string[]): string[] {
 // so they must come first. An inline entry may add resources but not change
 // one a template declares or osls generates, since osls merges it over
 // them and the checks that filter by Type would miss the merged one (#166).
-// It may use no variable but the cf and env ones. Entries count from 1.
+// Nor may it change an output osls generates, or hold a section that is
+// not a map, which osls would merge over the whole section. It may use no
+// variable but the cf and env ones. Entries count from 1.
 export function unreadResources(
   resources: unknown,
   templates: readonly string[],
@@ -202,9 +220,12 @@ export function unreadResources(
         ];
       }
       if (!isPlain(entry)) return [`${at} is not a map`];
-      const keys = Object.keys(entry)
-        .filter((key) => !READ_KEYS.includes(key))
-        .map((key) => `${at} has ${key}`);
+      const keys = Object.keys(entry).flatMap((key): string[] => {
+        if (!READ_KEYS.includes(key)) return [`${at} has ${key}`];
+        return isPlain(entry[key])
+          ? []
+          : [`${at} has ${key} that is not a map`];
+      });
       const inline = isPlain(entry.Resources) ? entry.Resources : {};
       const changed = Object.keys(inline).flatMap((id): string[] => {
         if (elsewhere.declared.includes(id))
@@ -213,10 +234,14 @@ export function unreadResources(
           return [`${at} changes ${id}, which osls generates`];
         return [];
       });
+      const outputs = isPlain(entry.Outputs) ? entry.Outputs : {};
+      const changedOutputs = Object.keys(outputs)
+        .filter((id) => oslsGenerates(id, elsewhere.functions))
+        .map((id) => `${at} changes the output ${id}, which osls generates`);
       const variables = variablesIn(entry, []).map(
         (found) => `${at} has ${found}`,
       );
-      return [...keys, ...changed, ...variables];
+      return [...keys, ...changed, ...changedOutputs, ...variables];
     });
   return [...head, ...rest];
 }

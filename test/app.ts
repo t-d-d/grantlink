@@ -36,13 +36,12 @@ export const DATA_TEMPLATE = "infra/data.cfn.yml";
 // The only templates serverless.yml may list. test/hosting.static.ts fails
 // on any other entry the stack below does not read (#142).
 export const TEMPLATES = [SITE_TEMPLATE, DATA_TEMPLATE] as const;
+const templates = TEMPLATES.map(readTemplate);
 
 // What serverless.yml's inline entries may not change: the templates'
 // resources, and what osls generates for the functions (#166).
 export const DECLARED_ELSEWHERE = {
-  declared: TEMPLATES.flatMap((path) =>
-    Object.keys(readTemplate(path).Resources),
-  ),
+  declared: templates.flatMap((template) => Object.keys(template.Resources)),
   functions: Object.keys(serverless.functions ?? {}),
 };
 
@@ -58,7 +57,7 @@ export const appStack: Template = (
   )
   .reduce<Template>(
     (stack, entry) => mergeOver(stack, entry),
-    TEMPLATES.map(readTemplate).reduce<Template>(
+    templates.reduce<Template>(
       (stack, template) => mergeOver(stack, template),
       { Resources: {} },
     ),
