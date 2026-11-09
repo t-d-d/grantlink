@@ -13,6 +13,7 @@ import {
 import { fakeDeps, isGoldSearch, reply } from "../../test/fakes.ts";
 import { NAMES, RECORDED } from "../../test/fixtures.ts";
 import { EuropePmcError } from "../europepmc/client.ts";
+import { found } from "../page/found.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
 // A whole run under the SDK's local runner, which replays the body as
@@ -91,7 +92,7 @@ describe("a run over the back catalogue", () => {
       found: 8,
       read: 7,
       failed: 1,
-      published: { published: true, references: 7 },
+      published: { published: true, references: 8 },
     });
 
     const row = fake.table.rows.get("PMC0000001");
@@ -101,7 +102,7 @@ describe("a run over the back catalogue", () => {
       "CTRQQR-2021/100010",
       "A28707",
     ]);
-    expect(row?.versions).toEqual({ rules: "rules-1", code: "test" });
+    expect(row?.versions).toEqual({ rules: "rules-2", code: "test" });
     expect(fake.table.rows.get("PMC0000003")?.references).toEqual([]);
 
     const page = fake.site.files?.["index.html"] ?? "";
@@ -125,6 +126,8 @@ describe("a run over the back catalogue", () => {
     expect(references("PMC13642255")).toEqual(["C47608/A29957"]);
     // A CRUK studentship with no grant id gives no reference.
     expect(references("PMC13664392")).toEqual([]);
+    // A bare number the metadata gives CRUK, and the acknowledgements repeat.
+    expect(references("PMC13401056")).toEqual(["28275"]);
 
     const page = fake.site.files?.["index.html"] ?? "";
     expect(page).toContain("C9685/A25117");
@@ -172,9 +175,49 @@ describe("a run over the back catalogue", () => {
     expect(again.result?.published).toEqual({
       published: true,
       papers: 8,
-      references: 7,
+      references: 8,
     });
     expect(fake.site.files?.["index.html"]).toContain("RRCOER-Jun24/100008");
+  });
+});
+
+describe("a paper Europe PMC has since linked to a grant", () => {
+  it("is neither listed nor counted once a later complete search no longer returns it", async () => {
+    const fake = fakeDeps();
+    await runWith(fake);
+    expect(fake.site.files?.["index.html"]).toContain("Another made-up study.");
+
+    // Europe PMC now links PMC0000002 to a grant, so the search for papers
+    // linked to none leaves it out.
+    const search = fake.deps.europePmc.search.bind(fake.deps.europePmc);
+    fake.deps.europePmc.search = async (...args) => {
+      const page = await search(...args);
+      return {
+        ...page,
+        papers: page.papers.filter((paper) => paper.pmcid !== "PMC0000002"),
+      };
+    };
+    fake.deps.now = () => "2026-12-09T12:00:00.000Z";
+
+    const again = await runWith(fake);
+    expect(again.status).toBe("SUCCEEDED");
+    expect(again.result?.published).toEqual({
+      published: true,
+      papers: 7,
+      references: 6,
+    });
+    const page = fake.site.files?.["index.html"] ?? "";
+    expect(page).not.toContain("Another made-up study.");
+    expect(page).not.toContain("RRCOER-Jun24/100008");
+    const data = found.parse(
+      JSON.parse(fake.site.files?.["found.json"] ?? "{}"),
+    );
+    expect(data.papers.map((paper) => paper.pmcid)).not.toContain("PMC0000002");
+    expect(data.counts.papers).toBe(7);
+    // The table keeps the paper and what was read from it.
+    expect(fake.table.rows.get("PMC0000002")).toMatchObject({
+      status: "processed",
+    });
   });
 });
 

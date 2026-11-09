@@ -15,6 +15,7 @@ const row = (pmcid: string, more: Partial<PaperRow> = {}): PaperRow => ({
   title: `Title of ${pmcid}`,
   status: "pending",
   foundAt: "2026-11-09T10:00:00.000Z",
+  foundByRun: "run-1",
   ...more,
 });
 
@@ -70,6 +71,41 @@ describe("what the run found", () => {
 
   it("parses as the data the deploy reads back", () => {
     expect(foundSchema.parse(JSON.parse(JSON.stringify(found)))).toEqual(found);
+  });
+});
+
+describe("a paper the run's search no longer returns", () => {
+  // Europe PMC has since linked these to a grant, or dropped them, so the
+  // run's search, which asks for papers linked to none, did not return them.
+  const found = summarise(
+    [
+      ...rows,
+      done("PMC5", [ca]),
+      { ...done("PMC6", [an]), foundByRun: "run-0" },
+      row("PMC7", { foundByRun: "run-0" }),
+      { ...done("PMC8", [ca]), foundByRun: undefined },
+    ],
+    run,
+  );
+
+  it("is neither listed nor counted", () => {
+    expect(found.counts).toEqual({
+      papers: 5,
+      processed: 4,
+      withReference: 3,
+      references: 4,
+      pending: 1,
+    });
+    expect(found.papers.map((paper) => paper.pmcid)).toEqual([
+      "PMC1",
+      "PMC2",
+      "PMC5",
+    ]);
+    expect(found.pending.map((paper) => paper.pmcid)).toEqual(["PMC4"]);
+    expect(found.formats).toEqual([
+      { format: "Cn/An", count: 3 },
+      { format: "An", count: 1 },
+    ]);
   });
 });
 
@@ -158,6 +194,12 @@ describe("rendering the page", () => {
     expect(html).toContain(
       "&lt;script&gt;&quot;x&quot;&lt;/script&gt; &amp; y",
     );
+  });
+
+  it("says what each reference format means, including a bare number", () => {
+    const html = renderFound(summarise(rows, run));
+    expect(html).toContain("Cn/An is the older");
+    expect(html).toContain("and n a bare award");
   });
 
   it("puts the findings in place of the not-yet-run notice, and keeps the rest of the page", () => {

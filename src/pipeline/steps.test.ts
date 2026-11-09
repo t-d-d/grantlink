@@ -96,19 +96,34 @@ describe("reading a page of the search", () => {
 describe("recording a page of the search", () => {
   it("adds each paper to the table and returns those not yet read", async () => {
     const { deps, table } = fakeDeps();
-    await table.addFound([{ pmcid: "PMC21", title: "Read" }], deps.now());
+    await table.addFound(
+      [{ pmcid: "PMC21", title: "Read" }],
+      deps.now(),
+      "run-1",
+    );
     await table.markProcessed("PMC21", {
       references: [],
       versions: { rules: "r", code: "c" },
       processedAt: deps.now(),
       runId: "run-1",
     });
-    const todo = await recordPage(deps, [
-      { pmcid: "PMC21", title: "Read" },
-      { pmcid: "PMC22", title: "Not read" },
-    ]);
+    const todo = await recordPage(
+      deps,
+      [
+        { pmcid: "PMC21", title: "Read" },
+        { pmcid: "PMC22", title: "Not read" },
+      ],
+      "run-2",
+    );
     expect(todo).toEqual(["PMC22"]);
-    expect(table.rows.get("PMC22")).toMatchObject({ status: "pending" });
-    expect(table.rows.get("PMC21")).toMatchObject({ status: "processed" });
+    expect(table.rows.get("PMC22")).toMatchObject({
+      status: "pending",
+      foundByRun: "run-2",
+    });
+    expect(table.rows.get("PMC21")).toMatchObject({
+      status: "processed",
+      runId: "run-1",
+      foundByRun: "run-2",
+    });
   });
 });

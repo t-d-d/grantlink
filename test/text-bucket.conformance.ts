@@ -1,5 +1,6 @@
 import {
   GetBucketEncryptionCommand,
+  GetBucketOwnershipControlsCommand,
   GetBucketPolicyCommand,
   GetPublicAccessBlockCommand,
   S3Client,
@@ -57,6 +58,16 @@ describe("fitness: the bucket stays private (storage.md)", () => {
   // CloudFormation shows in no other test (#67).
   it("has a policy that only denies, so it grants no one its objects", async () => {
     expect(grantsInPolicy(await readPolicy())).toEqual([]);
+  });
+
+  // With ACLs off, no grant can hand an object to another account (#94).
+  it("disables ACLs, so the bucket owner owns every object", async () => {
+    const reply = await s3.send(
+      new GetBucketOwnershipControlsCommand({ Bucket: TEXT_BUCKET }),
+    );
+    expect(reply.OwnershipControls).toEqual({
+      Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }],
+    });
   });
 });
 

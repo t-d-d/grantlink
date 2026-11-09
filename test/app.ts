@@ -61,3 +61,7 @@ export interface Step {
 export const deploy = parse(
   readRepoFile(".github/workflows/deploy.yml"),
 ) as Workflow;
+
+export const evalWorkflow = parse(
+  readRepoFile(".github/workflows/eval.yml"),
+) as Workflow;
