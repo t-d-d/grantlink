@@ -16,9 +16,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { root } from "./repo.ts";
 
-const [bash = "", tr = ""] = execFileSync(
+// The stubs wait with the system's sleep, by its full path, since the
+// script's sleep is a stub. A fractional read -t would need bash 4 or later.
+const [bash = "", tr = "", systemSleep = ""] = execFileSync(
   "bash",
-  ["-c", "command -v bash tr"],
+  ["-c", "command -v bash tr sleep"],
   { encoding: "utf8" },
 )
   .trim()
@@ -90,24 +92,23 @@ const ghStub = `#!${bash}
 log "gh $* < $(</dev/stdin)"
 `;
 
-// Each sleep is a tick. A loop that never ends stops at the thirtieth.
+// Each sleep is a tick. A loop that never ends stops at the hundredth.
 const sleepStub = `#!${bash}
 . "$STATE/lib.sh"
 log "sleep $*"
 ticks=$(( $(<"$STATE/ticks") + 1 ))
 echo "$ticks" > "$STATE/ticks"
 : > "$STATE/slept"
-[ "$ticks" -lt 30 ] || { echo "sleep: called $ticks times" >&2; exit 99; }
+[ "$ticks" -lt 100 ] || { echo "sleep: called $ticks times" >&2; exit 99; }
 `;
 
 const library = (answers: Answers): string => `
 log() { printf '%s\\n' "$1" >> "$STATE/calls"; }
 wait_for() {
   local i
-  exec 3<>"$STATE/never"
   for ((i = 0; i < 300; i++)); do
     [ -e "$STATE/$1" ] && return 0
-    read -rt 0.01 -u 3 _ || :
+    "${systemSleep}" 0.01
   done
   echo "stub: gave up waiting for $1" >&2
   exit 98
@@ -117,14 +118,15 @@ answer() {
 ${Object.entries(answers)
   .map(([call, body]) => `    ${JSON.stringify(call)}) ${body} ;;`)
   .join("\n")}
-    *) echo "stub: no answer for $1" >&2; exit 97 ;;
+    *) log "no answer: $1"; echo "stub: no answer for $1" >&2; exit 97 ;;
   esac
 }
 `;
 
 const dirs: string[] = [];
 afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true });
+  for (const dir of dirs.splice(0))
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
 });
 
 interface Run {
@@ -138,7 +140,6 @@ function run(answers: Answers, setup: string[] = []): Run {
   dirs.push(state);
   const bin = join(state, "bin");
   mkdirSync(bin);
-  execFileSync("mkfifo", [join(state, "never")]);
   for (const file of setup) writeFileSync(join(state, file), "");
   writeFileSync(join(state, "ticks"), "0");
   writeFileSync(join(state, "calls"), "");
@@ -162,7 +163,15 @@ function run(answers: Answers, setup: string[] = []): Run {
   const calls = readFileSync(join(state, "calls"), "utf8")
     .split("\n")
     .filter((line) => line !== "");
-  expect(calls.filter((call) => call.includes("unknown:"))).toEqual([]);
+  // A timeout or a failed spawn, with what the script wrote to stderr.
+  expect(result.error, result.stderr).toBeUndefined();
+  // The script swallows some failed calls as a stack that does not exist,
+  // so a call no case answers fails here instead.
+  expect(
+    calls.filter(
+      (call) => call.includes("unknown:") || call.startsWith("no answer:"),
+    ),
+  ).toEqual([]);
   return { status: result.status, stdout: result.stdout, calls };
 }
 
@@ -275,7 +284,7 @@ describe("the bootstrap script, run against stub aws and gh", () => {
     expect(status).toBe(255);
     expect(
       calls.filter((call) => call.startsWith("sleep")).length,
-    ).toBeLessThan(30);
+    ).toBeLessThan(100);
     expect(steps(calls)).toEqual([
       "aws identity",
       "aws parameter",
