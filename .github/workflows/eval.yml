@@ -56,9 +56,14 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
 
+      # Assigned first: a failure inside echo's arguments would not stop the
+      # step, and would hand on an empty fingerprint (#92).
       - id: fingerprint
         name: Compute the fingerprint
-        run: echo "value=$(node evals/fingerprint.ts)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          fingerprint="$(node evals/fingerprint.ts)"
+          echo "value=$fingerprint" >> "$GITHUB_OUTPUT"
 
       # Assumes the eval role through GitHub's OIDC token, as the deploy
       # assumes its own. The account id, the token and the credentials are
