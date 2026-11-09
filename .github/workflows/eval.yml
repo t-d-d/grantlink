@@ -172,24 +172,37 @@ jobs:
         run: echo "json=$(jq -c . report.json)" >> "$GITHUB_OUTPUT"
 
       # The live release is the commit main last deployed. Its report is
-      # the one filed under that commit's fingerprint.
-      - name: Read the live release's report
+      # the one filed under that commit's fingerprint. Without one, the step
+      # hands the comment its reason (#88).
+      - id: live
+        name: Read the live release's report
         if: github.event_name == 'pull_request' && steps.cached.outputs.bucket != 'missing'
         env:
           BUCKET: ${{ secrets.PRIVATE_BUCKET_NAME }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          live="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=1" \
-            --jq '.workflow_runs[0].head_sha // empty')"
-          if [ -z "$live" ] || ! git cat-file -e "$live^{commit}" 2>/dev/null; then
-            echo "No live release to compare with."
+          if ! live="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // empty')"; then
+            echo "GitHub's deploy history could not be read."
+            echo "reason=history-unread" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$live" ]; then
+            echo "No release is live yet."
+            echo "reason=no-deploy" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git cat-file -e "$live^{commit}" 2>/dev/null; then
+            echo "The live release's commit is not in this repository's history."
+            echo "reason=unknown-commit" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # A live commit from before the eval, or before one of its inputs
           # existed, has no fingerprint, and so no report to compare with.
           if ! fingerprint="$(node evals/fingerprint.ts "$live" 2>/dev/null)"; then
             echo "The live release predates the eval's inputs."
+            echo "reason=predates-eval" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           key="eval-reports/$fingerprint.json"
@@ -199,20 +212,24 @@ jobs:
             aws s3api get-object --bucket "$BUCKET" --key "$key" live.json >/dev/null
           else
             echo "The live release has no report."
+            echo "reason=no-report" >> "$GITHUB_OUTPUT"
           fi
 
-      # One comment per pull request, updated on each run.
+      # One comment per pull request, updated on each run. When the step
+      # above was skipped, the private bucket does not exist yet, so no
+      # deploy has run.
       - name: Comment with CI's scores beside the live release's
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
+          NO_LIVE: ${{ steps.live.outputs.reason || 'no-deploy' }}
         run: |
           set -euo pipefail
           if [ -f live.json ]; then
             node evals/check.ts comment report.json live.json > comment.md
           else
-            node evals/check.ts comment report.json > comment.md
+            node evals/check.ts comment report.json --no-live "$NO_LIVE" > comment.md
           fi
           id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
             --jq '.[] | select(.body | startswith("<!-- grantlink:eval -->")) | .id' | head -n 1)"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { comment, gate } from "./check.ts";
+import { comment, gate, noLive } from "./check.ts";
 import { FLOORS } from "./floors.ts";
 import type { Report } from "./report.ts";
 
@@ -67,8 +67,29 @@ describe("the pull request's comment", () => {
   });
 
   it("says when there is no live release to compare with", () => {
-    expect(comment(report({ spend: 0 }), null)).toContain(
+    expect(comment(report({ spend: 0 }), "no-deploy")).toContain(
       "No release is live yet",
     );
+  });
+
+  it.each([
+    ["predates-eval", "The live release predates the eval's inputs"],
+    ["no-report", "The live release has no report filed"],
+    [
+      "unknown-commit",
+      "The live release's commit is not in this repository's history",
+    ],
+    ["history-unread", "GitHub's deploy history could not be read"],
+  ] as const)(
+    "says why a live release has nothing to compare with (%s), without saying none is live",
+    (reason, words) => {
+      const text = comment(report({ spend: 0 }), reason);
+      expect(text).toContain(words);
+      expect(text).not.toContain("No release is live");
+    },
+  );
+
+  it("refuses a reason it does not know", () => {
+    expect(() => noLive.parse("gone")).toThrow();
   });
 });

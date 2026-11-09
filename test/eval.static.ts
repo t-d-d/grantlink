@@ -101,6 +101,29 @@ describe("the gate and the comment", () => {
     );
   });
 
+  it("hands the comment the reason it has no live report to compare with", () => {
+    // #88: a live release with no report must not read as no release.
+    const live = named("Read the live release's report");
+    expect(live?.id).toBe("live");
+    const reasons = [
+      ...(live?.run ?? "").matchAll(
+        /echo "reason=([\w-]+)" >> "\$GITHUB_OUTPUT"/gu,
+      ),
+    ].map((match) => match[1]);
+    expect(reasons.sort()).toEqual(
+      [
+        "history-unread",
+        "no-report",
+        "predates-eval",
+        "unknown-commit",
+        "no-deploy",
+      ].sort(),
+    );
+    const comment = named("Comment with CI's scores beside the live release's");
+    expect(JSON.stringify(comment?.env)).toContain("steps.live.outputs.reason");
+    expect(comment?.run).toContain('--no-live "$NO_LIVE"');
+  });
+
   it("masks the account id before any line that could print it", () => {
     const assume = named("Assume the eval role")?.run ?? "";
     const mask = assume.search(/::add-mask::\$account\b/u);
