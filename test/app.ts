@@ -50,7 +50,7 @@ export const appStack: Template = (
   .reduce<Template>(
     (stack, entry) => mergeOver(stack, entry),
     TEMPLATES.map(readTemplate).reduce<Template>(
-      (stack, template) => mergeOver(stack, { ...template }),
+      (stack, template) => mergeOver(stack, template),
       { Resources: {} },
     ),
   );

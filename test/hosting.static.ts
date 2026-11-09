@@ -49,6 +49,12 @@ describe("serverless.yml merges only what the static checks read", () => {
   it("lists the two templates, then only parameters, inline resources and outputs", () => {
     expect(unreadResources(serverless.resources, TEMPLATES)).toEqual([]);
   });
+
+  // osls takes `extensions` from the merged list, so a template that holds
+  // them applies them as serverless.yml would.
+  it.each(TEMPLATES)("finds no extensions in %s", (path) => {
+    expect(Object.keys(readTemplate(path))).not.toContain("extensions");
+  });
 });
 
 describe("fitness: no always-on compute (hosting.md)", () => {

@@ -104,6 +104,28 @@ describe("what serverless.yml's resources hold that the static checks do not rea
     ]);
   });
 
+  // osls merges the list in order, so an inline entry listed before a
+  // template would sit under it, while test/app.ts merges it over it.
+  it("finds an inline entry listed before the templates", () => {
+    expect(
+      unreadResources([{ Resources: {} }, known[0], known[1]], TEMPLATES),
+    ).toEqual([
+      "entry 1 is not ${file(./infra/site.cfn.yml)}",
+      "entry 2 is not ${file(./infra/data.cfn.yml)}",
+      "entry 3 is ${file(./infra/data.cfn.yml)} again",
+    ]);
+  });
+
+  it("finds the templates out of order or missing", () => {
+    expect(unreadResources([known[1], known[0]], TEMPLATES)).toEqual([
+      "entry 1 is not ${file(./infra/site.cfn.yml)}",
+      "entry 2 is not ${file(./infra/data.cfn.yml)}",
+    ]);
+    expect(unreadResources([known[0]], TEMPLATES)).toEqual([
+      "entry 2 is not ${file(./infra/data.cfn.yml)}",
+    ]);
+  });
+
   it("finds any other key, such as Conditions or Transform", () => {
     expect(
       unreadResources(

@@ -44,31 +44,40 @@ export function mergeOver<T extends object>(target: T, source: object): T {
   return merged as T;
 }
 
-// The keys an inline entry may hold. The static checks read each of them
-// from the merged stack.
+// The keys an inline entry may hold. Each merges into the stack test/app.ts
+// builds, as osls merges it into the deployed one.
 const READ_KEYS = ["Parameters", "Resources", "Outputs"];
 
 // Each entry of serverless.yml's `resources` that the static checks would
-// not read: `extensions`, any key but the three above, and any template but
-// the known ones, each listed once. Entries count from 1.
+// not read: the known templates missing from the head of the list or out of
+// order, `extensions`, any key but the three above, and any template but
+// the known ones, each listed once. test/app.ts merges the templates first,
+// so they must come first. Entries count from 1.
 export function unreadResources(
   resources: unknown,
   templates: readonly string[],
 ): string[] {
   if (!Array.isArray(resources)) return ["resources is not a list"];
-  const known = new Set(templates.map((path) => `\${file(./${path})}`));
-  const seen = new Set<string>();
-  return resources.flatMap((entry: unknown, index): string[] => {
-    const at = `entry ${String(index + 1)}`;
-    if (typeof entry === "string") {
-      if (!known.has(entry)) return [`${at} is ${entry}`];
-      if (seen.has(entry)) return [`${at} is ${entry} again`];
-      seen.add(entry);
-      return [];
-    }
-    if (!isPlain(entry)) return [`${at} is not a map`];
-    return Object.keys(entry)
-      .filter((key) => !READ_KEYS.includes(key))
-      .map((key) => `${at} has ${key}`);
-  });
+  const files = templates.map((path) => `\${file(./${path})}`);
+  const known = new Set(files);
+  const head = files.flatMap((file, index): string[] =>
+    resources[index] === file
+      ? []
+      : [`entry ${String(index + 1)} is not ${file}`],
+  );
+  const rest = resources
+    .slice(files.length)
+    .flatMap((entry: unknown, offset): string[] => {
+      const at = `entry ${String(files.length + offset + 1)}`;
+      if (typeof entry === "string") {
+        return [
+          known.has(entry) ? `${at} is ${entry} again` : `${at} is ${entry}`,
+        ];
+      }
+      if (!isPlain(entry)) return [`${at} is not a map`];
+      return Object.keys(entry)
+        .filter((key) => !READ_KEYS.includes(key))
+        .map((key) => `${at} has ${key}`);
+    });
+  return [...head, ...rest];
 }

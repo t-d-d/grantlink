@@ -156,7 +156,7 @@ describe("fitness: a run is a durable function on a published version (durable-e
 
   it("is started by a one-time schedule, at the alias, never $LATEST", () => {
     expect(run.events ?? []).toEqual([]);
-    const schedule = inlineResources.FirstRunSchedule;
+    const schedule = appStack.Resources.FirstRunSchedule;
     expect(schedule?.Type).toBe("AWS::Scheduler::Schedule");
     const props = schedule?.Properties as {
       ScheduleExpression: string;
@@ -167,7 +167,7 @@ describe("fitness: a run is a durable function on a published version (durable-e
   });
 
   it("lets the schedule invoke only the alias", () => {
-    const role = inlineResources.FirstRunRole as Parameters<typeof trustOf>[0];
+    const role = resource(appStack, "FirstRunRole");
     expect(trustOf(role).map((s) => s.Principal)).toEqual([
       { Service: "scheduler.amazonaws.com" },
     ]);
