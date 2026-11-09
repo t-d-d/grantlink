@@ -94,8 +94,9 @@ ${cards.map(([n, label]) => `          <p class="card stat"><span class="value">
           </table>
         </div>
         <p class="note">
-          Cn/An is the older C1234/A12345 form, An an award number alone, and
-          CODE/n the newer form, such as ABCDEF-2021/100000.
+          Cn/An is the older C1234/A12345 form, An an award number alone,
+          CODE/n the newer form, such as ABCDEF-2021/100000, and n a bare award
+          number that both the paper's metadata and its funding text give.
         </p>
 
         <h3>Not yet read</h3>
