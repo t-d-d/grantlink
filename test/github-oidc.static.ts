@@ -774,12 +774,13 @@ describe("the conformance role", () => {
     expect(trustOf(conformance)).toEqual(oidcTrust("ref:refs/heads/main"));
   });
 
-  it("reads the private bucket's public access block, encryption and policy, and nothing else", () => {
+  it("reads the private bucket's public access block, encryption, policy and ownership controls, and nothing else", () => {
     expect(allows(rightsOf(conformance))).toEqual([
       {
         Sid: "ReadBucketSettings",
         Effect: "Allow",
         Action: [
+          "s3:GetBucketOwnershipControls",
           "s3:GetBucketPolicy",
           "s3:GetBucketPublicAccessBlock",
           "s3:GetEncryptionConfiguration",

@@ -43,7 +43,7 @@ Once a job has assumed its role, it finds or builds every other value it needs. 
 
 The script is safe to run again. Each step changes only what differs, and it waits for a stack an earlier run left part way. If the credentials expire while the certificate waits for the registrar, the script stops while the stack carries on. Run it again and it waits for the stack. A stack whose first create failed has to be deleted before a run can apply it, and the script says so.
 
-The deploy role trusts only the `prod` environment and the CI eval role only the `eval` environment, so a workflow job must name its environment to reach either. The conformance role trusts only runs on main in a job that names no environment, and reads the private bucket's public access block, encryption and policy, and nothing the bucket holds. The gate checks both templates with [cfn-lint](https://github.com/aws-cloudformation/cfn-lint), so running the gate locally needs the version CI pins in [gate.yml](.github/workflows/gate.yml) (`pipx install cfn-lint==1.60.0`).
+The deploy role trusts only the `prod` environment and the CI eval role only the `eval` environment, so a workflow job must name its environment to reach either. The conformance role trusts only runs on main in a job that names no environment, and reads the private bucket's public access block, encryption, policy and ownership controls, and nothing the bucket holds. The gate checks both templates with [cfn-lint](https://github.com/aws-cloudformation/cfn-lint), so running the gate locally needs the version CI pins in [gate.yml](.github/workflows/gate.yml) (`pipx install cfn-lint==1.60.0`).
 
 ## How it deploys
 
