@@ -66,10 +66,21 @@ describe("governor merges pull requests its review passes", () => {
       /^8\. \*\*No changed file is on the human-only list\.[\s\S]*?(?=^9\. )/mu.exec(
         checklist,
       );
-    for (const path of paths) {
-      expect(owner?.[0]).toContain(`\`${path}\``);
-      expect(test8?.[0]).toContain(`\`${path}\``);
-    }
+    expect(owner, "CLAUDE.md's waits-for-the-owner line").not.toBeNull();
+    expect(test8, "the checklist's test 8").not.toBeNull();
+    expect(paths.length).toBeGreaterThan(0);
+    // Both ways: each list names exactly the config's paths, so a path
+    // dropped from the config cannot stay named as waiting in the prose.
+    const named = (text: string | undefined): string[] =>
+      [...(text ?? "").matchAll(/`([^`]+)`/gu)]
+        .map(([, path]) => path ?? "")
+        .filter(
+          (path) =>
+            !["prReview.humanOnly", ".github/governor.json"].includes(path),
+        )
+        .sort();
+    expect(named(owner?.[0])).toEqual([...paths].sort());
+    expect(named(test8?.[0])).toEqual([...paths].sort());
   });
 
   it("leaves prReview.quote unset", () => {
