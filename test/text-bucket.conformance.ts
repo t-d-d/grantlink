@@ -44,8 +44,7 @@ describe("fitness: the bucket stays private (storage.md)", () => {
     );
   });
 
-  // With ACLs off, no grant can hand an object to another account. A
-  // change made outside CloudFormation does not show in the template (#94).
+  // With ACLs off, no grant can hand an object to another account (#94).
   it("disables ACLs, so the bucket owner owns every object", async () => {
     const reply = await s3.send(
       new GetBucketOwnershipControlsCommand({ Bucket: TEXT_BUCKET }),
