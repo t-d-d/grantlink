@@ -15,9 +15,12 @@ import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 // A run: search Europe PMC page by page, record what each page found, read
 // each paper not yet read, then publish the page. Every I/O call sits in a
 // step (docs/constraints/durable-execution.md). A paper that fails is left for
-// the next run. A run that fails, or whose search finds nothing, publishes
-// nothing. Otherwise it publishes if any paper its own search returned has
-// been read, by this run or an earlier one (publish in
+// the next run. A run whose search finds nothing publishes nothing. A run
+// that fails publishes nothing, with one exception: a run that fails while it
+// publishes can leave its found.json on the site, because each try writes
+// found.json before the page (siteBucket.publish in src/store/bucket.ts, and
+// the README). Otherwise a run publishes if any paper its own search returned
+// has been read, by this run or an earlier one (publish in
 // src/pipeline/steps.ts).
 
 // Papers per child context. Each batch ends with a short wait, so each
