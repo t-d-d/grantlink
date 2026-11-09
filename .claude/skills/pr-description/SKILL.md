@@ -7,8 +7,9 @@ description: "Write or rewrite a pull request title and body that a reviewer can
 
 ## Who reads it
 
-The owner, who merges, and anyone reading this public repo afterwards.
-Neither reads the diff first. They want to know whether the change is
+Governor's review, which merges a pull request it passes, the owner, and
+anyone reading this public repo afterwards. None of them reads the diff
+first. They want to know whether the change is
 going the right way: is it more complicated than it needs to be, and has
 it drifted from what the issue, the PRD or a decision record said. Nothing
 already decided there is argued again here.

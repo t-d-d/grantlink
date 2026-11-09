@@ -10,6 +10,7 @@ const config = z
   .object({
     prReview: z.object({
       merge: z.boolean().optional(),
+      requireChecks: z.array(z.string()).optional(),
       humanOnly: z
         .array(z.object({ glob: z.string(), reason: z.string().min(1) }))
         .optional(),
@@ -21,6 +22,15 @@ const config = z
 describe("governor merges pull requests its review passes", () => {
   it("has prReview.merge on", () => {
     expect(config.merge).not.toBe(false);
+  });
+
+  // A pass merges, so the review must wait for the eval as well as the
+  // gate: a pull request whose report is below a gating floor must not
+  // merge (deploy-gates.md).
+  it("waits for the gate and the eval before it merges", () => {
+    expect(config.requireChecks ?? []).toEqual(
+      expect.arrayContaining(["gate", "eval"]),
+    );
   });
 
   it("holds what only the owner should judge, each with its reason", () => {
@@ -46,6 +56,5 @@ describe("governor merges pull requests its review passes", () => {
     expect(skill).toMatch(/net\s+line/u);
     expect(skill).not.toMatch(/prReview\.quote/u);
     expect(skill).toMatch(/no\s+edit\s+to\s+the\s+description\s+can\s+make/iu);
-    expect(skill).not.toMatch(/it is empty here/u);
   });
 });

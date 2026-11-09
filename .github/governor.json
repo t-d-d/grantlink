@@ -43,7 +43,7 @@
         "reason": "It holds the sessions' skills and the review's own checklist."
       }
     ],
-    "requireChecks": ["gate"],
+    "requireChecks": ["gate", "eval"],
     "merge": true
   },
   "heartbeat": { "issue": 31 },
