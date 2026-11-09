@@ -44,6 +44,17 @@ const OnlySecureTransport = z.strictObject({
 // S3 returns condition values as strings, but YAML reads an unquoted
 // false in the template as a boolean, and CloudFormation deploys the two
 // alike (#157).
+//
+// A string counts only as a lowercase "false" (#168). AWS says the case of
+// a condition value matters or not by its operator, and lists Bool as
+// Boolean matching against "true" or "false", with no word that it ignores
+// case. So "FALSE" or "False" fails, which errs toward failing a policy
+// that does refuse plain HTTP, never toward passing one that does not. An
+// unquoted False or FALSE in the template is another matter: YAML reads it
+// as the boolean false, so it passes here. See the Condition element page,
+// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html,
+// and the Boolean condition operators on
+// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition_operators.html#Conditions_Boolean
 const isFalse = (value: unknown): boolean =>
   value === "false" || value === false;
 
