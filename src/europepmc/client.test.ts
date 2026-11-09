@@ -317,7 +317,7 @@ describe("searching Europe PMC", () => {
       }),
     );
     await expect(client.search("*")).rejects.toThrow(
-      "every PMCID on a page of 3 results was malformed (2 of them)",
+      "all 2 PMCIDs on a page of 3 results were malformed",
     );
   });
 

@@ -10,10 +10,9 @@ import {
   it,
   vi,
 } from "vitest";
-import { goldA } from "../../evals/gold.ts";
 import { fakeDeps, isGoldSearch, reply } from "../../test/fakes.ts";
 import { NAMES, RECORDED } from "../../test/fixtures.ts";
-import { EuropePmcError, europePmc } from "../europepmc/client.ts";
+import { EuropePmcError } from "../europepmc/client.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
 // A whole run under the SDK's local runner, which replays the body as
@@ -458,22 +457,7 @@ describe("the eval snapshot (evals.md)", () => {
   });
 
   it("writes no manifest when every PMCID gold set A's search finds is malformed", async () => {
-    const fake = fakeDeps();
-    const run = fake.deps.europePmc;
-    const malformed = europePmc({
-      fetch: () => Promise.resolve(malformedPage()),
-      clock: { now: () => 0, sleep: () => Promise.resolve() },
-    });
-    fake.deps.europePmc = {
-      search: (cursor, selection, pageSize) =>
-        (selection === goldA.query ? malformed : run).search(
-          cursor,
-          selection,
-          pageSize,
-        ),
-      fullText: run.fullText.bind(run),
-      grants: run.grants.bind(run),
-    };
+    const fake = fakeDeps({ goldSearch: malformedPage });
     const { status, result, retryDelays } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
     expect(retryDelays("snapshot-search-0")).toHaveLength(2);

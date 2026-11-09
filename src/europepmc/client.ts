@@ -317,10 +317,12 @@ export function europePmc(
       });
       // A page whose every PMCID is malformed is taken as Europe PMC
       // changing how it writes them, not as a page of no papers. The
-      // search fails, so its step tries again and then fails the run.
+      // search fails, so its step tries again. The run's search then fails
+      // the run, and gold set A's search fails the snapshot, which waits
+      // for the next run.
       if (skipped > 0 && papers.length === 0) {
         throw new Error(
-          `every PMCID on a page of ${String(results.length)} results was malformed (${String(skipped)} of them)`,
+          `all ${String(skipped)} PMCIDs on a page of ${String(results.length)} results were malformed`,
         );
       }
       const nextCursor =
