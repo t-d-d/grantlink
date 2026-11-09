@@ -131,8 +131,10 @@ const scanReply = z.object({
   LastEvaluatedKey: z.record(z.string(), z.unknown()).optional(),
 });
 
+const latestSearchKey = z.object({ pmcid: z.literal(LATEST_SEARCH) });
+
 const isLatestSearch = (item: unknown): boolean =>
-  z.object({ pmcid: z.literal(LATEST_SEARCH) }).safeParse(item).success;
+  latestSearchKey.safeParse(item).success;
 
 export function dynamoTable(
   name: string,
