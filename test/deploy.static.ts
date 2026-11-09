@@ -172,6 +172,9 @@ describe("fitness: the eval gates every deploy (deploy-gates.md)", () => {
 
   it("runs the eval workflow, and the deploy needs it", () => {
     expect(jobs.eval?.uses).toBe("./.github/workflows/eval.yml");
+    // A called workflow's job reads its environment's secrets as empty
+    // unless the call passes them on (#81).
+    expect(jobs.eval?.secrets).toBe("inherit");
     expect(needs("deploy")).toContain("eval");
   });
 

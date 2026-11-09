@@ -65,14 +65,23 @@ export interface EuropePmc {
   grants(pmcid: string): Promise<string[]>;
 }
 
-// Europe PMC refused or failed the request, and it is not worth retrying.
+// Europe PMC refused or failed the request, and this client will not try
+// again. `waitSeconds` is how long Europe PMC's last refusal asked callers
+// to wait, if it said: the run's step waits at least that long before it
+// asks again.
 export class EuropePmcError extends Error {
   readonly status: number | undefined;
+  readonly waitSeconds: number | undefined;
 
-  constructor(message: string, status: number | undefined) {
+  constructor(
+    message: string,
+    status: number | undefined,
+    waitSeconds?: number,
+  ) {
     super(message);
     this.name = "EuropePmcError";
     this.status = status;
+    this.waitSeconds = waitSeconds;
   }
 }
 
@@ -194,6 +203,8 @@ export function europePmc(
       throw new Error(`refusing to call ${url.host}: not Europe PMC`);
     }
     let failure = "";
+    // The Retry-After of the last refusal, in ms, if it gave one.
+    let lastAsked: number | undefined;
     for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
       const wait = next - clock.now();
       if (wait > 0) await clock.sleep(wait);
@@ -226,10 +237,13 @@ export function europePmc(
       // Refused, or failed on the way: wait as long as Europe PMC asks, or
       // longer after each try, and keep the slower pace for a while.
       const asked = response && retryAfter(response, clock);
+      lastAsked = asked;
       if (asked !== undefined && asked > MAX_WAIT_MS) {
+        const seconds = Math.ceil(asked / 1_000);
         throw new EuropePmcError(
-          `${failure}, asked to wait ${String(Math.ceil(asked / 1_000))}s`,
+          `${failure}, asked to wait ${String(seconds)}s`,
           response?.status,
+          seconds,
         );
       }
       const backoff =
@@ -241,6 +255,7 @@ export function europePmc(
     throw new EuropePmcError(
       `${failure}, after ${String(ATTEMPTS)} tries`,
       undefined,
+      lastAsked === undefined ? undefined : Math.ceil(lastAsked / 1_000),
     );
   }
 

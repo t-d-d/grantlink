@@ -57,11 +57,15 @@ export function memoryTable(): Table & { rows: Map<string, PaperRow> } {
 // A reply whose body is already in memory. The local durable runner fakes
 // the clock to skip waits, and a real Response reads its body through
 // streams that stall under that clock.
-export function reply(body: string, status = 200): Response {
+export function reply(
+  body: string,
+  status = 200,
+  headers: Record<string, string> = {},
+): Response {
   return {
     ok: status >= 200 && status < 300,
     status,
-    headers: new Headers(),
+    headers: new Headers(headers),
     body: null,
     text: () => Promise.resolve(body),
     json: () => Promise.resolve(JSON.parse(body) as unknown),

@@ -46,7 +46,28 @@ async function runWith(fake: ReturnType<typeof fakeDeps>) {
   return {
     status,
     result: status === "SUCCEEDED" ? execution.getResult() : undefined,
+    // How long each named step waited before its next attempt, in seconds.
+    retryDelays: (step: string) =>
+      execution
+        .getHistoryEvents()
+        .filter((event) => event.Name === step)
+        .flatMap(
+          (event) =>
+            event.StepFailedDetails?.RetryDetails?.NextAttemptDelaySeconds ??
+            [],
+        ),
   };
+}
+
+// A paper step whose full text Europe PMC refuses every time with `error`.
+function refusingPapers(error: Error) {
+  const fake = fakeDeps();
+  fake.deps.europePmc = {
+    search: fake.deps.europePmc.search.bind(fake.deps.europePmc),
+    fullText: () => Promise.reject(error),
+    grants: fake.deps.europePmc.grants.bind(fake.deps.europePmc),
+  };
+  return fake;
 }
 
 describe("a run over the back catalogue", () => {
@@ -198,6 +219,65 @@ describe("a run that fails or finds nothing leaves the page as it was", () => {
       reason: "nothing read",
     });
     expect(fake.site.files).toBeUndefined();
+  });
+});
+
+describe("fitness: a step Europe PMC refused waits before asking again (europe-pmc.md)", () => {
+  it("waits as long as a search's Retry-After asks, when that is longer than the client waits", async () => {
+    const fake = fakeDeps({
+      search: () => reply("", 429, { "Retry-After": "300" }),
+    });
+    const { status, retryDelays } = await runWith(fake);
+    expect(status).toBe("FAILED");
+    const delays = retryDelays("search-0");
+    expect(delays).toHaveLength(2);
+    for (const delay of delays) expect(delay).toBeGreaterThanOrEqual(300);
+  });
+
+  it("waits as long as a paper's Retry-After asks", async () => {
+    const fake = refusingPapers(
+      new EuropePmcError(
+        "Europe PMC answered 429, asked to wait 900s",
+        429,
+        900,
+      ),
+    );
+    const { retryDelays } = await runWith(fake);
+    const delays = retryDelays("paper-PMC0000001");
+    expect(delays).toHaveLength(2);
+    for (const delay of delays) expect(delay).toBeGreaterThanOrEqual(900);
+  });
+
+  it("leaves a paper for the next run when Europe PMC asks for more than an hour", async () => {
+    const fake = refusingPapers(
+      new EuropePmcError(
+        "Europe PMC answered 429, asked to wait 7200s",
+        429,
+        7200,
+      ),
+    );
+    const { status, retryDelays } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(retryDelays("paper-PMC0000001")).toEqual([]);
+    expect(fake.table.rows.get("PMC0000001")).toMatchObject({
+      status: "pending",
+      failures: 1,
+    });
+  });
+
+  it("never asks again sooner than its first wait, with no Retry-After", async () => {
+    const search = await runWith(fakeDeps({ search: () => reply("", 503) }));
+    const paper = await runWith(
+      refusingPapers(
+        new EuropePmcError("Europe PMC answered 503, after 5 tries", undefined),
+      ),
+    );
+    const delays = [
+      ...search.retryDelays("search-0"),
+      ...paper.retryDelays("paper-PMC0000001"),
+    ];
+    expect(delays).toHaveLength(4);
+    for (const delay of delays) expect(delay).toBeGreaterThanOrEqual(30);
   });
 });
 
