@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  checkWholeSearch,
   europePmc,
   EuropePmcError,
   HOSTS,
@@ -343,20 +342,6 @@ describe("searching Europe PMC", () => {
     expect(page.papers).toEqual([]);
     expect(page.skipped).toBe(2);
     expect(page.nextCursor).toBe("AoE");
-  });
-
-  it("fails a whole search that skipped results for a malformed PMCID and found no papers", () => {
-    expect(() => {
-      checkWholeSearch(0, 3);
-    }).toThrow(
-      "the search skipped 3 results for a malformed PMCID and found no papers",
-    );
-    expect(() => {
-      checkWholeSearch(1, 3);
-    }).not.toThrow();
-    expect(() => {
-      checkWholeSearch(0, 0);
-    }).not.toThrow();
   });
 
   it("returns a page of results with no PMCID as an empty page", async () => {

@@ -1,5 +1,6 @@
 import type { DurableContext } from "@aws/durable-execution-sdk-js";
 import {
+  checkWholeSearch,
   markFailed,
   publish,
   readPaper,
@@ -8,7 +9,6 @@ import {
   type Deps,
   type Published,
 } from "../pipeline/steps.ts";
-import { checkWholeSearch } from "../europepmc/client.ts";
 import { batches } from "../shared/batches.ts";
 import { readOrRefused, type Read } from "../pipeline/refused.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";

@@ -1,7 +1,6 @@
 import type { DurableContext } from "@aws/durable-execution-sdk-js";
-import { checkWholeSearch } from "../europepmc/client.ts";
 import { goldA, goldB } from "../../evals/gold.ts";
-import type { Deps } from "../pipeline/steps.ts";
+import { checkWholeSearch, type Deps } from "../pipeline/steps.ts";
 import {
   sample,
   searchGoldA,

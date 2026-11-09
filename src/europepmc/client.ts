@@ -80,20 +80,6 @@ export interface EuropePmc {
   grants(pmcid: string): Promise<string[]>;
 }
 
-// A whole search that skipped results for a malformed PMCID and found no
-// papers at all is taken as Europe PMC changing how it writes PMCIDs, not
-// as a search that found nothing, and fails. A page is not judged alone:
-// one bad record on a small page is skipped and counted, and the rest of
-// the search goes on (#118). The run's search then fails the run, and gold
-// set A's search fails the snapshot, which waits for the next run.
-export function checkWholeSearch(found: number, skipped: number): void {
-  if (skipped > 0 && found === 0) {
-    throw new Error(
-      `the search skipped ${String(skipped)} results for a malformed PMCID and found no papers`,
-    );
-  }
-}
-
 // Europe PMC refused or failed the request, and this client will not try
 // again. `waitSeconds` is how long Europe PMC's last refusal asked callers
 // to wait, if it said: the run's step waits at least that long before it

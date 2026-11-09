@@ -52,6 +52,8 @@ async function runWith(fake: ReturnType<typeof fakeDeps>) {
   return {
     status,
     result: status === "SUCCEEDED" ? execution.getResult() : undefined,
+    // Why the run failed, if it did.
+    error: status === "FAILED" ? execution.getError().errorMessage : undefined,
     // How long each named step waited before its next attempt, in seconds.
     retryDelays: (step: string) =>
       execution
@@ -308,8 +310,11 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
 
   it("fails when the whole search skipped results for a malformed PMCID and found no papers", async () => {
     const fake = fakeDeps({ search: malformedPage });
-    const { status } = await runWith(fake);
+    const { status, error } = await runWith(fake);
     expect(status).toBe("FAILED");
+    expect(error).toContain(
+      "the search skipped 2 results for a malformed PMCID and found no papers",
+    );
     expect(fake.site.files).toBeUndefined();
   });
 
