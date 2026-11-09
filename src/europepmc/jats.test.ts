@@ -73,6 +73,13 @@ describe("cutting a paper to its funding sections", () => {
         ).text,
       ).toEqual([]);
     });
+
+    it.each([
+      ["<sec><title>Support vector machines</title><p>Method.</p></sec>"],
+      ["<sec><title>Support needs of carers</title><p>Method.</p></sec>"],
+    ])("nor a body section whose title goes on past Support, %s", (section) => {
+      expect(fundingSections(paper(section)).text).toEqual([]);
+    });
   });
 
   it("leaves a character reference past Unicode's range as written", () => {
