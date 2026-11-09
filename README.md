@@ -13,7 +13,7 @@ The plan is the PRD, [#1](https://github.com/t-d-d/grantlink/issues/1). The deci
 Two stacks are applied by hand, once, before anything deploys, and both are code in [infra/](infra/):
 
 - **The DNS stack**, `dns`, from [infra/dns.cfn.yml](infra/dns.cfn.yml): the hosted zone for grantlink.uk and its certificate, in us-east-1, where CloudFront requires the certificate. The zone is kept if the stack is deleted, so its nameservers never change under the registrar.
-- **The roles stack**, `grantlink-github-oidc`, from [infra/github-oidc.cfn.yml](infra/github-oidc.cfn.yml): GitHub's OIDC provider, the deploy role and the role CloudFormation takes to build the app stack, the CI eval role, and `access-eval` for aws-access's `grantlink-eval` profile. IAM is global, so it sits in us-east-1 beside the DNS stack. It reads the access account's id from aws-access's `/access/account-id` parameter in us-east-1.
+- **The roles stack**, `grantlink-github-oidc`, from [infra/github-oidc.cfn.yml](infra/github-oidc.cfn.yml): GitHub's OIDC provider, the deploy role and the role CloudFormation takes to build the app stack, `grantlink-app-boundary`, the permissions boundary every role in the app stack must carry, the CI eval role, and `access-eval` for aws-access's `grantlink-eval` profile. IAM is global, so it sits in us-east-1 beside the DNS stack. It reads the access account's id from aws-access's `/access/account-id` parameter in us-east-1.
 
 Every later change to the account goes through the app stack, from a green merge to main.
 
