@@ -8,7 +8,7 @@ import funderFile from "./funder.json" with { type: "json" };
 
 // Bump this whenever a pattern changes, so every stored result says which
 // rules made it.
-export const RULES_VERSION = "rules-2";
+export const RULES_VERSION = "rules-3";
 
 export const funder = z
   .object({
@@ -33,7 +33,7 @@ export const referenceSchema = z
       .string()
       .min(1)
       .max(48)
-      .regex(/^[A-Za-z0-9 /\\∖-]+$/u),
+      .regex(/^[A-Za-z0-9 /\\∖\u2010-\u2015-]+$/u),
     normalised: z
       .string()
       .min(1)
@@ -46,19 +46,19 @@ export const referenceSchema = z
 export type Reference = z.infer<typeof referenceSchema>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-const funderName = new RegExp(
-  `(?:^|[^A-Za-z])(?:${funder.names.map(escape).join("|")})(?![A-Za-z])`,
-  "iu",
-);
+const NAMES = funder.names.map(escape).join("|");
+const funderName = new RegExp(`(?:^|[^A-Za-z])(?:${NAMES})(?![A-Za-z])`, "iu");
 
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
+// A hyphen may be written as a Unicode hyphen or dash (U+2010 to U+2015).
+const DASH = String.raw`[-\u2010-\u2015]`;
 
 interface Pattern {
   format: string | ((match: RegExpMatchArray) => string);
   pattern: RegExp;
-  // An A number alone is short and common, so it counts only in a sentence
-  // that names the funder.
+  // A short number such as an A number is common, so it counts only in a
+  // sentence that names the funder.
   sentenceOnly: boolean;
 }
 
@@ -73,6 +73,10 @@ const PATTERNS: Pattern[] = [
   {
     format: (match) => {
       const suffix = match[1];
+      const month = match[2];
+      if (month !== undefined) {
+        return /\d{4}$/u.test(month) ? "CODEMonYYYY/n" : "CODEMonYY/n";
+      }
       if (suffix === undefined) return "CODE/n";
       if (/^\d{4}$/u.test(suffix)) return "CODE-YYYY/n";
       if (new RegExp(`^(?:${MONTHS})\\d{2}$`, "iu").test(suffix)) {
@@ -80,11 +84,41 @@ const PATTERNS: Pattern[] = [
       }
       return "CODE-X/n";
     },
+    // The suffix follows a hyphen, which a space may follow, or else is a
+    // month in title case written straight onto the code.
     pattern: new RegExp(
-      String.raw`\b[A-Z]{4,12}(?:-([A-Za-z0-9]{2,8}))?${SEP}1\d{5}\b`,
+      String.raw`\b[A-Z]{4,12}(?:${DASH}\s?([A-Za-z0-9]{2,8})|((?:${MONTHS})(?:\d{4}|\d{2})))?${SEP}1\d{5}\b`,
       "gu",
     ),
     sentenceOnly: false,
+  },
+  {
+    // A G number counts only in the brackets straight after the funder's
+    // name, as in "Cancer Research UK (G123/45)".
+    format: "Gn/n",
+    pattern: new RegExp(
+      String.raw`(?<=(?:^|[^A-Za-z])(?:${NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}\b`,
+      "giu",
+    ),
+    sentenceOnly: false,
+  },
+  {
+    // A Francis Crick Institute core funding number, old style.
+    format: "FCn",
+    pattern: /\bFC\s?\d{6}\b/gu,
+    sentenceOnly: true,
+  },
+  {
+    // A Francis Crick Institute core funding number, new style.
+    format: "CCn",
+    pattern: /\bCC\s?\d{4}\b/gu,
+    sentenceOnly: true,
+  },
+  {
+    // A joint award named for the funder, such as Stand Up To Cancer's.
+    format: "RTn",
+    pattern: /\bRT\s?\d{4}\b/gu,
+    sentenceOnly: true,
   },
   {
     format: "An",
@@ -94,7 +128,11 @@ const PATTERNS: Pattern[] = [
 ];
 
 function normalise(written: string): string {
-  return written.replace(/\s+/gu, "").replace(/[\\∖]/gu, "/").toUpperCase();
+  return written
+    .replace(/\s+/gu, "")
+    .replace(/[\\∖]/gu, "/")
+    .replace(/[\u2010-\u2015]/gu, "-")
+    .toUpperCase();
 }
 
 function sentences(paragraph: string): string[] {
@@ -102,13 +140,18 @@ function sentences(paragraph: string): string[] {
   return paragraph.split(/(?<=(?<!\b[A-Z])[.;!?])\s+(?=[A-Z(])/u);
 }
 
-// Finds the references in one piece of text. An A number counts only where
-// `anNumbers` is set, and never as the A part of a C/A reference.
-function scan(text: string, anNumbers: boolean): Reference[] {
-  const found: Reference[] = [];
+// Finds the references in one piece of text. A sentence-only pattern counts
+// only where `shortNumbers` is set, and never inside a longer reference, such
+// as the A part of a C/A reference.
+interface Found extends Reference {
+  sentenceOnly: boolean;
+}
+
+function scan(text: string, shortNumbers: boolean): Found[] {
+  const found: Found[] = [];
   const taken: [number, number][] = [];
   for (const { format, pattern, sentenceOnly } of PATTERNS) {
-    if (sentenceOnly && !anNumbers) continue;
+    if (sentenceOnly && !shortNumbers) continue;
     for (const match of text.matchAll(pattern)) {
       const start = match.index;
       const end = start + match[0].length;
@@ -118,6 +161,7 @@ function scan(text: string, anNumbers: boolean): Reference[] {
         asWritten: match[0],
         normalised: normalise(match[0]),
         format: typeof format === "string" ? format : format(match),
+        sentenceOnly,
       });
     }
   }
@@ -150,17 +194,23 @@ function alreadyFound(id: string, found: readonly Reference[]): boolean {
   );
 }
 
+const reference = ({ asWritten, normalised, format }: Found): Reference => ({
+  asWritten,
+  normalised,
+  format,
+});
+
 export function findReferences(sections: FundingSections): Reference[] {
   const found: Reference[] = [];
   for (const paragraph of sections.text) {
     if (!funderName.test(paragraph)) continue;
-    found.push(...scan(paragraph, false));
+    found.push(...scan(paragraph, false).map(reference));
     for (const sentence of sentences(paragraph)) {
       if (!funderName.test(sentence)) continue;
       found.push(
-        ...scan(sentence, true).filter(
-          (reference) => reference.format === "An",
-        ),
+        ...scan(sentence, true)
+          .filter(({ sentenceOnly }) => sentenceOnly)
+          .map(reference),
       );
     }
   }
@@ -169,7 +219,7 @@ export function findReferences(sections: FundingSections): Reference[] {
     for (const id of award.ids) {
       const trimmed = id.trim();
       if (!confirmedNumber(trimmed, sections.text)) {
-        found.push(...scan(trimmed, true));
+        found.push(...scan(trimmed, true).map(reference));
       } else if (!alreadyFound(trimmed, found)) {
         found.push({ asWritten: trimmed, normalised: trimmed, format: "n" });
       }
