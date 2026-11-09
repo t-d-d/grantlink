@@ -108,4 +108,12 @@ describe("reading an element by its name", () => {
   it("matches an element with no attributes or with whitespace after its name", () => {
     expect(elements("<fn>a</fn><fn\n>b</fn>", "fn")).toEqual(["a", "b"]);
   });
+
+  it("skips an empty element closed in its own tag", () => {
+    const funding = 'fn-type="funding"';
+    expect(
+      elements('<fn fn-type="funding"/><fn>x</fn>', "fn", funding),
+    ).toEqual([]);
+    expect(elements("<fn /><fn>x</fn>", "fn")).toEqual(["x"]);
+  });
 });

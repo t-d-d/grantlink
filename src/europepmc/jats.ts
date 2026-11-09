@@ -40,10 +40,11 @@ function plain(xml: string): string {
 // Every element with this name, as its inner XML. JATS does not nest any of
 // the elements read here inside one of the same name. The name must end at
 // whitespace or the tag's close: \b would let "fn" match <fn-group>, since a
-// hyphen ends a word.
+// hyphen ends a word. An empty element closed in its own tag, such as <fn/>,
+// is skipped, or the match would run on into the next element's text.
 export function elements(xml: string, name: string, attributes = ""): string[] {
   const pattern = new RegExp(
-    `<${name}(?=[\\s>])(?=[^>]*${attributes})[^>]*>([\\s\\S]*?)</${name}>`,
+    `<${name}(?=[\\s>])(?=[^>]*${attributes})[^>]*(?<!/)>([\\s\\S]*?)</${name}>`,
     "gu",
   );
   return [...xml.matchAll(pattern)].map((match) => match[1] ?? "");
