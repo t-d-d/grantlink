@@ -58,14 +58,35 @@ function paragraphs(section: string): string[] {
   return [plain(section.replace(/<title\b[^>]*>[\s\S]*?<\/title>/gu, ""))];
 }
 
-// A funding or acknowledgements section in the body, found by its type or by
+// What counts as a funding part, read here by the cutter and by the check on
+// recorded fixtures (test/fixture-parts.ts), so the two agree (#159).
+
+// The attribute that marks a footnote as funding text.
+export const FUNDING_FOOTNOTE = String.raw`\bfn-type="(?:financial-disclosure|funding|supported-by)"`;
+
+// The start of a funding or acknowledgements section, found by its type or by
 // its title. Europe PMC often marks acknowledgements up as a section rather
 // than an <ack>, and one journal titles its funding section Support. Support
 // must be the whole title, so a body section such as Support vector machines
-// is not kept. The match starts at the section's own opening tag, so one
-// nested in another section is found too.
-const FUNDING_SECTION =
-  /<sec\b(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>|[^>]*>\s*(?:<label\b[^>]*>[\s\S]*?<\/label>\s*)?<title\b[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))([\s\S]*?)<\/sec>/giu;
+// is not kept. A label ends at its own closing tag, so a labelled section
+// is not taken for the labelled funding section after it.
+const FUNDING_SECTION_START = String.raw`<sec\b(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>|[^>]*>\s*(?:<label\b[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>\s*)?<title\b[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
+
+const FUNDING_SECTION_AT = new RegExp(FUNDING_SECTION_START, "iuy");
+
+// Whether the section that opens at this index of the XML is a funding
+// section.
+export function isFundingSectionAt(xml: string, index: number): boolean {
+  FUNDING_SECTION_AT.lastIndex = index;
+  return FUNDING_SECTION_AT.test(xml);
+}
+
+// Every funding section, wherever it is. The match starts at the section's
+// own opening tag, so one nested in another section is found too.
+const FUNDING_SECTION = new RegExp(
+  String.raw`${FUNDING_SECTION_START}([\s\S]*?)<\/sec>`,
+  "giu",
+);
 
 function fundingBodySections(xml: string): string[] {
   // A match found by its title starts part way through the title, so the
@@ -96,11 +117,7 @@ export function fundingSections(xml: string): FundingSections {
     ...statements,
     ...sections.flatMap(paragraphs),
     ...elements(xml, "ack").flatMap(paragraphs),
-    ...elements(
-      xml,
-      "fn",
-      `fn-type="(?:financial-disclosure|funding|supported-by)"`,
-    ).flatMap(paragraphs),
+    ...elements(xml, "fn", FUNDING_FOOTNOTE).flatMap(paragraphs),
   ].filter((paragraph) => paragraph !== "");
   return { text: [...new Set(text)], awards };
 }
