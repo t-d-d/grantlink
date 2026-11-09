@@ -6,6 +6,11 @@
 # stack runs in, and access-eval reads the access account's id from SSM.
 # The ARNs in the outputs carry the account id, so they are secrets.
 #
+# GitHub's subject for this repository carries the owner's and the
+# repository's immutable ids, as it does for every repository made after
+# 15 July 2026. Each role trusts that subject exactly, so a renamed or
+# look-alike repository cannot match (#48).
+#
 # The private bucket is grantlink-text-<account id>, the name the app stack
 # (#19) must give it, so nobody types it.
 AWSTemplateFormatVersion: "2010-09-09"
@@ -44,7 +49,7 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: repo:t-d-d/grantlink:environment:prod
+                token.actions.githubusercontent.com:sub: repo:t-d-d@4635510/grantlink@1449324689:environment:prod
       Policies:
         - PolicyName: deploy
           PolicyDocument:
@@ -218,7 +223,7 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: repo:t-d-d/grantlink:environment:eval
+                token.actions.githubusercontent.com:sub: repo:t-d-d@4635510/grantlink@1449324689:environment:eval
       Policies:
         - PolicyName: eval
           PolicyDocument:

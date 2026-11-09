@@ -13,7 +13,9 @@ import {
 // in review as a failing test (#15, #9).
 const template = readTemplate("infra/github-oidc.cfn.yml");
 const provider = { Ref: "GitHubOidcProvider" };
-const repo = "repo:t-d-d/grantlink";
+// GitHub's subject for a repository made after 15 July 2026 carries the
+// owner's and the repository's immutable ids (#48).
+const repo = "repo:t-d-d@4635510/grantlink@1449324689";
 
 const deploy = resource(template, "DeployRole");
 const execution = resource(template, "DeployExecutionRole");
