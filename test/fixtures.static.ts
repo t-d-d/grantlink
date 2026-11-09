@@ -47,8 +47,8 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
   });
 
   // Nor may it keep the author list, the affiliations, the title, the
-  // reference list or any text outside its funding sections, where real
-  // names would be (#140). The names test cannot see these: it checks the
+  // reference list or any text outside its ids, licence, funding metadata,
+  // acknowledgements and funding sections, where real names would be (#140). The names test cannot see these: it checks the
   // replacement names are there, not that no others are.
   it.each(RECORDED)(
     "$file, recorded from a paper, keeps nothing outside its ids, licence and funding sections",

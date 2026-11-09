@@ -29,6 +29,7 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
   "article/front": (child) => child.name === "article-meta",
   "article/front/article-meta": (child) =>
     ["article-id", "permissions", "funding-group"].includes(child.name),
+  "article/front/article-meta/permissions": (child) => child.name === "license",
   "article/body": isFundingSection,
   "article/back": (child) =>
     child.name === "ack" ||
@@ -38,9 +39,9 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
   "article/back/fn-group": isFundingFootnote,
 };
 
-// The XML's elements as a tree, under a root with no name. Declarations,
-// processing instructions and comments are dropped, and CDATA counts as
-// text.
+// The XML's elements as a tree, under a root with no name. Declarations and
+// processing instructions are dropped. CDATA and comments count as text,
+// since a comment can hold a cut part kept by mistake.
 function parse(xml: string): Element {
   const root: Element = { name: "", open: "", children: [], text: false };
   const stack = [root];
@@ -50,8 +51,8 @@ function parse(xml: string): Element {
     const [whole, close, name, attributes = "", empty] = match;
     const parent = stack.at(-1) ?? root;
     if (name === undefined) {
-      if (whole.startsWith("<![CDATA[") || !whole.startsWith("<")) {
-        const text = whole.replace(/^<!\[CDATA\[|\]\]>$/gu, "");
+      if (/^(?:<!\[CDATA\[|<!--|[^<])/u.test(whole)) {
+        const text = whole.replace(/^(?:<!\[CDATA\[|<!--)|(?:\]\]|--)>$/gu, "");
         if (text.trim() !== "") parent.text = true;
       }
     } else if (close === "/") {
@@ -78,9 +79,14 @@ function stray(element: Element, path: string): string[] {
 }
 
 // The path of each part of a recorded full text that falls outside what it
-// may keep, or of its root if that is not an article.
+// may keep, of its root if that is not an article, and "(text)" for any text
+// outside the root.
 export function strayParts(xml: string): string[] {
-  return parse(xml).children.flatMap((root) =>
-    root.name === "article" ? stray(root, "article") : [root.name],
-  );
+  const document = parse(xml);
+  return [
+    ...(document.text ? ["(text)"] : []),
+    ...document.children.flatMap((root) =>
+      root.name === "article" ? stray(root, "article") : [root.name],
+    ),
+  ];
 }

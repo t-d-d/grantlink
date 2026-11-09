@@ -101,11 +101,27 @@ describe("strayParts", () => {
       { meta: "Somebody" },
       "article/front/article-meta (text)",
     ],
+    [
+      "a copyright statement beside the licence",
+      {
+        meta: "<permissions><copyright-statement>C</copyright-statement></permissions>",
+      },
+      "article/front/article-meta/permissions/copyright-statement",
+    ],
+    [
+      "a comment in the article-meta",
+      { meta: "<!-- <contrib-group>A</contrib-group> -->" },
+      "article/front/article-meta (text)",
+    ],
   ])("names %s", (_what, parts, stray) => {
     expect(strayParts(paper(parts))).toEqual([stray]);
   });
 
   it("names a root that is not an article", () => {
     expect(strayParts("<book><p>B</p></book>")).toEqual(["book"]);
+  });
+
+  it("names text outside the root", () => {
+    expect(strayParts(`${paper()}\nSomebody`)).toEqual(["(text)"]);
   });
 });
