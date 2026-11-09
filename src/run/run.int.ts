@@ -51,6 +51,8 @@ async function runWith(fake: ReturnType<typeof fakeDeps>) {
   const status = execution.getStatus();
   return {
     status,
+    // The local runner's clock when the run ended.
+    ended: Date.now(),
     result: status === "SUCCEEDED" ? execution.getResult() : undefined,
     // Why the run failed, if it did.
     error: status === "FAILED" ? execution.getError().errorMessage : undefined,
@@ -444,6 +446,59 @@ function refusingFor(seconds: number, from: "run" | "snapshot") {
   return { fake, early, refused };
 }
 
+// Europe PMC refusing only the run's last paper, with a Retry-After of two
+// hours. It records each request sent before that wait had passed, and
+// when the page was published.
+async function refusingLast() {
+  // The order the run reads its papers in.
+  const order: string[] = [];
+  const dry = fakeDeps();
+  const fullText = dry.deps.europePmc.fullText.bind(dry.deps.europePmc);
+  dry.deps.europePmc.fullText = (pmcid) => {
+    order.push(pmcid);
+    return fullText(pmcid);
+  };
+  dry.deps.text.hasSnapshot = () => Promise.resolve(true);
+  await runWith(dry);
+  const last = order.at(-1);
+  expect(last).toBeDefined();
+
+  const fake = fakeDeps();
+  const real = fake.deps.europePmc;
+  const seen = { notBefore: 0, publishedAt: 0, early: [] as string[] };
+  const check = (request: string) => {
+    if (Date.now() < seen.notBefore) seen.early.push(request);
+  };
+  fake.deps.europePmc = {
+    search: (cursor, selection, pageSize) => {
+      check("search");
+      return real.search(cursor, selection, pageSize);
+    },
+    grants: (pmcid) => {
+      check(`grants ${pmcid}`);
+      return real.grants(pmcid);
+    },
+    fullText: (pmcid) => {
+      check(`fullText ${pmcid}`);
+      if (pmcid !== last) return real.fullText(pmcid);
+      seen.notBefore = Date.now() + 7_200_000;
+      return Promise.reject(
+        new EuropePmcError(
+          "Europe PMC answered 429, asked to wait 7200s",
+          429,
+          7200,
+        ),
+      );
+    },
+  };
+  const publish = fake.deps.site.publish.bind(fake.deps.site);
+  fake.deps.site.publish = (files) => {
+    seen.publishedAt = Date.now();
+    return publish(files);
+  };
+  return { fake, seen };
+}
+
 describe("fitness: a step Europe PMC refused waits before asking again (europe-pmc.md)", () => {
   it("waits as long as a search's Retry-After asks, when that is longer than the client waits", async () => {
     const fake = fakeDeps({
@@ -511,6 +566,28 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
       expect(early).toEqual([]);
     },
   );
+
+  it("does not hold back the publish step for a refusal on the run's last paper", async () => {
+    const { fake, seen } = await refusingLast();
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.published).toMatchObject({ published: true });
+    expect(seen.notBefore).toBeGreaterThan(0);
+    expect(seen.publishedAt).toBeGreaterThan(0);
+    expect(seen.publishedAt).toBeLessThan(seen.notBefore);
+    // The snapshot, which asks Europe PMC, still waits.
+    expect(result?.snapshot).toMatchObject({ taken: true });
+    expect(seen.early).toEqual([]);
+  });
+
+  it("ends only once a refusal on its last paper has been waited out, when there is no snapshot to take", async () => {
+    const { fake, seen } = await refusingLast();
+    fake.deps.text.hasSnapshot = () => Promise.resolve(true);
+    const { status, ended } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(seen.publishedAt).toBeLessThan(seen.notBefore);
+    expect(ended).toBeGreaterThanOrEqual(seen.notBefore);
+  });
 
   it("never asks again sooner than its first wait, with no Retry-After", async () => {
     const search = await runWith(fakeDeps({ search: () => reply("", 503) }));
