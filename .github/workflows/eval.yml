@@ -220,9 +220,17 @@ jobs:
           fi
           # A live commit from before the eval, or before one of its inputs
           # existed, has no fingerprint, and so no report to compare with.
-          if ! fingerprint="$(node evals/fingerprint.ts "$live" 2>/dev/null)"; then
+          # fingerprint.ts exits 3 for that alone. Any other failure is its
+          # own reason, and its error stays in this log (#90).
+          status=0
+          fingerprint="$(node evals/fingerprint.ts "$live")" || status=$?
+          if [ "$status" -eq 3 ]; then
             echo "The live release predates the eval's inputs."
             echo "reason=predates-eval" >> "$GITHUB_OUTPUT"
+            exit 0
+          elif [ "$status" -ne 0 ]; then
+            echo "::warning::The live release's fingerprint could not be worked out, so there is nothing to compare with."
+            echo "reason=fingerprint-failed" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           key="eval-reports/$fingerprint.json"
