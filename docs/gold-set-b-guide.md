@@ -47,8 +47,8 @@ the rest.
 2. Find each proposed reference with your browser's find. Check that the
    text ties it to CRUK by one of the rules below, and that
    `references_as_written` matches the print character for character.
-3. Find `Cancer Research`, `CRUK` and `CR-UK` too, and read every place
-   they appear, for any CRUK reference the passes missed.
+3. Find `Cancer Research`, `CRUK`, `CR-UK` and `U.K.` too, and read every
+   place they appear, for any CRUK reference the passes missed.
 4. Fix `funded`, the references or the note if they are wrong, and put `y`
    in `checked`.
 
@@ -85,7 +85,9 @@ says funded it.
 
 **No** when CRUK is named, but the paper does not say CRUK funded this
 work. The usual reasons are an author's declared interest, an affiliation,
-or thanks to CRUK staff for something other than funding.
+or thanks to CRUK staff for something other than funding. An affiliation
+or a facility alone is `unclear` instead when the paper has no funding
+statement (rule 1 below).
 
 **Unclear** when you cannot tell from the text. Say why in the note, in a
 few words of your own.
@@ -107,7 +109,9 @@ reference twice in different ways, record each way once.
   slash (`/`);
 - every letter in upper case;
 - every Unicode hyphen or dash, such as `‐` (U+2010), turned into `-`;
-- a `CRUK` joined to the front of a reference dropped.
+- a `CRUK` printed straight onto the front of a reference, with no space
+  or separator between them, as in `CRUKC1234/A56789`, dropped. A
+  reference whose own form starts with `CRUK/` or `CRUK-` keeps it.
 
 The rules produce the same form (`src/extract/rules.ts`). The last two
 steps cover forms the rules cannot read yet (#177).
@@ -179,7 +183,7 @@ CRUK is named only as where someone works.
 > Acknowledgements: One author is based at the Cancer Research UK
 > Exampletown Institute.
 
-`funded`: `no`. References: blank. Note: `affiliation only`.
+`funded`: `no`. References: blank. Note: `affiliation or facility only`.
 
 ### Several funders
 
@@ -208,7 +212,7 @@ which reference is CRUK's`.
 
 ## Rules agreed while labelling
 
-The owner settled these on 18 papers the guide left open (#175).
+You settled these on 18 papers the guide left open (#175).
 
 1. **An affiliation or a facility only.** CRUK named only in an
    affiliation, or as a facility the authors used, is `no` when the paper's
@@ -246,5 +250,6 @@ registration or a dataset accession.
 ## When you are done
 
 Every row has `funded` set, its references where it has any, and `y` in
-`checked` (#22). Export the main tab as CSV. #23 commits the ids and
-references to the repo, and nothing else from the sheet.
+`checked` (#22). Export the main tab and the `proposed` tab as CSV. #23
+compares the two, and commits the ids and references to the repo, and
+nothing else from the sheet.
