@@ -51,7 +51,9 @@ export const noLive = z.enum([
 ]);
 export type NoLive = z.infer<typeof noLive>;
 
-const NO_LIVE: Record<NoLive, string> = {
+const NO_LIVE: Record<NoLive | OlderFormat, string> = {
+  "older-format":
+    "The live release's report is in a format this pull request's code cannot read, most likely an older one, so there is nothing to compare with.",
   "no-deploy":
     "No deploy of main has run yet, so there is nothing to compare with.",
   "page-unread":
@@ -66,7 +68,44 @@ const NO_LIVE: Record<NoLive, string> = {
     "The live release has no report filed, so there is nothing to compare with.",
 };
 
-export function comment(ci: Report, live: Report | NoLive): string {
+// A live report this code cannot read, most likely because it was filed by
+// older code before a row or a field was added (#138). The comparison is
+// advice, so this is a reason to show CI's scores alone, not a failure. It
+// comes from check.ts, not from eval.yml, so it is not in noLive.
+export type OlderFormat = "older-format";
+
+// Why it could not be read goes to the job's log, as paths and codes and
+// never values, so a broken report can still be told from an old one.
+// stdout is the comment, so the default writes to stderr.
+export function readLive(
+  raw: string,
+  warn: (line: string) => void = (line) => {
+    console.error(line);
+  },
+): Report | OlderFormat {
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    warn("::warning::The live release's report is not JSON.");
+    return "older-format";
+  }
+  const parsed = report.safeParse(json);
+  if (parsed.success) return parsed.data;
+  const why = parsed.error.issues.map(
+    (issue) =>
+      `${issue.code} at ${issue.path.map(String).join(".") || "(root)"}${"keys" in issue ? ` (${issue.keys.join(", ")})` : ""}`,
+  );
+  warn(
+    `::warning::The live release's report does not parse: ${why.join("; ")}.`,
+  );
+  return "older-format";
+}
+
+export function comment(
+  ci: Report,
+  live: Report | NoLive | OlderFormat,
+): string {
   const mine = verdict(ci);
   const theirs = typeof live === "string" ? null : verdict(live);
   const rows = mine.rows.map((row, i) => {
@@ -105,10 +144,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     path !== undefined &&
     extra !== undefined
   ) {
-    const read = (file: string) =>
-      report.parse(JSON.parse(readFileSync(file, "utf8")));
-    const live = extra === "--no-live" ? noLive.parse(reason) : read(extra);
-    console.log(comment(read(path), live));
+    // CI's own report must parse. The live one is only compared with.
+    const ci = report.parse(JSON.parse(readFileSync(path, "utf8")));
+    const live =
+      extra === "--no-live"
+        ? noLive.parse(reason)
+        : readLive(readFileSync(extra, "utf8"));
+    console.log(comment(ci, live));
   } else {
     throw new Error(
       "usage: node evals/check.ts gate <report.json> <fingerprint> | comment <report.json> <live.json> | comment <report.json> --no-live <reason>",
