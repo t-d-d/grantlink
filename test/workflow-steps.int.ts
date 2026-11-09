@@ -163,6 +163,7 @@ describe("the eval's read of the live release's report", () => {
     ["the reply is not JSON", curl("<html>")],
     ["the record holds no report", curl('{"commit":"x"}')],
     ["the record's report is not an object", curl('{"report":"x"}')],
+    ["the reply holds more than one record", curl(`${record}\n${record}`)],
   ])(
     "says the page is unread, and leaves no live report, when %s",
     (_, stub) => {

@@ -143,7 +143,10 @@ describe("the gate and the comment", () => {
   // holds instead of looking one up.
   it("takes the live report from the release record, not from the live commit's fingerprint", () => {
     const live = named("Read the live release's report")?.run ?? "";
-    expect(live).toMatch(/jq -ce '\.report \| objects'/u);
+    // Slurped, so a reply of several records is not taken as one.
+    expect(live).toMatch(
+      /jq -ces 'select\(length == 1\) \| \.\[0\]\.report \| objects'/u,
+    );
     expect(live).not.toContain("fingerprint.ts");
     expect(live).not.toMatch(/\bgit\b/u);
     expect(live).not.toMatch(/\baws\b/u);

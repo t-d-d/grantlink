@@ -74,10 +74,10 @@ describe("the pull request's comment", () => {
     expect(text).not.toContain("recent runs");
   });
 
-  it("says the live release is not known when its record cannot be read", () => {
+  it("says the live report is not known when its record cannot be read or holds none", () => {
     const text = comment(report({ spend: 0 }), "page-unread");
     expect(text).toContain(
-      "The release record on the live page could not be read",
+      "The release record on the live page could not be read, or holds no report",
     );
     expect(text).not.toMatch(/no live release|no release is live|no deploy/iu);
   });

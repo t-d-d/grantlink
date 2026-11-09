@@ -185,9 +185,9 @@ jobs:
       # fingerprint the live release's own code worked out, which this pull
       # request's code cannot work out again when it changes the inputs, so
       # the step takes the report from the record (#139). If the record
-      # cannot be read, or holds no report, there is nothing to compare
-      # with, and the comment shows CI's scores alone (#88). The report is
-      # written to live.json only, never printed.
+      # cannot be read, is not one JSON value, or holds no report, there is
+      # nothing to compare with, and the comment shows CI's scores alone
+      # (#88). The report is written to live.json only, never printed.
       - id: live
         name: Read the live release's report
         if: github.event_name == 'pull_request' && steps.cached.outputs.bucket != 'missing'
@@ -196,7 +196,7 @@ jobs:
         run: |
           set -euo pipefail
           if ! record="$(curl -sSf --retry 2 --max-time 30 "$RELEASE_URL")" \
-            || ! live="$(jq -ce '.report | objects' <<< "$record" 2>/dev/null)"; then
+            || ! live="$(jq -ces 'select(length == 1) | .[0].report | objects' <<< "$record" 2>/dev/null)"; then
             echo "::warning::Could not read the report in the live page's release record, so there is nothing to compare with."
             echo "reason=page-unread" >> "$GITHUB_OUTPUT"
             exit 0

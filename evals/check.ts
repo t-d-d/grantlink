@@ -50,7 +50,7 @@ const NO_LIVE: Record<NoLive | OlderFormat, string> = {
   "no-deploy":
     "No deploy of main has run yet, so there is nothing to compare with.",
   "page-unread":
-    "The release record on the live page could not be read, so the live release is not known and there is nothing to compare with.",
+    "The release record on the live page could not be read, or holds no report, so there is nothing to compare with.",
 };
 
 // A live report this code cannot read, most likely because it was filed by
