@@ -530,45 +530,49 @@ describe("the run's role inside the boundary", () => {
         ),
     },
   ];
-  const held = [
-    ...((serverless.provider.iam?.role?.statements ?? []) as Statement[]),
-    ...fromOsls,
-  ];
+  const declared = (serverless.provider.iam?.role?.statements ??
+    []) as Statement[];
+  const held = [...declared, ...fromOsls];
 
   // Each action and resource a statement asks for that no Allow in the
   // policy covers with the same or no condition, or that a Deny reaches.
-  const outside = (asked: Statement[], policy: Statement[]): string[] =>
-    asked.flatMap((statement) =>
+  // An action asked for may itself be a pattern, so a Deny reaches it where
+  // the two share an action, compared without regard to case.
+  const outside = (asked: Statement[], policy: Statement[]): string[] => {
+    const rules = policy.map((rule) => ({
+      rule,
+      arns: list(rule.Resource).map((value) => renderArn(value, names)),
+    }));
+    return asked.flatMap((statement) =>
       actions(statement).flatMap((action) =>
         list(statement.Resource)
           .map((value) => renderArn(value, names))
           .filter((arn) => {
-            const reaches = (rule: Statement): boolean =>
-              actions(rule).some((pattern) => wildcardMatches(pattern, action));
-            const allowed = policy.some(
-              (rule) =>
+            const allowed = rules.some(
+              ({ rule, arns }) =>
                 rule.Effect === "Allow" &&
-                reaches(rule) &&
+                actions(rule).some((pattern) =>
+                  patternWithin(action.toLowerCase(), pattern.toLowerCase()),
+                ) &&
                 (rule.Condition === undefined ||
                   JSON.stringify(rule.Condition) ===
                     JSON.stringify(statement.Condition)) &&
-                list(rule.Resource).some((value) =>
-                  patternWithin(arn, renderArn(value, names)),
-                ),
+                arns.some((wide) => patternWithin(arn, wide)),
             );
-            const denied = policy.some(
-              (rule) =>
+            const denied = rules.some(
+              ({ rule, arns }) =>
                 rule.Effect === "Deny" &&
-                reaches(rule) &&
-                list(rule.Resource).some((value) =>
-                  patternsOverlap(arn, renderArn(value, names)),
-                ),
+                actions(rule).some((pattern) =>
+                  patternsOverlap(pattern.toLowerCase(), action.toLowerCase()),
+                ) &&
+                arns.some((other) => patternsOverlap(arn, other)),
             );
             return !allowed || denied;
           })
           .map((arn) => `${action} ${arn}`),
       ),
     );
+  };
 
   // A change to osls's version may change what it adds to the role.
   it("pins what the osls version in use adds", () => {
@@ -578,10 +582,26 @@ describe("the run's role inside the boundary", () => {
     expect(devDependencies.osls).toBe("4.5.0");
   });
 
-  it("asks for nothing the boundary does not allow", () => {
-    expect(held.flatMap((statement) => list(statement.Resource))).not.toEqual(
+  // outside() reads Allows by Action and Resource, and Denies too in the
+  // boundary. A statement written any other way would be misread, so it
+  // fails here first.
+  it("reads every statement the check compares", () => {
+    const unread = (statement: Statement): boolean =>
+      statement.NotAction !== undefined ||
+      statement.NotResource !== undefined ||
+      statement.Action === undefined ||
+      statement.Resource === undefined;
+    expect(held.filter((statement) => statement.Effect !== "Allow")).toEqual(
       [],
     );
+    expect(held.filter(unread)).toEqual([]);
+    expect(boundary.filter(unread)).toEqual([]);
+  });
+
+  it("asks for nothing the boundary does not allow", () => {
+    expect(
+      declared.flatMap((statement) => list(statement.Resource)),
+    ).not.toEqual([]);
     expect(outside(held, boundary)).toEqual([]);
   });
 
@@ -592,6 +612,22 @@ describe("the run's role inside the boundary", () => {
     expect(outside(held, drifted)).toEqual([
       `s3:PutObject arn:aws:s3:::${generated("SiteBucket").toLowerCase()}/index.html`,
       `s3:PutObject arn:aws:s3:::${generated("SiteBucket").toLowerCase()}/found.json`,
+    ]);
+  });
+
+  it("finds a wildcard action that reaches a denied one", () => {
+    const reports = sub(
+      "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval-reports/*",
+    );
+    const asked: Statement[] = [
+      { Effect: "Allow", Action: "s3:Put*", Resource: reports },
+    ];
+    const policy: Statement[] = [
+      { Effect: "Allow", Action: "s3:*", Resource: reports },
+      { Effect: "Deny", Action: "s3:PutObject", Resource: reports },
+    ];
+    expect(outside(asked, policy)).toEqual([
+      `s3:Put* arn:aws:s3:::grantlink-text-${account}/eval-reports/*`,
     ]);
   });
 

@@ -125,28 +125,32 @@ export function subText(value: unknown): string {
 // IAM compares actions and ARNs: without regard to case for actions.
 export function wildcardMatches(pattern: string, value: string): boolean {
   return new RegExp(
-    `^${pattern
-      .replace(/[.+^${}()|[\]\\]/gu, "\\$&")
-      .replace(/\*/gu, ".*")
-      .replace(/\?/gu, ".")}$`,
+    `^${escapeLiterals(pattern).replace(/\*/gu, ".*").replace(/\?/gu, ".")}$`,
     "iu",
   ).test(value);
 }
 
-// A character no ARN holds. It stands for a wildcard in the narrower of two
-// patterns, so only a * in the wider one can take it.
-const hole = "\u0000";
+// Escapes every regular expression character an IAM pattern may hold,
+// leaving its * and ? wildcards for the caller to translate.
+function escapeLiterals(pattern: string): string {
+  return pattern.replace(/[.+^${}()|[\]\\]/gu, "\\$&");
+}
+
+// Two characters no ARN holds. They stand for the wildcards in the narrower
+// of two patterns: only a * in the wider one can take a *, which may be any
+// length, and a * or a ? can take a ?, which is one character.
+const anyLength = "\u0000";
+const oneCharacter = "\u0001";
 
 // Whether every value one IAM pattern covers is covered by another, as IAM
 // compares ARNs: with regard to case.
 export function patternWithin(narrow: string, wide: string): boolean {
   return new RegExp(
-    `^${wide
-      .replace(/[.+^${}()|[\]\\]/gu, "\\$&")
+    `^${escapeLiterals(wide)
       .replace(/\*/gu, "[^]*")
       .replace(/\?/gu, "[^\\u0000]")}$`,
     "u",
-  ).test(narrow.replace(/[*?]/gu, hole));
+  ).test(narrow.replace(/\*/gu, anyLength).replace(/\?/gu, oneCharacter));
 }
 
 // Whether some value is covered by both of two IAM patterns.

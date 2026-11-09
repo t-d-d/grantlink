@@ -25,6 +25,13 @@ describe("comparing IAM patterns", () => {
     expect(patternWithin("a:b/*", "a:b/*")).toBe(true);
   });
 
+  it("lets a ? in the wider pattern take a ? in the narrower", () => {
+    expect(patternWithin("a:b?", "a:b?")).toBe(true);
+    expect(patternWithin("a:?*", "a:?*")).toBe(true);
+    expect(patternWithin("a:b?", "a:b*")).toBe(true);
+    expect(patternWithin("a:b*", "a:b?*")).toBe(false);
+  });
+
   it("does not find a pattern inside a narrower one", () => {
     expect(patternWithin("a:b/*", "a:b/c/*")).toBe(false);
     expect(patternWithin("log:g*", "log:g-run")).toBe(false);
