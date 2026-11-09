@@ -15,7 +15,7 @@ Two stacks are applied by hand, once, before anything deploys, and both are code
 
 Every later change to the account goes through the app stack, from a green merge to main.
 
-Run one script, from the repo root on your own machine, with AWS credentials for grantlink's account as an administrator, and `gh` signed in with admin rights on this repo:
+Run one script, from the repo root on your own machine, with AWS credentials for the organization's management account as an administrator, and `gh` signed in with admin rights on this repo. The script finds grantlink's account by its name and works there through `OrganizationAccountAccessRole`. That session lasts an hour, so if the registrar is slow and the certificate is still waiting, run the script again once the DNS stack has finished:
 
 ```sh
 scripts/bootstrap.sh

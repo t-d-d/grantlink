@@ -39,6 +39,31 @@ describe("the bootstrap script", () => {
     );
   });
 
+  it("reaches grantlink from the management account by its name", () => {
+    expect(script).toMatch(
+      /aws organizations list-accounts --query "Accounts\[\?Name=='grantlink'/u,
+    );
+    expect(script).toMatch(/role\/OrganizationAccountAccessRole/u);
+  });
+
+  // A deploy with nothing to change exits non-zero unless told not to, so
+  // without the flag a second run would stop at the first stack.
+  it("can run again over stacks that already exist", () => {
+    const deploys = [
+      ...script.matchAll(
+        /aws cloudformation deploy\b[^&\n]*(?:\\\n[^&\n]*)*/gu,
+      ),
+    ];
+    expect(deploys).toHaveLength(2);
+    for (const [deploy] of deploys) {
+      expect(deploy).toContain("--no-fail-on-empty-changeset");
+    }
+  });
+
+  it("stops waiting for the hosted zone if the DNS deploy has ended", () => {
+    expect(script).toMatch(/while \[ "\$zone" = "None" \] && kill -0 "\$dns"/u);
+  });
+
   it("asks for no value by hand but the go-ahead", () => {
     const prompts = [...script.matchAll(/\bread -r -p\b/gu)];
     expect(prompts).toHaveLength(1);
