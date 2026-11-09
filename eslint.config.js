@@ -89,12 +89,12 @@ export default defineConfig(
   },
   {
     // The eval's fingerprint covers what it runs (docs/constraints/evals.md).
-    files: ["src/extract/**/*.ts", "evals/**/*.ts"],
+    files: ["src/extract/**/*.ts", "src/shared/**/*.ts", "evals/**/*.ts"],
     ignores: tests,
     rules: {
       "grantlink/imports-within": [
         "error",
-        { paths: ["src/extract", "evals"] },
+        { paths: ["src/extract", "src/shared", "evals"] },
       ],
     },
   },

@@ -6,9 +6,10 @@ const trees = Object.fromEntries(
 );
 
 describe("the eval's fingerprint", () => {
-  it("covers the extraction, the eval, its workflow and the lockfile", () => {
+  it("covers the extraction, the shared helpers, the eval, its workflow and the lockfile", () => {
     expect(INPUTS).toEqual([
       "src/extract",
+      "src/shared",
       "evals",
       ".github/workflows/eval.yml",
       "package-lock.json",

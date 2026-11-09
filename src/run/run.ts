@@ -7,6 +7,7 @@ import {
   type Deps,
   type Published,
 } from "../pipeline/steps.ts";
+import { batches } from "../shared/batches.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 
@@ -33,11 +34,6 @@ interface BatchOutcome {
   read: number;
   failed: number;
 }
-
-const chunks = (items: string[], size: number): string[][] =>
-  Array.from({ length: Math.ceil(items.length / size) }, (_, i) =>
-    items.slice(i * size, i * size + size),
-  );
 
 async function readBatch(
   ctx: DurableContext,
@@ -86,7 +82,7 @@ export function makeRun(deps: Deps) {
         { retryStrategy: europePmcRetry },
       );
       found += result.found;
-      for (const [index, batch] of chunks(result.todo, BATCH).entries()) {
+      for (const [index, batch] of batches(result.todo, BATCH).entries()) {
         const name = `papers-${String(page)}-${String(index)}`;
         const outcome = await ctx.runInChildContext(name, async (child) =>
           readBatch(child, deps, batch, runId),

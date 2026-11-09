@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 // to print it for a commit, HEAD by default.
 export const INPUTS = [
   "src/extract",
+  "src/shared",
   "evals",
   ".github/workflows/eval.yml",
   "package-lock.json",

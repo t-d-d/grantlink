@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pmcid as PMCID } from "../src/shared/pmcid.ts";
 import goldAFile from "./gold-a.json" with { type: "json" };
 import goldBFile from "./gold-b.json" with { type: "json" };
 import snapshotFile from "./snapshot.json" with { type: "json" };
@@ -7,7 +8,6 @@ import snapshotFile from "./snapshot.json" with { type: "json" };
 // (docs/constraints/evals.md). The repo is public, so the gold sets hold
 // paper ids, grant ids and labels only, never text.
 
-const PMCID = z.string().regex(/^PMC\d+$/u);
 const SHA256 = z.string().regex(/^[0-9a-f]{64}$/u);
 // A grant id as Europe PMC holds it, or a label: the characters a reference
 // is made of, and no space, so no sentence or name fits.

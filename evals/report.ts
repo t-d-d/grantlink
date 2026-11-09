@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pmcid as PMCID } from "../src/shared/pmcid.ts";
 import {
   FLOORS,
   judge,
@@ -15,7 +16,6 @@ import {
 const ids = FLOORS.map((floor) => floor.id);
 const HEX = (length: number) =>
   z.string().regex(new RegExp(`^[0-9a-f]{${String(length)}}$`, "u"));
-const PMCID = z.string().regex(/^PMC\d+$/u);
 
 const row = z
   .object({

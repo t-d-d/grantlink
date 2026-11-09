@@ -4,10 +4,10 @@
 # a gating floor fails the job, which stops the merge and the deploy (#8).
 #
 # The S3 reads and writes sit in this workflow's own steps. The runner reads
-# local files only, so src/extract/ and evals/ import nothing from outside
-# themselves (docs/constraints/evals.md). Logs print paper ids and scores
-# only: the snapshot's files hold funding text and names, and nothing here
-# prints them.
+# local files only, and src/extract/, src/shared/ and evals/ import nothing
+# from outside the fingerprinted paths (docs/constraints/evals.md). Logs
+# print paper ids and scores only: the snapshot's files hold funding text
+# and names, and nothing here prints them.
 #
 # This file is one of the fingerprint's inputs, so a change here runs the
 # eval again.

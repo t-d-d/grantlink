@@ -105,12 +105,12 @@ describe("fitness: no text in logs (personal-data.md)", () => {
 describe("fitness: the fingerprint covers what the eval runs (evals.md)", () => {
   const rule = "grantlink/imports-within";
 
-  it.each(["src/extract/rules.ts", "src/extract/model.ts", "evals/run.ts"])(
+  it.each(["src/extract/rules.ts", "src/shared/pmcid.ts", "evals/run.ts"])(
     "is an error in %s, bound to the fingerprinted paths",
     async (path) => {
       expect(await severity(path, rule)).toBe(ERROR);
       expect(await options(path, rule)).toEqual({
-        paths: ["src/extract", "evals"],
+        paths: ["src/extract", "src/shared", "evals"],
       });
     },
   );
@@ -123,6 +123,7 @@ describe("fitness: the fingerprint covers what the eval runs (evals.md)", () => 
     const { INPUTS } = await import("../evals/fingerprint.ts");
     expect(INPUTS.filter((path) => !/\.(?:yml|json)$/u.test(path))).toEqual([
       "src/extract",
+      "src/shared",
       "evals",
     ]);
   });

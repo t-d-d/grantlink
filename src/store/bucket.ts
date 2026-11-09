@@ -4,6 +4,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { FundingSections } from "../extract/rules.ts";
+import { isPmcid } from "../shared/pmcid.ts";
 
 // The only module that reads or writes S3 (docs/constraints/storage.md):
 // the private bucket that holds each paper's funding text, and the bucket
@@ -13,7 +14,6 @@ interface Sender {
   send(command: object): Promise<unknown>;
 }
 
-const PMCID = /^PMC\d+$/u;
 const defaultClient = () => new S3Client({ region: "eu-west-2" });
 
 export interface TextBucket {
@@ -49,7 +49,7 @@ export function textBucket(
 ): TextBucket {
   return {
     async putFundingText(pmcid, sections) {
-      if (!PMCID.test(pmcid)) throw new Error("not a PMCID");
+      if (!isPmcid(pmcid)) throw new Error("not a PMCID");
       await client.send(
         new PutObjectCommand({
           Bucket: name,
@@ -72,7 +72,7 @@ export function textBucket(
     },
 
     async putSnapshotPaper(pmcid, body) {
-      if (!PMCID.test(pmcid)) throw new Error("not a PMCID");
+      if (!isPmcid(pmcid)) throw new Error("not a PMCID");
       return putOnce(`eval/papers/${pmcid}.json`, body);
     },
 

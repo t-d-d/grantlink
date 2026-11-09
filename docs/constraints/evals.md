@@ -1,5 +1,5 @@
 # Evals
-Relevance: src/extract/**, evals/**, .github/workflows/eval.yml, scripts/eval-snapshot.sh, the eval roles, the eval snapshot or the eval reports
+Relevance: src/extract/**, src/shared/**, evals/**, .github/workflows/eval.yml, scripts/eval-snapshot.sh, the eval roles, the eval snapshot or the eval reports
 Decision: The eval scores a fixed snapshot. Its reports are a cache keyed by a fingerprint of its inputs, written once and only by CI.
 
 Why: Scores must compare across releases, so the text they are scored on
@@ -21,10 +21,11 @@ text, so it must not get broad AWS access or see the key.
   `evals/gold-b.json`. A new snapshot takes a new id.
 - The repo holds paper ids, grant ids and labels only, never text.
 - The fingerprint is the SHA-256 of the git hashes of `src/extract/`,
-  `evals/`, `.github/workflows/eval.yml` and `package-lock.json`, as
-  `evals/fingerprint.ts` computes it.
-- Code in `src/extract/` and `evals/` imports nothing from outside those
-  paths except packages and Node's built-ins.
+  `src/shared/`, `evals/`, `.github/workflows/eval.yml` and
+  `package-lock.json`, as `evals/fingerprint.ts` computes it.
+  `src/shared/` holds the one PMCID pattern, which the eval reads too.
+- Code in `src/extract/`, `src/shared/` and `evals/` imports nothing from
+  outside those paths except packages and Node's built-ins.
   `grantlink/imports-within` checks this.
 - The runner, `evals/run.ts`, reads the snapshot from local files and
   checks the manifest against its pin and each paper against the manifest.
