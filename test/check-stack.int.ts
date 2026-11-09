@@ -1,7 +1,7 @@
 // Runs scripts/check-stack.sh, the deploy's check on the app stack before
 // sls deploy (#89), under bash with a stub aws. The stub answers from the
-// environment: the stack's status, whether it lists TextBucket, its newest
-// failed resource, and what S3 says about the funding text bucket. The
+// environment: the stack's status, whether it lists TextBucket, its latest
+// page of events, and what S3 says about the funding text bucket. The
 // script's PATH holds only the stub and the system commands it needs, so a
 // call nothing stubs fails instead of reaching AWS.
 import { execFileSync, spawnSync } from "node:child_process";
@@ -64,7 +64,8 @@ case "$1 $2" in
   "cloudformation describe-stack-events")
     log "events $stack"
     [ -n "$STATUS" ] || missing DescribeStackEvents
-    printf '%s\\n' "\${FAILED:-None}" ;;
+    # One row per event, newest first, as the script's --query renders it.
+    [ -z "\${EVENTS:-}" ] || printf '%s\\n' "$EVENTS" ;;
   "cloudformation list-stack-resources")
     log "resources $stack"
     [ -n "$STATUS" ] || missing ListStackResources
@@ -94,7 +95,9 @@ afterEach(() => {
 interface Stack {
   status?: string;
   listed?: "0" | "1";
-  failed?: string;
+  // The latest page of events, newest first: logical id, status, and
+  // whether the event starts an operation the user asked for.
+  events?: string[];
   bucket?: "200" | "403" | "404" | "500";
   deny?: boolean;
   pages?: number;
@@ -126,7 +129,7 @@ function check(stack: Stack): Check {
       LC_ALL: "C",
       STATUS: stack.status ?? "",
       LISTED: stack.listed ?? "1",
-      FAILED: stack.failed ?? "None",
+      EVENTS: (stack.events ?? []).join("\n"),
       BUCKET: stack.bucket ?? "404",
       DENY: stack.deny === true ? "1" : "",
       PAGES: String(stack.pages ?? 1),
@@ -173,7 +176,13 @@ describe("a stack stuck in cleanup or rollback stops the deploy (#89)", () => {
   it("names the resource the cleanup cannot delete", () => {
     const result = check({
       status: "UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS",
-      failed: "TextBucket\tDELETE_FAILED",
+      events: [
+        "TextBucket\tDELETE_FAILED\tFalse",
+        "grantlink-prod\tUPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS\tFalse",
+        "grantlink-prod\tUPDATE_ROLLBACK_IN_PROGRESS\tFalse",
+        "RunLambdaFunction\tUPDATE_FAILED\tFalse",
+        "grantlink-prod\tUPDATE_IN_PROGRESS\tTrue",
+      ],
     });
     expect(result.status).not.toBe(0);
     expect(result.output).toContain(
@@ -188,7 +197,12 @@ describe("a stack stuck in cleanup or rollback stops the deploy (#89)", () => {
   it("says to continue a rollback that failed", () => {
     const result = check({
       status: "UPDATE_ROLLBACK_FAILED",
-      failed: "RunLambdaFunction\tUPDATE_FAILED",
+      events: [
+        "grantlink-prod\tUPDATE_ROLLBACK_FAILED\tFalse",
+        "RunLambdaFunction\tUPDATE_FAILED\tFalse",
+        "grantlink-prod\tUPDATE_ROLLBACK_IN_PROGRESS\tFalse",
+        "grantlink-prod\tUPDATE_IN_PROGRESS\tTrue",
+      ],
     });
     expect(result.status).not.toBe(0);
     expect(result.output).toContain("RunLambdaFunction (UPDATE_FAILED)");
@@ -198,7 +212,12 @@ describe("a stack stuck in cleanup or rollback stops the deploy (#89)", () => {
   it("says to delete a stack whose first create failed", () => {
     const result = check({
       status: "ROLLBACK_COMPLETE",
-      failed: "RunLambdaFunction\tCREATE_FAILED",
+      events: [
+        "grantlink-prod\tROLLBACK_COMPLETE\tFalse",
+        "grantlink-prod\tROLLBACK_IN_PROGRESS\tFalse",
+        "RunLambdaFunction\tCREATE_FAILED\tFalse",
+        "grantlink-prod\tCREATE_IN_PROGRESS\tTrue",
+      ],
     });
     expect(result.status).not.toBe(0);
     expect(result.output).toContain("RunLambdaFunction (CREATE_FAILED)");
@@ -217,6 +236,39 @@ describe("a stack stuck in cleanup or rollback stops the deploy (#89)", () => {
     expect(result.status).not.toBe(0);
     expect(result.output).toContain("grantlink-prod is in UPDATE_IN_PROGRESS");
     expect(result.output).not.toContain("None");
+  });
+
+  it("names the stack, not a resource that failed in an earlier operation (#129)", () => {
+    const result = check({
+      status: "UPDATE_IN_PROGRESS",
+      events: [
+        "RunLambdaFunction\tUPDATE_IN_PROGRESS\tFalse",
+        "grantlink-prod\tUPDATE_IN_PROGRESS\tTrue",
+        "grantlink-prod\tUPDATE_ROLLBACK_COMPLETE\tFalse",
+        "grantlink-prod\tUPDATE_ROLLBACK_IN_PROGRESS\tFalse",
+        "ResultsTable\tUPDATE_FAILED\tFalse",
+        "grantlink-prod\tUPDATE_IN_PROGRESS\tTrue",
+      ],
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain("grantlink-prod is in UPDATE_IN_PROGRESS");
+    expect(result.output).toContain("No resource in it has failed.");
+    expect(result.output).not.toContain("ResultsTable (");
+  });
+
+  it("names a resource that failed in the current operation, before its rollback began (#129)", () => {
+    const result = check({
+      status: "UPDATE_ROLLBACK_IN_PROGRESS",
+      events: [
+        "grantlink-prod\tUPDATE_ROLLBACK_IN_PROGRESS\tFalse",
+        "RunLambdaFunction\tUPDATE_FAILED\tFalse",
+        "grantlink-prod\tUPDATE_IN_PROGRESS\tTrue",
+        "ResultsTable\tUPDATE_FAILED\tFalse",
+      ],
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain("RunLambdaFunction (UPDATE_FAILED)");
+    expect(result.output).not.toContain("ResultsTable (");
   });
 });
 
@@ -253,6 +305,19 @@ describe("a funding text bucket outside the stack stops the deploy (#89)", () =>
     const result = check({ bucket: "403" });
     expect(result.status).not.toBe(0);
     expect(result.output).toContain("TextBucket");
+  });
+
+  // The owner chose this recovery on #129: with no stack, there is nothing
+  // to import the bucket into.
+  it("says to empty and delete the bucket when there is no stack, keeping any eval snapshot first (#129)", () => {
+    const result = check({ bucket: "403" });
+    expect(result.status).not.toBe(0);
+    expect(result.output).toMatch(/empty and delete TextBucket/iu);
+    expect(result.output).toMatch(/run this deploy again/u);
+    expect(result.output).toContain("eval/");
+    expect(result.output).toMatch(/copy it out first/iu);
+    expect(result.output).not.toMatch(/import/iu);
+    expect(result.output).not.toMatch(/grantlink-text/u);
   });
 });
 
