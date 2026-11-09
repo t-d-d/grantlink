@@ -93,8 +93,10 @@ const realSleep: Sleep = (ms) =>
   });
 
 // DynamoDB hands back the keys it could not read when the table is
-// throttled. Each try for them waits twice as long as the one before, and
-// after the last the step that called fails, and its own retries take over.
+// throttled. Each try that reads none of them waits twice as long as the
+// one before; a try that reads some starts the count again. After the last
+// try in a row that reads none, the step that called fails, and its own
+// retries take over.
 const UNPROCESSED_FIRST_WAIT_MS = 50;
 const UNPROCESSED_TRIES = 8;
 
@@ -149,14 +151,15 @@ export function dynamoTable(
       const done = new Set<string>();
       for (const batch of batches(pmcids, 100)) {
         let keys = batch.map((pmcid) => ({ pmcid }));
-        for (let unanswered = 0; keys.length > 0; unanswered += 1) {
-          if (unanswered === UNPROCESSED_TRIES) {
+        let stalled = 0;
+        for (let tries = 0; keys.length > 0; tries += 1) {
+          if (stalled === UNPROCESSED_TRIES) {
             throw new Error(
               `${String(keys.length)} keys still unprocessed after ${String(UNPROCESSED_TRIES)} tries`,
             );
           }
-          if (unanswered > 0) {
-            await sleep(UNPROCESSED_FIRST_WAIT_MS * 2 ** (unanswered - 1));
+          if (tries > 0) {
+            await sleep(UNPROCESSED_FIRST_WAIT_MS * 2 ** stalled);
           }
           const reply = batchGetReply.parse(
             await send(
@@ -177,7 +180,9 @@ export function dynamoTable(
               .parse(item);
             if (row.status === "processed") done.add(row.pmcid);
           }
-          keys = reply.UnprocessedKeys?.[name]?.Keys ?? [];
+          const left = reply.UnprocessedKeys?.[name]?.Keys ?? [];
+          stalled = left.length < keys.length ? 0 : stalled + 1;
+          keys = left;
         }
       }
       return done;
