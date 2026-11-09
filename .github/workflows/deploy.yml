@@ -180,10 +180,13 @@ jobs:
           output() {
             jq -er --arg key "$1" '.[] | select(.OutputKey == $key) | .OutputValue' <<< "$outputs"
           }
+          bucket="$(output SiteBucketName)"
+          distribution="$(output DistributionId)"
+          url="$(output PageUrl)"
           {
-            echo "bucket=$(output SiteBucketName)"
-            echo "distribution=$(output DistributionId)"
-            echo "url=$(output PageUrl)"
+            echo "bucket=$bucket"
+            echo "distribution=$distribution"
+            echo "url=$url"
           } >> "$GITHUB_OUTPUT"
 
       # Builds the page again from the last run's data, uploads the site,

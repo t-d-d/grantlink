@@ -58,7 +58,9 @@ jobs:
 
       - id: fingerprint
         name: Compute the fingerprint
-        run: echo "value=$(node evals/fingerprint.ts)" >> "$GITHUB_OUTPUT"
+        run: |
+          value="$(node evals/fingerprint.ts)"
+          echo "value=$value" >> "$GITHUB_OUTPUT"
 
       # Assumes the eval role through GitHub's OIDC token, as the deploy
       # assumes its own. The account id, the token and the credentials are
@@ -167,7 +169,9 @@ jobs:
 
       - id: report
         name: Hand the report on
-        run: echo "json=$(jq -c . report.json)" >> "$GITHUB_OUTPUT"
+        run: |
+          json="$(jq -c . report.json)"
+          echo "json=$json" >> "$GITHUB_OUTPUT"
 
       # The live release is the commit main last deployed. Its report is
       # the one filed under that commit's fingerprint. A deploy.yml run
