@@ -258,6 +258,7 @@ describe("searching Europe PMC", () => {
     expect(page).toEqual({
       hitCount: 3,
       nextCursor: "AoE",
+      skipped: 0,
       papers: [
         {
           pmcid: "PMC11",
@@ -267,6 +268,52 @@ describe("searching Europe PMC", () => {
         { pmcid: "PMC12", title: "Two" },
       ],
     });
+  });
+
+  it("skips a result with a malformed PMCID and keeps the rest of the page", async () => {
+    const { client } = harness(() =>
+      Response.json({
+        hitCount: 3,
+        resultList: {
+          result: [
+            { pmcid: "PMC11", title: "One" },
+            { pmcid: "PMC 12", title: "Malformed" },
+            { pmcid: "PMC13", title: "Three" },
+          ],
+        },
+      }),
+    );
+    const page = await client.search("*");
+    expect(page.papers.map((paper) => paper.pmcid)).toEqual(["PMC11", "PMC13"]);
+    expect(page.skipped).toBe(1);
+  });
+
+  it("keeps a paper whose first publication date is malformed, without a date", async () => {
+    const { client } = harness(() =>
+      Response.json({
+        hitCount: 2,
+        resultList: {
+          result: [
+            {
+              pmcid: "PMC11",
+              title: "One",
+              firstPublicationDate: "03/02/2021",
+            },
+            {
+              pmcid: "PMC12",
+              title: "Two",
+              firstPublicationDate: "2021-02-30",
+            },
+          ],
+        },
+      }),
+    );
+    const page = await client.search("*");
+    expect(page.papers).toEqual([
+      { pmcid: "PMC11", title: "One" },
+      { pmcid: "PMC12", title: "Two" },
+    ]);
+    expect(page.skipped).toBe(0);
   });
 
   it("ends at the last page", async () => {

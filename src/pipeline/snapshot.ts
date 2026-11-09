@@ -57,6 +57,7 @@ export async function searchGoldA(
   logger.info("snapshot-search", {
     hitCount: page.hitCount,
     found: page.papers.length,
+    skipped: page.skipped,
   });
   return {
     pmcids: page.papers.map((paper) => paper.pmcid),

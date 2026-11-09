@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { funder } from "../extract/rules.ts";
-import { isPmcid, pmcid as PMCID } from "../shared/pmcid.ts";
+import { isPmcid } from "../shared/pmcid.ts";
 
 // The only module that talks to Europe PMC, and the only outside service a
 // run reads papers from (docs/constraints/public-data.md). It keeps to
@@ -54,6 +54,8 @@ export interface SearchPage {
   // The cursor for the next page, or null after the last.
   nextCursor: string | null;
   papers: SearchPaper[];
+  // How many results carried a malformed PMCID and were left out.
+  skipped: number;
 }
 
 export interface EuropePmc {
@@ -100,15 +102,18 @@ export function searchQuery(): string {
   ].join(" AND ");
 }
 
+// Each result's PMCID is read as any string and checked in search(), so a
+// result with a malformed one is left out and counted, and the rest of the
+// page is kept. A malformed date is read as no date.
 const searchReply = z.object({
   hitCount: z.number().int().nonnegative(),
   nextCursorMark: z.string().optional(),
   resultList: z.object({
     result: z.array(
       z.object({
-        pmcid: PMCID.optional(),
+        pmcid: z.string().optional(),
         title: z.string().optional(),
-        firstPublicationDate: z.iso.date().optional(),
+        firstPublicationDate: z.iso.date().optional().catch(undefined),
       }),
     ),
   }),
@@ -270,26 +275,32 @@ export function europePmc(
       url.searchParams.set("cursorMark", cursor);
       const reply = searchReply.parse(await (await request(url)).json());
       const results = reply.resultList.result;
-      const papers: SearchPaper[] = results.flatMap((result) =>
-        result.pmcid !== undefined && isPmcid(result.pmcid)
-          ? [
-              {
-                pmcid: result.pmcid,
-                title: plainTitle(result.title ?? ""),
-                ...(result.firstPublicationDate === undefined
-                  ? {}
-                  : { firstPublished: result.firstPublicationDate }),
-              },
-            ]
-          : [],
-      );
+      // A result with no PMCID has no full text in Europe PMC, so it is
+      // not a paper to read. One with a malformed PMCID is counted.
+      let skipped = 0;
+      const papers: SearchPaper[] = results.flatMap((result) => {
+        if (result.pmcid === undefined) return [];
+        if (!isPmcid(result.pmcid)) {
+          skipped += 1;
+          return [];
+        }
+        return [
+          {
+            pmcid: result.pmcid,
+            title: plainTitle(result.title ?? ""),
+            ...(result.firstPublicationDate === undefined
+              ? {}
+              : { firstPublished: result.firstPublicationDate }),
+          },
+        ];
+      });
       const nextCursor =
         results.length === 0 ||
         reply.nextCursorMark === undefined ||
         reply.nextCursorMark === cursor
           ? null
           : reply.nextCursorMark;
-      return { hitCount: reply.hitCount, nextCursor, papers };
+      return { hitCount: reply.hitCount, nextCursor, papers, skipped };
     },
 
     async fullText(pmcid) {
