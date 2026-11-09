@@ -302,6 +302,7 @@ describe("every role in the app stack carries the boundary", () => {
 // named by Fn::Join of its parts reads the same as one named by Fn::Sub. A
 // value it cannot work out reads as "*", which matches anything (#66).
 const account = "the-account";
+const privateBucket = `grantlink-text-${account}`;
 const pseudo: Record<string, string> = {
   "AWS::AccountId": account,
   "AWS::Partition": "aws",
@@ -361,13 +362,13 @@ function render(resources: Resources, value: unknown): string {
 // Keys in the private bucket, under each of its prefixes, another prefix
 // and none, to test a NotResource against.
 const privateObjects = ["cache/", "eval/", "eval-reports/", "names/", ""].map(
-  (prefix) => `arn:aws:s3:::grantlink-text-${account}/${prefix}PMC1.json`,
+  (prefix) => `arn:aws:s3:::${privateBucket}/${prefix}PMC1.json`,
 );
 
 // Whether a resource pattern matches some object in the private bucket,
 // whatever its key. The text before the first wildcard must agree with the
 // start of the bucket's object ARNs, or name one of them outright.
-const bucketObjects = `arn:aws:s3:::grantlink-text-${account}/`;
+const bucketObjects = `arn:aws:s3:::${privateBucket}/`;
 function coversAnObject(pattern: string): boolean {
   const literal = (pattern.split(/[*?]/u)[0] ?? "").toLowerCase();
   if (literal.length === pattern.length) {
@@ -442,6 +443,12 @@ function readersOfPrivateObjects(resources: Resources): string[] {
   });
 }
 
+// The stack's two buckets, for a test stack to add a resource to.
+const buckets: Resources = {
+  TextBucket: data.Resources.TextBucket as Resources[string],
+  SiteBucket: site.Resources.SiteBucket as Resources[string],
+};
+
 describe("fitness: only the run's own role reaches the private bucket's objects (storage.md)", () => {
   // osls makes the run's role from provider.iam.role, which this does not
   // read. Every other role and policy in the stack is here.
@@ -450,8 +457,7 @@ describe("fitness: only the run's own role reaches the private bucket's objects 
   });
 
   const role = (statement: Statement): Resources => ({
-    TextBucket: data.Resources.TextBucket as Resources[string],
-    SiteBucket: site.Resources.SiteBucket as Resources[string],
+    ...buckets,
     Reader: {
       Type: "AWS::IAM::Role",
       Properties: {
@@ -587,6 +593,145 @@ describe("fitness: only the run's own role reaches the private bucket's objects 
           Effect: "Allow",
           Action: "s3:GetBucketPolicy",
           Resource: { "Fn::GetAtt": ["TextBucket", "Arn"] },
+        }),
+      ),
+    ).toEqual([]);
+  });
+});
+
+// The stack resource a value names by Ref, Fn::GetAtt or a lone Fn::Sub
+// variable, if it names one.
+function named(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const v = value as Record<string, unknown>;
+  if (typeof v.Ref === "string") return v.Ref;
+  const getAtt = v["Fn::GetAtt"];
+  if (Array.isArray(getAtt) && typeof getAtt[0] === "string") return getAtt[0];
+  const sub = v["Fn::Sub"];
+  const match =
+    typeof sub === "string" ? /^\$\{([^}.!]+)(\.[^}]*)?\}$/u.exec(sub) : null;
+  return match?.[1];
+}
+
+// Each access point in the stack that opens a route to the private bucket,
+// by resource. An access point keeps its own policy, which names its own
+// ARN, so the role check above does not see what it grants (#105). The app
+// needs none, so the stack may declare none on the private bucket. A bucket
+// it cannot work out counts as the private bucket.
+function accessPointsOnPrivateBucket(resources: Resources): string[] {
+  // A resource other than a bucket renders as `<Name>`, a bucket it cannot
+  // work out, since no bucket name holds `<`.
+  const onPrivate = (bucket: unknown): boolean => {
+    const name = render(resources, bucket);
+    return name.includes("<") || wildcardMatches(name, privateBucket);
+  };
+  const pointOnPrivate = (logical: string): boolean => {
+    const r = resources[logical];
+    if (r === undefined) return false;
+    if (r.Type === "AWS::S3::AccessPoint")
+      return onPrivate(r.Properties.Bucket);
+    if (r.Type === "AWS::S3::MultiRegionAccessPoint") {
+      return list(r.Properties.Regions).some((region) =>
+        onPrivate((region as { Bucket?: unknown }).Bucket),
+      );
+    }
+    if (r.Type === "AWS::S3ObjectLambda::AccessPoint") {
+      // It reads through a supporting access point. Only one the stack
+      // declares on another bucket is safe.
+      const configuration = r.Properties.ObjectLambdaConfiguration as
+        { SupportingAccessPoint?: unknown } | undefined;
+      const supporting = named(configuration?.SupportingAccessPoint);
+      return (
+        supporting === undefined ||
+        resources[supporting]?.Type !== "AWS::S3::AccessPoint" ||
+        pointOnPrivate(supporting)
+      );
+    }
+    return false;
+  };
+  return Object.keys(resources).filter(pointOnPrivate);
+}
+
+describe("fitness: no access point opens the private bucket (storage.md)", () => {
+  it("finds none in the app stack", () => {
+    expect(accessPointsOnPrivateBucket(appStack)).toEqual([]);
+  });
+
+  const withBucket = (extra: Resources): Resources => ({
+    ...buckets,
+    ...extra,
+  });
+  const accessPoint = (Bucket: unknown): Resources[string] => ({
+    Type: "AWS::S3::AccessPoint",
+    Properties: { Bucket },
+  });
+  const multiRegion = (Bucket: unknown): Resources[string] => ({
+    Type: "AWS::S3::MultiRegionAccessPoint",
+    Properties: { Regions: [{ Bucket }] },
+  });
+  const objectLambda = (SupportingAccessPoint: unknown): Resources[string] => ({
+    Type: "AWS::S3ObjectLambda::AccessPoint",
+    Properties: { ObjectLambdaConfiguration: { SupportingAccessPoint } },
+  });
+
+  it.each([
+    ["by its Ref", accessPoint({ Ref: "TextBucket" })],
+    [
+      "by its name",
+      accessPoint({ "Fn::Sub": "grantlink-text-${AWS::AccountId}" }),
+    ],
+    [
+      "by a bucket it cannot read",
+      accessPoint({ "Fn::ImportValue": "elsewhere" }),
+    ],
+    ["as a multi-region access point", multiRegion({ Ref: "TextBucket" })],
+  ])("finds an access point on the private bucket %s", (_what, point) => {
+    expect(accessPointsOnPrivateBucket(withBucket({ Point: point }))).toEqual([
+      "Point",
+    ]);
+  });
+
+  it("finds an access point on a bucket another resource names", () => {
+    expect(
+      accessPointsOnPrivateBucket(
+        withBucket({
+          Maker: { Type: "Custom::BucketMaker", Properties: {} },
+          Point: accessPoint({ "Fn::GetAtt": ["Maker", "BucketName"] }),
+        }),
+      ),
+    ).toEqual(["Point"]);
+  });
+
+  it("finds an Object Lambda access point that reads the private bucket", () => {
+    expect(
+      accessPointsOnPrivateBucket(
+        withBucket({
+          Point: accessPoint({ Ref: "TextBucket" }),
+          Lambda: objectLambda({ "Fn::GetAtt": ["Point", "Arn"] }),
+        }),
+      ),
+    ).toEqual(["Point", "Lambda"]);
+  });
+
+  it("finds an Object Lambda access point whose supporting point it cannot trace", () => {
+    expect(
+      accessPointsOnPrivateBucket(
+        withBucket({
+          Lambda: objectLambda(
+            "arn:aws:s3:eu-west-2:the-account:accesspoint/elsewhere",
+          ),
+        }),
+      ),
+    ).toEqual(["Lambda"]);
+  });
+
+  it("passes access points on another bucket", () => {
+    expect(
+      accessPointsOnPrivateBucket(
+        withBucket({
+          Point: accessPoint({ Ref: "SiteBucket" }),
+          Region: multiRegion({ Ref: "SiteBucket" }),
+          Lambda: objectLambda({ "Fn::GetAtt": ["Point", "Arn"] }),
         }),
       ),
     ).toEqual([]);
