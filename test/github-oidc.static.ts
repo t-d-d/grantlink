@@ -531,7 +531,7 @@ describe("the run's role inside the boundary", () => {
     },
   ];
   const held = [
-    ...(serverless.provider.iam?.role?.statements ?? []),
+    ...((serverless.provider.iam?.role?.statements ?? []) as Statement[]),
     ...fromOsls,
   ];
 
