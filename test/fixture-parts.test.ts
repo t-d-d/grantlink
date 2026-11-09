@@ -61,6 +61,15 @@ describe("strayParts", () => {
       "article/body/sec",
     ],
     [
+      "a labelled body section followed by a labelled funding section",
+      {
+        body:
+          "<body><sec><label>1.</label><title>Methods</title><p>M</p></sec>" +
+          "<sec><label>2.</label><title>Funding</title><p>Funded.</p></sec></body>",
+      },
+      "article/body/sec",
+    ],
+    [
       "the author list",
       {
         meta: "<contrib-group><contrib><name>A</name></contrib></contrib-group>",
@@ -140,9 +149,8 @@ describe("strayParts", () => {
     expect(strayParts(paper(parts))).toEqual([stray]);
   });
 
-  // #159: a part passes the check exactly when the cutter reads it as funding
-  // text, so a correct recording is never refused and the check keeps nothing
-  // the cutter would not read.
+  // #159: a section or footnote in the back passes the check when the cutter
+  // reads it as funding text, and is named when it does not.
   it.each([
     '<fn fn-type="financial-disclosure"><p>Funded.</p></fn>',
     '<fn fn-type="funding"><p>Funded.</p></fn>',

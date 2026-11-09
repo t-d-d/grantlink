@@ -59,21 +59,23 @@ function paragraphs(section: string): string[] {
 // recorded fixtures (test/fixture-parts.ts), so the two agree (#159).
 
 // The attribute that marks a footnote as funding text.
-export const FUNDING_FOOTNOTE = `fn-type="(?:financial-disclosure|funding|supported-by)"`;
+export const FUNDING_FOOTNOTE = String.raw`\bfn-type="(?:financial-disclosure|funding|supported-by)"`;
 
 // The start of a funding or acknowledgements section, found by its type or by
 // its title. Europe PMC often marks acknowledgements up as a section rather
 // than an <ack>, and one journal titles its funding section Support. Support
 // must be the whole title, so a body section such as Support vector machines
-// is not kept.
-const FUNDING_SECTION_START = String.raw`<sec\b(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>|[^>]*>\s*(?:<label\b[^>]*>[\s\S]*?<\/label>\s*)?<title\b[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
+// is not kept. A label ends at its own closing tag, so a labelled section
+// is not taken for the labelled funding section after it.
+const FUNDING_SECTION_START = String.raw`<sec\b(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>|[^>]*>\s*(?:<label\b[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>\s*)?<title\b[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
+
+const FUNDING_SECTION_AT = new RegExp(FUNDING_SECTION_START, "iuy");
 
 // Whether the section that opens at this index of the XML is a funding
 // section.
 export function isFundingSectionAt(xml: string, index: number): boolean {
-  const start = new RegExp(FUNDING_SECTION_START, "iuy");
-  start.lastIndex = index;
-  return start.test(xml);
+  FUNDING_SECTION_AT.lastIndex = index;
+  return FUNDING_SECTION_AT.test(xml);
 }
 
 // Every funding section, wherever it is. The match starts at the section's

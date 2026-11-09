@@ -5,9 +5,10 @@
 // affiliations, the title, the abstract, the reference list or the body, can
 // carry real names, and is named here.
 //
-// A part counts as funding exactly when the cutter in src/europepmc/jats.ts
-// reads it as funding text, by the definitions it exports (#159). One
-// difference stays: the cutter finds a funding section nested in another
+// Whether a section or footnote is a funding part is decided by the
+// definitions the cutter in src/europepmc/jats.ts exports, so the two agree
+// (#159). The check does not look inside a part it allows. One difference
+// stays: the cutter finds a funding section nested in another
 // section, but the check refuses the outer section, whose other parts can
 // carry names. A recording keeps only the funding section, moved up into the
 // body or the back.
@@ -22,7 +23,7 @@ interface Element {
   funding: boolean;
 }
 
-const FOOTNOTE = new RegExp(String.raw`\b${FUNDING_FOOTNOTE}`, "u");
+const FOOTNOTE = new RegExp(FUNDING_FOOTNOTE, "u");
 
 const isFundingSection = (element: Element): boolean =>
   element.name === "sec" && element.funding;
