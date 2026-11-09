@@ -109,9 +109,21 @@ describe("the gate and the comment", () => {
     const run = live?.run ?? "";
     expect(run).toMatch(/actions\/runs\/\$\w+\/jobs/u);
     expect(run).toContain(
-      'select(.name == env.DEPLOY_JOB and .conclusion == "success")',
+      'any(.jobs[]; .name == env.DEPLOY_JOB and .conclusion == "success")',
     );
+    // Only a positive answer counts: an empty or odd reply is no deploy.
+    expect(run).toContain('if [ "$deployed" = "true" ]');
     expect(run).not.toContain(".workflow_runs[0].head_sha");
+  });
+
+  // The comparison is advice for the comment. A failed read of GitHub's
+  // runs leaves nothing to compare with; it does not fail the eval job.
+  it("treats a failed read of the deploy runs as nothing to compare with", () => {
+    const run = named("Read the live release's report")?.run ?? "";
+    const calls = run.match(/gh api/gu) ?? [];
+    const guarded = run.match(/if ! \w+="\$\(gh api/gu) ?? [];
+    expect(calls.length).toBeGreaterThan(0);
+    expect(guarded).toHaveLength(calls.length);
   });
 
   it("masks the account id before any line that could print it", () => {
