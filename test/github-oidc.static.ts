@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { serverless } from "./app.ts";
 import {
   list,
   readTemplate,
@@ -175,6 +176,32 @@ describe("the deploy execution role", () => {
         .flatMap(resources)
         .some((pattern) => covers(pattern, text)),
     ).toBe(false);
+  });
+
+  // A Deny holds even if a later Allow is widened by mistake.
+  it("is denied every object in the private bucket", () => {
+    expect(
+      rightsOf(execution).filter((statement) => statement.Effect === "Deny"),
+    ).toContainEqual(
+      expect.objectContaining({
+        Action: "s3:*",
+        Resource: {
+          "Fn::Sub":
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/*",
+        },
+      }),
+    );
+  });
+
+  // The pattern is the name CloudFormation gives osls's deployment bucket in
+  // the stack grantlink-prod. Naming the bucket in serverless.yml, or
+  // changing the service or the stage, would stop it matching.
+  it("names the deployment bucket as osls creates it", () => {
+    expect(serverless.service).toBe("grantlink");
+    expect(serverless.provider.stage).toBe("prod");
+    expect(
+      (serverless.provider as { deploymentBucket?: unknown }).deploymentBucket,
+    ).toBeUndefined();
   });
 
   it("can read, update and delete the roles it creates", () => {
