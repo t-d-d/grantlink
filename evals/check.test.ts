@@ -147,6 +147,53 @@ describe("the pull request's comment", () => {
     expect(text).not.toContain("10.0%");
   });
 
+  // #169: newer code may file a row this code does not know, with a score
+  // of another shape. That row is never compared, so it does not cost the
+  // comment the live scores for the rows both reports share.
+  it("ignores a malformed row it does not know, keeping the shared live scores", () => {
+    const newer = report({ "recall-a": 0.9, spend: 0 });
+    const live = readLive(
+      JSON.stringify({
+        ...newer,
+        rows: [
+          ...newer.rows,
+          { id: "added-later", score: { low: 0.1, high: 0.2 }, n: 3 },
+          { score: "unnamed" },
+          "not a row",
+        ],
+      }),
+      () => undefined,
+    );
+    expect(live).not.toBe("older-format");
+    if (live === "older-format") return;
+    const text = comment(report({ "recall-a": 0.96, spend: 0 }), live);
+    expect(text).toContain(
+      "| Recall | Gold set A | 95% or more | 96.0% | 90.0% | go |",
+    );
+  });
+
+  it("logs where a known row is malformed, by its place in the live report", () => {
+    const lines: string[] = [];
+    const live = report({ spend: 0 });
+    const [first, ...rest] = live.rows;
+    if (first === undefined) throw new Error("no rows");
+    readLive(
+      JSON.stringify({
+        ...live,
+        rows: [
+          { id: "added-later", score: {} },
+          { id: first.id, score: "high" },
+          ...rest,
+        ],
+      }),
+      (line) => {
+        lines.push(line);
+      },
+    );
+    expect(lines.join("\n")).toContain("invalid_type at rows.1.score");
+    expect(lines.join("\n")).not.toContain("high");
+  });
+
   it.each([
     ["without rows", (live: Report) => ({ ...live, rows: "none" })],
     ["with no rows", (live: Report) => ({ ...live, rows: [] })],

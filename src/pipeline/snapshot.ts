@@ -53,7 +53,7 @@ export async function snapshotTaken(deps: Deps): Promise<boolean> {
 export async function searchGoldA(
   deps: Deps,
   cursor: string,
-): Promise<{ pmcids: string[]; nextCursor: string | null }> {
+): Promise<{ pmcids: string[]; skipped: number; nextCursor: string | null }> {
   const page = await deps.europePmc.search(
     cursor,
     goldA.query,
@@ -66,6 +66,7 @@ export async function searchGoldA(
   });
   return {
     pmcids: page.papers.map((paper) => paper.pmcid),
+    skipped: page.skipped,
     nextCursor: page.nextCursor,
   };
 }
