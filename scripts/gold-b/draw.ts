@@ -1,4 +1,5 @@
 import {
+  EuropePmcError,
   LARGEST_PAGE_SIZE,
   type EuropePmc,
 } from "../../src/europepmc/client.ts";
@@ -151,6 +152,16 @@ async function everything(
   return [...found].map(([pmcid, year]) => ({ pmcid, year }));
 }
 
+// A 4xx other than 429 means Europe PMC has no full text for the paper
+// (docs/constraints/europe-pmc.md). Any other failure stops the draw, so a
+// passing outage cannot change which papers it picks.
+const noFullText = (error: unknown) =>
+  error instanceof EuropePmcError &&
+  error.status !== undefined &&
+  error.status >= 400 &&
+  error.status < 500 &&
+  error.status !== 429;
+
 export async function draw(
   api: EuropePmc,
   plan: Plan,
@@ -166,6 +177,20 @@ export async function draw(
     if (known !== undefined) return known;
     const found = everything(api, query);
     searches.set(query, found);
+    return found;
+  };
+  // Each paper is read once, though two hard cases may share a query
+  // (europe-pmc.md: a paper already read is not fetched again). null means
+  // Europe PMC has no full text for it.
+  const read = new Map<string, Promise<HardCase[] | null>>();
+  const casesOf = (pmcid: string) => {
+    const known = read.get(pmcid);
+    if (known !== undefined) return known;
+    const found = api.fullText(pmcid).then(hardCases, (error: unknown) => {
+      if (noFullText(error)) return null;
+      throw error;
+    });
+    read.set(pmcid, found);
     return found;
   };
   const base = await search(plan.base);
@@ -186,13 +211,8 @@ export async function draw(
     let picked = 0;
     for (const pmcid of order.slice(0, MAX_READS)) {
       if (picked === plan.perHardCase) break;
-      let xml: string;
-      try {
-        xml = await api.fullText(pmcid);
-      } catch {
-        continue;
-      }
-      if (!hardCases(xml).includes(name)) continue;
+      const cases = await casesOf(pmcid);
+      if (!cases?.includes(name)) continue;
       papers.push({
         pmcid,
         year: years.get(pmcid) ?? "unknown",
@@ -208,6 +228,11 @@ export async function draw(
     }
   }
 
+  if (papers.length > plan.size) {
+    throw new Error(
+      `the plan's size, ${String(plan.size)}, is less than the ${String(papers.length)} papers its hard cases take`,
+    );
+  }
   const counts: Record<string, number> = {};
   for (const year of years.values()) counts[year] = (counts[year] ?? 0) + 1;
   const shares = allocate(counts, plan.size - papers.length);
@@ -223,6 +248,12 @@ export async function draw(
       papers.push({ pmcid, year, pickedFor: "year" });
       taken.add(pmcid);
     }
+  }
+
+  if (papers.length !== plan.size) {
+    throw new Error(
+      `drew ${String(papers.length)} papers, not the plan's size of ${String(plan.size)}`,
+    );
   }
 
   return {

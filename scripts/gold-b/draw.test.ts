@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  EuropePmcError,
   LARGEST_PAGE_SIZE,
   type EuropePmc,
   type SearchPage,
@@ -105,6 +106,7 @@ describe("allocating the sample across years", () => {
 function fake(
   hits: Record<string, { pmcid: string; year: string }[]>,
   texts: Record<string, string>,
+  failing: Record<string, Error> = {},
 ) {
   const fetched: string[] = [];
   const searched: string[] = [];
@@ -128,9 +130,11 @@ function fake(
     },
     fullText(pmcid) {
       fetched.push(pmcid);
+      const failure = failing[pmcid];
+      if (failure !== undefined) return Promise.reject(failure);
       const text = texts[pmcid];
       return text === undefined
-        ? Promise.reject(new Error("no full text"))
+        ? Promise.reject(new EuropePmcError("Europe PMC answered 404", 404))
         : Promise.resolve(text);
     },
     grants: () => Promise.resolve([]),
@@ -224,6 +228,46 @@ describe("drawing the sample", () => {
     const { papers, sheetOrder } = await draw(fake(hits, texts).api, plan);
     expect(new Set(sheetOrder)).toEqual(new Set(papers.map((p) => p.pmcid)));
     expect(sheetOrder).not.toEqual(papers.map((p) => p.pmcid));
+  });
+
+  it("reads each paper's full text once, though two hard cases share a query", async () => {
+    const shared = {
+      ...plan,
+      hardCases: plan.hardCases.map((hardCase) =>
+        hardCase.name === "several-funders" || hardCase.name === "no-reference"
+          ? { ...hardCase, query: base }
+          : hardCase,
+      ),
+    };
+    const { api, fetched } = fake(hits, texts);
+    await draw(api, shared);
+    expect(fetched.length).toBeGreaterThan(0);
+    expect(new Set(fetched).size).toBe(fetched.length);
+  });
+
+  it("passes over a paper with no full text", async () => {
+    const missing = { ...texts };
+    delete missing.PMC1;
+    const thin = { ...hits, "declared-interest-Q": all.slice(0, 1) };
+    await expect(draw(fake(thin, missing).api, plan)).rejects.toThrow(
+      /declared-interest: found 0/u,
+    );
+  });
+
+  it("stops, rather than passing over a paper, when Europe PMC fails", async () => {
+    const { api } = fake(hits, texts, {
+      PMC1: new EuropePmcError(
+        "Europe PMC answered 503, after 5 tries",
+        undefined,
+      ),
+    });
+    await expect(draw(api, plan)).rejects.toThrow(/503/u);
+  });
+
+  it("fails when the plan's size is less than its hard cases take", async () => {
+    await expect(
+      draw(fake(hits, texts).api, { ...plan, size: 4 }),
+    ).rejects.toThrow(/size/u);
   });
 
   it("fails when a hard case has too few papers", async () => {

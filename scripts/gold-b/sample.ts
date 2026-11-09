@@ -78,6 +78,36 @@ if (process.argv.includes("--write")) {
   const got = drawn.papers.map(({ pmcid }) => pmcid);
   const missing = want.filter((pmcid) => !got.includes(pmcid));
   const extra = got.filter((pmcid) => !want.includes(pmcid));
-  console.log(JSON.stringify({ population: drawn.population, missing, extra }));
-  if (missing.length > 0 || extra.length > 0) process.exitCode = 1;
+  // A paper drawn again for another hard case or year is a change too.
+  const before = new Map(
+    recorded.papers.map((paper) => [paper.pmcid, paper] as const),
+  );
+  const changed = drawn.papers
+    .filter((paper) => {
+      const was = before.get(paper.pmcid);
+      return (
+        was !== undefined &&
+        (was.pickedFor !== paper.pickedFor || was.year !== paper.year)
+      );
+    })
+    .map(({ pmcid }) => pmcid);
+  const sheetMatches =
+    JSON.stringify(drawn.sheetOrder) === JSON.stringify(recorded.sheetOrder);
+  console.log(
+    JSON.stringify({
+      population: drawn.population,
+      missing,
+      extra,
+      changed,
+      sheetMatches,
+    }),
+  );
+  if (
+    missing.length > 0 ||
+    extra.length > 0 ||
+    changed.length > 0 ||
+    !sheetMatches
+  ) {
+    process.exitCode = 1;
+  }
 }
