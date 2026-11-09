@@ -60,11 +60,11 @@ describe("the verdict on a report", () => {
     const result = verdict(good);
     expect(result.releasable).toBe(true);
     expect(result.rows.map((row) => [row.id, row.result])).toEqual([
-      ["precision-b", "awaiting labels"],
-      ["recall-b", "awaiting labels"],
+      ["precision-b", "awaiting snapshot"],
+      ["recall-b", "awaiting snapshot"],
       ["review-share", "not measured yet"],
       ["recall-a", "go"],
-      ["model-adds", "awaiting labels"],
+      ["model-adds", "not measured yet"],
       ["spend", "go"],
     ]);
   });

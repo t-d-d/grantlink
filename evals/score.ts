@@ -12,8 +12,10 @@ export interface GoldA {
   grants: string[];
 }
 
-// Gold set B: unlinked papers labelled by hand. An empty list means the
-// paper gives no reference.
+// Gold set B: unlinked papers. Two passes of a Claude model proposed the
+// labels and the owner checked them (#175): 58 papers checked, and the other
+// 42 accepted on a random sample of 10 with seed 20261109. The owner changed
+// none. An empty list means the paper gives no reference.
 export interface GoldB {
   pmcid: string;
   references: string[];
