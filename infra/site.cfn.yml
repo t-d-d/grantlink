@@ -1,0 +1,178 @@
+# The page: files in a private S3 bucket, served by CloudFront over HTTPS
+# only (#4). serverless.yml takes its resources from here, so this is part
+# of the app stack, grantlink-prod, in eu-west-2. It stands alone too, so
+# cfn-lint checks it in the gate.
+#
+# CloudFront keeps no access logs and the page sets no cookie
+# (docs/constraints/no-tracking.md).
+AWSTemplateFormatVersion: "2010-09-09"
+Description: grantlink app stack, the page (eu-west-2)
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: grantlink.uk
+    Description: The domain the page is served at, once the certificate and the zone are given.
+  CertificateArn:
+    Type: String
+    Default: ""
+    Description: The DNS stack's CertificateArn output. Empty serves the page at CloudFront's own address.
+  HostedZoneId:
+    Type: String
+    Default: ""
+    Description: The DNS stack's HostedZoneId output. Empty serves the page at CloudFront's own address.
+
+Conditions:
+  HasDomain: !And
+    - !Not [!Equals [!Ref CertificateArn, ""]]
+    - !Not [!Equals [!Ref HostedZoneId, ""]]
+
+Resources:
+  # Private: only the distribution reads it, through origin access control.
+  # The deploy role writes the page's files after each deploy.
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DistributionReads
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${SiteBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+          - Sid: HttpsOnly
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt SiteBucket.Arn
+              - !Sub ${SiteBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-site
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # The browser may load only the page's own styles, images and fonts, and
+  # run no script. HSTS keeps it on HTTPS.
+  ResponseHeaders:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub ${AWS::StackName}-site
+        SecurityHeadersConfig:
+          ContentSecurityPolicy:
+            ContentSecurityPolicy: default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+            Override: true
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 63072000
+            IncludeSubdomains: true
+            Override: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          ReferrerPolicy:
+            ReferrerPolicy: no-referrer
+            Override: true
+
+  # No Logging block: CloudFront keeps no access logs.
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: grantlink page
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        DefaultRootObject: index.html
+        Aliases: !If [HasDomain, [!Ref DomainName], !Ref AWS::NoValue]
+        ViewerCertificate: !If
+          - HasDomain
+          - AcmCertificateArn: !Ref CertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
+        Origins:
+          - Id: site
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt OriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: site
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # AWS's managed CachingOptimized policy.
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          ResponseHeadersPolicyId: !Ref ResponseHeaders
+
+  # CloudFront's own hosted zone id, the same for every distribution.
+  AliasIpv4:
+    Type: AWS::Route53::RecordSet
+    Condition: HasDomain
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+
+  AliasIpv6:
+    Type: AWS::Route53::RecordSet
+    Condition: HasDomain
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: AAAA
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+
+Outputs:
+  SiteBucketName:
+    Description: Where the deploy writes the page's files.
+    Value: !Ref SiteBucket
+  DistributionId:
+    Description: The distribution the deploy invalidates.
+    Value: !Ref Distribution
+  PageUrl:
+    Description: Where the page is served, which the live tier reads.
+    Value: !If
+      - HasDomain
+      - !Sub https://${DomainName}/
+      - !Sub https://${Distribution.DomainName}/

@@ -4,6 +4,8 @@ grantlink finds research papers that say Cancer Research UK funded them but that
 
 It is an independent demonstration on public data from [Europe PMC](https://europepmc.org/). It is not affiliated with or endorsed by Cancer Research UK.
 
+The data comes from Europe PMC, through its public web services, under the [EMBL-EBI terms of use](https://www.ebi.ac.uk/about/terms-of-use/). For corrections or removals, write to thomas.david.dickinson@gmail.com.
+
 The plan is the PRD, [#1](https://github.com/t-d-d/grantlink/issues/1). The decisions behind it are the issues labelled `type: adr`, and the rules in force are in [docs/constraints/](docs/constraints/README.md).
 
 ## Setting up the AWS account
@@ -41,6 +43,19 @@ Role ARNs, the certificate's ARN and the bucket's name carry the account id, so 
 The script is safe to run again. Each step changes only what differs, and it waits for a stack an earlier run left part way. If the credentials expire while the certificate waits for the registrar, the script stops while the stack carries on. Run it again and it waits for the stack. A stack whose first create failed has to be deleted before a run can apply it, and the script says so.
 
 The deploy role trusts only the `prod` environment and the CI eval role only the `eval` environment, so a workflow job must name its environment to reach either. The gate checks both templates with [cfn-lint](https://github.com/aws-cloudformation/cfn-lint), so running the gate locally needs the version CI pins in [gate.yml](.github/workflows/gate.yml) (`pipx install cfn-lint==1.60.0`).
+
+## How it deploys
+
+The app stack, `grantlink-prod`, is defined in [serverless.yml](serverless.yml) and deployed with [osls](https://github.com/oss-serverless/osls), the open-source fork of the Serverless Framework. It runs in London (eu-west-2). For now it holds the page: files in a private S3 bucket behind CloudFront, served over HTTPS only, with its resources in [infra/site.cfn.yml](infra/site.cfn.yml).
+
+[deploy.yml](.github/workflows/deploy.yml) runs on every push to main, and nothing else deploys. It runs the gate, then:
+
+1. Reads whether `AWS_DEPLOY_ROLE_ARN` and `AWS_DEPLOY_EXECUTION_ROLE_ARN` are set in `prod`. Until the bootstrap above has run, it stops there and deploys nothing.
+2. Assumes the deploy role through GitHub's OIDC token, and masks the account id.
+3. Deploys the app stack, then copies [site/](site/) to the bucket and clears CloudFront's cache.
+4. Runs the live tier against the page. A failure turns the deploy red.
+
+CloudFront serves the page at grantlink.uk once `CERTIFICATE_ARN` and `HOSTED_ZONE_ID` are set in `prod`, and at its own `cloudfront.net` address until then. A failed deploy is fixed forward. There is no rollback step, and CloudFormation rolls a failed stack update back by itself. The eval gate joins the deploy in [#20](https://github.com/t-d-d/grantlink/issues/20).
 
 ## Licence
 

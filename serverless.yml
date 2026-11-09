@@ -1,0 +1,29 @@
+# The app stack (#4): grantlink-prod, in London, built by CloudFormation
+# through the deploy execution role. Only a green merge to main deploys it,
+# from .github/workflows/deploy.yml. Never deploy it by hand.
+#
+# osls is the open-source fork of version 3 of the Serverless Framework.
+# Version 4 needs a licence key; osls needs none.
+service: grantlink
+frameworkVersion: "4"
+
+provider:
+  name: aws
+  # Stored data stays in the UK (docs/constraints/hosting.md).
+  region: eu-west-2
+  stage: prod
+  iam:
+    deploymentRole: ${env:AWS_DEPLOY_EXECUTION_ROLE_ARN}
+
+resources:
+  - ${file(./infra/site.cfn.yml)}
+  # The DNS stack's values, from the prod environment. Until both are set
+  # the page is served at CloudFront's own address. They are set as the
+  # parameters' defaults, not passed as stack parameters, because osls
+  # passes stack parameters to the stack's first create too, whose template
+  # holds only the deployment bucket, and CloudFormation refuses them.
+  - Parameters:
+      CertificateArn:
+        Default: ${env:CERTIFICATE_ARN, ''}
+      HostedZoneId:
+        Default: ${env:HOSTED_ZONE_ID, ''}
