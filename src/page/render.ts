@@ -119,6 +119,15 @@ const GATES: Record<string, string> = {
   "decides the model": "No, it decides the model",
 };
 
+const GOLD_B_LABELS = [
+  "Gold set B's labels were proposed by two passes of a Claude model and checked by the owner against a written guide.",
+  "The owner checked 58 of the 100 papers: every one where the passes differed or one was unsure, the 18 used to settle the guide's rules, and 10 of the rest drawn at random.",
+  "That sample found no error, so the other 42 were accepted as proposed.",
+  "The owner changed none of the labels.",
+  "Because a Claude model proposed them, the labels may favour a model over the rules, so read what the model adds with that in mind.",
+  '<a href="https://github.com/t-d-d/grantlink/issues/175">The decision record</a> says why.',
+].join(" ");
+
 // How it's run: the go/no-go table for the live release beside the rules
 // alone, the runs that deployed and scored it, and the snapshot it was
 // scored on (docs/constraints/deploy-gates.md).
@@ -126,7 +135,8 @@ export function renderRun(release: Release): string {
   const { report } = release;
   const cell = (text: string, cls = "") =>
     `<td${cls === "" ? "" : ` class="${cls}"`}>${escape(text)}</td>`;
-  const rows = verdict(report).rows.map(
+  const judged = verdict(report).rows;
+  const rows = judged.map(
     (row) =>
       `<tr>${[
         cell(row.measure),
@@ -144,6 +154,13 @@ export function renderRun(release: Release): string {
       : `Scored on eval snapshot ${escape(report.snapshot.id)}, whose manifest has the SHA-256 <code class="ref">${escape(
           report.snapshot.manifestSha256,
         )}</code>.`;
+  // A model proposed gold set B's labels (#175), so wherever its rows have
+  // scores the page says how the labels were made.
+  const goldB = judged.some(
+    (row) => row.on === "Gold set B" && row.score !== null,
+  )
+    ? `\n        <p class="note">${GOLD_B_LABELS}</p>`
+    : "";
   return `<section aria-labelledby="run">
         <h2 id="run">How it's run</h2>
         <p>
@@ -160,7 +177,7 @@ export function renderRun(release: Release): string {
             ${rows.join("\n            ")}
           </table>
         </div>
-        <p class="note">${snapshot}</p>
+        <p class="note">${snapshot}</p>${goldB}
       </section>`;
 }
 

@@ -11,7 +11,8 @@
 // stays: the cutter finds a funding section nested in another
 // section, but the check refuses the outer section, whose other parts can
 // carry names. A recording keeps only the funding section, moved up into the
-// body or the back.
+// body or the back. Nor may it keep a funding section's <sec-meta>, which the
+// cutter skips but which can name people (#222).
 
 import { FUNDING_FOOTNOTE, isFundingSectionAt } from "../src/europepmc/jats.ts";
 
@@ -78,6 +79,13 @@ function parse(xml: string): Element {
 }
 
 function stray(element: Element, path: string): string[] {
+  // A funding section's own children are not checked, but for its sec-meta,
+  // which the cutter does not keep and which can name people (#222).
+  if (isFundingSection(element)) {
+    return element.children
+      .filter((child) => child.name === "sec-meta")
+      .map((child) => `${path}/${child.name}`);
+  }
   const allowed = ALLOWED[path];
   if (allowed === undefined) return [];
   return [

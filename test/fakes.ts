@@ -1,5 +1,5 @@
 import { FLOORS } from "../evals/floors.ts";
-import { goldA } from "../evals/gold.ts";
+import { goldA, goldB } from "../evals/gold.ts";
 import { europePmc, type Clock } from "../src/europepmc/client.ts";
 import { release, type Release } from "../src/page/release.ts";
 import type { Deps } from "../src/pipeline/steps.ts";
@@ -125,6 +125,8 @@ export interface FakeSearches {
   goldSearch?: (cursor: string) => Response;
 }
 
+const LABELLED = new Set(goldB.papers.map((paper) => paper.pmcid));
+
 // Europe PMC answering from the fixtures. A paper with no fixture fails as
 // a server error does; either search may be replaced to fail it.
 export function fakeEuropePmc(options: FakeSearches = {}) {
@@ -188,6 +190,11 @@ export function fakeEuropePmc(options: FakeSearches = {}) {
     try {
       return Promise.resolve(reply(fixture(`${pmcid}.xml`)));
     } catch {
+      // Gold set B's papers, which the snapshot reads from the real labels,
+      // answer with a full text written by hand unless one is recorded.
+      if (LABELLED.has(pmcid)) {
+        return Promise.resolve(reply(fixture("PMC0000003.xml")));
+      }
       return Promise.resolve(reply("", 503));
     }
   };

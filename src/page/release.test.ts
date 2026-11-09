@@ -17,6 +17,8 @@ const rows = (scores: Partial<Record<string, number>>) =>
     n: 300,
   }));
 
+const scores = { "recall-a": 0.97, spend: 0 };
+
 const report: Report = {
   fingerprint: "f".repeat(64),
   commit: "e".repeat(40),
@@ -25,8 +27,8 @@ const report: Report = {
   rulesVersion: "rules-1",
   snapshot: { id: "s1", manifestSha256: "d".repeat(64) },
   createdAt: "2026-11-09T12:00:00.000Z",
-  rows: rows({ "recall-a": 0.97, spend: 0 }),
-  baseline: rows({ "recall-a": 0.97, spend: 0 }),
+  rows: rows(scores),
+  baseline: rows(scores),
   missedA: [],
 };
 
@@ -76,7 +78,8 @@ describe("how it's run, on the page", () => {
     for (const floor of FLOORS) expect(section).toContain(floor.measure);
     expect(section).toContain("97.0%");
     expect(section).toContain("Rules alone");
-    expect(section).toContain("awaiting labels");
+    expect(section).toContain("awaiting snapshot");
+    expect(section).not.toContain("awaiting labels");
   });
 
   it("links to the deploy's run and the report's run, and names the snapshot", () => {
@@ -87,6 +90,23 @@ describe("how it's run, on the page", () => {
       'href="https://github.com/t-d-d/grantlink/actions/runs/111"',
     );
     expect(section).toContain("d".repeat(64));
+  });
+
+  it("says how gold set B's labels were made once gold set B is scored", () => {
+    const scored = { "precision-b": 0.96, "recall-b": 0.81, ...scores };
+    const withB = renderRun(
+      makeRelease({
+        ...fields,
+        report: { ...report, rows: rows(scored), baseline: rows(scored) },
+      }),
+    );
+    expect(withB).toContain("proposed by two passes of a Claude model");
+    expect(withB).toContain("checked by the owner");
+    expect(withB).toContain("changed none of the");
+    expect(withB).toContain(
+      'href="https://github.com/t-d-d/grantlink/issues/175"',
+    );
+    expect(section).not.toContain("two passes of a Claude model");
   });
 
   it("says when no snapshot is pinned yet", () => {

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { goldA, goldB, manifest, paperFile, pinned } from "./gold.ts";
+import {
+  goldA,
+  goldB,
+  goldBLabels,
+  manifest,
+  paperFile,
+  pinned,
+} from "./gold.ts";
 
 describe("the gold sets and the pin", () => {
   it("records gold set A's query, seed and size", () => {
@@ -17,8 +24,25 @@ describe("the gold sets and the pin", () => {
     ).toBe(true);
   });
 
-  it("holds labels for gold set B, or none yet", () => {
-    expect(Array.isArray(goldB.papers)).toBe(true);
+  it("refuses gold set B labels that carry anything but ids and references", () => {
+    const paper = { pmcid: "PMC1", references: ["C1234/A56789"] };
+    const file = { about: "x", papers: [paper] };
+    expect(goldBLabels.parse(file)).toEqual(file);
+    expect(goldBLabels.parse(goldB)).toEqual(goldB);
+    // A note or the funded column, beside the references.
+    expect(() =>
+      goldBLabels.parse({ ...file, papers: [{ ...paper, note: "x" }] }),
+    ).toThrow();
+    expect(() =>
+      goldBLabels.parse({ ...file, papers: [{ ...paper, funded: "yes" }] }),
+    ).toThrow();
+    // A sentence or a name in place of a reference.
+    expect(() =>
+      goldBLabels.parse({
+        ...file,
+        papers: [{ ...paper, references: ["Funded by Dr Jane Doe"] }],
+      }),
+    ).toThrow();
   });
 
   it("refuses a manifest entry that carries anything but ids, hashes and grant ids", () => {
