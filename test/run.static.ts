@@ -62,6 +62,16 @@ describe("fitness: the bucket stays private (storage.md)", () => {
     expect(bucket.WebsiteConfiguration).toBeUndefined();
   });
 
+  // The deploy role may change the bucket's ownership controls and its ACL
+  // (#65). With ACLs on, a grant to another account would hand it the
+  // objects, and IgnorePublicAcls stops only public grants.
+  it("turns ACLs off and sets none", () => {
+    expect(bucket.OwnershipControls).toEqual({
+      Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }],
+    });
+    expect(bucket.AccessControl).toBeUndefined();
+  });
+
   it("is encrypted with S3's own keys", () => {
     expect(bucket.BucketEncryption).toEqual({
       ServerSideEncryptionConfiguration: [
