@@ -40,9 +40,11 @@ function plain(xml: string): string {
 // Every element with this name, as its inner XML. JATS does not nest any of
 // the elements read here inside one of the same name. A self-closing element
 // is empty, and does not run on to the next closing tag of its name (#195).
-function elements(xml: string, name: string, attributes = ""): string[] {
+// The name must end at whitespace, a slash or the tag's close: \b would let
+// "fn" match <fn-group>, since a hyphen ends a word.
+export function elements(xml: string, name: string, attributes = ""): string[] {
   const pattern = new RegExp(
-    `<${name}\\b(?=[^>]*${attributes})(?:[^>]*/>|[^>]*>([\\s\\S]*?)</${name}>)`,
+    `<${name}(?=[\\s/>])(?=[^>]*${attributes})(?:[^>]*/>|[^>]*>([\\s\\S]*?)</${name}>)`,
     "gu",
   );
   return [...xml.matchAll(pattern)].map((match) => match[1] ?? "");
