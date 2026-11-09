@@ -58,7 +58,7 @@ The app stack, `grantlink-prod`, is defined in [serverless.yml](serverless.yml) 
 5. Builds the page again from the release record and the last run's `found.json`, if there is one, copies [site/](site/) to the bucket and clears CloudFront's cache.
 6. Runs the live tier against the page. A failure turns the deploy red.
 
-CloudFront serves the page at grantlink.uk, with the certificate and the zone the deploy reads from the DNS stack. A deploy before the DNS stack exists fails (#44). A failed deploy is fixed forward. There is no rollback step, and CloudFormation rolls a failed stack update back by itself.
+CloudFront serves the page at grantlink.uk, with the certificate and the zone the deploy reads from the DNS stack. A deploy before the DNS stack exists fails (#44). A failed deploy is fixed forward. There is no rollback step, and CloudFormation rolls a failed stack update back by itself. Before it deploys, the deploy checks the stack. If the stack is stuck in cleanup or rollback, or the funding text bucket exists outside it, the deploy stops and names the resource and what to do (#89). Both data stores are retained, so no rollback deletes their data.
 
 ## How the eval gates a release
 

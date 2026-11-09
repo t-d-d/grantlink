@@ -160,6 +160,17 @@ describe("the deploy and the run (#19)", () => {
     });
   });
 
+  // test/check-stack.int.ts runs the script against a stub aws (#89).
+  it("checks the stack with scripts/check-stack.sh, once the role is assumed and before anything reads the stack", () => {
+    const checkAt = at(/^scripts\/check-stack\.sh$/u);
+    const assumeAt = at(/assume-role-with-web-identity/u);
+    const firstAt = all.findIndex((step) => step.id === "first");
+    expect(checkAt).toBeGreaterThan(assumeAt);
+    expect(checkAt).toBeLessThan(firstAt);
+    expect(checkAt).toBeLessThan(at(/\bsls deploy\b/u));
+    expect(JSON.stringify(all[checkAt])).not.toContain("continue-on-error");
+  });
+
   // test/publish-page.int.ts runs the script against a stub aws.
   it("builds the page again from the last run's data, so a deploy keeps the findings", () => {
     const script = readRepoFile("scripts/publish-page.sh");

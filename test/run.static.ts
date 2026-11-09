@@ -142,6 +142,17 @@ describe("fitness: one on-demand table (storage.md)", () => {
   });
 });
 
+// A failed update that created a data store rolls back by deleting it, and
+// a replacement deletes the old one. Either would lose data, and a bucket
+// that holds data stalls the rollback instead (#89).
+describe("the data stores outlive a rollback or a replacement (#89)", () => {
+  it.each(["ResultsTable", "TextBucket"])("%s is retained", (name) => {
+    const store = resource(data, name);
+    expect(store.DeletionPolicy).toBe("Retain");
+    expect(store.UpdateReplacePolicy).toBe("Retain");
+  });
+});
+
 describe("fitness: a run is a durable function on a published version (durable-execution.md)", () => {
   it("is a durable function, which osls publishes as a version behind an alias", () => {
     expect(run.handler).toBe("src/run/lambda.handler");

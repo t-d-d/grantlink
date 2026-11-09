@@ -136,6 +136,13 @@ jobs:
             echo "AWS_SESSION_TOKEN=$session"
           } >> "$GITHUB_ENV"
 
+      # CloudFormation refuses to update a stack stuck in cleanup or
+      # rollback, and to create a bucket that is already there. This stops
+      # the deploy first, with a message that names the resource and says
+      # what to do, and never prints the account id (#89).
+      - name: Check the app stack
+        run: scripts/check-stack.sh
+
       # The first run over the back catalogue starts from a one-time
       # schedule, a quarter of an hour after the deploy that creates it.
       # Later deploys keep that time from the stack's FirstRunAt output, so
