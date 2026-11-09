@@ -101,29 +101,33 @@ export type Published =
       published: true;
       papers: number;
       references: number;
-      // "left" when a newer deploy's page was live, and kept.
+      // "left" when another release's page was live, and kept.
       page: "written" | "left";
     }
   | { published: false; reason: string };
 
-// Whether a newer deploy than this run's own put the live page up. A run
-// stays on the version it started on, so one that finishes after a deploy
-// would put the old template back (#73). A run with no record of its own
-// counts as older than any deploy that recorded one.
-async function newerDeployLive(
+// Whether the live page belongs to another release than this run's own.
+// The page a run builds shows its own release, and only the deploy writes
+// release.json beside it, so a run writes the page only when the live
+// record names its release (#119). One that started before a deploy would
+// put the old template back (#73). One whose release is newer than the
+// live record comes from a deploy whose publish failed, and leaves the
+// page and its record to the next deploy. With no record on either side
+// the page names no release, and a run writes it.
+async function otherReleaseLive(
   deps: Deps,
   runId: string,
   own: Release | null,
 ): Promise<boolean> {
   const text = await deps.site.liveRelease();
-  if (text === null) return false;
-  const live = deployRun(liveRelease.parse(JSON.parse(text)));
+  const live =
+    text === null ? null : deployRun(liveRelease.parse(JSON.parse(text)));
   const ownRun = own === null ? null : deployRun(own);
-  if (ownRun !== null && ownRun >= live) return false;
+  if (ownRun === live) return false;
   logger.info("page-left", {
     runId,
     ownDeploy: ownRun ?? "none",
-    liveDeploy: live,
+    liveDeploy: live ?? "none",
   });
   return true;
 }
@@ -132,8 +136,8 @@ async function newerDeployLive(
 // finished gets here, so the page shows the papers that search returned
 // (summarise in src/page/found.ts). A table with no such paper read yet
 // publishes nothing, so the page keeps what it had.
-// The data always goes up. The page does only if no newer deploy is live,
-// and otherwise the findings reach it at the next deploy or run.
+// The data always goes up. The page does only if the live release is the
+// run's own, and otherwise the findings reach it at the next deploy or run.
 // The site writes found.json before the page (siteBucket in
 // src/store/bucket.ts), so a publish whose page write fails on every try
 // leaves the new found.json on the site beside the old page. The README's
@@ -149,7 +153,7 @@ export async function publish(deps: Deps, runId: string): Promise<Published> {
   }
   const data = JSON.stringify(found);
   const own = await deps.release();
-  const left = await newerDeployLive(deps, runId, own);
+  const left = await otherReleaseLive(deps, runId, own);
   await deps.site.publish(
     left
       ? { "found.json": data }
