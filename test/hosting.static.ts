@@ -121,16 +121,6 @@ describe("fitness: HTTPS only (hosting.md)", () => {
     expect(bucket.WebsiteConfiguration).toBeUndefined();
   });
 
-  // With ACLs disabled, no grant can let another account write or change
-  // the page's files, whatever the deploy role's s3:PutBucket* allows (#95).
-  it("lets no ACL grant access to the bucket", () => {
-    const bucket = resource(site, "SiteBucket").Properties;
-    expect(bucket.OwnershipControls).toEqual({
-      Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }],
-    });
-    expect(bucket.AccessControl).toBeUndefined();
-  });
-
   it("tells browsers to keep to HTTPS", () => {
     const policy = resource(site, "ResponseHeaders").Properties
       .ResponseHeadersPolicyConfig as {
@@ -144,6 +134,20 @@ describe("fitness: HTTPS only (hosting.md)", () => {
     const hsts = policy.SecurityHeadersConfig.StrictTransportSecurity;
     expect(hsts.Override).toBe(true);
     expect(hsts.AccessControlMaxAgeSec).toBeGreaterThanOrEqual(31_536_000);
+  });
+});
+
+// hosting.md states no rule on ACLs, so this is not a fitness check (#95).
+describe("the page's bucket", () => {
+  // With ACLs disabled, no grant in the template can let another account
+  // write or change the page's files. The deploy role's s3:PutBucket* can
+  // still change the bucket outside the template, which this tier cannot see.
+  it("lets no ACL grant access to the bucket", () => {
+    const bucket = resource(site, "SiteBucket").Properties;
+    expect(bucket.OwnershipControls).toEqual({
+      Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }],
+    });
+    expect(bucket.AccessControl).toBeUndefined();
   });
 });
 
