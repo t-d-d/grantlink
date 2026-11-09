@@ -59,6 +59,18 @@ async function runWith(fake: ReturnType<typeof fakeDeps>) {
   };
 }
 
+// A search page whose every PMCID is malformed, as if Europe PMC had
+// changed how it writes them.
+const malformedPage = () =>
+  reply(
+    JSON.stringify({
+      hitCount: 2,
+      resultList: {
+        result: [{ pmcid: "PMC 1" }, { pmcid: "pmc2" }],
+      },
+    }),
+  );
+
 // A paper step whose full text Europe PMC refuses every time with `error`.
 function refusingPapers(error: Error) {
   const fake = fakeDeps();
@@ -192,6 +204,14 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
     const fake = fakeDeps({ search: () => reply("", 503) });
     const { status } = await runWith(fake);
     expect(status).toBe("FAILED");
+    expect(fake.site.files).toBeUndefined();
+  });
+
+  it("asks again, then fails, when every PMCID on a search page is malformed", async () => {
+    const fake = fakeDeps({ search: malformedPage });
+    const { status, retryDelays } = await runWith(fake);
+    expect(status).toBe("FAILED");
+    expect(retryDelays("search-0")).toHaveLength(2);
     expect(fake.site.files).toBeUndefined();
   });
 
@@ -436,6 +456,15 @@ describe("the eval snapshot (evals.md)", () => {
     });
     expect(fake.text.get("eval/s1/manifest.json")).toBe(first);
     expect(fake.requests.some(isGoldSearch)).toBe(false);
+  });
+
+  it("writes no manifest when every PMCID gold set A's search finds is malformed", async () => {
+    const fake = fakeDeps({ goldSearch: malformedPage });
+    const { status, result, retryDelays } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(retryDelays("snapshot-search-0")).toHaveLength(2);
+    expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
+    expect(fake.text.has("eval/s1/manifest.json")).toBe(false);
   });
 
   it("publishes the page even when the snapshot fails, and leaves it for the next run", async () => {

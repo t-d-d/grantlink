@@ -187,11 +187,12 @@ describe("fitness: the eval gates every deploy (deploy-gates.md)", () => {
     expect(needs("deploy")).toContain("eval");
   });
 
-  it("lets the eval assume its role and read which commit is live", () => {
+  // The eval reads which commit is live from the page (#85), not from
+  // deploy.yml's runs, so it needs no actions permission.
+  it("lets the eval assume its role", () => {
     expect(jobs.eval?.permissions).toEqual({
       contents: "read",
       "id-token": "write",
-      actions: "read",
       "pull-requests": "write",
     });
   });
