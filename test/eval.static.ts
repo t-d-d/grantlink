@@ -111,15 +111,22 @@ describe("the gate and the comment", () => {
     const call = fingerprintCall.exec(live);
     const status = call?.[1] ?? "";
     expect(status).not.toBe("");
+    // The step runs under set -u, so the status starts at 0 for the run
+    // that succeeds and never assigns it.
+    const initialised = new RegExp(
+      String.raw`(?:^|\n)\s*${status}=0\n\s*\w+="\$\(node evals/fingerprint\.ts`,
+      "u",
+    );
     const after = live.slice(call?.index ?? 0);
     const missing = new RegExp(
-      String.raw`if \[ "\$${status}" -eq ${String(MISSING_INPUT)} \]; then\n.*\n\s*echo "reason=predates-eval"`,
+      String.raw`if \[ "\$${status}" -eq ${String(MISSING_INPUT)} \]; then\n.*\n\s*echo "reason=predates-eval"[^\n]*\n\s*exit 0\n`,
       "u",
     );
     const other = new RegExp(
-      String.raw`elif \[ "\$${status}" -ne 0 \]; then\n[\s\S]*?echo "reason=fingerprint-failed"[\s\S]*?exit 0`,
+      String.raw`elif \[ "\$${status}" -ne 0 \]; then\n.*\n\s*echo "reason=fingerprint-failed"[^\n]*\n\s*exit 0\n\s*fi\n`,
       "u",
     );
+    expect(live).toMatch(initialised);
     expect(after).toMatch(missing);
     expect(after).toMatch(other);
     expect(live).not.toMatch(/fingerprint\.ts[^\n]*2>/u);
