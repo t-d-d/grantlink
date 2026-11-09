@@ -1,5 +1,6 @@
 import type { DurableContext } from "@aws/durable-execution-sdk-js";
 import {
+  checkWholeSearch,
   markFailed,
   publish,
   readPaper,
@@ -93,6 +94,7 @@ export function makeRun(deps: Deps) {
     let cursor: string | null = "*";
     let page = 0;
     let found = 0;
+    let skipped = 0;
     let read = 0;
     let failed = 0;
     while (cursor !== null) {
@@ -110,6 +112,7 @@ export function makeRun(deps: Deps) {
         { retryStrategy: storeRetry },
       );
       found += result.papers.length;
+      skipped += result.skipped;
       for (const [index, batch] of batches(todo, BATCH).entries()) {
         const name = `papers-${String(page)}-${String(index)}`;
         const outcome = await ctx.runInChildContext(name, async (child) =>
@@ -124,6 +127,7 @@ export function makeRun(deps: Deps) {
       cursor = result.nextCursor;
       page += 1;
     }
+    checkWholeSearch(found, skipped);
 
     const published: Published =
       found === 0
