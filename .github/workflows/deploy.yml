@@ -185,30 +185,13 @@ jobs:
             echo "url=$(output PageUrl)"
           } >> "$GITHUB_OUTPUT"
 
+      # Builds the page again from the last run's data, uploads the site,
+      # and keeps a page a run publishes during the deploy (#46).
       - name: Publish the page
         env:
           BUCKET: ${{ steps.stack.outputs.bucket }}
           DISTRIBUTION: ${{ steps.stack.outputs.distribution }}
-        run: |
-          set -euo pipefail
-          # A run publishes the page with its findings, and found.json, the
-          # data it built them from. Build the page again from that data and
-          # the release record, so a new template keeps the findings and the
-          # page shows this release, and leave found.json alone. Only a
-          # missing found.json, before the first run, builds the page with
-          # no findings: any other error stops the deploy before it
-          # overwrites them.
-          if missing="$(aws s3api head-object --bucket "$BUCKET" --key found.json 2>&1 >/dev/null)"; then
-            aws s3 cp "s3://$BUCKET/found.json" found.json --only-show-errors
-          elif ! grep -qE "Not Found|404" <<< "$missing"; then
-            echo "$missing" >&2
-            exit 1
-          fi
-          node src/page/build.ts site/index.html site/release.json found.json
-          aws s3 sync site/ "s3://$BUCKET/" --delete --exclude found.json --cache-control "public, max-age=300"
-          id="$(aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" \
-            --paths "/*" --query Invalidation.Id --output text)"
-          aws cloudfront wait invalidation-completed --distribution-id "$DISTRIBUTION" --id "$id"
+        run: scripts/publish-page.sh
 
       # The live tier reads the page as a visitor would. A failure here
       # turns the deploy red.

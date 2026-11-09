@@ -6,12 +6,14 @@ import { buildPage } from "./render.ts";
 
 // Builds the page again at deploy: from the data the last run published,
 // so a deploy that changes the template keeps the findings, and from the
-// release record, so the page shows the release it is. The deploy runs
+// release record, so the page shows the release it is.
+// scripts/publish-page.sh runs it on a copy of site/, which it rewrites in
+// place:
 //
-//   node src/page/build.ts site/index.html site/release.json [found.json]
+//   node src/page/build.ts <copy of site>/index.html <release.json> [<found.json>]
 //
-// which rewrites site/index.html in place before it is uploaded. Before the
-// first run there is no found.json, and the page shows no findings yet.
+// Before the first run there is no found.json, and the page shows no
+// findings yet. A deploy always writes the release record first.
 export function rebuild(
   template: string,
   data: string | null,
@@ -35,10 +37,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     path !== undefined && existsSync(path) ? readFileSync(path, "utf8") : null;
   writeFileSync(
     page,
-    rebuild(
-      readFileSync(page, "utf8"),
-      read(data),
-      readFileSync(record, "utf8"),
-    ),
+    rebuild(readFileSync(page, "utf8"), read(data), read(record)),
   );
 }
