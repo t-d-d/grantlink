@@ -43,7 +43,6 @@
         "reason": "It holds the sessions' skills and the review's own checklist."
       }
     ],
-    "quote": ["src/**", "evals/**", "test/**", "scripts/**", "serverless.yml"],
     "requireChecks": ["gate"],
     "merge": true
   },

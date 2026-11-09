@@ -6,9 +6,8 @@ description: The checklist governor's PR review reads for grantlink's pull reque
 # PR review
 
 Read the pull request's description, its changed files and the tickets it
-closes, then answer each test in order. The review sees no diff. Governor
-quotes each modified file under `prReview.quote` in `.github/governor.json`
-whole, at the merge base and at the head. The description follows
+closes, then answer each test in order. The review sees no diff and reads
+no source files. The description follows
 .github/pull_request_template.md, and the tests follow its sections.
 
 A pass merges the pull request.
@@ -41,19 +40,19 @@ A pass merges the pull request.
    loose end with no issue number fails.
 
 7. **The change keeps complexity the same or lower, and adds what the
-   tickets ask for.** Compare each quoted file at the merge base with the
-   same file at the head. A pull request fails that adds a module, a
-   dependency, a config switch or an abstraction its tickets do not need,
-   or that adds code without delivering what the tickets ask for. A fail
-   here says that no edit to the description can make the pull request
-   pass, so it waits for the owner.
+   tickets ask for.** Read the Adds / removes section. It passes when its
+   net line says the change is simpler or no more complex, the lines above
+   the net line agree, and the Outcome adds what the tickets ask for. It
+   fails when the net line says more complex, or when a line above it adds
+   a module, a dependency, a config switch or an abstraction that the net
+   line does not account for. A fail here says that no edit to the
+   description can make the pull request pass, so it waits for the owner.
 
 8. **No changed file is on the human-only list.** The list is
    `prReview.humanOnly` in `.github/governor.json`: the stacks in `infra/`,
    everything under `.github/`, the constraint files, `CLAUDE.md` and
    `.claude/`. A pull request that changes one waits for the owner, with the
-   entry's reason. So does one that adds, removes or renames a quoted file.
-   Governor checks this in code.
+   entry's reason. Governor checks this in code.
 
 9. **No required status check is red on its head.** Governor checks this in
    code, and a push that turns the check green meets it.
