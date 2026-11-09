@@ -363,13 +363,19 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
 });
 
 // Europe PMC refusing every full text with a Retry-After of `seconds`,
-// from the run's first paper or from the snapshot's first search on. It
-// records each request sent before the last refusal's wait had passed.
-// The local runner moves Date.now() on through each durable wait.
+// from the run's first paper or from the start of the snapshot on, however
+// the snapshot draws gold set A. It records each request sent before the
+// last refusal's wait had passed. The local runner moves Date.now() on
+// through each durable wait.
 function refusingFor(seconds: number, from: "run" | "snapshot") {
   const fake = fakeDeps();
   const real = fake.deps.europePmc;
   let refusing = from === "run";
+  const hasSnapshot = fake.deps.text.hasSnapshot.bind(fake.deps.text);
+  fake.deps.text.hasSnapshot = (id) => {
+    refusing = true;
+    return hasSnapshot(id);
+  };
   let notBefore = 0;
   const early: string[] = [];
   const refused: string[] = [];
@@ -379,7 +385,6 @@ function refusingFor(seconds: number, from: "run" | "snapshot") {
   fake.deps.europePmc = {
     search: (cursor, selection, pageSize) => {
       check("search");
-      if (selection !== undefined) refusing = true;
       return real.search(cursor, selection, pageSize);
     },
     grants: (pmcid) => {
@@ -451,10 +456,11 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
     async (seconds) => {
       const { fake, early, refused } = refusingFor(seconds, "run");
       fake.deps.text.hasSnapshot = () => Promise.resolve(true);
-      const { status } = await runWith(fake);
+      const { status, result } = await runWith(fake);
       expect(status).toBe("SUCCEEDED");
       // Every paper was asked about in the end, each after the wait.
-      expect(new Set(refused).size).toBeGreaterThan(1);
+      expect(result?.found).toBeGreaterThan(1);
+      expect(new Set(refused).size).toBe(result?.found);
       expect(early).toEqual([]);
     },
   );
