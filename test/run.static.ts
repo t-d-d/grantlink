@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { serverless, site } from "./app.ts";
+import { appStack, DATA_TEMPLATE, serverless, site } from "./app.ts";
 import {
   list,
   readTemplate,
@@ -23,7 +23,6 @@ import { readRepoFile } from "./repo.ts";
 // funding text bucket from infra/data.cfn.yml, and the function and its
 // first run from serverless.yml.
 
-export const DATA_TEMPLATE = "infra/data.cfn.yml";
 const data = readTemplate(DATA_TEMPLATE);
 
 type Resources = Record<
@@ -36,11 +35,6 @@ const inline = (serverless.resources as unknown[]).flatMap((entry) =>
     : [],
 );
 const inlineResources: Resources = Object.assign({}, ...inline) as Resources;
-const appStack: Resources = {
-  ...site.Resources,
-  ...data.Resources,
-  ...inlineResources,
-};
 
 const run = serverless.functions?.run as {
   handler: string;
@@ -130,7 +124,7 @@ describe("fitness: the bucket stays private (storage.md)", () => {
   // The deploy role may put any policy on this bucket (#59), so the
   // template is where a policy granting funding text would show.
   it("has a policy that only denies, so it grants no one its objects", () => {
-    const onTextBucket = Object.entries(appStack).filter(
+    const onTextBucket = Object.entries(appStack.Resources).filter(
       ([, r]) =>
         r.Type === "AWS::S3::BucketPolicy" &&
         /TextBucket|grantlink-text/u.test(JSON.stringify(r.Properties.Bucket)),
@@ -180,7 +174,7 @@ describe("fitness: a run is a durable function on a published version (durable-e
 
   it("is started by a one-time schedule, at the alias, never $LATEST", () => {
     expect(run.events ?? []).toEqual([]);
-    const schedule = inlineResources.FirstRunSchedule;
+    const schedule = appStack.Resources.FirstRunSchedule;
     expect(schedule?.Type).toBe("AWS::Scheduler::Schedule");
     const props = schedule?.Properties as {
       ScheduleExpression: string;
@@ -191,7 +185,7 @@ describe("fitness: a run is a durable function on a published version (durable-e
   });
 
   it("lets the schedule invoke only the alias", () => {
-    const role = inlineResources.FirstRunRole as Parameters<typeof trustOf>[0];
+    const role = resource(appStack, "FirstRunRole");
     expect(trustOf(role).map((s) => s.Principal)).toEqual([
       { Service: "scheduler.amazonaws.com" },
     ]);
@@ -317,7 +311,7 @@ describe("every role in the app stack carries the boundary", () => {
   const roles = readTemplate("infra/github-oidc.cfn.yml");
   const name = roles.Resources.AppRoleBoundary?.Properties.ManagedPolicyName as
     string | undefined;
-  const declared = Object.entries(appStack).filter(
+  const declared = Object.entries(appStack.Resources).filter(
     ([, r]) => r.Type === "AWS::IAM::Role",
   );
 
@@ -498,7 +492,9 @@ describe("fitness: only the run's own role reaches the private bucket's objects 
   // osls makes the run's role from provider.iam.role, which this does not
   // read. Every other role and policy in the stack is here.
   it("finds no other role or policy that may read or write them", () => {
-    expect(readersOfPrivateObjects(appStack)).toEqual([]);
+    expect(readersOfPrivateObjects(appStack.Resources as Resources)).toEqual(
+      [],
+    );
   });
 
   const role = (statement: Statement): Resources => ({
@@ -699,7 +695,9 @@ function accessPointsOnPrivateBucket(resources: Resources): string[] {
 
 describe("fitness: no access point opens the private bucket (storage.md)", () => {
   it("finds none in the app stack", () => {
-    expect(accessPointsOnPrivateBucket(appStack)).toEqual([]);
+    expect(
+      accessPointsOnPrivateBucket(appStack.Resources as Resources),
+    ).toEqual([]);
   });
 
   const withBucket = (extra: Resources): Resources => ({

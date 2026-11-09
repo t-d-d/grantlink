@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { deploy, serverless, site, SITE_TEMPLATE } from "./app.ts";
+import {
+  appStack,
+  deploy,
+  serverless,
+  site,
+  SITE_TEMPLATE,
+  TEMPLATES,
+} from "./app.ts";
 import { readTemplate, resource } from "./cfn.ts";
+import { unreadResources } from "./serverless.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The app stack runs serverless in London, its own account's only
@@ -34,6 +42,21 @@ describe("fitness: data stays in London (hosting.md)", () => {
   });
 });
 
+// The static checks read the stack as test/app.ts merges it. osls also
+// applies `extensions` and any further template, which they do not read,
+// so serverless.yml may hold neither (#142).
+describe("serverless.yml merges only what the static checks read", () => {
+  it("lists the two templates, then only parameters, inline resources and outputs", () => {
+    expect(unreadResources(serverless.resources, TEMPLATES)).toEqual([]);
+  });
+
+  // osls takes `extensions` from the merged list, so a template that holds
+  // them applies them as serverless.yml would.
+  it.each(TEMPLATES)("finds no extensions in %s", (path) => {
+    expect(Object.keys(readTemplate(path))).not.toContain("extensions");
+  });
+});
+
 describe("fitness: no always-on compute (hosting.md)", () => {
   const alwaysOn = [
     "AWS::EC2::Instance",
@@ -46,26 +69,8 @@ describe("fitness: no always-on compute (hosting.md)", () => {
     "AWS::Lambda::Version",
   ];
 
-  // The app stack is the site and data templates plus anything
-  // serverless.yml declares inline beside them.
-  const entries: unknown[] = Array.isArray(serverless.resources)
-    ? serverless.resources
-    : [serverless.resources];
-  const inline = entries.flatMap((entry) =>
-    typeof entry === "object" && entry !== null && "Resources" in entry
-      ? Object.values(
-          (entry as { Resources: Record<string, { Type: string }> }).Resources,
-        )
-      : [],
-  );
-
   it("declares no instance, service, NAT gateway or database server", () => {
-    const data = readTemplate("infra/data.cfn.yml");
-    const types = [
-      ...Object.values(site.Resources),
-      ...Object.values(data.Resources),
-      ...inline,
-    ].map((r) => r.Type);
+    const types = Object.values(appStack.Resources).map((r) => r.Type);
     expect(types.filter((type) => alwaysOn.includes(type))).toEqual([]);
   });
 
@@ -111,7 +116,7 @@ describe("fitness: HTTPS only (hosting.md)", () => {
   });
 
   it("keeps the bucket private", () => {
-    const bucket = resource(site, "SiteBucket").Properties;
+    const bucket = resource(appStack, "SiteBucket").Properties;
     expect(bucket.PublicAccessBlockConfiguration).toEqual({
       BlockPublicAcls: true,
       BlockPublicPolicy: true,
@@ -142,8 +147,10 @@ describe("the page's bucket", () => {
   // With ACLs disabled, no grant in the template can let another account
   // write or change the page's files. The deploy role's s3:PutBucket* can
   // still change the bucket outside the template, which this tier cannot see.
+  // It reads the bucket as osls merges it, so an override in
+  // serverless.yml shows here (#142).
   it("lets no ACL grant access to the bucket", () => {
-    const bucket = resource(site, "SiteBucket").Properties;
+    const bucket = resource(appStack, "SiteBucket").Properties;
     expect(bucket.OwnershipControls).toEqual({
       Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }],
     });

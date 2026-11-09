@@ -163,16 +163,35 @@ describe("publishing the page", () => {
     });
   });
 
-  it.each([
-    ["the live one", fakeRelease(200)],
-    ["newer than the live one", fakeRelease(100)],
-    ["the first, with no live record", null],
-  ])("writes both files when its release is %s", async (_, live) => {
-    const fake = await readOne(live);
+  it("writes both files when its release is the live one", async () => {
+    const fake = await readOne(fakeRelease(200));
     const result = await publish(fake.deps, "run-1");
     expect(result).toMatchObject({ published: true, page: "written" });
     expect(fake.site.files?.["found.json"]).toContain("run-1");
     expect(fake.site.files?.["index.html"]).toContain("What it found");
+  });
+
+  it("writes both files when neither it nor the page has a release", async () => {
+    const fake = await readOne(null);
+    fake.deps.release = () => Promise.resolve(null);
+    const result = await publish(fake.deps, "run-1");
+    expect(result).toMatchObject({ published: true, page: "written" });
+    expect(fake.site.files?.["index.html"]).toContain("What it found");
+  });
+
+  // The page shows the run's own release, and only the deploy writes
+  // release.json beside it, so a run writes the page only when the live
+  // record names its release (#119). A deploy whose publish failed leaves
+  // the page and its record to the next deploy.
+  it.each([
+    ["newer than the live one", fakeRelease(100)],
+    ["the first, with no live record", null],
+  ])("leaves the page when its release is %s", async (_, live) => {
+    const fake = await readOne(live);
+    const result = await publish(fake.deps, "run-1");
+    expect(result).toMatchObject({ published: true, page: "left" });
+    expect(fake.site.files?.["found.json"]).toContain("run-1");
+    expect(fake.site.files?.["index.html"]).toBeUndefined();
   });
 
   it("reads a newer deploy's record tolerantly, by its deploy run alone", async () => {
