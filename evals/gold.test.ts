@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { goldA, goldB, goldBLabels, manifest, pinned } from "./gold.ts";
+import {
+  goldA,
+  goldB,
+  goldBLabels,
+  manifest,
+  paperFile,
+  pinned,
+} from "./gold.ts";
 
 describe("the gold sets and the pin", () => {
   it("records gold set A's query, seed and size", () => {
@@ -61,5 +68,29 @@ describe("the gold sets and the pin", () => {
         papers: [{ ...entry, grants: ["Funded by Dr Jane Doe"] }],
       }),
     ).toThrow();
+  });
+
+  // A snapshot taken before #128 joins an award group's sources with "; ".
+  it("reads a paper file that joins an award group's sources in one string", () => {
+    expect(
+      paperFile.parse({
+        pmcid: "PMC1",
+        text: [],
+        awards: [
+          { source: "Cancer Research UK; Example Trust", ids: ["12345"] },
+          { source: "", ids: ["1"] },
+        ],
+      }).awards,
+    ).toEqual([
+      { sources: ["Cancer Research UK", "Example Trust"], ids: ["12345"] },
+      { sources: [], ids: ["1"] },
+    ]);
+  });
+
+  it("reads a paper file that lists an award group's sources", () => {
+    const awards = [{ sources: ["Cancer Research UK"], ids: ["A12345"] }];
+    expect(paperFile.parse({ pmcid: "PMC1", text: [], awards }).awards).toEqual(
+      awards,
+    );
   });
 });

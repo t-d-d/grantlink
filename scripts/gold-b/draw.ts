@@ -67,8 +67,8 @@ export function hardCases(xml: string): HardCase[] {
   ].map(plain);
   const others =
     OTHER_FUNDERS.test(text) ||
-    sections.awards.some(
-      (award) => award.source !== "" && !named.test(award.source),
+    sections.awards.some((award) =>
+      award.sources.some((source) => source !== "" && !named.test(source)),
     );
 
   const found: HardCase[] = [];

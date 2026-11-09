@@ -62,41 +62,102 @@ function markup(xml: string): string {
 // only to the next closing tag of its name, and one with none after it is
 // dropped, so a broken element never takes in the rest of the paper. A
 // self-closing element is empty, and does not run on to the next closing tag
-// of its name (#195).
-export function elements(xml: string, name: string, attributes = ""): string[] {
+// of its name (#195). Each comes with the attributes in its opening tag.
+function tagged(
+  xml: string,
+  name: string,
+  attributes = "",
+): { tag: string; inner: string }[] {
   const tags = new RegExp(`<(/?)${name}${NAME_END}([^>]*)>`, "gu");
   const wanted = new RegExp(attributes, "u");
-  const found: string[] = [];
+  const found: { tag: string; inner: string }[] = [];
+  let opening = "";
   let depth = 0;
   let start = 0;
   for (const tag of xml.matchAll(tags)) {
     const [whole, closing, rest = ""] = tag;
     if (rest.endsWith("/")) {
-      if (depth === 0 && wanted.test(rest)) found.push("");
+      if (depth === 0 && wanted.test(rest))
+        found.push({ tag: rest, inner: "" });
       continue;
     }
     if (closing) {
       if (depth === 0) continue;
       depth -= 1;
-      if (depth === 0) found.push(xml.slice(start, tag.index));
+      if (depth === 0) {
+        found.push({ tag: opening, inner: xml.slice(start, tag.index) });
+      }
     } else if (depth > 0) {
       depth += 1;
     } else if (wanted.test(rest)) {
       depth = 1;
+      opening = rest;
       start = tag.index + whole.length;
     }
   }
   if (depth > 0) {
     const close = xml.indexOf(`</${name}>`, start);
     if (close !== -1) {
-      found.push(xml.slice(start, close));
+      found.push({ tag: opening, inner: xml.slice(start, close) });
       return [
         ...found,
-        ...elements(xml.slice(close + name.length + 3), name, attributes),
+        ...tagged(xml.slice(close + name.length + 3), name, attributes),
       ];
     }
   }
   return found;
+}
+
+// Every outermost element with this name, as its inner XML.
+export function elements(xml: string, name: string, attributes = ""): string[] {
+  return tagged(xml, name, attributes).map(({ inner }) => inner);
+}
+
+// An attribute's value split at white space, in either kind of quotes.
+function attribute(tag: string, name: string): string[] {
+  const match = new RegExp(
+    `\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`,
+    "u",
+  ).exec(tag);
+  const value = match?.[1] ?? match?.[2] ?? "";
+  return value.split(/\s+/u).filter((part) => part !== "");
+}
+
+// An award group's ids with the funding sources they belong to. An award id
+// whose rid names sources in its group goes to those sources alone. Any
+// other id goes to every source in the group, which then does not say whose
+// it is (#128).
+function awardsOf(group: string): FundingSections["awards"] {
+  const sources = tagged(group, "funding-source").map(({ tag, inner }) => ({
+    ids: attribute(tag, "id"),
+    name: plain(inner),
+  }));
+  const all = sources.map(({ name }) => name).filter((name) => name !== "");
+  const untied: string[] = [];
+  const tied = new Map<string, { sources: string[]; ids: string[] }>();
+  for (const { tag, inner } of tagged(group, "award-id")) {
+    const id = plain(inner);
+    if (id === "") continue;
+    const rid = attribute(tag, "rid");
+    const named = sources
+      .filter((source) => source.ids.some((sourceId) => rid.includes(sourceId)))
+      .map(({ name }) => name);
+    if (named.length === 0) {
+      untied.push(id);
+      continue;
+    }
+    const key = JSON.stringify(named);
+    const award = tied.get(key) ?? { sources: named, ids: [] };
+    award.ids.push(id);
+    tied.set(key, award);
+  }
+  const awards = [...tied.values()];
+  // An award group that names nothing, such as a self-closing one, gives no
+  // award.
+  if (all.length === 0 && untied.length === 0) return awards;
+  return untied.length > 0 || awards.length === 0
+    ? [{ sources: all, ids: untied }, ...awards]
+    : awards;
 }
 
 // A section's title. A self-closing title is only itself (#221).
@@ -168,17 +229,9 @@ export function fundingSections(paper: string): FundingSections {
   const statements = groups.flatMap((group) =>
     elements(group, "funding-statement").map(plain),
   );
-  const awards = groups
-    .flatMap((group) =>
-      elements(group, "award-group").map((award) => ({
-        source: elements(award, "funding-source").map(plain).join("; "),
-        ids: elements(award, "award-id")
-          .map(plain)
-          .filter((id) => id !== ""),
-      })),
-    )
-    // An empty award group, such as a self-closing one, names nothing.
-    .filter(({ source, ids }) => source !== "" || ids.length > 0);
+  const awards = groups.flatMap((group) =>
+    elements(group, "award-group").flatMap(awardsOf),
+  );
   const sections = fundingBodySections(xml);
   const text = [
     ...statements,
