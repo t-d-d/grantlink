@@ -38,14 +38,16 @@ function plain(xml: string): string {
 }
 
 // Every element with this name, as its opening tag and its inner XML. JATS
-// does not nest any of the elements read here inside one of the same name.
+// does not nest any of the elements read here inside one of the same name. A
+// self-closing element is empty, and does not run on to the next closing tag
+// of its name (#195).
 function tagged(
   xml: string,
   name: string,
   attributes = "",
 ): { tag: string; inner: string }[] {
   const pattern = new RegExp(
-    `(<${name}\\b(?=[^>]*${attributes})[^>]*>)([\\s\\S]*?)</${name}>`,
+    `(<${name}\\b(?=[^>]*${attributes})[^>]*?)(?:/>|>([\\s\\S]*?)</${name}>)`,
     "gu",
   );
   return [...xml.matchAll(pattern)].map((match) => ({
@@ -78,11 +80,12 @@ function awardsOf(group: string): FundingSections["awards"] {
     ids: attribute(tag, "id"),
     name: plain(inner),
   }));
-  const all = sources.map(({ name }) => name);
+  const all = sources.map(({ name }) => name).filter((name) => name !== "");
   const untied: string[] = [];
   const tied = new Map<string, { sources: string[]; ids: string[] }>();
   for (const { tag, inner } of tagged(group, "award-id")) {
     const id = plain(inner);
+    if (id === "") continue;
     const rid = attribute(tag, "rid");
     const named = sources
       .filter((source) => source.ids.some((sourceId) => rid.includes(sourceId)))
@@ -97,15 +100,20 @@ function awardsOf(group: string): FundingSections["awards"] {
     tied.set(key, award);
   }
   const awards = [...tied.values()];
+  // An award group that names nothing, such as a self-closing one, gives no
+  // award.
+  if (all.length === 0 && untied.length === 0) return awards;
   return untied.length > 0 || awards.length === 0
     ? [{ sources: all, ids: untied }, ...awards]
     : awards;
 }
 
 // The paragraphs of a section, or its whole text less its title if it has
-// none.
+// none. A self-closing paragraph is empty, so it does not count.
 function paragraphs(section: string): string[] {
-  const found = elements(section, "p").map(plain);
+  const found = elements(section, "p")
+    .map(plain)
+    .filter((paragraph) => paragraph !== "");
   if (found.length > 0) return found;
   return [plain(section.replace(/<title\b[^>]*>[\s\S]*?<\/title>/gu, ""))];
 }

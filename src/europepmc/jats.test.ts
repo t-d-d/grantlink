@@ -62,6 +62,14 @@ describe("cutting a paper to its funding sections", () => {
     ]);
   });
 
+  it("reads the award id after a self-closing one with its own rid (#195)", () => {
+    expect(
+      fundingSections(
+        shared(`<award-id rid="fs2"/><award-id rid="fs1">67890</award-id>`),
+      ).awards,
+    ).toEqual([{ sources: ["Cancer Research UK"], ids: ["67890"] }]);
+  });
+
   it("gives an award id with no rid to every source in its group", () => {
     expect(
       fundingSections(
@@ -164,6 +172,47 @@ describe("cutting a paper to its funding sections", () => {
         "<article><back><ack><p>Grant &#x110000; and &#99999999;.</p></ack></back></article>",
       ).text,
     ).toEqual(["Grant &#x110000; and &#99999999;."]);
+  });
+
+  it("reads an empty self-closing award id as no id, and the next one alone (#195)", () => {
+    const award = (inside: string) =>
+      fundingSections(
+        `<article><front><funding-group><award-group>${inside}</award-group></funding-group></front></article>`,
+      ).awards;
+    expect(
+      award(
+        `<funding-source>Cancer Research UK</funding-source><award-id/><award-id rid="x"/><award-id>A1</award-id>`,
+      ),
+    ).toEqual([{ sources: ["Cancer Research UK"], ids: ["A1"] }]);
+    expect(
+      award(
+        `<award-id /><funding-source>Cancer Research UK</funding-source><award-id>A1</award-id><award-id></award-id>`,
+      ),
+    ).toEqual([{ sources: ["Cancer Research UK"], ids: ["A1"] }]);
+  });
+
+  it("reads a self-closing element of any kind as empty", () => {
+    expect(
+      fundingSections(
+        `<article><back><ack/><p>Body text.</p><ack><p>Thanks.</p></ack></back></article>`,
+      ).text,
+    ).toEqual(["Thanks."]);
+  });
+
+  it("keeps a section's whole text when its only paragraph is self-closing", () => {
+    expect(
+      fundingSections(
+        `<article><back><ack><title>Acknowledgements</title><p/>Funded by grant A1.</ack></back></article>`,
+      ).text,
+    ).toEqual(["Funded by grant A1."]);
+  });
+
+  it("keeps no award for a self-closing award group", () => {
+    expect(
+      fundingSections(
+        `<article><front><funding-group><award-group/></funding-group></front></article>`,
+      ),
+    ).toEqual({ text: [], awards: [] });
   });
 
   it("finds nothing in a paper with no funding sections", () => {
