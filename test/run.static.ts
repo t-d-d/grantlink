@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appStack, DATA_TEMPLATE, serverless, site } from "./app.ts";
+import { appStack, DATA_TEMPLATE, serverless } from "./app.ts";
 import {
   list,
   readTemplate,
@@ -21,9 +21,8 @@ import { readRepoFile } from "./repo.ts";
 
 // The run's resources in the app stack (#19): the results table and the
 // funding text bucket from infra/data.cfn.yml, and the function and its
-// first run from serverless.yml.
-
-const data = readTemplate(DATA_TEMPLATE);
+// first run from serverless.yml. Each check reads the stack as osls merges
+// it, so an override in serverless.yml shows (#166).
 
 type Resources = Record<
   string,
@@ -52,7 +51,7 @@ describe("the app stack takes the data template", () => {
 });
 
 describe("fitness: the bucket stays private (storage.md)", () => {
-  const bucket = resource(data, "TextBucket").Properties;
+  const bucket = resource(appStack, "TextBucket").Properties;
 
   it("is named as the roles stack expects", () => {
     expect(subText(bucket.BucketName)).toBe("grantlink-text-${AWS::AccountId}");
@@ -108,7 +107,7 @@ describe("fitness: the bucket stays private (storage.md)", () => {
       "TextBucket.Arn": bucketArn,
     };
     const policy = BucketPolicy.parse(
-      resource(data, "TextBucketPolicy").Properties.PolicyDocument,
+      resource(appStack, "TextBucketPolicy").Properties.PolicyDocument,
     );
     const rendered = {
       Statement: policy.Statement.map((statement) => ({
@@ -142,13 +141,13 @@ describe("fitness: the bucket stays private (storage.md)", () => {
 
 describe("fitness: one on-demand table (storage.md)", () => {
   it("bills on demand, keyed by PMCID", () => {
-    const table = resource(data, "ResultsTable").Properties;
+    const table = resource(appStack, "ResultsTable").Properties;
     expect(table.BillingMode).toBe("PAY_PER_REQUEST");
     expect(table.KeySchema).toEqual([
       { AttributeName: "pmcid", KeyType: "HASH" },
     ]);
     expect(
-      Object.values(data.Resources).filter(
+      Object.values(appStack.Resources).filter(
         (r) => r.Type === "AWS::DynamoDB::Table",
       ),
     ).toHaveLength(1);
@@ -160,7 +159,7 @@ describe("fitness: one on-demand table (storage.md)", () => {
 // that holds data stalls the rollback instead (#89).
 describe("the data stores outlive a rollback or a replacement (#89)", () => {
   it.each(["ResultsTable", "TextBucket"])("%s is retained", (name) => {
-    const store = resource(data, name);
+    const store = resource(appStack, name);
     expect(store.DeletionPolicy).toBe("Retain");
     expect(store.UpdateReplacePolicy).toBe("Retain");
   });
@@ -285,7 +284,7 @@ describe("the function", () => {
 });
 
 describe("fitness: cache entries never change (evals.md)", () => {
-  const policy = resource(data, "TextBucketPolicy").Properties
+  const policy = resource(appStack, "TextBucketPolicy").Properties
     .PolicyDocument as { Statement: Record<string, unknown>[] };
   const writeOnce = policy.Statement.find(
     (statement) => statement.Sid === "WriteOnceUnderEval",
@@ -484,8 +483,8 @@ function readersOfPrivateObjects(resources: Resources): string[] {
 
 // The stack's two buckets, for a test stack to add a resource to.
 const buckets: Resources = {
-  TextBucket: data.Resources.TextBucket as Resources[string],
-  SiteBucket: site.Resources.SiteBucket as Resources[string],
+  TextBucket: appStack.Resources.TextBucket as Resources[string],
+  SiteBucket: appStack.Resources.SiteBucket as Resources[string],
 };
 
 describe("fitness: only the run's own role reaches the private bucket's objects (storage.md)", () => {
@@ -599,7 +598,7 @@ describe("fitness: only the run's own role reaches the private bucket's objects 
   it("passes a role that attaches the stack's own managed policy", () => {
     expect(
       readersOfPrivateObjects({
-        SiteBucket: site.Resources.SiteBucket as Resources[string],
+        SiteBucket: appStack.Resources.SiteBucket as Resources[string],
         Publish: {
           Type: "AWS::IAM::ManagedPolicy",
           Properties: {

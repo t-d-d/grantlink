@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appStack,
+  DECLARED_ELSEWHERE,
   deploy,
   serverless,
   site,
@@ -44,10 +45,13 @@ describe("fitness: data stays in London (hosting.md)", () => {
 
 // The static checks read the stack as test/app.ts merges it. osls also
 // applies `extensions` and any further template, which they do not read,
-// so serverless.yml may hold neither (#142).
+// so serverless.yml may hold neither (#142). An inline entry may only add
+// resources, and may use only the cf and env variables (#166).
 describe("serverless.yml merges only what the static checks read", () => {
-  it("lists the two templates, then only parameters, inline resources and outputs", () => {
-    expect(unreadResources(serverless.resources, TEMPLATES)).toEqual([]);
+  it("lists the two templates, then only parameters, new inline resources and outputs", () => {
+    expect(
+      unreadResources(serverless.resources, TEMPLATES, DECLARED_ELSEWHERE),
+    ).toEqual([]);
   });
 
   // osls takes `extensions` from the merged list, so a template that holds
@@ -83,8 +87,10 @@ describe("fitness: no always-on compute (hosting.md)", () => {
   });
 });
 
+// These read the stack as osls merges it, so an override in serverless.yml
+// shows here (#166).
 describe("fitness: HTTPS only (hosting.md)", () => {
-  const config = resource(site, "Distribution").Properties
+  const config = resource(appStack, "Distribution").Properties
     .DistributionConfig as {
     DefaultCacheBehavior: { ViewerProtocolPolicy: string };
     CacheBehaviors?: { ViewerProtocolPolicy: string }[];
@@ -127,7 +133,7 @@ describe("fitness: HTTPS only (hosting.md)", () => {
   });
 
   it("tells browsers to keep to HTTPS", () => {
-    const policy = resource(site, "ResponseHeaders").Properties
+    const policy = resource(appStack, "ResponseHeaders").Properties
       .ResponseHeadersPolicyConfig as {
       SecurityHeadersConfig: {
         StrictTransportSecurity: {
@@ -159,14 +165,14 @@ describe("the page's bucket", () => {
 });
 
 describe("the page's address (#44)", () => {
-  const records = Object.values(site.Resources).filter(
+  const records = Object.values(appStack.Resources).filter(
     (r) => r.Type === "AWS::Route53::RecordSet",
   );
 
   it("always serves at grantlink.uk, with no fallback to CloudFront's own address", () => {
-    expect(site.Parameters?.DomainName?.Default).toBe("grantlink.uk");
-    expect(site.Conditions).toBeUndefined();
-    const config = resource(site, "Distribution").Properties
+    expect(appStack.Parameters?.DomainName?.Default).toBe("grantlink.uk");
+    expect(appStack.Conditions).toBeUndefined();
+    const config = resource(appStack, "Distribution").Properties
       .DistributionConfig as Record<string, unknown>;
     expect(config.Aliases).toEqual([{ Ref: "DomainName" }]);
     expect(config.ViewerCertificate).toEqual({
@@ -174,7 +180,7 @@ describe("the page's address (#44)", () => {
       SslSupportMethod: "sni-only",
       MinimumProtocolVersion: "TLSv1.2_2021",
     });
-    expect(site.Outputs?.PageUrl?.Value).toEqual({
+    expect(appStack.Outputs?.PageUrl?.Value).toEqual({
       "Fn::Sub": "https://${DomainName}/",
     });
   });

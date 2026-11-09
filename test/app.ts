@@ -37,6 +37,15 @@ export const DATA_TEMPLATE = "infra/data.cfn.yml";
 // on any other entry the stack below does not read (#142).
 export const TEMPLATES = [SITE_TEMPLATE, DATA_TEMPLATE] as const;
 
+// What serverless.yml's inline entries may not change: the templates'
+// resources, and what osls generates for the functions (#166).
+export const DECLARED_ELSEWHERE = {
+  declared: TEMPLATES.flatMap((path) =>
+    Object.keys(readTemplate(path).Resources),
+  ),
+  functions: Object.keys(serverless.functions ?? {}),
+};
+
 // The app stack as osls merges it: the templates, then serverless.yml's
 // inline entries over them in order, so an inline entry that changes one
 // property of a template's resource shows here (#142).
