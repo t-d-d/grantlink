@@ -137,6 +137,20 @@ describe("fitness: HTTPS only (hosting.md)", () => {
   });
 });
 
+// hosting.md states no rule on ACLs, so this is not a fitness check (#95).
+describe("the page's bucket", () => {
+  // With ACLs disabled, no grant in the template can let another account
+  // write or change the page's files. The deploy role's s3:PutBucket* can
+  // still change the bucket outside the template, which this tier cannot see.
+  it("lets no ACL grant access to the bucket", () => {
+    const bucket = resource(site, "SiteBucket").Properties;
+    expect(bucket.OwnershipControls).toEqual({
+      Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }],
+    });
+    expect(bucket.AccessControl).toBeUndefined();
+  });
+});
+
 describe("the page's address (#44)", () => {
   const records = Object.values(site.Resources).filter(
     (r) => r.Type === "AWS::Route53::RecordSet",
