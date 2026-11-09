@@ -8,29 +8,24 @@ The plan is the PRD, [#1](https://github.com/t-d-d/grantlink/issues/1). The deci
 
 ## Setting up the AWS account
 
-Two stacks are applied by hand, once, before anything deploys. Both go in grantlink's own account, in us-east-1, and both are code in [infra/](infra/). Every later change to the account goes through the app stack, from a green merge to main.
+Two stacks are applied by hand, once, before anything deploys, and both are code in [infra/](infra/):
 
-Apply them in this order.
+- **The DNS stack**, `dns`, from [infra/dns.cfn.yml](infra/dns.cfn.yml): the hosted zone for grantlink.uk and its certificate, in us-east-1, where CloudFront requires the certificate. The zone is kept if the stack is deleted, so its nameservers never change under the registrar.
+- **The roles stack**, `grantlink-github-oidc`, from [infra/github-oidc.cfn.yml](infra/github-oidc.cfn.yml): GitHub's OIDC provider, the deploy role and the role CloudFormation takes to build the app stack, the CI eval role, and `access-eval` for aws-access's `grantlink-eval` profile. IAM is global, so it sits in us-east-1 beside the DNS stack. It reads the access account's id from aws-access's `/access/account-id` parameter in us-east-1.
 
-1. **The DNS stack**, [infra/dns.cfn.yml](infra/dns.cfn.yml): the hosted zone for grantlink.uk and its certificate.
+Every later change to the account goes through the app stack, from a green merge to main.
 
-   ```sh
-   aws cloudformation deploy --region us-east-1 \
-     --stack-name grantlink-dns --template-file infra/dns.cfn.yml
-   ```
+Run one script, from the repo root on your own machine, with AWS credentials for grantlink's account as an administrator, however you come by them, and `gh` signed in with admin rights on this repo. Before it changes anything, the script checks that the account holds aws-access's `/access/account-id` parameter, which the roles stack reads. The account must not already have a GitHub OIDC provider of its own, or the roles stack fails:
 
-   The stack waits until ACM has validated the certificate, which needs the registrar to point at the new zone. While it waits, read the zone's nameservers in the Route 53 console, or with `aws route53 get-hosted-zone`, and set them at the registrar. The stack outputs them too, once it finishes. The zone is kept if the stack is deleted, so the nameservers never change under the registrar.
+```sh
+scripts/bootstrap.sh
+```
 
-2. **The roles stack**, [infra/github-oidc.cfn.yml](infra/github-oidc.cfn.yml): GitHub's OIDC provider, the deploy role and the role CloudFormation takes to build the app stack, the CI eval role, and `access-eval` for aws-access's `grantlink-eval` profile. It creates GitHub's OIDC provider, and an account holds only one, so the stack fails if the account already has it. It needs the SSM parameter `/access/account-id` in us-east-1 to hold the access account's id, and the private bucket's name, which the app stack uses too.
+It asks only whether the account is the right one. Then it:
 
-   ```sh
-   aws cloudformation deploy --region us-east-1 \
-     --stack-name grantlink-github-oidc --template-file infra/github-oidc.cfn.yml \
-     --capabilities CAPABILITY_NAMED_IAM \
-     --parameter-overrides PrivateBucketName=<the private bucket's name>
-   ```
-
-Then give GitHub what the deploy and the eval read. Role ARNs and the certificate's ARN carry the account id, so they are secrets, never variables.
+1. Applies the DNS stack, and prints the zone's nameservers as soon as the zone exists. If the registrar does not list them yet, set them there then: the certificate, and so the stack, waits until it does.
+2. Applies the roles stack. It takes no parameter a person fills. It reads the access account's id from SSM, and the private bucket is `grantlink-text-<account id>`, the name the app stack (#19) must give it.
+3. Gives GitHub every value the deploy and the eval read:
 
 | Name | Kind | GitHub environment | Value |
 | --- | --- | --- | --- |
@@ -38,10 +33,12 @@ Then give GitHub what the deploy and the eval read. Role ARNs and the certificat
 | `AWS_DEPLOY_EXECUTION_ROLE_ARN` | Secret | `prod` | The roles stack's `DeployExecutionRoleArn` output |
 | `CERTIFICATE_ARN` | Secret | `prod` | The DNS stack's `CertificateArn` output |
 | `HOSTED_ZONE_ID` | Variable | `prod` | The DNS stack's `HostedZoneId` output |
-| `PRIVATE_BUCKET_NAME` | Variable | `prod` and `eval` | The name given to the roles stack |
+| `PRIVATE_BUCKET_NAME` | Secret | `prod` and `eval` | `grantlink-text-<account id>` |
 | `AWS_EVAL_ROLE_ARN` | Secret | `eval` | The roles stack's `CiEvalRoleArn` output |
 
-The `AccessEvalRoleArn` output goes to aws-access, for the `grantlink-eval` profile.
+Role ARNs, the certificate's ARN and the bucket's name carry the account id, so they are secrets, never variables. The script reads every value before it gives GitHub any, and stops rather than give an empty one.
+
+The script is safe to run again. Each step changes only what differs, and it waits for a stack an earlier run left part way. If the credentials expire while the certificate waits for the registrar, the script stops while the stack carries on. Run it again and it waits for the stack. A stack whose first create failed has to be deleted before a run can apply it, and the script says so.
 
 The deploy role trusts only the `prod` environment and the CI eval role only the `eval` environment, so a workflow job must name its environment to reach either. The gate checks both templates with [cfn-lint](https://github.com/aws-cloudformation/cfn-lint), so running the gate locally needs the version CI pins in [gate.yml](.github/workflows/gate.yml) (`pipx install cfn-lint==1.60.0`).
 

@@ -49,6 +49,12 @@ const githubTrust = (environment: string): Statement[] => [
   },
 ];
 
+describe("the roles stack", () => {
+  it("needs no value typed by the person applying it", () => {
+    expect(Object.keys(template.Parameters ?? {})).toEqual(["AccessAccountId"]);
+  });
+});
+
 describe("GitHub's OIDC provider", () => {
   it("is GitHub's issuer, for STS", () => {
     const { Properties } = resource(template, "GitHubOidcProvider");
@@ -102,8 +108,14 @@ describe("the deploy role", () => {
       Effect: "Deny",
       Action: "s3:*",
       Resource: [
-        { "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}" },
-        { "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}/*" },
+        {
+          "Fn::Sub":
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}",
+        },
+        {
+          "Fn::Sub":
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/*",
+        },
       ],
     });
   });
@@ -173,11 +185,12 @@ describe("the CI eval role", () => {
       Action: "s3:GetObject",
       Resource: [
         {
-          "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval/*",
+          "Fn::Sub":
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval/*",
         },
         {
           "Fn::Sub":
-            "arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval-reports/*",
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval-reports/*",
         },
       ],
     });
@@ -196,7 +209,7 @@ describe("the CI eval role", () => {
         Action: "s3:PutObject",
         Resource: {
           "Fn::Sub":
-            "arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval-reports/*",
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval-reports/*",
         },
         Condition: { StringEquals: { "s3:if-none-match": "*" } },
       },
@@ -213,7 +226,8 @@ describe("the CI eval role", () => {
         Effect: "Allow",
         Action: "s3:ListBucket",
         Resource: {
-          "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}",
+          "Fn::Sub":
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}",
         },
         Condition: {
           StringLike: { "s3:prefix": ["eval/*", "eval-reports/*"] },
@@ -252,7 +266,8 @@ describe("access-eval", () => {
 
   it("allows only s3:GetObject on eval/*, and denies everything else", () => {
     const snapshot = {
-      "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval/*",
+      "Fn::Sub":
+        "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval/*",
     };
     expect(rightsOf(accessEval)).toEqual([
       {
@@ -279,24 +294,53 @@ describe("access-eval", () => {
 });
 
 describe("only the CI eval role writes to eval-reports/", () => {
-  const writesReports = (statement: Statement): boolean =>
-    statement.Effect === "Allow" &&
-    actions(statement).some((action) =>
-      ["*", "s3:*", "s3:PutObject", "s3:Put*"].includes(action),
-    ) &&
-    resources(statement).some(
-      (arn) =>
-        arn === "*" ||
-        arn.includes("${PrivateBucketName}") ||
-        arn.includes("eval-reports"),
+  const report =
+    "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval-reports/a-report.json";
+
+  // Whether a statement applies to putting a report, reading Action or
+  // NotAction and Resource or NotResource with their wildcards.
+  const appliesToReport = (statement: Statement): boolean => {
+    const action =
+      statement.NotAction === undefined
+        ? actions(statement).some((pattern) => covers(pattern, "s3:PutObject"))
+        : !list(statement.NotAction).some((pattern) =>
+            covers(pattern, "s3:PutObject"),
+          );
+    const resource =
+      statement.NotResource === undefined
+        ? resources(statement).some((pattern) => covers(pattern, report))
+        : !list(statement.NotResource)
+            .map(subText)
+            .some((pattern) => covers(pattern, report));
+    return action && resource;
+  };
+
+  // An Allow that applies, and no Deny that does.
+  const writesReports = (role: typeof deploy): boolean => {
+    const applying = rightsOf(role).filter(appliesToReport);
+    return (
+      applying.some((statement) => statement.Effect === "Allow") &&
+      !applying.some((statement) => statement.Effect === "Deny")
     );
+  };
 
   it.each(Object.entries(roles).filter(([name]) => name !== "ciEval"))(
     "%s cannot",
     (_name, role) => {
-      expect(rightsOf(role).filter(writesReports)).toEqual([]);
+      expect(writesReports(role)).toBe(false);
     },
   );
+
+  it("ciEval can", () => {
+    expect(writesReports(ciEval)).toBe(true);
+  });
+
+  // Its wildcard on grantlink-* reaches the bucket. Only the Deny stops it.
+  it("deploy is stopped by its Deny, not by its Allows", () => {
+    expect(
+      allows(rightsOf(deploy)).some((statement) => appliesToReport(statement)),
+    ).toBe(true);
+  });
 });
 
 describe("every role", () => {
