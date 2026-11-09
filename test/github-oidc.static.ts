@@ -1,0 +1,284 @@
+import { describe, expect, it } from "vitest";
+import {
+  list,
+  readTemplate,
+  resource,
+  rightsOf,
+  subText,
+  trustOf,
+  type Statement,
+} from "./cfn.ts";
+
+// Pins who each role trusts and what it may do, so a change to either shows
+// in review as a failing test (#15, #9).
+const template = readTemplate("infra/github-oidc.cfn.yml");
+const provider = { Ref: "GitHubOidcProvider" };
+const repo = "repo:t-d-d/grantlink";
+
+const deploy = resource(template, "DeployRole");
+const execution = resource(template, "DeployExecutionRole");
+const ciEval = resource(template, "CiEvalRole");
+const accessEval = resource(template, "AccessEvalRole");
+const roles = { deploy, execution, ciEval, accessEval };
+
+const actions = (statement: Statement): string[] => list(statement.Action);
+const resources = (statement: Statement): string[] =>
+  list(statement.Resource).map(subText);
+const allows = (statements: Statement[]): Statement[] =>
+  statements.filter((statement) => statement.Effect === "Allow");
+
+// The trust a role gets from GitHub's OIDC provider for one environment.
+const githubTrust = (environment: string): Statement[] => [
+  {
+    Effect: "Allow",
+    Principal: { Federated: provider },
+    Action: "sts:AssumeRoleWithWebIdentity",
+    Condition: {
+      StringEquals: {
+        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+        "token.actions.githubusercontent.com:sub": `${repo}:environment:${environment}`,
+      },
+    },
+  },
+];
+
+describe("GitHub's OIDC provider", () => {
+  it("is GitHub's issuer, for STS", () => {
+    const { Properties } = resource(template, "GitHubOidcProvider");
+    expect(resource(template, "GitHubOidcProvider").Type).toBe(
+      "AWS::IAM::OIDCProvider",
+    );
+    expect(Properties.Url).toBe("https://token.actions.githubusercontent.com");
+    expect(Properties.ClientIdList).toEqual(["sts.amazonaws.com"]);
+  });
+});
+
+describe("the deploy role", () => {
+  it("trusts only this repo's prod environment", () => {
+    expect(trustOf(deploy)).toEqual(githubTrust("prod"));
+  });
+
+  it("changes only the app stack, and only in London", () => {
+    const stacks = allows(rightsOf(deploy))
+      .filter((statement) =>
+        actions(statement).some((action) =>
+          action.startsWith("cloudformation:"),
+        ),
+      )
+      .filter((statement) =>
+        actions(statement).some(
+          (action) => action !== "cloudformation:ValidateTemplate",
+        ),
+      )
+      .flatMap(resources);
+    expect(stacks).toEqual([
+      "arn:${AWS::Partition}:cloudformation:eu-west-2:${AWS::AccountId}:stack/grantlink-prod/*",
+    ]);
+  });
+
+  it("passes only the execution role, and only to CloudFormation", () => {
+    const passes = allows(rightsOf(deploy)).filter((statement) =>
+      actions(statement).includes("iam:PassRole"),
+    );
+    expect(passes).toHaveLength(1);
+    expect(passes[0]?.Resource).toEqual({
+      "Fn::GetAtt": ["DeployExecutionRole", "Arn"],
+    });
+    expect(passes[0]?.Condition).toEqual({
+      StringEquals: { "iam:PassedToService": "cloudformation.amazonaws.com" },
+    });
+  });
+
+  it("cannot reach the private bucket's objects", () => {
+    expect(rightsOf(deploy)).toContainEqual({
+      Sid: "NoPrivateBucket",
+      Effect: "Deny",
+      Action: "s3:*",
+      Resource: [
+        { "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}" },
+        { "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}/*" },
+      ],
+    });
+  });
+});
+
+describe("the deploy execution role", () => {
+  it("is assumed only by CloudFormation in this account", () => {
+    expect(trustOf(execution)).toEqual([
+      {
+        Effect: "Allow",
+        Principal: { Service: "cloudformation.amazonaws.com" },
+        Action: "sts:AssumeRole",
+        Condition: {
+          StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" } },
+        },
+      },
+    ]);
+  });
+
+  it("manages buckets but never touches an object", () => {
+    const objectActions = allows(rightsOf(execution))
+      .flatMap(actions)
+      .filter(
+        (action) =>
+          action === "s3:*" ||
+          /^s3:(Get|Put|Delete|Restore)Object/u.test(action) ||
+          action === "*",
+      );
+    expect(objectActions).toEqual([]);
+  });
+
+  it("creates and passes only the app stack's own roles", () => {
+    const iam = allows(rightsOf(execution)).filter((statement) =>
+      actions(statement).some((action) => action.startsWith("iam:")),
+    );
+    expect(iam.flatMap(resources)).toEqual([
+      "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/grantlink-prod-*",
+    ]);
+  });
+});
+
+describe("the CI eval role", () => {
+  it("trusts only this repo's eval environment", () => {
+    expect(trustOf(ciEval)).toEqual(githubTrust("eval"));
+  });
+
+  it("reads the snapshot and the reports", () => {
+    expect(rightsOf(ciEval)).toContainEqual({
+      Sid: "ReadSnapshotAndReports",
+      Effect: "Allow",
+      Action: "s3:GetObject",
+      Resource: [
+        {
+          "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval/*",
+        },
+        {
+          "Fn::Sub":
+            "arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval-reports/*",
+        },
+      ],
+    });
+  });
+
+  it("adds a report only where none exists, and cannot overwrite one", () => {
+    const writes = allows(rightsOf(ciEval)).filter((statement) =>
+      actions(statement).some(
+        (action) => action !== "s3:GetObject" && action !== "s3:ListBucket",
+      ),
+    );
+    expect(writes).toEqual([
+      {
+        Sid: "AddReportsOnly",
+        Effect: "Allow",
+        Action: "s3:PutObject",
+        Resource: {
+          "Fn::Sub":
+            "arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval-reports/*",
+        },
+        Condition: { StringEquals: { "s3:if-none-match": "*" } },
+      },
+    ]);
+  });
+
+  it("lists only the eval prefixes", () => {
+    const listing = allows(rightsOf(ciEval)).filter((statement) =>
+      actions(statement).includes("s3:ListBucket"),
+    );
+    expect(listing).toEqual([
+      {
+        Sid: "ListEvalPrefixes",
+        Effect: "Allow",
+        Action: "s3:ListBucket",
+        Resource: {
+          "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}",
+        },
+        Condition: {
+          StringLike: { "s3:prefix": ["eval/*", "eval-reports/*"] },
+        },
+      },
+    ]);
+  });
+});
+
+describe("access-eval", () => {
+  it("is named for aws-access's grantlink-eval profile", () => {
+    expect(accessEval.Properties.RoleName).toBe("access-eval");
+  });
+
+  it("trusts only claude-grantlink in the access account", () => {
+    expect(trustOf(accessEval)).toEqual([
+      {
+        Effect: "Allow",
+        Principal: {
+          AWS: {
+            "Fn::Sub":
+              "arn:${AWS::Partition}:iam::${AccessAccountId}:role/claude-grantlink",
+          },
+        },
+        Action: "sts:AssumeRole",
+      },
+    ]);
+  });
+
+  it("reads the access account's id from SSM, not the template", () => {
+    expect(template.Parameters?.AccessAccountId).toMatchObject({
+      Type: "AWS::SSM::Parameter::Value<String>",
+      Default: "/access/account-id",
+    });
+  });
+
+  it("allows only s3:GetObject on eval/*, and denies everything else", () => {
+    const snapshot = {
+      "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval/*",
+    };
+    expect(rightsOf(accessEval)).toEqual([
+      {
+        Sid: "ReadSnapshot",
+        Effect: "Allow",
+        Action: "s3:GetObject",
+        Resource: snapshot,
+      },
+      {
+        Sid: "DenyOtherActions",
+        Effect: "Deny",
+        NotAction: "s3:GetObject",
+        Resource: "*",
+      },
+      {
+        Sid: "DenyOtherObjects",
+        Effect: "Deny",
+        Action: "s3:GetObject",
+        NotResource: snapshot,
+      },
+    ]);
+    expect(accessEval.Properties.ManagedPolicyArns).toBeUndefined();
+  });
+});
+
+describe("only the CI eval role writes to eval-reports/", () => {
+  const writesReports = (statement: Statement): boolean =>
+    statement.Effect === "Allow" &&
+    actions(statement).some((action) =>
+      ["*", "s3:*", "s3:PutObject", "s3:Put*"].includes(action),
+    ) &&
+    resources(statement).some(
+      (arn) =>
+        arn === "*" ||
+        arn.includes("${PrivateBucketName}") ||
+        arn.includes("eval-reports"),
+    );
+
+  it.each(Object.entries(roles).filter(([name]) => name !== "ciEval"))(
+    "%s cannot",
+    (_name, role) => {
+      expect(rightsOf(role).filter(writesReports)).toEqual([]);
+    },
+  );
+});
+
+describe("every role", () => {
+  it.each(Object.entries(roles))("%s has inline rights only", (_name, role) => {
+    expect(role.Type).toBe("AWS::IAM::Role");
+    expect(role.Properties.ManagedPolicyArns).toBeUndefined();
+  });
+});
