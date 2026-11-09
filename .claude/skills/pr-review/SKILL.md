@@ -6,8 +6,8 @@ description: The checklist governor's PR review reads for grantlink's pull reque
 # PR review
 
 Read the pull request's description, the names of its changed files and
-the tickets it closes, then answer each test in order. The review sees no diff and reads
-no source files. The description follows
+the tickets it closes, then answer each test in order. The review sees no
+diff and reads no source files. The description follows
 .github/pull_request_template.md, and the tests follow its sections.
 
 A pass merges the pull request.
