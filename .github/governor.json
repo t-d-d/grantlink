@@ -12,7 +12,7 @@
   "summons": {},
   "prMessages": {},
   "subscribeMessages": {},
-  "redScheduledRun": { "enabled": false },
+  "redScheduledRun": { "enabled": true },
   "unblocked": { "enabled": false },
   "ciMessages": { "enabled": true },
   "deployMessages": { "deployedLabels": true },

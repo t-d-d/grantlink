@@ -1,0 +1,36 @@
+# Runs the conformance tests once a day and on demand (#56). They read setup
+# outside the repo: GitHub's record of the repository, which the deploy and
+# eval roles' OIDC subjects must match (#52), and the prod environment's
+# branch rule (deploy-gates.md). A rename, a transfer or a changed setting
+# then turns this run red instead of waiting for a deploy to fail, and
+# governor's redScheduledRun tells the owner.
+#
+# It runs only the files that need nothing but GitHub's token.
+# test/text-bucket.conformance.ts needs AWS, which #50 adds here.
+name: conformance
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+# The repository's record needs no permission. The prod environment and its
+# branch policies need actions: read.
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  conformance:
+    name: conformance
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run conformance -- test/github-oidc.conformance.ts test/environments.conformance.ts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
