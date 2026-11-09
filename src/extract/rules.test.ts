@@ -76,6 +76,84 @@ describe("the rules", () => {
     ).toEqual([]);
   });
 
+  // A bare number counts only when the metadata gives it to the funder and
+  // the paper's own text gives the same number (#97).
+  it("reads a bare number the metadata gives the funder when the text gives it too", () => {
+    expect(
+      findReferences({
+        text: ["This work was funded by a grant (Grant No. 12345)."],
+        awards: [{ source: "Cancer Research UK", ids: ["12345"] }],
+      }),
+    ).toEqual([{ asWritten: "12345", normalised: "12345", format: "n" }]);
+  });
+
+  it("leaves a bare number the metadata gives the funder when the text does not give it", () => {
+    expect(
+      findReferences({
+        text: ["This work was funded by Cancer Research UK."],
+        awards: [{ source: "Cancer Research UK", ids: ["12345"] }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("leaves a bare number the text gives only inside a longer reference", () => {
+    expect(
+      findReferences({
+        text: ["Funded by the Example Trust (B12345 and 123456)."],
+        awards: [{ source: "Cancer Research UK", ids: ["12345"] }],
+      }),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ["Cancer Research UK (CTRQQR-2021/100010).", "CTRQQR-2021/100010"],
+    ["Cancer Research UK (CTRQQR-2021 / 100010).", "CTRQQR-2021/100010"],
+    ["Cancer Research UK (DRCMDPA∖100010).", "DRCMDPA/100010"],
+  ])(
+    "leaves a bare number the text gives only after a separator, in %s",
+    (text, normalised) => {
+      expect(
+        findReferences({
+          text: [text],
+          awards: [{ source: "Cancer Research UK", ids: ["100010"] }],
+        }).map((reference) => reference.normalised),
+      ).toEqual([normalised]);
+    },
+  );
+
+  it("lists a bare number once when the text also gives it with its A", () => {
+    expect(
+      findReferences({
+        text: ["Cancer Research UK (A28275). Grant 28275."],
+        awards: [{ source: "Cancer Research UK", ids: ["28275"] }],
+      }),
+    ).toEqual([{ asWritten: "A28275", normalised: "A28275", format: "An" }]);
+  });
+
+  it("leaves a bare number the metadata gives another funder", () => {
+    expect(
+      findReferences({
+        text: ["Cancer Research UK and the Example Trust (12345)."],
+        awards: [{ source: "Example Trust", ids: ["12345"] }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("leaves a bare number in the text that no award gives the funder", () => {
+    expect(
+      findReferences(sections("Funded by Cancer Research UK (grant 12345).")),
+    ).toEqual([]);
+  });
+
+  it("leaves a bare number too short or too long to be a reference", () => {
+    expect(
+      findReferences({
+        text: ["Grants 2021 and 12345678."],
+        awards: [{ source: "Cancer Research UK", ids: ["2021", "12345678"] }],
+      }),
+    ).toEqual([]);
+  });
+
   it("lists each normalised reference once", () => {
     expect(
       findReferences(

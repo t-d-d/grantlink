@@ -196,6 +196,12 @@ describe("rendering the page", () => {
     );
   });
 
+  it("says what each reference format means, including a bare number", () => {
+    const html = renderFound(summarise(rows, run));
+    expect(html).toContain("Cn/An is the older");
+    expect(html).toContain("and n a bare award");
+  });
+
   it("puts the findings in place of the not-yet-run notice, and keeps the rest of the page", () => {
     const page = buildPage(template, summarise(rows, run));
     expect(page).not.toContain("Not yet run");
