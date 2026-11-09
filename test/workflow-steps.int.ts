@@ -6,25 +6,28 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { deploy, type Workflow } from "./app.ts";
-import { parse } from "yaml";
-import { readRepoFile } from "./repo.ts";
+import { deploy, evalWorkflow, type Workflow } from "./app.ts";
 
-const bash = execFileSync("bash", ["-c", "command -v bash"], {
+// The system commands the steps and the stubs run. The step's PATH holds
+// only these and the stubs, so a call nothing stubs fails instead of
+// reaching AWS.
+const commands = ["bash", "cat", "jq"];
+const found = execFileSync("bash", ["-c", `command -v ${commands.join(" ")}`], {
   encoding: "utf8",
-}).trim();
-
-const evalWorkflow = parse(
-  readRepoFile(".github/workflows/eval.yml"),
-) as Workflow;
+})
+  .trim()
+  .split("\n");
+const bash = found[0] ?? "";
 
 function script(workflow: Workflow, job: string, id: string): string {
   const step = workflow.jobs[job]?.steps?.find((each) => each.id === id);
@@ -37,18 +40,21 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true });
 });
 
-// Runs the step in an empty directory with $STUBS ahead of the system PATH.
+// Runs the step in an empty directory, with the stubs and the system
+// commands above as its whole PATH.
 function runStep(run: string, stubs: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "grantlink-step-"));
   dirs.push(dir);
   const bin = join(dir, "bin");
-  execFileSync("mkdir", [bin]);
+  const work = join(dir, "work");
+  mkdirSync(bin);
+  mkdirSync(work);
+  for (const path of found) symlinkSync(path, join(bin, basename(path)));
   for (const [name, body] of Object.entries(stubs)) {
+    if (commands.includes(name)) throw new Error(`${name} is not a stub`);
     writeFileSync(join(bin, name), `#!${bash}\n${body}\n`);
     chmodSync(join(bin, name), 0o755);
   }
-  const work = join(dir, "work");
-  execFileSync("mkdir", [work]);
   const output = join(dir, "output");
   writeFileSync(output, "");
   const step = join(dir, "step.sh");
@@ -56,13 +62,9 @@ function runStep(run: string, stubs: Record<string, string> = {}) {
   const result = spawnSync(bash, ["-e", step], {
     cwd: work,
     encoding: "utf8",
-    env: {
-      PATH: `${bin}:${process.env.PATH ?? ""}`,
-      GITHUB_OUTPUT: output,
-      HOME: dir,
-    },
+    env: { PATH: bin, GITHUB_OUTPUT: output, HOME: dir },
   });
-  return { status: result.status, output: readFileSync(output, "utf8"), work };
+  return { status: result.status, output: readFileSync(output, "utf8") };
 }
 
 describe("the eval's fingerprint step", () => {
@@ -92,6 +94,10 @@ describe("the eval's report hand-on", () => {
 
   it("fails when report.json is missing", () => {
     expect(runStep(run).status).not.toBe(0);
+  });
+
+  it("fails when report.json is empty", () => {
+    expect(runStep(`: > report.json\n${run}`).status).not.toBe(0);
   });
 
   it("fails when report.json is not JSON", () => {

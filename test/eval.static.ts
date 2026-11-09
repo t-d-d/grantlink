@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
 import { noLive } from "../evals/check.ts";
 import { INPUTS, MISSING_INPUT } from "../evals/fingerprint.ts";
-import { deploy, type Step, type Workflow } from "./app.ts";
+import { deploy, evalWorkflow as workflow, type Step } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The eval workflow (#9, #20): the report is a cache keyed by the
 // fingerprint, the runner reads local files, and a report below a floor
 // fails the job.
-const workflow = parse(readRepoFile(".github/workflows/eval.yml")) as Workflow;
 const job = workflow.jobs.eval;
 const steps: Step[] = job?.steps ?? [];
 const at = (pattern: RegExp) =>

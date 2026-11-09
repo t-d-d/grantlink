@@ -170,7 +170,7 @@ jobs:
       - id: report
         name: Hand the report on
         run: |
-          json="$(jq -c . report.json)"
+          json="$(jq -ce . report.json)"
           echo "json=$json" >> "$GITHUB_OUTPUT"
 
       # The live release is the commit main last deployed. Its report is
