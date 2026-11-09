@@ -43,7 +43,7 @@ Once a job has assumed its role, it finds or builds every other value it needs. 
 
 The script is safe to run again. Each step changes only what differs, and it waits for a stack an earlier run left part way. If the credentials expire while the certificate waits for the registrar, the script stops while the stack carries on. Run it again and it waits for the stack. A stack whose first create failed has to be deleted before a run can apply it, and the script says so.
 
-The deploy role trusts only the `prod` environment and the CI eval role only the `eval` environment, so a workflow job must name its environment to reach either. The conformance role trusts only runs on main in a job that names no environment, and reads the private bucket's public access block, encryption and policy, and nothing the bucket holds. The gate checks both templates with [cfn-lint](https://github.com/aws-cloudformation/cfn-lint), so running the gate locally needs the version CI pins in [gate.yml](.github/workflows/gate.yml) (`pipx install cfn-lint==1.60.0`).
+The deploy role trusts only the `prod` environment and the CI eval role only the `eval` environment, so a workflow job must name its environment to reach either. The conformance role trusts only runs on main in a job that names no environment, and reads the private bucket's public access block, encryption, policy and ownership controls, and nothing the bucket holds. The gate checks both templates with [cfn-lint](https://github.com/aws-cloudformation/cfn-lint), so running the gate locally needs the version CI pins in [gate.yml](.github/workflows/gate.yml) (`pipx install cfn-lint==1.60.0`).
 
 ## How it deploys
 
@@ -58,7 +58,7 @@ The app stack, `grantlink-prod`, is defined in [serverless.yml](serverless.yml) 
 5. Builds the page again from the release record and the last run's `found.json`, if there is one, copies [site/](site/) to the bucket and clears CloudFront's cache.
 6. Runs the live tier against the page. A failure turns the deploy red.
 
-CloudFront serves the page at grantlink.uk, with the certificate and the zone the deploy reads from the DNS stack. A deploy before the DNS stack exists fails (#44). A failed deploy is fixed forward. There is no rollback step, and CloudFormation rolls a failed stack update back by itself.
+CloudFront serves the page at grantlink.uk, with the certificate and the zone the deploy reads from the DNS stack. A deploy before the DNS stack exists fails (#44). A failed deploy is fixed forward. There is no rollback step, and CloudFormation rolls a failed stack update back by itself. Before it deploys, the deploy checks the stack. If the stack is stuck in cleanup or rollback, or the funding text bucket exists outside it, the deploy stops and names the resource and what to do (#89). Both data stores are retained, so no rollback deletes their data.
 
 ## How the eval gates a release
 

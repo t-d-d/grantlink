@@ -235,7 +235,7 @@ describe("a paper Europe PMC has since linked to a grant", () => {
     expect(again.result?.published).toEqual({
       published: true,
       papers: 7,
-      references: 6,
+      references: 7,
       page: "written",
     });
     const page = fake.site.files?.["index.html"] ?? "";
