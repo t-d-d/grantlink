@@ -86,11 +86,16 @@ export const isGoldSearch = (url: URL) =>
   url.pathname.endsWith("/search") &&
   (url.searchParams.get("query") ?? "").includes(goldA.query);
 
+// How a test may replace Europe PMC's answers: `search` for the run's
+// search, and `goldSearch` for gold set A's sampling search.
+export interface FakeSearches {
+  search?: (cursor: string) => Response;
+  goldSearch?: (cursor: string) => Response;
+}
+
 // Europe PMC answering from the fixtures. A paper with no fixture fails as
-// a server error does; `search` may be replaced to fail the search.
-export function fakeEuropePmc(
-  options: { search?: (cursor: string) => Response } = {},
-) {
+// a server error does; either search may be replaced to fail it.
+export function fakeEuropePmc(options: FakeSearches = {}) {
   const requests: URL[] = [];
   const instant: Clock = { now: () => 0, sleep: () => Promise.resolve() };
   const fetch = (url: URL) => {
@@ -127,6 +132,10 @@ export function fakeEuropePmc(
       }
       // Gold set A's sampling query: papers already linked to the funder.
       if (isGoldSearch(url)) {
+        if (options.goldSearch) {
+          const cursor = url.searchParams.get("cursorMark") ?? "*";
+          return Promise.resolve(options.goldSearch(cursor));
+        }
         return Promise.resolve(
           reply(
             JSON.stringify({
@@ -153,9 +162,7 @@ export function fakeEuropePmc(
   return { client: europePmc({ fetch, clock: instant }), requests };
 }
 
-export function fakeDeps(
-  options: { search?: (cursor: string) => Response } = {},
-) {
+export function fakeDeps(options: FakeSearches = {}) {
   const table = memoryTable();
   const text = new Map<string, unknown>();
   // Written once, as the bucket's policy makes every write under eval/.

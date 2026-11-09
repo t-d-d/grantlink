@@ -43,7 +43,7 @@ export function gate(
 // release's report" step finds it.
 export const noLive = z.enum([
   "no-deploy",
-  "history-unread",
+  "page-unread",
   "unknown-commit",
   "predates-eval",
   "fingerprint-failed",
@@ -53,9 +53,9 @@ export type NoLive = z.infer<typeof noLive>;
 
 const NO_LIVE: Record<NoLive, string> = {
   "no-deploy":
-    "No deploy of main was found in deploy.yml's recent runs, so there is nothing to compare with.",
-  "history-unread":
-    "GitHub's deploy history could not be read, so the live release is not known and there is nothing to compare with.",
+    "No deploy of main has run yet, so there is nothing to compare with.",
+  "page-unread":
+    "The release record on the live page could not be read, so the live release is not known and there is nothing to compare with.",
   "unknown-commit":
     "The live release's commit is not in this repository's history, so there is nothing to compare with.",
   "predates-eval":
