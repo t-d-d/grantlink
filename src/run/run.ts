@@ -3,6 +3,7 @@ import {
   type DurableContext,
   type RetryDecision,
 } from "@aws/durable-execution-sdk-js";
+import { EuropePmcError } from "../europepmc/client.ts";
 import {
   markFailed,
   publish,
@@ -23,13 +24,23 @@ import { batches } from "../shared/batches.ts";
 // finished batch whole.
 export const BATCH = 50;
 
-// Europe PMC's client already paces and backs off within one try. A step
-// that still fails waits longer, up to five minutes, before the next.
-const europePmcRetry = createRetryStrategy({
-  maxAttempts: 3,
-  initialDelay: { seconds: 30 },
-  maxDelay: { minutes: 5 },
-});
+// Europe PMC's client already paces and backs off within one try, waiting
+// at most 16 seconds between its own tries. A step that still fails waits
+// longer before the next: 30 seconds, then a minute, or as long as Europe
+// PMC asked if that is longer. There is no jitter, so no step retry comes
+// sooner than the client's own last wait (docs/constraints/europe-pmc.md).
+const STEP_TRIES = 3;
+const FIRST_STEP_WAIT_SECONDS = 30;
+
+function europePmcRetry(error: Error, attempt: number): RetryDecision {
+  if (attempt >= STEP_TRIES) return { shouldRetry: false };
+  const backoff = FIRST_STEP_WAIT_SECONDS * 2 ** (attempt - 1);
+  const asked = error instanceof EuropePmcError ? error.waitSeconds : undefined;
+  return {
+    shouldRetry: true,
+    delay: { seconds: Math.max(backoff, asked ?? 0) },
+  };
+}
 
 // Only Europe PMC's own refusals and failures are worth asking again in
 // this run, after the longer wait. A paper it has no full text for (a 4xx

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   europePmc,
+  EuropePmcError,
   HOSTS,
   INTERVAL_MS,
   searchQuery,
@@ -94,9 +95,12 @@ describe("fitness: requests back off (europe-pmc.md)", () => {
       () =>
         new Response("", { status: 429, headers: { "Retry-After": "3600" } }),
     );
-    await expect(client.fullText("PMC1")).rejects.toThrow(
-      /asked to wait 3600s/u,
-    );
+    const error = await client.fullText("PMC1").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(EuropePmcError);
+    expect(error).toMatchObject({
+      message: expect.stringMatching(/asked to wait 3600s/u) as unknown,
+      waitSeconds: 3600,
+    });
     expect(requests).toHaveLength(1);
   });
 

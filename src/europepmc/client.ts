@@ -61,14 +61,23 @@ export interface EuropePmc {
   fullText(pmcid: string): Promise<string>;
 }
 
-// Europe PMC refused or failed the request, and it is not worth retrying.
+// Europe PMC refused or failed the request, and this client will not try
+// again. `waitSeconds` is how long Europe PMC asked callers to wait, when
+// that was longer than the client waits within one try: the run's step
+// waits at least that long before it asks again.
 export class EuropePmcError extends Error {
   readonly status: number | undefined;
+  readonly waitSeconds: number | undefined;
 
-  constructor(message: string, status: number | undefined) {
+  constructor(
+    message: string,
+    status: number | undefined,
+    waitSeconds?: number,
+  ) {
     super(message);
     this.name = "EuropePmcError";
     this.status = status;
+    this.waitSeconds = waitSeconds;
   }
 }
 
@@ -174,9 +183,11 @@ export function europePmc(
       // longer after each try, and keep the slower pace for a while.
       const asked = response && retryAfter(response, clock);
       if (asked !== undefined && asked > MAX_WAIT_MS) {
+        const seconds = Math.ceil(asked / 1_000);
         throw new EuropePmcError(
-          `${failure}, asked to wait ${String(Math.ceil(asked / 1_000))}s`,
+          `${failure}, asked to wait ${String(seconds)}s`,
           response?.status,
+          seconds,
         );
       }
       const backoff =
