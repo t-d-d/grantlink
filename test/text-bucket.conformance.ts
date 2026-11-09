@@ -6,6 +6,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { BucketPolicy, grantsInPolicy } from "./bucket-policy.ts";
 
 // Reads the deployed funding text bucket, since a setting changed in the
 // console does not show in the template (storage.md). TEXT_BUCKET is the
@@ -15,6 +16,13 @@ const { TEXT_BUCKET } = z
   .object({ TEXT_BUCKET: z.string().regex(/^grantlink-text-\d{12}$/u) })
   .parse(process.env);
 const s3 = new S3Client({ region: "eu-west-2" });
+
+async function readPolicy(): Promise<string> {
+  const reply = await s3.send(
+    new GetBucketPolicyCommand({ Bucket: TEXT_BUCKET }),
+  );
+  return reply.Policy ?? "{}";
+}
 
 describe("fitness: the bucket stays private (storage.md)", () => {
   it("blocks all public access", async () => {
@@ -42,16 +50,17 @@ describe("fitness: the bucket stays private (storage.md)", () => {
       expect.arrayContaining([expect.stringMatching(/^(?:AES256|aws:kms)$/u)]),
     );
   });
+
+  // The template's policy only denies, and a grant added outside
+  // CloudFormation shows in no other test (#67).
+  it("has a policy that only denies, so it grants no one its objects", async () => {
+    expect(grantsInPolicy(await readPolicy())).toEqual([]);
+  });
 });
 
 describe("fitness: cache entries never change (evals.md)", () => {
   it("refuses any write under eval/ or eval-reports/ that could replace an object", async () => {
-    const reply = await s3.send(
-      new GetBucketPolicyCommand({ Bucket: TEXT_BUCKET }),
-    );
-    const policy = z
-      .object({ Statement: z.array(z.record(z.string(), z.unknown())) })
-      .parse(JSON.parse(reply.Policy ?? "{}"));
+    const policy = BucketPolicy.parse(JSON.parse(await readPolicy()));
     const writeOnce = policy.Statement.find(
       (statement) => statement.Sid === "WriteOnceUnderEval",
     );
