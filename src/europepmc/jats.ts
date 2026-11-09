@@ -37,12 +37,27 @@ function plain(xml: string): string {
     .trim();
 }
 
+// Drops comments and turns each CDATA section into escaped text, so that a
+// tag written inside either is not read as markup.
+function markup(xml: string): string {
+  return xml
+    .replace(/<!--[\s\S]*?-->/gu, "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gu, (_whole, text: string) =>
+      text
+        .replace(/&/gu, "&amp;")
+        .replace(/</gu, "&lt;")
+        .replace(/>/gu, "&gt;"),
+    );
+}
+
 // Every outermost element with this name, as its inner XML. JATS nests some
 // of them, such as a paragraph in a list item in a paragraph, so each one
 // runs to the closing tag that balances its opening tag, and the elements
-// inside it are read as part of it.
+// inside it are read as part of it. One whose closing tag is missing runs
+// only to the next closing tag of its name, and one with none after it is
+// dropped, so a broken element never takes in the rest of the paper.
 function elements(xml: string, name: string, attributes = ""): string[] {
-  const tags = new RegExp(`<(/?)${name}\\b([^>]*)>`, "gu");
+  const tags = new RegExp(`<(/?)${name}(?=[\\s/>])([^>]*)>`, "gu");
   const wanted = new RegExp(attributes, "u");
   const found: string[] = [];
   let depth = 0;
@@ -59,6 +74,16 @@ function elements(xml: string, name: string, attributes = ""): string[] {
     } else if (wanted.test(rest)) {
       depth = 1;
       start = tag.index + whole.length;
+    }
+  }
+  if (depth > 0) {
+    const close = xml.indexOf(`</${name}>`, start);
+    if (close !== -1) {
+      found.push(xml.slice(start, close));
+      return [
+        ...found,
+        ...elements(xml.slice(close + name.length + 3), name, attributes),
+      ];
     }
   }
   return found;
@@ -89,7 +114,8 @@ function fundingBodySections(xml: string): string[] {
   );
 }
 
-export function fundingSections(xml: string): FundingSections {
+export function fundingSections(paper: string): FundingSections {
+  const xml = markup(paper);
   const groups = elements(xml, "funding-group");
   const statements = groups.flatMap((group) =>
     elements(group, "funding-statement").map(plain),

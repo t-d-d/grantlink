@@ -93,6 +93,38 @@ describe("cutting a paper to its funding sections", () => {
     ]);
   });
 
+  it("reads past a paragraph tag in a comment or a CDATA section", () => {
+    expect(
+      fundingSections(
+        "<article><back><ack><p>Grant A1<!-- was <p> -->.</p><p>Grant <![CDATA[<p>]]>B2.</p><p>Grant A2.</p></ack></back></article>",
+      ).text,
+    ).toEqual(["Grant A1.", "Grant <p>B2.", "Grant A2."]);
+  });
+
+  it("keeps a paragraph whose closing tag is missing", () => {
+    expect(
+      fundingSections(
+        "<article><back><ack><p>Grant A1.</p><p>Grant B2 <p>and A2.</p></ack></back></article>",
+      ).text,
+    ).toEqual(["Grant A1.", "Grant B2 and A2."]);
+  });
+
+  it("keeps no more of a paper after an unclosed element than the next closing tag", () => {
+    const sections = fundingSections(
+      "<article><back><ack><p>Grant A1.</p><ref-list><ref>Refauthor 2020.</ref></ref-list></back><fn-group><fn><p>Note.</p></fn></fn-group></article>",
+    );
+    expect(sections.text).toEqual([]);
+    expect(JSON.stringify(sections)).not.toContain("Refauthor");
+  });
+
+  it("does not read a footnote group as a footnote", () => {
+    expect(
+      fundingSections(
+        '<article><back><fn-group fn-type="funding"><fn><p>Grant A1.</p></fn><p>Notes.</p></fn-group></back></article>',
+      ).text,
+    ).toEqual([]);
+  });
+
   it("leaves a character reference past Unicode's range as written", () => {
     expect(
       fundingSections(
