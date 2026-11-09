@@ -66,6 +66,9 @@ describe("the page's bucket", () => {
 
 // An S3 held in memory that refuses a write over an existing key when the
 // write asks it to, as the bucket's policy makes every write under eval/.
+// The run's role may list only under eval/, and S3 does not count a listing
+// limited to a prefix when it reads a missing key, so that read is refused
+// as AccessDenied, not NoSuchKey.
 function memoryS3() {
   const objects = new Map<string, string>();
   const fail = (name: string, status: number) =>
@@ -77,6 +80,7 @@ function memoryS3() {
     send: (command: { constructor: { name: string }; input: object }) => {
       const input = command.input as {
         Key: string;
+        Prefix?: string;
         Body?: string;
         IfNoneMatch?: string;
       };
@@ -90,10 +94,19 @@ function memoryS3() {
         case "GetObjectCommand": {
           const body = objects.get(input.Key);
           if (body === undefined) {
-            return Promise.reject(fail("NoSuchKey", 404));
+            return Promise.reject(fail("AccessDenied", 403));
           }
           return Promise.resolve({
             Body: { transformToString: () => Promise.resolve(body) },
+          });
+        }
+        case "ListObjectsV2Command": {
+          const keys = [...objects.keys()].filter((key) =>
+            key.startsWith(input.Prefix ?? ""),
+          );
+          return Promise.resolve({
+            KeyCount: keys.length,
+            Contents: keys.map((Key) => ({ Key })),
           });
         }
         default:

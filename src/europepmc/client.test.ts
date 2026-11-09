@@ -275,6 +275,28 @@ describe("sampling gold set A", () => {
     expect(url?.searchParams.get("resultType")).toBe("core");
   });
 
+  it("reads each grant id once, however often Europe PMC lists it", async () => {
+    const { client } = harness(() =>
+      Response.json({
+        hitCount: 1,
+        resultList: {
+          result: [
+            {
+              pmcid: "PMC11",
+              grantsList: {
+                grant: [
+                  { grantId: "A56789", agency: "Cancer Research UK" },
+                  { grantId: " A56789 ", agency: "Cancer Research UK" },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    );
+    expect(await client.grants("PMC11")).toEqual(["A56789"]);
+  });
+
   it("reads no grants for a paper Europe PMC links to none", async () => {
     const { client } = harness(() =>
       Response.json({

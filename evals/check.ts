@@ -47,7 +47,7 @@ export function comment(ci: Report, live: Report | null): string {
   const liveLine =
     live === null
       ? "No release is live yet, so there is nothing to compare with."
-      : `The live release's scores come from [its report's run](${live.runUrl}), for commit ${live.commit.slice(0, 7)}.`;
+      : `The live release's scores come from [its report's run](${live.runUrl}).`;
   return [
     MARKER,
     `### Eval: ${mine.releasable ? "go" : "no-go"}`,

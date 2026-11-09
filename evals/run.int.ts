@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { evaluate, loadSnapshot } from "./run.ts";
+import { evaluate, goldToScore, loadSnapshot } from "./run.ts";
 
 // The runner against a snapshot written to a directory, laid out as the
 // bucket is.
@@ -91,5 +91,26 @@ describe("the eval runner", () => {
     expect(readFileSync(join(dir, "eval/s1/manifest.json"), "utf8")).toContain(
       "PMC1",
     );
+  });
+});
+
+describe("which gold papers are scored", () => {
+  const a = [{ pmcid: "PMC1", grants: ["A11111"] }];
+  const b = [{ pmcid: "PMC2", references: [] }];
+
+  it("scores both gold sets against a pinned snapshot", () => {
+    expect(goldToScore({ manifestSha256: "a".repeat(64) }, a, b)).toEqual({
+      goldA: a,
+      goldB: b,
+    });
+  });
+
+  it("scores nothing while a new snapshot waits to be taken and pinned", () => {
+    // A labels pull request names a new snapshot with no pin yet. Its rows
+    // wait rather than block, so it can merge, deploy and be taken.
+    expect(goldToScore({ manifestSha256: null }, a, b)).toEqual({
+      goldA: [],
+      goldB: [],
+    });
   });
 });

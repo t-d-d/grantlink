@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { report, verdict } from "../../evals/report.ts";
+import { HEX, report, verdict } from "../../evals/report.ts";
 
 // The release record (docs/constraints/deploy-gates.md): which commit is
 // live, the eval's fingerprint for it, the report that covers it with the
@@ -13,9 +13,6 @@ import { report, verdict } from "../../evals/report.ts";
 //
 // reads COMMIT, FINGERPRINT and DEPLOY_RUN_URL, and refuses a report for
 // another fingerprint or below a gating floor.
-
-const HEX = (length: number) =>
-  z.string().regex(new RegExp(`^[0-9a-f]{${String(length)}}$`, "u"));
 
 export const release = z
   .object({

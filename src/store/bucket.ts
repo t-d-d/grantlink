@@ -1,8 +1,10 @@
 import {
   GetObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
+import { z } from "zod";
 import type { FundingSections } from "../extract/rules.ts";
 import { isPmcid } from "../shared/pmcid.ts";
 
@@ -26,6 +28,10 @@ export interface TextBucket {
 }
 
 const SNAPSHOT_ID = /^s\d+$/u;
+
+const listReply = z.object({
+  Contents: z.array(z.object({ Key: z.string().optional() })).optional(),
+});
 
 const errorName = (error: unknown): string =>
   error instanceof Error ? error.name : "";
@@ -60,15 +66,18 @@ export function textBucket(
       );
     },
 
+    // Lists the manifest's key as a prefix. The run's role may list only
+    // under eval/, and S3 refuses a read of a missing key as AccessDenied
+    // unless the role may list the whole bucket.
     async hasSnapshot(id) {
       if (!SNAPSHOT_ID.test(id)) throw new Error("not a snapshot id");
-      try {
-        await read(`eval/${id}/manifest.json`);
-        return true;
-      } catch (error) {
-        if (errorName(error) === "NoSuchKey") return false;
-        throw error;
-      }
+      const key = `eval/${id}/manifest.json`;
+      const reply = listReply.parse(
+        await client.send(
+          new ListObjectsV2Command({ Bucket: name, Prefix: key, MaxKeys: 1 }),
+        ),
+      );
+      return (reply.Contents ?? []).some((object) => object.Key === key);
     },
 
     async putSnapshotPaper(pmcid, body) {

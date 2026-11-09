@@ -11,7 +11,7 @@ import snapshotFile from "./snapshot.json" with { type: "json" };
 const SHA256 = z.string().regex(/^[0-9a-f]{64}$/u);
 // A grant id as Europe PMC holds it, or a label: the characters a reference
 // is made of, and no space, so no sentence or name fits.
-const GRANT = z
+export const GRANT = z
   .string()
   .min(1)
   .max(40)

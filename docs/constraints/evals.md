@@ -18,7 +18,9 @@ text, so it must not get broad AWS access or see the key.
   `evals/gold-a.json`. Once the snapshot exists, `node evals/pin.ts` pins
   the manifest's hash in `evals/snapshot.json` and copies gold set A's ids
   and grant ids into `evals/gold-a.json`. Gold set B's labels live in
-  `evals/gold-b.json`. A new snapshot takes a new id.
+  `evals/gold-b.json`. A new gold paper needs a new snapshot id, which
+  starts unpinned. An unpinned snapshot scores nothing, so its rows wait
+  and do not block until it is taken and pinned.
 - The repo holds paper ids, grant ids and labels only, never text.
 - The fingerprint is the SHA-256 of the git hashes of `src/extract/`,
   `src/shared/`, `evals/`, `.github/workflows/eval.yml` and
@@ -62,7 +64,9 @@ text, so it must not get broad AWS access or see the key.
 
 The first report for a fingerprint stands, so the eval never measures the
 model's run-to-run variation. The canary in each weekly run watches for
-drift instead. Whether a new input that can change a score sits inside the
+drift instead. Unpinning the snapshot makes every gold row wait, so a pull
+request that sets `manifestSha256` to null without a new snapshot id is for
+review. Whether a new input that can change a score sits inside the
 fingerprinted paths is for review: the lint rule sees imports, not files
 read at run time.
 

@@ -90,6 +90,15 @@ describe("the gate and the comment", () => {
     expect(comment?.run).toContain("-X PATCH");
   });
 
+  it("compares with nothing, and does not fail, when the live release has no fingerprint", () => {
+    // A live commit from before the eval, or before an input was added,
+    // has no git hash for every input, so its fingerprint cannot be read.
+    const live = named("Read the live release's report")?.run ?? "";
+    expect(live).toMatch(
+      /if ! \w+="\$\(node evals\/fingerprint\.ts "\$live"[^)]*\)"; then[\s\S]*?exit 0/u,
+    );
+  });
+
   it("masks the account id before any line that could print it", () => {
     const assume = named("Assume the eval role")?.run ?? "";
     const mask = assume.search(/::add-mask::\$account\b/u);

@@ -14,7 +14,7 @@ import {
 // paper ids, never text, so it may be printed and published.
 
 const ids = FLOORS.map((floor) => floor.id);
-const HEX = (length: number) =>
+export const HEX = (length: number) =>
   z.string().regex(new RegExp(`^[0-9a-f]{${String(length)}}$`, "u"));
 
 const row = z

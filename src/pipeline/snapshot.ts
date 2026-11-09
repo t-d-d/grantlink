@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
 import { fundingSections } from "../europepmc/jats.ts";
-import { goldA, manifest, pinned, type Manifest } from "../../evals/gold.ts";
+import {
+  GRANT,
+  goldA,
+  manifest,
+  pinned,
+  type Manifest,
+} from "../../evals/gold.ts";
 import { logger } from "../log.ts";
 import type { Deps } from "./steps.ts";
 
@@ -65,17 +71,28 @@ export type Taken = { kept: true; entry: Entry } | { kept: false };
 
 // Reads one gold paper afresh into cache/, and writes its funding sections
 // under eval/ once. A gold set A paper Europe PMC links to none of the
-// funder's grants, or one with no funding text, is passed over.
+// funder's grants, or one with no funding text, is passed over. Its grants
+// are read first, so a paper with none costs no full text. A grant id the
+// manifest cannot hold, such as one with a space, is left out, or the
+// manifest would refuse the whole snapshot.
 export async function snapshotPaper(
   deps: Deps,
   pmcid: string,
   set: "A" | "B",
 ): Promise<Taken> {
+  const grants =
+    set === "A"
+      ? (await deps.europePmc.grants(pmcid)).filter(
+          (grant) => GRANT.safeParse(grant).success,
+        )
+      : [];
+  if (set === "A" && grants.length === 0) {
+    logger.info("snapshot-passed-over", { pmcid });
+    return { kept: false };
+  }
   const sections = fundingSections(await deps.europePmc.fullText(pmcid));
   await deps.text.putFundingText(pmcid, sections);
-  const grants = set === "A" ? await deps.europePmc.grants(pmcid) : [];
-  const empty = sections.text.length === 0 && sections.awards.length === 0;
-  if (empty || (set === "A" && grants.length === 0)) {
+  if (sections.text.length === 0 && sections.awards.length === 0) {
     logger.info("snapshot-passed-over", { pmcid });
     return { kept: false };
   }

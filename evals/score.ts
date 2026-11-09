@@ -75,7 +75,9 @@ export function score({ texts, goldA, goldB }: Input): Scores {
   const found = (pmcid: string): string[] => {
     const sections = texts.get(pmcid);
     if (sections === undefined) {
-      throw new Error(`no text in the snapshot for ${pmcid}`);
+      throw new Error(
+        `no text in the snapshot for ${pmcid}: a new gold paper needs a new snapshot id`,
+      );
     }
     return findReferences(sections).map((reference) => reference.normalised);
   };

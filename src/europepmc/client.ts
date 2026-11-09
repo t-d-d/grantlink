@@ -267,7 +267,9 @@ export function europePmc(
       url.searchParams.set("resultType", "core");
       url.searchParams.set("format", "json");
       const reply = grantsReply.parse(await (await request(url)).json());
-      return reply.resultList.result.flatMap((result) =>
+      // Europe PMC can list one grant more than once, as for each holder.
+      // Each counts once, or it would weigh twice in gold set A's recall.
+      const ids = reply.resultList.result.flatMap((result) =>
         (result.grantsList?.grant ?? []).flatMap((grant) =>
           grant.agency === funder.europePmcAgency &&
           grant.grantId !== undefined &&
@@ -276,6 +278,7 @@ export function europePmc(
             : [],
         ),
       );
+      return [...new Set(ids)];
     },
   };
 }

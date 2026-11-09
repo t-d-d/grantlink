@@ -82,6 +82,21 @@ export function evaluate(input: {
   };
 }
 
+// The gold papers to score. A snapshot not yet pinned scores nothing: a
+// pull request that adds labels names a new snapshot with no pin, its rows
+// wait rather than block, and once it deploys a run takes the snapshot and
+// a later pull request pins it. Unpinning shows in review, in
+// evals/snapshot.json.
+export function goldToScore(
+  pin: { manifestSha256: string | null },
+  a: readonly GoldA[],
+  b: readonly GoldB[],
+): { goldA: readonly GoldA[]; goldB: readonly GoldB[] } {
+  return pin.manifestSha256 === null
+    ? { goldA: [], goldB: [] }
+    : { goldA: a, goldB: b };
+}
+
 const ciEnv = z.object({
   FINGERPRINT: z.string().min(1),
   COMMIT: z.string().min(1),
@@ -89,14 +104,10 @@ const ciEnv = z.object({
 });
 
 function main(dir: string, out: string | undefined): void {
-  if (pinned.manifestSha256 === null && goldA.papers.length > 0) {
-    throw new Error("gold set A lists papers, but no snapshot is pinned");
-  }
   const texts = loadSnapshot(dir, pinned);
   const result = evaluate({
     texts,
-    goldA: goldA.papers,
-    goldB: goldB.papers,
+    ...goldToScore(pinned, goldA.papers, goldB.papers),
   });
   const meta = out === undefined ? undefined : ciEnv.parse(process.env);
   const report = makeReport({

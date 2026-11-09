@@ -171,7 +171,13 @@ jobs:
             echo "No live release to compare with."
             exit 0
           fi
-          key="eval-reports/$(node evals/fingerprint.ts "$live").json"
+          # A live commit from before the eval, or before one of its inputs
+          # existed, has no fingerprint, and so no report to compare with.
+          if ! fingerprint="$(node evals/fingerprint.ts "$live" 2>/dev/null)"; then
+            echo "The live release predates the eval's inputs."
+            exit 0
+          fi
+          key="eval-reports/$fingerprint.json"
           count="$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$key" \
             --query KeyCount --output text)"
           if [ "$count" = "1" ]; then
