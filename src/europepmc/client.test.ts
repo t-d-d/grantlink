@@ -168,18 +168,15 @@ describe("fitness: only Europe PMC's public web services (public-data.md)", () =
   it.each([
     ["negates the open-access terms", "NOT OPEN_ACCESS:y AND IN_EPMC:y"],
     ["ORs around them", "X OR (OPEN_ACCESS:y AND IN_EPMC:y)"],
-  ])(
-    "keeps a query that %s to open-access papers",
-    async (_, selection) => {
-      const { client, requests } = harness(() =>
-        Response.json({ hitCount: 0, resultList: { result: [] } }),
-      );
-      await client.search("*", selection);
-      expect(requests[0]?.url.searchParams.get("query")).toBe(
-        `(${selection}) AND OPEN_ACCESS:y AND IN_EPMC:y`,
-      );
-    },
-  );
+  ])("keeps a query that %s to open-access papers", async (_, selection) => {
+    const { client, requests } = harness(() =>
+      Response.json({ hitCount: 0, resultList: { result: [] } }),
+    );
+    await client.search("*", selection);
+    expect(requests[0]?.url.searchParams.get("query")).toBe(
+      `(${selection}) AND OPEN_ACCESS:y AND IN_EPMC:y`,
+    );
+  });
 
   it.each([
     ["closes the brackets early", "X) OR (Y"],
@@ -190,9 +187,7 @@ describe("fitness: only Europe PMC's public web services (public-data.md)", () =
     // The open-access terms are there, so only the brackets can refuse it.
     const selection = `${part} AND OPEN_ACCESS:y AND IN_EPMC:y`;
     const { client, requests } = harness(() => ok());
-    await expect(client.search("*", selection)).rejects.toThrow(
-      /open-access/u,
-    );
+    await expect(client.search("*", selection)).rejects.toThrow(/open-access/u);
     expect(requests).toHaveLength(0);
   });
 
