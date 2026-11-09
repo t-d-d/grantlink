@@ -1,0 +1,142 @@
+# Deploys the app stack and the page on every push to main, and only then.
+# Nobody deploys by hand (#8). The eval gate joins this workflow in #20;
+# until then a merge to main deploys once the gate is green.
+#
+# There is no rollback. A failed deploy is fixed forward, and CloudFormation
+# rolls a failed stack update back by itself.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# One deploy at a time, and none cancelled part way.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  # Governor's deploy messages label every ticket a deploy ships.
+  TICKET_LABEL_PATHS: all
+
+jobs:
+  gate:
+    uses: ./.github/workflows/gate.yml
+
+  # A workflow can read an environment's secret only in a job that names
+  # the environment, so this job reads whether the deploy role is set. Until
+  # the owner runs the bootstrap, a merge runs the gate and deploys nothing.
+  role:
+    name: deploy role
+    runs-on: ubuntu-24.04
+    environment: prod
+    outputs:
+      set: ${{ steps.read.outputs.set }}
+    steps:
+      - id: read
+        env:
+          ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          if [ -n "$ROLE" ]; then
+            echo "set=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "set=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::AWS_DEPLOY_ROLE_ARN is not set in prod, so nothing deploys. The README says how to set it."
+          fi
+
+  deploy:
+    name: "deploy · deployed: grantlink"
+    needs: [gate, role]
+    if: needs.role.outputs.set == 'true'
+    runs-on: ubuntu-24.04
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: eu-west-2
+      AWS_DEFAULT_REGION: eu-west-2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      # Assumes the deploy role through GitHub's OIDC token, with the AWS
+      # CLI the runner ships, so no outside action holds the credentials.
+      # The account id, the token and the credentials are masked before
+      # anything else runs, so no later line prints them.
+      - name: Assume the deploy role
+        env:
+          ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          token="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)"
+          echo "::add-mask::$token"
+          creds="$(aws sts assume-role-with-web-identity \
+            --role-arn "$ROLE" \
+            --role-session-name "grantlink-deploy-$GITHUB_RUN_ID" \
+            --web-identity-token "$token" \
+            --duration-seconds 3600 \
+            --output json)"
+          account="$(jq -r .AssumedRoleUser.Arn <<< "$creds" | cut -d: -f5)"
+          key="$(jq -r .Credentials.AccessKeyId <<< "$creds")"
+          secret="$(jq -r .Credentials.SecretAccessKey <<< "$creds")"
+          session="$(jq -r .Credentials.SessionToken <<< "$creds")"
+          echo "::add-mask::$account"
+          echo "::add-mask::$key"
+          echo "::add-mask::$secret"
+          echo "::add-mask::$session"
+          {
+            echo "AWS_ACCESS_KEY_ID=$key"
+            echo "AWS_SECRET_ACCESS_KEY=$secret"
+            echo "AWS_SESSION_TOKEN=$session"
+          } >> "$GITHUB_ENV"
+
+      # The stack is grantlink-prod in eu-west-2, as serverless.yml names it.
+      # CloudFront serves at grantlink.uk once the certificate and the zone
+      # are set in prod, and at its own address until then.
+      - name: Deploy the app stack
+        env:
+          AWS_DEPLOY_EXECUTION_ROLE_ARN: ${{ secrets.AWS_DEPLOY_EXECUTION_ROLE_ARN }}
+          CERTIFICATE_ARN: ${{ secrets.CERTIFICATE_ARN }}
+          HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
+        run: npx sls deploy
+
+      - name: Read the stack's outputs
+        id: stack
+        run: |
+          set -euo pipefail
+          output() {
+            aws cloudformation describe-stacks --stack-name grantlink-prod \
+              --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+          }
+          {
+            echo "bucket=$(output SiteBucketName)"
+            echo "distribution=$(output DistributionId)"
+            echo "url=$(output PageUrl)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish the page
+        env:
+          BUCKET: ${{ steps.stack.outputs.bucket }}
+          DISTRIBUTION: ${{ steps.stack.outputs.distribution }}
+        run: |
+          set -euo pipefail
+          aws s3 sync site/ "s3://$BUCKET/" --delete --cache-control "public, max-age=300"
+          id="$(aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" \
+            --paths "/*" --query Invalidation.Id --output text)"
+          aws cloudfront wait invalidation-completed --distribution-id "$DISTRIBUTION" --id "$id"
+
+      # The live tier reads the page as a visitor would. A failure here
+      # turns the deploy red.
+      - name: Read the live page
+        env:
+          PAGE_URL: ${{ steps.stack.outputs.url }}
+        run: npm run test:live

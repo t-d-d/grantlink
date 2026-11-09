@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>grantlink</title>
+    <meta
+      name="description"
+      content="grantlink finds papers that say Cancer Research UK funded them but that Europe PMC links to no grant, and reads the grant reference from their funding text."
+    />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <p class="name">grantlink</p>
+    </header>
+
+    <main>
+      <h1>Grant links that papers state but Europe PMC does not hold</h1>
+
+      <p class="lede">
+        Europe PMC links a paper to a grant only when the grant number is in the
+        paper's structured metadata. Many papers that thank Cancer Research UK
+        for funding give the grant reference only in their text, so Europe PMC
+        links them to no grant.
+      </p>
+
+      <p>
+        grantlink reads the funding text of those papers, finds the grant
+        reference, and checks it against the links Europe PMC already holds. It
+        tries rules first, then a model. It accepts only what clears thresholds
+        set by its evaluation, and sends everything else to a person for review.
+      </p>
+
+      <p>
+        Beside the links, this page will show how the service is run: the
+        go/no-go criteria set before the build, the evaluation that gates every
+        release, and the check behind every limit it works within.
+      </p>
+
+      <section class="card" aria-labelledby="status">
+        <h2 id="status">Not yet run</h2>
+        <p>
+          The first run over the back catalogue has not happened yet. The links
+          it finds, and how it is run, will appear here once it has.
+        </p>
+      </section>
+
+      <p>
+        The links are proposed by software. Each will show its confidence and
+        whether a person has accepted it, and none comes with a warranty.
+      </p>
+    </main>
+
+    <footer>
+      <p>
+        grantlink is an independent demonstration on public data from Europe
+        PMC. It is not affiliated with or endorsed by Cancer Research UK.
+      </p>
+      <p>
+        Data from <a href="https://europepmc.org/">Europe PMC</a>, used under
+        the
+        <a href="https://www.ebi.ac.uk/about/terms-of-use/"
+          >EMBL-EBI terms of use</a
+        >.
+      </p>
+      <p>
+        For corrections or removals, write to
+        <a href="mailto:thomas.david.dickinson@gmail.com"
+          >thomas.david.dickinson@gmail.com</a
+        >.
+      </p>
+      <p>
+        <a href="https://github.com/t-d-d/grantlink">The code</a> is under the
+        Apache License 2.0.
+      </p>
+    </footer>
+  </body>
+</html>
