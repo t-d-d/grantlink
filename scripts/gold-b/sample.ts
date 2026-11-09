@@ -46,9 +46,9 @@ const client = europePmc();
 // paper it is reading, by id only.
 const api: EuropePmc = {
   ...client,
-  search: (cursor, selection) => {
+  search: (cursor, selection, pageSize) => {
     console.error(`search page ${cursor.slice(0, 12)}`);
-    return client.search(cursor, selection);
+    return client.search(cursor, selection, pageSize);
   },
   fullText: (pmcid) => {
     console.error(`read ${pmcid}`);

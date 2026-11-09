@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { EuropePmc, SearchPage } from "../../src/europepmc/client.ts";
+import {
+  LARGEST_PAGE_SIZE,
+  type EuropePmc,
+  type SearchPage,
+} from "../../src/europepmc/client.ts";
 import {
   allocate,
   draw,
@@ -104,14 +108,17 @@ function fake(
 ) {
   const fetched: string[] = [];
   const searched: string[] = [];
+  const sizes: (number | undefined)[] = [];
   const api: EuropePmc = {
-    search(_cursor, selection = ""): Promise<SearchPage> {
+    search(_cursor, selection = "", pageSize?: number): Promise<SearchPage> {
       searched.push(selection);
+      sizes.push(pageSize);
       const found = hits[selection];
       if (found === undefined) throw new Error(`unexpected query ${selection}`);
       return Promise.resolve({
         hitCount: found.length,
         nextCursor: null,
+        skipped: 0,
         papers: found.map(({ pmcid, year }) => ({
           pmcid,
           title: "",
@@ -128,7 +135,7 @@ function fake(
     },
     grants: () => Promise.resolve([]),
   };
-  return { api, fetched, searched };
+  return { api, fetched, searched, sizes };
 }
 
 describe("drawing the sample", () => {
@@ -205,6 +212,12 @@ describe("drawing the sample", () => {
     const { api, searched } = fake(hits, texts);
     await draw(api, repeated);
     expect(searched.filter((query) => query === base)).toHaveLength(1);
+  });
+
+  it("asks for Europe PMC's largest page, as the pace makes each page slow", async () => {
+    const { api, sizes } = fake(hits, texts);
+    await draw(api, plan);
+    expect(new Set(sizes)).toEqual(new Set([LARGEST_PAGE_SIZE]));
   });
 
   it("orders the sheet by the seed, not by how each paper was picked", async () => {

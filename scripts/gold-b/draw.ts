@@ -1,4 +1,7 @@
-import type { EuropePmc } from "../../src/europepmc/client.ts";
+import {
+  LARGEST_PAGE_SIZE,
+  type EuropePmc,
+} from "../../src/europepmc/client.ts";
 import { fundingSections } from "../../src/europepmc/jats.ts";
 import { findReferences, funder } from "../../src/extract/rules.ts";
 import { sample } from "../../src/pipeline/snapshot.ts";
@@ -139,7 +142,7 @@ async function everything(
   const found = new Map<string, string>();
   let cursor: string | null = "*";
   while (cursor !== null) {
-    const page = await api.search(cursor, query);
+    const page = await api.search(cursor, query, LARGEST_PAGE_SIZE);
     for (const paper of page.papers) {
       found.set(paper.pmcid, paper.firstPublished?.slice(0, 4) ?? "unknown");
     }
