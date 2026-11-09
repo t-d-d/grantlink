@@ -22,6 +22,15 @@ describe("finding what a page loads", () => {
     ]);
   });
 
+  it("finds a load whose attribute value is not quoted", () => {
+    const html = `<img src=https://img.example.com/c.png alt=x>
+      <link rel=stylesheet href=//fonts.example.com/css>`;
+    expect(loadsOf(html)).toEqual([
+      "https://img.example.com/c.png",
+      "//fonts.example.com/css",
+    ]);
+  });
+
   it("leaves out links a reader follows", () => {
     expect(loadsOf(`<a href="https://europepmc.org/">Europe PMC</a>`)).toEqual(
       [],
@@ -34,6 +43,12 @@ describe("finding what a page loads", () => {
       <script src="//cdn.example.com/a.js"></script>
       <img src="data:image/png;base64,AAAA">`;
     expect(foreignLoads(html, page)).toEqual(["//cdn.example.com/a.js"]);
+  });
+
+  it("counts a load it cannot read as one from another host", () => {
+    expect(foreignLoads(`<img src="http://[bad/x.png">`, page)).toEqual([
+      "http://[bad/x.png",
+    ]);
   });
 });
 

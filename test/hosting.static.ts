@@ -49,8 +49,23 @@ describe("fitness: no always-on compute (hosting.md)", () => {
     "AWS::Lambda::Version",
   ];
 
+  // The app stack is the site template plus anything serverless.yml
+  // declares inline beside it.
+  const entries: unknown[] = Array.isArray(serverless.resources)
+    ? serverless.resources
+    : [serverless.resources];
+  const inline = entries.flatMap((entry) =>
+    typeof entry === "object" && entry !== null && "Resources" in entry
+      ? Object.values(
+          (entry as { Resources: Record<string, { Type: string }> }).Resources,
+        )
+      : [],
+  );
+
   it("declares no instance, service, NAT gateway or database server", () => {
-    const types = Object.values(site.Resources).map((r) => r.Type);
+    const types = [...Object.values(site.Resources), ...inline].map(
+      (r) => r.Type,
+    );
     expect(types.filter((type) => alwaysOn.includes(type))).toEqual([]);
   });
 

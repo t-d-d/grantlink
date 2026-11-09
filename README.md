@@ -50,7 +50,7 @@ The app stack, `grantlink-prod`, is defined in [serverless.yml](serverless.yml) 
 
 [deploy.yml](.github/workflows/deploy.yml) runs on every push to main, and nothing else deploys. It runs the gate, then:
 
-1. Reads whether `AWS_DEPLOY_ROLE_ARN` is set in `prod`. Until the bootstrap above has run, it stops there and deploys nothing.
+1. Reads whether `AWS_DEPLOY_ROLE_ARN` and `AWS_DEPLOY_EXECUTION_ROLE_ARN` are set in `prod`. Until the bootstrap above has run, it stops there and deploys nothing.
 2. Assumes the deploy role through GitHub's OIDC token, and masks the account id.
 3. Deploys the app stack, then copies [site/](site/) to the bucket and clears CloudFront's cache.
 4. Runs the live tier against the page. A failure turns the deploy red.

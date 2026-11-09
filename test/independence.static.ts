@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONTACT, CREDIT, NOTICE, textOf } from "./page.ts";
+import { CONTACT, CREDIT, NOTICE, TERMS, textOf } from "./page.ts";
 import { readRepoFile, repoFiles } from "./repo.ts";
 
 // Cancer Research UK is named only to say whose grants grantlink reads, and
@@ -19,6 +19,7 @@ describe("fitness: every view carries the independence notice (independence.md)"
       const html = readRepoFile(path);
       expect(textOf(html)).toMatch(NOTICE);
       expect(html).toMatch(CREDIT);
+      expect(html).toMatch(TERMS);
       expect(html).toContain(`mailto:${CONTACT}`);
     },
   );

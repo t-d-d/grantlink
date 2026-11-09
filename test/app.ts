@@ -27,6 +27,7 @@ export const site: Template = readTemplate(SITE_TEMPLATE);
 export interface Workflow {
   on: Record<string, unknown>;
   env?: Record<string, string>;
+  concurrency?: { group: string; "cancel-in-progress"?: boolean };
   jobs: Record<string, Job>;
 }
 

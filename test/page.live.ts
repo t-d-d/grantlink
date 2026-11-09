@@ -4,6 +4,7 @@ import {
   CONTACT,
   CREDIT,
   NOTICE,
+  TERMS,
   foreignLoads,
   loadsOf,
   textOf,
@@ -33,6 +34,7 @@ describe("fitness: the page carries the notice and the credit (independence.md)"
   it("carries the independence notice, the credit and the contact", () => {
     expect(textOf(html)).toMatch(NOTICE);
     expect(html).toMatch(CREDIT);
+    expect(html).toMatch(TERMS);
     expect(html).toContain(`mailto:${CONTACT}`);
   });
 });

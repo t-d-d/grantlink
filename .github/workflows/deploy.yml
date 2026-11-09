@@ -27,8 +27,9 @@ jobs:
     uses: ./.github/workflows/gate.yml
 
   # A workflow can read an environment's secret only in a job that names
-  # the environment, so this job reads whether the deploy role is set. Until
-  # the owner runs the bootstrap, a merge runs the gate and deploys nothing.
+  # the environment, so this job reads whether both deploy roles are set.
+  # Until the owner runs the bootstrap, a merge runs the gate and deploys
+  # nothing.
   role:
     name: deploy role
     runs-on: ubuntu-24.04
@@ -39,12 +40,13 @@ jobs:
       - id: read
         env:
           ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          EXECUTION_ROLE: ${{ secrets.AWS_DEPLOY_EXECUTION_ROLE_ARN }}
         run: |
-          if [ -n "$ROLE" ]; then
+          if [ -n "$ROLE" ] && [ -n "$EXECUTION_ROLE" ]; then
             echo "set=true" >> "$GITHUB_OUTPUT"
           else
             echo "set=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::AWS_DEPLOY_ROLE_ARN is not set in prod, so nothing deploys. The README says how to set it."
+            echo "::notice::AWS_DEPLOY_ROLE_ARN or AWS_DEPLOY_EXECUTION_ROLE_ARN is not set in prod, so nothing deploys. The README says how to set them."
           fi
 
   deploy:
@@ -113,9 +115,10 @@ jobs:
         id: stack
         run: |
           set -euo pipefail
+          outputs="$(aws cloudformation describe-stacks --stack-name grantlink-prod \
+            --query "Stacks[0].Outputs" --output json)"
           output() {
-            aws cloudformation describe-stacks --stack-name grantlink-prod \
-              --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+            jq -er --arg key "$1" '.[] | select(.OutputKey == $key) | .OutputValue' <<< "$outputs"
           }
           {
             echo "bucket=$(output SiteBucketName)"

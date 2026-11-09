@@ -27,13 +27,13 @@ describe("the deploy workflow", () => {
     expect(jobs.gate?.uses).toBe("./.github/workflows/gate.yml");
   });
 
-  it("reads whether the deploy role's secret is set, in prod", () => {
+  it("reads whether both deploy roles' secrets are set, in prod", () => {
     const role = jobs.role;
     expect(role?.environment).toBe("prod");
     expect(role?.outputs?.set).toBeDefined();
-    expect(JSON.stringify(role?.steps)).toContain(
-      "secrets.AWS_DEPLOY_ROLE_ARN",
-    );
+    const read = JSON.stringify(role?.steps);
+    expect(read).toContain("secrets.AWS_DEPLOY_ROLE_ARN");
+    expect(read).toContain("secrets.AWS_DEPLOY_EXECUTION_ROLE_ARN");
   });
 
   it("deploys only after the gate, and only once the role's secret is set", () => {
@@ -56,11 +56,10 @@ describe("the deploy workflow", () => {
       (step.run ?? "").includes("assume-role-with-web-identity"),
     );
     const assumeRun = all[assume]?.run ?? "";
-    expect(assumeRun).toMatch(/::add-mask::.*account/iu);
+    const accountMask = assumeRun.search(/::add-mask::\$account\b/u);
+    expect(accountMask).toBeGreaterThan(-1);
     // Nothing after the role is assumed runs before the mask is set.
-    expect(assumeRun.indexOf("::add-mask::")).toBeLessThan(
-      assumeRun.indexOf("GITHUB_ENV"),
-    );
+    expect(accountMask).toBeLessThan(assumeRun.indexOf("GITHUB_ENV"));
   });
 
   it("names the deploy job so governor sees each deploy", () => {
@@ -89,9 +88,10 @@ describe("the deploy workflow", () => {
   });
 
   it("runs one deploy at a time", () => {
-    expect(readRepoFile(".github/workflows/deploy.yml")).toMatch(
-      /concurrency:\n\s+group: deploy\n\s+cancel-in-progress: false/u,
-    );
+    expect(deploy.concurrency).toEqual({
+      group: "deploy",
+      "cancel-in-progress": false,
+    });
   });
 });
 
