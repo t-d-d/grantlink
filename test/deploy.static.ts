@@ -102,7 +102,7 @@ describe("governor sees each deploy", () => {
   };
 
   it("reads deploy.yml as the CI workflow, with CI messages on", () => {
-    expect(governor.workflows?.ci).toBe("deploy.yml");
+    expect(governor.workflows?.ci).toBe(".github/workflows/deploy.yml");
     expect(governor.ciMessages?.enabled).toBe(true);
   });
 });
