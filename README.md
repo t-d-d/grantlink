@@ -48,15 +48,34 @@ The deploy role trusts only the `prod` environment and the CI eval role only the
 
 The app stack, `grantlink-prod`, is defined in [serverless.yml](serverless.yml) and deployed with [osls](https://github.com/oss-serverless/osls), the open-source fork of the Serverless Framework. It runs in London (eu-west-2). It holds the page, the run and the run's stores. The page is files in a private S3 bucket behind CloudFront, served over HTTPS only, with its resources in [infra/site.cfn.yml](infra/site.cfn.yml). The results table and the private bucket for funding text are in [infra/data.cfn.yml](infra/data.cfn.yml).
 
-[deploy.yml](.github/workflows/deploy.yml) runs on every push to main, and nothing else deploys. It runs the gate, then:
+[deploy.yml](.github/workflows/deploy.yml) runs on every push to main, and nothing else deploys. It runs the gate and the eval, then:
 
 1. Reads whether `AWS_DEPLOY_ROLE_ARN` and `AWS_DEPLOY_EXECUTION_ROLE_ARN` are set in `prod`. Until the bootstrap above has run, it stops there and deploys nothing.
-2. Assumes the deploy role through GitHub's OIDC token, and masks the account id.
-3. Deploys the app stack. The first deploy also sets a one-time schedule that starts the first run a quarter of an hour later.
-4. Builds the page again from the last run's `found.json`, if there is one, copies [site/](site/) to the bucket and clears CloudFront's cache.
-5. Runs the live tier against the page. A failure turns the deploy red.
+2. Checks that the eval's report is for main's own fingerprint and clears every gating floor, and records the release in `site/release.json`: its commit, its fingerprint, the report and the run that produced it, and the deploy's own run. A report below a floor stops the deploy, and the page keeps the last release.
+3. Assumes the deploy role through GitHub's OIDC token, and masks the account id.
+4. Deploys the app stack. The first deploy also sets a one-time schedule that starts the first run a quarter of an hour later.
+5. Builds the page again from the release record and the last run's `found.json`, if there is one, copies [site/](site/) to the bucket and clears CloudFront's cache.
+6. Runs the live tier against the page. A failure turns the deploy red.
 
-CloudFront serves the page at grantlink.uk once `CERTIFICATE_ARN` and `HOSTED_ZONE_ID` are set in `prod`, and at its own `cloudfront.net` address until then. A failed deploy is fixed forward. There is no rollback step, and CloudFormation rolls a failed stack update back by itself. The eval gate joins the deploy in [#20](https://github.com/t-d-d/grantlink/issues/20).
+CloudFront serves the page at grantlink.uk once `CERTIFICATE_ARN` and `HOSTED_ZONE_ID` are set in `prod`, and at its own `cloudfront.net` address until then. A failed deploy is fixed forward. There is no rollback step, and CloudFormation rolls a failed stack update back by itself.
+
+## How the eval gates a release
+
+[eval.yml](.github/workflows/eval.yml) runs on every pull request, and on main inside the deploy. It computes the eval's fingerprint, the git hashes of `src/extract/`, `evals/`, the workflow and the lockfile, and reuses the report filed under it in `eval-reports/` in the private bucket. With no report, it downloads the snapshot, runs [evals/run.ts](evals/run.ts) and files one, written once. A pull request gets a comment with CI's scores beside the live release's. A report below a gating floor fails the job, so the pull request cannot merge once the `eval` check is required, and main does not deploy. The rules are in [evals.md](docs/constraints/evals.md) and [deploy-gates.md](docs/constraints/deploy-gates.md).
+
+The snapshot is the gold sets' funding text, under `eval/` in the private bucket. A run takes it once, after it publishes: it samples gold set A with the query and seed in [evals/gold-a.json](evals/gold-a.json), reads each paper into `cache/` and `eval/papers/`, and writes a manifest of each paper and its text's hash. The run logs the manifest's hash as `snapshot-written`. To pin it, download the manifest and run the pin:
+
+```sh
+id=$(jq -r .id evals/snapshot.json)
+bucket="grantlink-text-$(AWS_PROFILE=grantlink-eval aws sts get-caller-identity --query Account --output text)"
+mkdir -p ".eval/eval/$id"
+AWS_PROFILE=grantlink-eval aws s3api get-object --bucket "$bucket" --key "eval/$id/manifest.json" ".eval/eval/$id/manifest.json"
+node evals/pin.ts .eval
+```
+
+and raise the change to `evals/` as a pull request. Until a snapshot is pinned, the rows that need it show what they wait for and do not block.
+
+A session runs the eval itself while it iterates, with `AWS_PROFILE=grantlink-eval npm run eval`. It reads the snapshot through `access-eval`, which may read `eval/` and nothing else. Its runs are advice and never enter the cache. The snapshot lands in `.eval/`, which git and Prettier leave out, since it holds funding text and names.
 
 ## How a run works
 

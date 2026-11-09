@@ -63,3 +63,71 @@ describe("the page's bucket", () => {
     ]);
   });
 });
+
+// An S3 held in memory that refuses a write over an existing key when the
+// write asks it to, as the bucket's policy makes every write under eval/.
+function memoryS3() {
+  const objects = new Map<string, string>();
+  const fail = (name: string, status: number) =>
+    Object.assign(new Error(name), {
+      name,
+      $metadata: { httpStatusCode: status },
+    });
+  const client = {
+    send: (command: { constructor: { name: string }; input: object }) => {
+      const input = command.input as {
+        Key: string;
+        Body?: string;
+        IfNoneMatch?: string;
+      };
+      switch (command.constructor.name) {
+        case "PutObjectCommand":
+          if (input.IfNoneMatch === "*" && objects.has(input.Key)) {
+            return Promise.reject(fail("PreconditionFailed", 412));
+          }
+          objects.set(input.Key, input.Body ?? "");
+          return Promise.resolve({});
+        case "GetObjectCommand": {
+          const body = objects.get(input.Key);
+          if (body === undefined) {
+            return Promise.reject(fail("NoSuchKey", 404));
+          }
+          return Promise.resolve({
+            Body: { transformToString: () => Promise.resolve(body) },
+          });
+        }
+        default:
+          return Promise.reject(new Error("not faked"));
+      }
+    },
+  };
+  return { client, objects };
+}
+
+describe("the eval snapshot in the funding text bucket", () => {
+  it("writes a paper's text under eval/papers/ once, and keeps the first copy", async () => {
+    const { client, objects } = memoryS3();
+    const bucket = textBucket("b", client);
+    expect(await bucket.putSnapshotPaper("PMC11", "first")).toBe("first");
+    expect(await bucket.putSnapshotPaper("PMC11", "second")).toBe("first");
+    expect(objects.get("eval/papers/PMC11.json")).toBe("first");
+  });
+
+  it("writes a snapshot's manifest once, and knows whether it exists", async () => {
+    const { client, objects } = memoryS3();
+    const bucket = textBucket("b", client);
+    expect(await bucket.hasSnapshot("s1")).toBe(false);
+    expect(await bucket.putManifest("s1", "{}")).toBe("{}");
+    expect(await bucket.putManifest("s1", "[]")).toBe("{}");
+    expect(await bucket.hasSnapshot("s1")).toBe(true);
+    expect([...objects.keys()]).toEqual(["eval/s1/manifest.json"]);
+  });
+
+  it("refuses a key that is not a PMCID or a snapshot id", async () => {
+    const { client, objects } = memoryS3();
+    const bucket = textBucket("b", client);
+    await expect(bucket.putSnapshotPaper("../x", "")).rejects.toThrow();
+    await expect(bucket.putManifest("../x", "")).rejects.toThrow();
+    expect(objects.size).toBe(0);
+  });
+});

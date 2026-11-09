@@ -1,4 +1,8 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import type { FundingSections } from "../extract/rules.ts";
 
 // The only module that reads or writes S3 (docs/constraints/storage.md):
@@ -14,7 +18,27 @@ const defaultClient = () => new S3Client({ region: "eu-west-2" });
 
 export interface TextBucket {
   putFundingText(pmcid: string, sections: FundingSections): Promise<void>;
+  // The eval snapshot under eval/ (docs/constraints/evals.md). Each write
+  // happens once: a second write keeps the first copy and returns it.
+  hasSnapshot(id: string): Promise<boolean>;
+  putSnapshotPaper(pmcid: string, body: string): Promise<string>;
+  putManifest(id: string, body: string): Promise<string>;
 }
+
+const SNAPSHOT_ID = /^s\d+$/u;
+
+const errorName = (error: unknown): string =>
+  error instanceof Error ? error.name : "";
+
+const bodyOf = (reply: unknown): Promise<string> => {
+  const body = (
+    reply as { Body?: { transformToString?: () => Promise<string> } }
+  ).Body;
+  if (typeof body?.transformToString !== "function") {
+    throw new Error("S3 sent no body");
+  }
+  return body.transformToString();
+};
 
 // The funding text bucket. A paper's funding sections go under cache/, and
 // nowhere else. They hold names, so they never leave this bucket
@@ -35,7 +59,55 @@ export function textBucket(
         }),
       );
     },
+
+    async hasSnapshot(id) {
+      if (!SNAPSHOT_ID.test(id)) throw new Error("not a snapshot id");
+      try {
+        await read(`eval/${id}/manifest.json`);
+        return true;
+      } catch (error) {
+        if (errorName(error) === "NoSuchKey") return false;
+        throw error;
+      }
+    },
+
+    async putSnapshotPaper(pmcid, body) {
+      if (!PMCID.test(pmcid)) throw new Error("not a PMCID");
+      return putOnce(`eval/papers/${pmcid}.json`, body);
+    },
+
+    async putManifest(id, body) {
+      if (!SNAPSHOT_ID.test(id)) throw new Error("not a snapshot id");
+      return putOnce(`eval/${id}/manifest.json`, body);
+    },
   };
+
+  async function read(key: string): Promise<string> {
+    return bodyOf(
+      await client.send(new GetObjectCommand({ Bucket: name, Key: key })),
+    );
+  }
+
+  // Writes only where nothing is. The bucket's policy refuses any other
+  // write under eval/, so a copy written once never changes. A write that
+  // finds a copy, such as a step's second try, returns that copy.
+  async function putOnce(key: string, body: string): Promise<string> {
+    try {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: name,
+          Key: key,
+          ContentType: "application/json",
+          IfNoneMatch: "*",
+          Body: body,
+        }),
+      );
+      return body;
+    } catch (error) {
+      if (errorName(error) !== "PreconditionFailed") throw error;
+      return read(key);
+    }
+  }
 }
 
 // What a run publishes: the page, and the data it was built from, which the

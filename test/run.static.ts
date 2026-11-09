@@ -148,11 +148,57 @@ describe("the function", () => {
     ]);
   });
 
-  it("may write funding text only under cache/, and publish only the page and its data", () => {
+  it("may write funding text only under cache/ and eval/, and publish only the page and its data", () => {
     const text = readRepoFile("serverless.yml");
     expect(text).toContain("grantlink-text-${AWS::AccountId}/cache/*");
+    expect(text).toContain("grantlink-text-${AWS::AccountId}/eval/*");
     expect(text).not.toMatch(/grantlink-text-\$\{AWS::AccountId\}\/\*/u);
+    expect(text).not.toContain("eval-reports");
     expect(text).toContain("/index.html");
     expect(text).toContain("/found.json");
+  });
+
+  it("lists only the snapshot's prefix, so a missing manifest reads as missing", () => {
+    const statements = (
+      serverless.provider as {
+        iam?: { role?: { statements?: Record<string, unknown>[] } };
+      }
+    ).iam?.role?.statements;
+    const list = statements?.find(
+      (statement) => statement.Action === "s3:ListBucket",
+    );
+    expect(list?.Condition).toEqual({
+      StringLike: { "s3:prefix": ["eval/*"] },
+    });
+  });
+
+  it("carries the gold sets and the release record it publishes with", () => {
+    const patterns = (
+      serverless as unknown as { package: { patterns: string[] } }
+    ).package.patterns;
+    expect(patterns).toContain("evals/**");
+    expect(patterns).toContain("!evals/**/*.test.ts");
+    expect(patterns).toContain("site/release.json");
+  });
+});
+
+describe("fitness: cache entries never change (evals.md)", () => {
+  const policy = resource(data, "TextBucketPolicy").Properties
+    .PolicyDocument as { Statement: Record<string, unknown>[] };
+  const writeOnce = policy.Statement.find(
+    (statement) => statement.Sid === "WriteOnceUnderEval",
+  );
+
+  it("refuses any write under eval/ or eval-reports/ that could replace an object", () => {
+    expect(writeOnce).toMatchObject({
+      Effect: "Deny",
+      Principal: "*",
+      Action: "s3:PutObject",
+      Condition: { StringNotEquals: { "s3:if-none-match": "*" } },
+    });
+    expect((writeOnce?.Resource as unknown[]).map((r) => subText(r))).toEqual([
+      "${TextBucket.Arn}/eval/*",
+      "${TextBucket.Arn}/eval-reports/*",
+    ]);
   });
 });

@@ -239,7 +239,7 @@ describe("the CI eval role", () => {
   });
 });
 
-describe("access-eval", () => {
+describe("fitness: the session role reads the snapshot and nothing else (evals.md)", () => {
   it("is named for aws-access's grantlink-eval profile", () => {
     expect(accessEval.Properties.RoleName).toBe("access-eval");
   });
@@ -295,7 +295,7 @@ describe("access-eval", () => {
   });
 });
 
-describe("only the CI eval role writes to eval-reports/", () => {
+describe("fitness: only CI files reports (evals.md)", () => {
   const report =
     "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval-reports/a-report.json";
 

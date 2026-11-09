@@ -1,5 +1,6 @@
 import {
   GetBucketEncryptionCommand,
+  GetBucketPolicyCommand,
   GetPublicAccessBlockCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -40,5 +41,28 @@ describe("fitness: the bucket stays private (storage.md)", () => {
     ).toEqual(
       expect.arrayContaining([expect.stringMatching(/^(?:AES256|aws:kms)$/u)]),
     );
+  });
+});
+
+describe("fitness: cache entries never change (evals.md)", () => {
+  it("refuses any write under eval/ or eval-reports/ that could replace an object", async () => {
+    const reply = await s3.send(
+      new GetBucketPolicyCommand({ Bucket: TEXT_BUCKET }),
+    );
+    const policy = z
+      .object({ Statement: z.array(z.record(z.string(), z.unknown())) })
+      .parse(JSON.parse(reply.Policy ?? "{}"));
+    const writeOnce = policy.Statement.find(
+      (statement) => statement.Sid === "WriteOnceUnderEval",
+    );
+    expect(writeOnce).toMatchObject({
+      Effect: "Deny",
+      Action: "s3:PutObject",
+      Condition: { StringNotEquals: { "s3:if-none-match": "*" } },
+    });
+    expect(writeOnce?.Resource).toEqual([
+      `arn:aws:s3:::${TEXT_BUCKET}/eval/*`,
+      `arn:aws:s3:::${TEXT_BUCKET}/eval-reports/*`,
+    ]);
   });
 });

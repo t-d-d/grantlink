@@ -2,3 +2,7 @@ node_modules/
 coverage/
 .serverless/
 .env
+# The eval snapshot holds funding text and names. Never commit it.
+.eval/
+# Written by the deploy.
+site/release.json

@@ -1,6 +1,8 @@
 # Deploys the app stack and the page on every push to main, and only then.
-# Nobody deploys by hand (#8). The eval gate joins this workflow in #20;
-# until then a merge to main deploys once the gate is green.
+# Nobody deploys by hand (#8). It deploys only once the gate is green and
+# the eval has a report for main's own fingerprint at or above every gating
+# floor, and it records which report covers the release
+# (docs/constraints/deploy-gates.md).
 #
 # There is no rollback. A failed deploy is fixed forward, and CloudFormation
 # rolls a failed stack update back by itself.
@@ -25,6 +27,17 @@ env:
 jobs:
   gate:
     uses: ./.github/workflows/gate.yml
+
+  # The eval for main's own commit. Two pull requests that each passed
+  # against an older main are scored again together if their combination
+  # is new; otherwise the report already filed is reused.
+  eval:
+    uses: ./.github/workflows/eval.yml
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+      pull-requests: write
 
   # A workflow can read an environment's secret only in a job that names
   # the environment, so this job reads whether both deploy roles are set.
@@ -51,7 +64,7 @@ jobs:
 
   deploy:
     name: "deploy · deployed: grantlink"
-    needs: [gate, role]
+    needs: [gate, role, eval]
     if: needs.role.outputs.set == 'true'
     runs-on: ubuntu-24.04
     environment: prod
@@ -68,6 +81,26 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci --ignore-scripts
+
+      # The release record ships with the function and the page. It is
+      # refused unless the eval's report is for this commit's own
+      # fingerprint and clears every gating floor.
+      - name: Record the release
+        env:
+          REPORT: ${{ needs.eval.outputs.report }}
+          FINGERPRINT: ${{ needs.eval.outputs.fingerprint }}
+          COMMIT: ${{ github.sha }}
+          DEPLOY_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          own="$(node evals/fingerprint.ts)"
+          if [ "$own" != "$FINGERPRINT" ]; then
+            echo "::error::The eval scored fingerprint $FINGERPRINT, but this commit's is $own."
+            exit 1
+          fi
+          printf '%s' "$REPORT" > report.json
+          node evals/check.ts gate report.json "$own"
+          node src/page/release.ts report.json site/release.json
 
       # Assumes the deploy role through GitHub's OIDC token, with the AWS
       # CLI the runner ships, so no outside action holds the credentials.
@@ -159,17 +192,19 @@ jobs:
         run: |
           set -euo pipefail
           # A run publishes the page with its findings, and found.json, the
-          # data it built them from. Build the page again from that data, so
-          # a new template keeps the findings, and leave found.json alone.
-          # Only a missing found.json, before the first run, skips this: any
-          # other error stops the deploy before it overwrites the findings.
+          # data it built them from. Build the page again from that data and
+          # the release record, so a new template keeps the findings and the
+          # page shows this release, and leave found.json alone. Only a
+          # missing found.json, before the first run, builds the page with
+          # no findings: any other error stops the deploy before it
+          # overwrites them.
           if missing="$(aws s3api head-object --bucket "$BUCKET" --key found.json 2>&1 >/dev/null)"; then
             aws s3 cp "s3://$BUCKET/found.json" found.json --only-show-errors
-            node src/page/build.ts found.json site/index.html
           elif ! grep -qE "Not Found|404" <<< "$missing"; then
             echo "$missing" >&2
             exit 1
           fi
+          node src/page/build.ts site/index.html site/release.json found.json
           aws s3 sync site/ "s3://$BUCKET/" --delete --exclude found.json --cache-control "public, max-age=300"
           id="$(aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" \
             --paths "/*" --query Invalidation.Id --output text)"

@@ -1,0 +1,208 @@
+# The eval (#9). On every pull request, and on every push to main through
+# deploy.yml, it computes the eval's fingerprint and takes the report filed
+# under it in eval-reports/, or runs the eval and files one. A report below
+# a gating floor fails the job, which stops the merge and the deploy (#8).
+#
+# The S3 reads and writes sit in this workflow's own steps. The runner reads
+# local files only, so src/extract/ and evals/ import nothing from outside
+# themselves (docs/constraints/evals.md). Logs print paper ids and scores
+# only: the snapshot's files hold funding text and names, and nothing here
+# prints them.
+#
+# This file is one of the fingerprint's inputs, so a change here runs the
+# eval again.
+name: eval
+
+on:
+  pull_request:
+  workflow_call:
+    outputs:
+      fingerprint:
+        description: The eval's fingerprint for the commit
+        value: ${{ jobs.eval.outputs.fingerprint }}
+      report:
+        description: The report filed under the fingerprint, as compact JSON
+        value: ${{ jobs.eval.outputs.report }}
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    name: eval
+    runs-on: ubuntu-24.04
+    environment: eval
+    permissions:
+      contents: read
+      id-token: write
+      # The live release's report: which commit main last deployed.
+      actions: read
+      # The pull request's comment with CI's scores.
+      pull-requests: write
+    outputs:
+      fingerprint: ${{ steps.fingerprint.outputs.value }}
+      report: ${{ steps.report.outputs.json }}
+    env:
+      AWS_REGION: eu-west-2
+      AWS_DEFAULT_REGION: eu-west-2
+    steps:
+      # The whole history, so the live release's commit can be read too.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - id: fingerprint
+        name: Compute the fingerprint
+        run: echo "value=$(node evals/fingerprint.ts)" >> "$GITHUB_OUTPUT"
+
+      # Assumes the eval role through GitHub's OIDC token, as the deploy
+      # assumes its own. The account id, the token and the credentials are
+      # masked before anything else runs.
+      - name: Assume the eval role
+        env:
+          ROLE: ${{ secrets.AWS_EVAL_ROLE_ARN }}
+          BUCKET: ${{ secrets.PRIVATE_BUCKET_NAME }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ROLE" ] || [ -z "$BUCKET" ]; then
+            echo "::error::AWS_EVAL_ROLE_ARN or PRIVATE_BUCKET_NAME is not set in the eval environment. The README says how to set them."
+            exit 1
+          fi
+          token="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)"
+          echo "::add-mask::$token"
+          creds="$(aws sts assume-role-with-web-identity \
+            --role-arn "$ROLE" \
+            --role-session-name "grantlink-eval-$GITHUB_RUN_ID" \
+            --web-identity-token "$token" \
+            --duration-seconds 3600 \
+            --output json)"
+          account="$(jq -r .AssumedRoleUser.Arn <<< "$creds" | cut -d: -f5)"
+          key="$(jq -r .Credentials.AccessKeyId <<< "$creds")"
+          secret="$(jq -r .Credentials.SecretAccessKey <<< "$creds")"
+          session="$(jq -r .Credentials.SessionToken <<< "$creds")"
+          echo "::add-mask::$account"
+          echo "::add-mask::$key"
+          echo "::add-mask::$secret"
+          echo "::add-mask::$session"
+          {
+            echo "AWS_ACCESS_KEY_ID=$key"
+            echo "AWS_SECRET_ACCESS_KEY=$secret"
+            echo "AWS_SESSION_TOKEN=$session"
+          } >> "$GITHUB_ENV"
+
+      # The report is a cache keyed by the fingerprint (#9). Listing with
+      # the key as a prefix is how the role asks whether it exists.
+      - id: cached
+        name: Look for the report filed for this fingerprint
+        env:
+          BUCKET: ${{ secrets.PRIVATE_BUCKET_NAME }}
+          FINGERPRINT: ${{ steps.fingerprint.outputs.value }}
+        run: |
+          set -euo pipefail
+          key="eval-reports/$FINGERPRINT.json"
+          count="$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$key" \
+            --query KeyCount --output text)"
+          if [ "$count" = "1" ]; then
+            aws s3api get-object --bucket "$BUCKET" --key "$key" report.json >/dev/null
+            echo "Reusing the report already filed for this fingerprint."
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download the snapshot
+        if: steps.cached.outputs.hit != 'true'
+        env:
+          PRIVATE_BUCKET_NAME: ${{ secrets.PRIVATE_BUCKET_NAME }}
+        run: scripts/eval-snapshot.sh .eval
+
+      - name: Run the eval
+        if: steps.cached.outputs.hit != 'true'
+        env:
+          FINGERPRINT: ${{ steps.fingerprint.outputs.value }}
+          COMMIT: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node evals/run.ts .eval report.json
+
+      # Written once: S3 refuses the write if a report is already there, as
+      # when another run for the same fingerprint filed first. That one
+      # stands, and this run takes it.
+      - name: File the report
+        if: steps.cached.outputs.hit != 'true'
+        env:
+          BUCKET: ${{ secrets.PRIVATE_BUCKET_NAME }}
+          FINGERPRINT: ${{ steps.fingerprint.outputs.value }}
+        run: |
+          set -euo pipefail
+          key="eval-reports/$FINGERPRINT.json"
+          if aws s3api put-object --bucket "$BUCKET" --key "$key" --body report.json \
+            --content-type application/json --if-none-match '*' >/dev/null 2>put.err; then
+            echo "Filed the report."
+          elif grep -q PreconditionFailed put.err; then
+            aws s3api get-object --bucket "$BUCKET" --key "$key" report.json >/dev/null
+            echo "Another run filed a report for this fingerprint first. Taking it."
+          else
+            cat put.err >&2
+            exit 1
+          fi
+
+      - id: report
+        name: Hand the report on
+        run: echo "json=$(jq -c . report.json)" >> "$GITHUB_OUTPUT"
+
+      # The live release is the commit main last deployed. Its report is
+      # the one filed under that commit's fingerprint.
+      - name: Read the live release's report
+        if: github.event_name == 'pull_request'
+        env:
+          BUCKET: ${{ secrets.PRIVATE_BUCKET_NAME }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          live="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // empty')"
+          if [ -z "$live" ] || ! git cat-file -e "$live^{commit}" 2>/dev/null; then
+            echo "No live release to compare with."
+            exit 0
+          fi
+          key="eval-reports/$(node evals/fingerprint.ts "$live").json"
+          count="$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$key" \
+            --query KeyCount --output text)"
+          if [ "$count" = "1" ]; then
+            aws s3api get-object --bucket "$BUCKET" --key "$key" live.json >/dev/null
+          else
+            echo "The live release has no report."
+          fi
+
+      # One comment per pull request, updated on each run.
+      - name: Comment with CI's scores beside the live release's
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ -f live.json ]; then
+            node evals/check.ts comment report.json live.json > comment.md
+          else
+            node evals/check.ts comment report.json > comment.md
+          fi
+          id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            --jq '.[] | select(.body | startswith("<!-- grantlink:eval -->")) | .id' | head -n 1)"
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@comment.md >/dev/null
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@comment.md >/dev/null
+          fi
+
+      # Last, so the comment shows the scores even when they fail.
+      - name: Gate on the floors
+        env:
+          FINGERPRINT: ${{ steps.fingerprint.outputs.value }}
+        run: node evals/check.ts gate report.json "$FINGERPRINT"

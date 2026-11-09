@@ -101,3 +101,29 @@ describe("fitness: no text in logs (personal-data.md)", () => {
     expect(await severity(path, rule)).toBe(ERROR);
   });
 });
+
+describe("fitness: the fingerprint covers what the eval runs (evals.md)", () => {
+  const rule = "grantlink/imports-within";
+
+  it.each(["src/extract/rules.ts", "src/extract/model.ts", "evals/run.ts"])(
+    "is an error in %s, bound to the fingerprinted paths",
+    async (path) => {
+      expect(await severity(path, rule)).toBe(ERROR);
+      expect(await options(path, rule)).toEqual({
+        paths: ["src/extract", "evals"],
+      });
+    },
+  );
+
+  it("is off outside them", async () => {
+    expect(await severity("src/run/handler.ts", rule)).toBeUndefined();
+  });
+
+  it("binds the same paths the fingerprint hashes, but its workflow and lockfile", async () => {
+    const { INPUTS } = await import("../evals/fingerprint.ts");
+    expect(INPUTS.filter((path) => !/\.(?:yml|json)$/u.test(path))).toEqual([
+      "src/extract",
+      "evals",
+    ]);
+  });
+});
