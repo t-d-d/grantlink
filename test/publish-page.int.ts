@@ -53,11 +53,23 @@ run_publishes() {
   cp "$STATE/run/index.html" "$bucket/index.html"
   log "run publishes"
 }
-race() { if [ "\${RACE:-}" = "$1" ]; then run_publishes; fi; }
-key=; body=; if_match=; if_none_match=; excludes=()
+# A run publishes once.
+race() {
+  if [ "\${RACE:-}" = "$1" ] && [ ! -e "$STATE/raced" ]; then
+    : > "$STATE/raced"
+    run_publishes
+  fi
+}
+key=; body=; if_match=; if_none_match=; delete=; excludes=()
+excluded() {
+  local pattern
+  for pattern in "\${excludes[@]}"; do [ "$1" = "$pattern" ] && return 0; done
+  return 1
+}
 args=("$@")
 while [ $# -gt 0 ]; do
   case $1 in
+    --delete) delete=1 ;;
     --key) key=$2; shift ;;
     --body) body=$2; shift ;;
     --if-match) if_match=$2; shift ;;
@@ -82,11 +94,6 @@ case "$1 $2" in
     # What --query ETag --output text prints.
     etag "$key"; echo
     race "head $key" ;;
-  "s3api get-object")
-    log "get $key"
-    cp "$bucket/$key" "\${@: -1}"
-    echo "{\\"ETag\\": $(etag "$key")}"
-    race "get $key" ;;
   "s3 cp")
     key=\${3#s3://*/}
     log "get $key"
@@ -96,17 +103,31 @@ case "$1 $2" in
     log "sync"
     for file in "$3"*; do
       name=\${file##*/}
-      skip=
-      for pattern in "\${excludes[@]}"; do [ "$name" = "$pattern" ] && skip=1; done
-      [ -n "$skip" ] || { cp "$file" "$bucket/$name"; log "put $name"; }
+      excluded "$name" || { cp "$file" "$bucket/$name"; log "put $name"; }
     done
+    if [ -n "$delete" ]; then
+      for file in "$bucket"/*; do
+        name=\${file##*/}
+        [ -e "$3$name" ] || excluded "$name" || { rm "$file"; log "delete $name"; }
+      done
+    fi
     race sync ;;
   "s3api put-object")
     if [ "\${FAIL:-}" = "put $key" ]; then
       echo "An error occurred (AccessDenied) when calling the PutObject operation: Access Denied" >&2
       exit 254
     fi
-    if [ -n "$if_match" ] && { [ ! -e "$bucket/$key" ] || [ "$(etag "$key")" != "$if_match" ]; }; then
+    if [ "\${FAIL:-}" = "conflict $key" ]; then
+      log "conflict $key"
+      echo "An error occurred (ConditionalRequestConflict) when calling the PutObject operation: A conflicting operation occurred" >&2
+      exit 254
+    fi
+    if [ -n "$if_match" ] && [ ! -e "$bucket/$key" ]; then
+      log "refused $key"
+      echo "An error occurred (NoSuchKey) when calling the PutObject operation: The specified key does not exist." >&2
+      exit 254
+    fi
+    if [ -n "$if_match" ] && [ "$(etag "$key")" != "$if_match" ]; then
       log "refused $key"
       echo "An error occurred (PreconditionFailed) when calling the PutObject operation: At least one of the pre-conditions you specified did not hold" >&2
       exit 254
@@ -138,6 +159,11 @@ const summary = (runId: RunId) =>
 const data = (runId: RunId) => JSON.stringify(summary(runId));
 const page = (runId: RunId) => buildPage(template, summary(runId));
 
+// A run builds its page with the template its own function version holds,
+// which a deploy may since have changed.
+const older = `<!-- the template before this deploy -->\n${template}`;
+const runsPage = buildPage(older, summary("run-new"));
+
 const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0))
@@ -154,6 +180,7 @@ interface Deploy {
 
 it("tells the old run's page from the new one's", () => {
   expect(page("run-old")).not.toBe(page("run-new"));
+  expect(runsPage).not.toBe(page("run-new"));
 });
 
 // Publishes with the bucket holding `before`, and a run that publishes
@@ -171,7 +198,7 @@ function deploy(
   for (const [key, body] of Object.entries(before))
     writeFileSync(join(bucket, key), body);
   writeFileSync(join(runDir, "found.json"), data("run-new"));
-  writeFileSync(join(runDir, "index.html"), page("run-new"));
+  writeFileSync(join(runDir, "index.html"), runsPage);
   writeFileSync(join(state, "calls"), "");
   writeFileSync(join(bin, "aws"), awsStub);
   chmodSync(join(bin, "aws"), 0o755);
@@ -215,6 +242,7 @@ const published = {
   "found.json": data("run-old"),
   "index.html": "the page as the old template built it",
   "style.css": "old style",
+  "gone.css": "a file the site no longer has",
 };
 
 describe("the deploy publishes the page", () => {
@@ -224,6 +252,7 @@ describe("the deploy publishes the page", () => {
     expect(result.bucket("index.html")).toBe(page("run-old"));
     expect(result.bucket("found.json")).toBe(data("run-old"));
     expect(result.bucket("style.css")).toBe(readRepoFile("site/style.css"));
+    expect(result.bucket("gone.css")).toBeUndefined();
     expect(result.calls.slice(-2)).toEqual(["invalidate", "wait"]);
   });
 
@@ -247,11 +276,13 @@ describe("the deploy publishes the page", () => {
   });
 });
 
+// The deploy keeps the run's findings, and shows them with its own template.
 describe("a run that publishes during a deploy keeps its page (#46)", () => {
   it("after the deploy has read found.json", () => {
     const result = deploy(published, { race: "get found.json" });
     expect(result.status, result.stderr).toBe(0);
     expect(result.calls).toContain("run publishes");
+    expect(result.calls).toContain("refused index.html");
     expect(result.bucket("found.json")).toBe(data("run-new"));
     expect(result.bucket("index.html")).toBe(page("run-new"));
     expect(result.calls.slice(-2)).toEqual(["invalidate", "wait"]);
@@ -260,16 +291,27 @@ describe("a run that publishes during a deploy keeps its page (#46)", () => {
   it("after the deploy has uploaded the rest of the site", () => {
     const result = deploy(published, { race: "sync" });
     expect(result.status, result.stderr).toBe(0);
+    expect(result.calls).toContain("refused index.html");
     expect(result.bucket("index.html")).toBe(page("run-new"));
   });
 
   it("before the first run's page, while the deploy publishes the template", () => {
     const result = deploy({}, { race: "head found.json" });
     expect(result.status, result.stderr).toBe(0);
+    expect(result.calls).toContain("refused index.html");
     expect(result.bucket("index.html")).toBe(page("run-new"));
   });
 
-  it("but any other failed upload still stops the deploy", () => {
+  it("but a write that keeps conflicting stops the deploy after three tries", () => {
+    const result = deploy(published, { fail: "conflict index.html" });
+    expect(result.status).not.toBe(0);
+    expect(
+      result.calls.filter((call) => call === "conflict index.html"),
+    ).toHaveLength(3);
+    expect(result.bucket("index.html")).toBe(published["index.html"]);
+  });
+
+  it("and any other failed upload stops the deploy at once", () => {
     const result = deploy(published, { fail: "put index.html" });
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("AccessDenied");

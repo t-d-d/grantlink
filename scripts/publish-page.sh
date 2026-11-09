@@ -12,7 +12,8 @@
 # A run can publish while this script runs (#46). The script reads
 # index.html's ETag before it reads found.json, and uploads index.html only
 # if the ETag has not changed since. If a run has published in between, S3
-# refuses the upload and the run's page stays, built from newer data.
+# refuses the upload, and the script reads found.json again and builds the
+# page again: the run's findings stay, shown with this deploy's template.
 set -euo pipefail
 : "${BUCKET:?}" "${DISTRIBUTION:?}"
 
@@ -35,33 +36,64 @@ etag() {
   fi
 }
 
-page="$(etag index.html)"
-data="$(etag found.json)"
-if [ -n "$data" ]; then
-  aws s3 cp "s3://$BUCKET/found.json" "$work/found.json" --only-show-errors
-  node "$repo/src/page/build.ts" "$work/found.json" "$work/site/index.html"
-fi
+# Builds index.html from the template and the last run's data, and keeps
+# in $page the ETag of the page it read first. Only a missing found.json,
+# before the first run, leaves the template as it is.
+build_index() {
+  cp "$repo/site/index.html" "$work/site/index.html"
+  page="$(etag index.html)"
+  data="$(etag found.json)"
+  if [ -n "$data" ]; then
+    aws s3 cp "s3://$BUCKET/found.json" "$work/found.json" --only-show-errors
+    node "$repo/src/page/build.ts" "$work/found.json" "$work/site/index.html"
+  fi
+}
 
+# Uploads index.html only if the page in the bucket is still the one
+# build_index read. Sets $refused when S3 refuses it for that reason:
+# PreconditionFailed when the page changed, NoSuchKey when it went, and
+# ConditionalRequestConflict when another write to it is under way.
+put_index() {
+  local unchanged
+  if [ -n "$page" ]; then
+    unchanged=(--if-match "$page")
+  else
+    unchanged=(--if-none-match "*")
+  fi
+  refused=
+  if aws s3api put-object --bucket "$BUCKET" --key index.html \
+    --body "$work/site/index.html" \
+    --content-type "text/html; charset=utf-8" \
+    --cache-control "public, max-age=300" \
+    "${unchanged[@]}" >/dev/null 2>"$work/put.err"; then
+    return
+  fi
+  if grep -qE "PreconditionFailed|NoSuchKey|ConditionalRequestConflict" "$work/put.err"; then
+    refused=1
+    return
+  fi
+  cat "$work/put.err" >&2
+  exit 1
+}
+
+build_index
 aws s3 sync "$work/site/" "s3://$BUCKET/" --delete \
   --exclude found.json --exclude index.html \
   --cache-control "public, max-age=300" --only-show-errors
-
-# The page as it was when the script began, or no page at all.
-if [ -n "$page" ]; then
-  unchanged=(--if-match "$page")
-else
-  unchanged=(--if-none-match "*")
-fi
-if aws s3api put-object --bucket "$BUCKET" --key index.html \
-  --body "$work/site/index.html" \
-  --content-type "text/html; charset=utf-8" \
-  --cache-control "public, max-age=300" \
-  "${unchanged[@]}" >/dev/null 2>"$work/put.err"; then
-  :
-elif grep -qE "PreconditionFailed|ConditionalRequestConflict" "$work/put.err"; then
-  echo "::notice::A run published the page during this deploy, so the deploy kept the run's page."
-else
+for try in 1 2 3; do
+  put_index
+  if [ -z "$refused" ]; then
+    break
+  fi
+  echo "::notice::The page changed while the deploy built it (try $try of 3)."
+  # Not under && or ||, which would turn off set -e inside the function.
+  if [ "$try" -lt 3 ]; then
+    build_index
+  fi
+done
+if [ -n "$refused" ]; then
   cat "$work/put.err" >&2
+  echo "The page kept changing while the deploy built it." >&2
   exit 1
 fi
 

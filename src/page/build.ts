@@ -4,11 +4,10 @@ import { found } from "./found.ts";
 import { buildPage } from "./render.ts";
 
 // Builds the page again from the data the last run published, so a deploy
-// that changes the template keeps the findings. The deploy runs
+// that changes the template keeps the findings. scripts/publish-page.sh
+// runs it on a copy of site/, which it rewrites in place:
 //
-//   node src/page/build.ts found.json site/index.html
-//
-// which rewrites site/index.html in place before it is uploaded.
+//   node src/page/build.ts <found.json> <copy of site>/index.html
 export function rebuild(template: string, data: string): string {
   return buildPage(template, found.parse(JSON.parse(data)));
 }
