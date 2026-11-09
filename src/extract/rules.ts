@@ -170,7 +170,7 @@ export function findReferences(sections: FundingSections): Reference[] {
     if (!award.sources.some((source) => funderName.test(source))) continue;
     // A bare number in an award shared with another funder may be that
     // funder's, so only a reference in a known format counts there (#128).
-    const shared = award.sources.length > 1;
+    const shared = award.sources.some((source) => !funderName.test(source));
     for (const id of award.ids) {
       const trimmed = id.trim();
       if (shared || !confirmedNumber(trimmed, sections.text)) {

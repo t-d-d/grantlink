@@ -152,6 +152,15 @@ describe("the rules", () => {
     ).toEqual([]);
   });
 
+  it("reads a bare number in an award group whose sources all name the funder", () => {
+    expect(
+      findReferences({
+        text: ["Funded by Cancer Research UK (12345)."],
+        awards: [{ sources: ["Cancer Research UK", "CRUK"], ids: ["12345"] }],
+      }),
+    ).toEqual([{ asWritten: "12345", normalised: "12345", format: "n" }]);
+  });
+
   it("reads a reference in a known format from an award group the funder shares", () => {
     expect(
       findReferences({

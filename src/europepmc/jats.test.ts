@@ -49,6 +49,19 @@ describe("cutting a paper to its funding sections", () => {
     ]);
   });
 
+  it("reads a rid written in single quotes", () => {
+    expect(
+      fundingSections(
+        shared(
+          `<award-id rid='fs2'>12345</award-id><award-id rid='fs1'>67890</award-id>`,
+        ),
+      ).awards,
+    ).toEqual([
+      { sources: ["Example Trust"], ids: ["12345"] },
+      { sources: ["Cancer Research UK"], ids: ["67890"] },
+    ]);
+  });
+
   it("gives an award id with no rid to every source in its group", () => {
     expect(
       fundingSections(

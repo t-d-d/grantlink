@@ -37,27 +37,35 @@ function plain(xml: string): string {
     .trim();
 }
 
-// Every element with this name, as its inner XML. JATS does not nest any of
-// the elements read here inside one of the same name.
-function elements(xml: string, name: string, attributes = ""): string[] {
+// Every element with this name, as its opening tag and its inner XML. JATS
+// does not nest any of the elements read here inside one of the same name.
+function tagged(
+  xml: string,
+  name: string,
+  attributes = "",
+): { tag: string; inner: string }[] {
   const pattern = new RegExp(
-    `<${name}\\b(?=[^>]*${attributes})[^>]*>([\\s\\S]*?)</${name}>`,
+    `(<${name}\\b(?=[^>]*${attributes})[^>]*>)([\\s\\S]*?)</${name}>`,
     "gu",
   );
-  return [...xml.matchAll(pattern)].map((match) => match[1] ?? "");
-}
-
-// Every element with this name, as its opening tag and its inner XML.
-function tagged(xml: string, name: string): { tag: string; inner: string }[] {
-  const pattern = new RegExp(`(<${name}\\b[^>]*>)([\\s\\S]*?)</${name}>`, "gu");
   return [...xml.matchAll(pattern)].map((match) => ({
     tag: match[1] ?? "",
     inner: match[2] ?? "",
   }));
 }
 
+// Every element with this name, as its inner XML.
+function elements(xml: string, name: string, attributes = ""): string[] {
+  return tagged(xml, name, attributes).map(({ inner }) => inner);
+}
+
+// An attribute's value split at white space, in either kind of quotes.
 function attribute(tag: string, name: string): string[] {
-  const value = new RegExp(`\\s${name}="([^"]*)"`, "u").exec(tag)?.[1] ?? "";
+  const match = new RegExp(
+    `\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`,
+    "u",
+  ).exec(tag);
+  const value = match?.[1] ?? match?.[2] ?? "";
   return value.split(/\s+/u).filter((part) => part !== "");
 }
 
