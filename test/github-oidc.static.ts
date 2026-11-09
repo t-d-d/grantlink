@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { serverless, site } from "./app.ts";
+import { readRepoFile } from "./repo.ts";
 import {
   list,
+  patternWithin,
+  patternsOverlap,
   readTemplate,
+  renderArn,
   resource,
   rightsOf,
   subText,
@@ -448,6 +452,154 @@ describe("the app roles' boundary", () => {
     for (const action of used) {
       expect(bounded, action).toContain(action);
     }
+  });
+});
+
+// The run's role and its boundary, both rendered to ARNs, so a pattern in
+// the boundary that drifts from the name a resource is given fails here and
+// not as AccessDenied in production (#104).
+describe("the run's role inside the boundary", () => {
+  const boundary = (
+    template.Resources.AppRoleBoundary?.Properties.PolicyDocument as {
+      Statement: Statement[];
+    }
+  ).Statement;
+  const { service } = serverless;
+  const { region, stage } = serverless.provider;
+  const stack = `${service}-${stage}`;
+  const account = "ACCOUNT";
+  const london = `${region}:${account}`;
+  // CloudFormation names a resource the template leaves unnamed
+  // <stack>-<logical id>-<suffix>, and lowercases the name of a bucket.
+  const generated = (logicalId: string): string =>
+    `${stack}-${logicalId}-1A2B3C4D5E6F`;
+  const names = {
+    "AWS::Partition": "aws",
+    "AWS::Region": region,
+    "AWS::AccountId": account,
+    "ResultsTable.Arn": `arn:aws:dynamodb:${london}:table/${generated("ResultsTable")}`,
+    "SiteBucket.Arn": `arn:aws:s3:::${generated("SiteBucket").toLowerCase()}`,
+  };
+
+  // The functions that run as the role, named as osls names them.
+  const functions = Object.entries(serverless.functions ?? {}).map(
+    ([key, config]) => ({
+      name: `${stack}-${key}`,
+      durable: "durableConfig" in config,
+    }),
+  );
+
+  // What osls adds to the run's role, pinned from osls's
+  // merge-iam-templates.js, since reading it from `serverless package` is
+  // not offline. osls grants the logs on /aws/lambda/grantlink-prod*, which
+  // reaches every function the stack makes, so each function's own log
+  // group stands for that wildcard here.
+  const sub = (text: string): { "Fn::Sub": string } => ({ "Fn::Sub": text });
+  const logGroup = (name: string): string =>
+    `arn:\${AWS::Partition}:logs:\${AWS::Region}:\${AWS::AccountId}:log-group:/aws/lambda/${name}`;
+  const fromOsls: Statement[] = [
+    {
+      Effect: "Allow",
+      Action: [
+        "logs:CreateLogStream",
+        "logs:CreateLogGroup",
+        "logs:TagResource",
+      ],
+      Resource: functions.flatMap(({ name }) => [
+        sub(logGroup(name)),
+        sub(`${logGroup(name)}:*`),
+      ]),
+    },
+    {
+      Effect: "Allow",
+      Action: ["logs:PutLogEvents"],
+      Resource: functions.map(({ name }) => sub(`${logGroup(name)}:*:*`)),
+    },
+    {
+      Effect: "Allow",
+      Action: [
+        "lambda:CheckpointDurableExecution",
+        "lambda:GetDurableExecutionState",
+      ],
+      Resource: functions
+        .filter(({ durable }) => durable)
+        .map(({ name }) =>
+          sub(
+            `arn:\${AWS::Partition}:lambda:\${AWS::Region}:\${AWS::AccountId}:function:${name}:*/durable-execution/*/*`,
+          ),
+        ),
+    },
+  ];
+  const held = [
+    ...(serverless.provider.iam?.role?.statements ?? []),
+    ...fromOsls,
+  ];
+
+  // Each action and resource a statement asks for that no Allow in the
+  // policy covers with the same or no condition, or that a Deny reaches.
+  const outside = (asked: Statement[], policy: Statement[]): string[] =>
+    asked.flatMap((statement) =>
+      actions(statement).flatMap((action) =>
+        list(statement.Resource)
+          .map((value) => renderArn(value, names))
+          .filter((arn) => {
+            const reaches = (rule: Statement): boolean =>
+              actions(rule).some((pattern) => wildcardMatches(pattern, action));
+            const allowed = policy.some(
+              (rule) =>
+                rule.Effect === "Allow" &&
+                reaches(rule) &&
+                (rule.Condition === undefined ||
+                  JSON.stringify(rule.Condition) ===
+                    JSON.stringify(statement.Condition)) &&
+                list(rule.Resource).some((value) =>
+                  patternWithin(arn, renderArn(value, names)),
+                ),
+            );
+            const denied = policy.some(
+              (rule) =>
+                rule.Effect === "Deny" &&
+                reaches(rule) &&
+                list(rule.Resource).some((value) =>
+                  patternsOverlap(arn, renderArn(value, names)),
+                ),
+            );
+            return !allowed || denied;
+          })
+          .map((arn) => `${action} ${arn}`),
+      ),
+    );
+
+  // A change to osls's version may change what it adds to the role.
+  it("pins what the osls version in use adds", () => {
+    const { devDependencies } = JSON.parse(readRepoFile("package.json")) as {
+      devDependencies: Record<string, string>;
+    };
+    expect(devDependencies.osls).toBe("4.5.0");
+  });
+
+  it("asks for nothing the boundary does not allow", () => {
+    expect(held.flatMap((statement) => list(statement.Resource))).not.toEqual(
+      [],
+    );
+    expect(outside(held, boundary)).toEqual([]);
+  });
+
+  it("would fail if the boundary named the page's bucket another way", () => {
+    const drifted = JSON.parse(
+      JSON.stringify(boundary).replaceAll("-sitebucket-", "-site-"),
+    ) as Statement[];
+    expect(outside(held, drifted)).toEqual([
+      `s3:PutObject arn:aws:s3:::${generated("SiteBucket").toLowerCase()}/index.html`,
+      `s3:PutObject arn:aws:s3:::${generated("SiteBucket").toLowerCase()}/found.json`,
+    ]);
+  });
+
+  it("would fail if the boundary dropped a log group osls grants", () => {
+    const drifted = boundary.filter((rule) => rule.Sid !== "RunLogs");
+    expect(outside(held, drifted)).toContain(
+      `logs:PutLogEvents arn:aws:logs:${london}:log-group:/aws/lambda/${stack}-run:*:*`,
+    );
   });
 });
 

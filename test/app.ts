@@ -1,5 +1,5 @@
 import { parse } from "yaml";
-import { readTemplate, type Template } from "./cfn.ts";
+import { readTemplate, type Statement, type Template } from "./cfn.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The app stack: serverless.yml, and the CloudFormation template it takes
@@ -14,7 +14,7 @@ export interface ServerlessConfig {
       deploymentRole?: string;
       role?: {
         permissionsBoundary?: unknown;
-        statements?: { Action?: string | string[] }[];
+        statements?: Statement[];
       };
     };
     stackParameters?: { ParameterKey: string; ParameterValue: string }[];
