@@ -27,6 +27,7 @@ const Workflow = z.object({
     z.string(),
     z.object({
       permissions: z.record(z.string(), z.string()).optional(),
+      "timeout-minutes": z.number().optional(),
       steps: z.array(Step),
     }),
   ),
@@ -68,8 +69,9 @@ describe("the scheduled conformance run", () => {
     expect(conformance[0]?.env?.GITHUB_TOKEN).toBe("${{ github.token }}");
   });
 
-  // The repository's record needs no permission. The prod environment and
-  // its branch policies need actions: read.
+  // Checkout needs contents: read, and the repository's record needs no
+  // permission. The prod environment and its branch policies need
+  // actions: read.
   it("gives the token only the read permissions the files need", () => {
     expect(workflow.permissions).toEqual({
       contents: "read",
@@ -80,12 +82,22 @@ describe("the scheduled conformance run", () => {
     }
   });
 
+  // A stalled install or fetch would otherwise hold the run for GitHub's
+  // six hours before it goes red. Each test already stops at 30 seconds.
+  it("stops a stalled run within ten minutes", () => {
+    for (const job of Object.values(workflow.jobs)) {
+      expect(job["timeout-minutes"]).toBe(10);
+    }
+  });
+
   it("holds no secret and no variable", () => {
     expect(readRepoFile(WORKFLOW)).not.toMatch(/\b(secrets|vars)\./u);
   });
 });
 
-describe("a red scheduled run reaches the owner", () => {
+// Governor starts a session on a red scheduled run on the default branch.
+// Its schema leaves the feature on unless `enabled` is false.
+describe("a red scheduled run starts a governor session", () => {
   it("has governor's redScheduledRun on", () => {
     const config = z
       .object({
