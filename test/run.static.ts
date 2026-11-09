@@ -104,9 +104,15 @@ describe("fitness: the bucket stays private (storage.md)", () => {
   // The same check test/text-bucket.conformance.ts makes of the deployed
   // policy (#135), so a narrowed Deny fails here before it deploys (#148).
   // The template names the bucket by GetAtt and Sub, so each resource is
-  // rendered with a stand-in ARN first.
+  // rendered with a stand-in account first. The bucket's ARN and its name
+  // written out render the same, so either way of naming it passes.
   it("refuses plain HTTP for everyone, every action, the bucket and its objects", () => {
-    const bucketArn = "arn:aws:s3:::text-bucket";
+    const bucketArn = "arn:aws:s3:::grantlink-text-ACCOUNT";
+    const names = {
+      "AWS::Partition": "aws",
+      "AWS::AccountId": "ACCOUNT",
+      "TextBucket.Arn": bucketArn,
+    };
     const policy = BucketPolicy.parse(
       resource(data, "TextBucketPolicy").Properties.PolicyDocument,
     );
@@ -114,7 +120,7 @@ describe("fitness: the bucket stays private (storage.md)", () => {
       Statement: policy.Statement.map((statement) => ({
         ...statement,
         Resource: list(statement.Resource).map((value) =>
-          renderArn(value, { "TextBucket.Arn": bucketArn }),
+          renderArn(value, names),
         ),
       })),
     };
