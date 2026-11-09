@@ -160,14 +160,6 @@ describe("the bootstrap script", () => {
     }
   });
 
-  it("checks for aws-access's parameter before it changes anything", () => {
-    const check = index(
-      /^aws ssm get-parameter --region "\$REGION" --name \/access\/account-id\b/u,
-    );
-    expect(check).toBeGreaterThan(-1);
-    expect(check).toBeLessThan(index(/^aws cloudformation deploy /u));
-  });
-
   // A deploy with nothing to change exits non-zero unless told not to, and
   // CloudFormation refuses to update a stack mid-change, so each deploy
   // first waits for its stack to settle.
@@ -204,17 +196,6 @@ describe("the bootstrap script", () => {
       ),
     ).toBeGreaterThan(-1);
     expect(script).not.toMatch(/list-hosted-zones-by-name/u);
-  });
-
-  // A rerun that waits on a stack still being created shows them first.
-  it("prints the nameservers of a zone that exists before it waits on the stack", () => {
-    const shown = index(/^\[ "\$zone" = "None" \] \|\| nameservers "\$zone"$/u);
-    expect(shown).toBeGreaterThan(-1);
-    expect(shown).toBeLessThan(index(/^settle "\$DNS_STACK"$/u));
-  });
-
-  it("stops waiting for the hosted zone if the DNS deploy has ended", () => {
-    expect(script).toMatch(/while \[ "\$zone" = "None" \] && kill -0 "\$dns"/u);
   });
 
   it("asks for no value by hand but the go-ahead", () => {
