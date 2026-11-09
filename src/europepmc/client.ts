@@ -16,6 +16,12 @@ export const USER_AGENT =
 
 // The least time between the starts of two requests.
 export const INTERVAL_MS = 500;
+
+// Results per page of a search. The run keeps a page of results as one
+// step's result, which the durable SDK checkpoints in at most 256 KB. A
+// page this size fits even when every title is 500 characters of three
+// bytes each (src/pipeline/steps.test.ts).
+export const SEARCH_PAGE_SIZE = 150;
 // A request slower than this counts as Europe PMC slowing down.
 const SLOW_MS = 5_000;
 const MAX_INTERVAL_MS = 16_000;
@@ -271,7 +277,7 @@ export function europePmc(
       url.searchParams.set("query", query);
       url.searchParams.set("resultType", "lite");
       url.searchParams.set("format", "json");
-      url.searchParams.set("pageSize", "1000");
+      url.searchParams.set("pageSize", String(SEARCH_PAGE_SIZE));
       url.searchParams.set("cursorMark", cursor);
       const reply = searchReply.parse(await (await request(url)).json());
       const results = reply.resultList.result;

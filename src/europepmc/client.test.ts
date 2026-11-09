@@ -4,6 +4,7 @@ import {
   EuropePmcError,
   HOSTS,
   INTERVAL_MS,
+  SEARCH_PAGE_SIZE,
   searchQuery,
   USER_AGENT,
   type Clock,
@@ -255,6 +256,9 @@ describe("searching Europe PMC", () => {
     const page = await client.search("*");
     expect(requests[0]?.url.searchParams.get("cursorMark")).toBe("*");
     expect(requests[0]?.url.searchParams.get("format")).toBe("json");
+    expect(requests[0]?.url.searchParams.get("pageSize")).toBe(
+      String(SEARCH_PAGE_SIZE),
+    );
     expect(page).toEqual({
       hitCount: 3,
       nextCursor: "AoE",
