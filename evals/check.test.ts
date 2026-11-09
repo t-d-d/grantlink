@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { comment, gate, noLive } from "./check.ts";
+import { comment, gate, noLive, readLive } from "./check.ts";
 import { FLOORS } from "./floors.ts";
 import type { Report } from "./report.ts";
 
@@ -105,5 +105,37 @@ describe("the pull request's comment", () => {
 
   it("refuses a reason it does not know", () => {
     expect(() => noLive.parse("gone")).toThrow();
+  });
+
+  // #138: a pull request that adds a row or a field reads a live report
+  // filed by older code. The comparison is advice, so the comment shows
+  // CI's scores alone rather than failing the eval check.
+  it.each([
+    [
+      "one row short",
+      (live: Report) => ({ ...live, rows: live.rows.slice(0, -1) }),
+    ],
+    ["with an extra key", (live: Report) => ({ ...live, retired: true })],
+  ])("shows CI's scores alone when the live report is %s", (_, change) => {
+    const live = readLive(
+      JSON.stringify(change(report({ "recall-a": 0.9, spend: 0 }))),
+    );
+    expect(live).toBe("older-format");
+    const text = comment(report({ "recall-a": 0.96, spend: 0 }), live);
+    expect(text).toContain(
+      "| Recall | Gold set A | 95% or more | 96.0% | - | go |",
+    );
+    expect(text).toContain(
+      "The live release's report is in a format this pull request's code cannot read",
+    );
+  });
+
+  it("reads a live report this code can read", () => {
+    const live = report({ spend: 0 });
+    expect(readLive(JSON.stringify(live))).toEqual(live);
+  });
+
+  it("treats a live report that is not JSON as one it cannot read", () => {
+    expect(readLive("{")).toBe("older-format");
   });
 });
