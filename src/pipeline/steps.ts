@@ -134,6 +134,10 @@ async function newerDeployLive(
 // publishes nothing, so the page keeps what it had.
 // The data always goes up. The page does only if no newer deploy is live,
 // and otherwise the findings reach it at the next deploy or run.
+// The site writes found.json before the page (siteBucket in
+// src/store/bucket.ts), so a publish whose page write fails on every try
+// leaves the new found.json on the site beside the old page. The README's
+// "How a run works" says why that is acceptable.
 export async function publish(deps: Deps, runId: string): Promise<Published> {
   const found = summarise(await deps.table.all(), {
     runId,
