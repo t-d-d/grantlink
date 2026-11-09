@@ -37,18 +37,73 @@ function plain(xml: string): string {
     .trim();
 }
 
-// Every element with this name, as its inner XML. JATS does not nest any of
-// the elements read here inside one of the same name. A self-closing element
-// is empty, and does not run on to the next closing tag of its name (#195).
-// The name must end at whitespace, a slash or the tag's close: \b would let
-// "fn" match <fn-group>, since a hyphen ends a word.
-export function elements(xml: string, name: string, attributes = ""): string[] {
-  const pattern = new RegExp(
-    `<${name}(?=[\\s/>])(?=[^>]*${attributes})(?:[^>]*/>|[^>]*>([\\s\\S]*?)</${name}>)`,
-    "gu",
-  );
-  return [...xml.matchAll(pattern)].map((match) => match[1] ?? "");
+// What ends a tag's name: whitespace, a slash or the tag's close. \b would
+// let "fn" match <fn-group> and "title" match <title-group>, since a hyphen
+// ends a word (#210, #216).
+const NAME_END = String.raw`(?=[\s/>])`;
+
+// Drops comments and turns each CDATA section into escaped text, so that a
+// tag written inside either is not read as markup.
+function markup(xml: string): string {
+  return xml
+    .replace(/<!--[\s\S]*?-->/gu, "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gu, (_whole, text: string) =>
+      text
+        .replace(/&/gu, "&amp;")
+        .replace(/</gu, "&lt;")
+        .replace(/>/gu, "&gt;"),
+    );
 }
+
+// Every outermost element with this name, as its inner XML. JATS nests some
+// of them, such as a paragraph in a list item in a paragraph, so each one
+// runs to the closing tag that balances its opening tag, and the elements
+// inside it are read as part of it. One whose closing tag is missing runs
+// only to the next closing tag of its name, and one with none after it is
+// dropped, so a broken element never takes in the rest of the paper. A
+// self-closing element is empty, and does not run on to the next closing tag
+// of its name (#195).
+export function elements(xml: string, name: string, attributes = ""): string[] {
+  const tags = new RegExp(`<(/?)${name}${NAME_END}([^>]*)>`, "gu");
+  const wanted = new RegExp(attributes, "u");
+  const found: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (const tag of xml.matchAll(tags)) {
+    const [whole, closing, rest = ""] = tag;
+    if (rest.endsWith("/")) {
+      if (depth === 0 && wanted.test(rest)) found.push("");
+      continue;
+    }
+    if (closing) {
+      if (depth === 0) continue;
+      depth -= 1;
+      if (depth === 0) found.push(xml.slice(start, tag.index));
+    } else if (depth > 0) {
+      depth += 1;
+    } else if (wanted.test(rest)) {
+      depth = 1;
+      start = tag.index + whole.length;
+    }
+  }
+  if (depth > 0) {
+    const close = xml.indexOf(`</${name}>`, start);
+    if (close !== -1) {
+      found.push(xml.slice(start, close));
+      return [
+        ...found,
+        ...elements(xml.slice(close + name.length + 3), name, attributes),
+      ];
+    }
+  }
+  return found;
+}
+
+// A section's title.
+const TITLE = new RegExp(
+  String.raw`<title${NAME_END}[^>]*>[\s\S]*?<\/title>`,
+  "gu",
+);
 
 // The paragraphs of a section, or its whole text less its title if it has
 // none. A self-closing paragraph is empty, so it does not count.
@@ -57,7 +112,7 @@ function paragraphs(section: string): string[] {
     .map(plain)
     .filter((paragraph) => paragraph !== "");
   if (found.length > 0) return found;
-  return [plain(section.replace(/<title\b[^>]*>[\s\S]*?<\/title>/gu, ""))];
+  return [plain(section.replace(TITLE, ""))];
 }
 
 // What counts as a funding part, read here by the cutter and by the check on
@@ -70,15 +125,15 @@ export const FUNDING_FOOTNOTE = String.raw`\bfn-type="(?:financial-disclosure|fu
 // its title. Europe PMC often marks acknowledgements up as a section rather
 // than an <ack>, and one journal titles its funding section Support. Support
 // must be the whole title, so a body section such as Support vector machines
-// is not kept. A label ends at its own closing tag, so a labelled section
-// is not taken for the labelled funding section after it. A section may open
-// with a <sec-meta>, which ends at its own closing tag in the same way. It is
-// part of the match whether the section is found by its type or its title, so
-// it is not kept, since it can name people (#222). The name must end at
-// whitespace, a slash or the tag's close, so <sec-meta> is not taken for a
-// section itself.
-const SEC_META = String.raw`(?:<sec-meta(?=[\s/>])(?:[^>]*\/>|[^>]*>(?:(?!<\/sec-meta>)[\s\S])*<\/sec-meta>)\s*)?`;
-const FUNDING_SECTION_START = String.raw`<sec(?=[\s/>])(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>\s*${SEC_META}|[^>]*>\s*${SEC_META}(?:<label\b[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>\s*)?<title\b[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
+// is not kept. A tag matches only by its whole name, so <sec-meta> is not a
+// section and <title-group> is not a title (#216). A label ends at its own
+// closing tag, so a labelled section is not taken for the labelled funding
+// section after it. A section may open with a <sec-meta>, which ends at its
+// own closing tag in the same way. It is part of the match whether the
+// section is found by its type or its title, so it is not kept, since it can
+// name people (#222).
+const SEC_META = String.raw`(?:<sec-meta${NAME_END}(?:[^>]*\/>|[^>]*>(?:(?!<\/sec-meta>)[\s\S])*<\/sec-meta>)\s*)?`;
+const FUNDING_SECTION_START = String.raw`<sec${NAME_END}(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>\s*${SEC_META}|[^>]*>\s*${SEC_META}(?:<label${NAME_END}[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>\s*)?<title${NAME_END}[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
 
 const FUNDING_SECTION_AT = new RegExp(FUNDING_SECTION_START, "iuy");
 
@@ -104,7 +159,8 @@ function fundingBodySections(xml: string): string[] {
   );
 }
 
-export function fundingSections(xml: string): FundingSections {
+export function fundingSections(paper: string): FundingSections {
+  const xml = markup(paper);
   const groups = elements(xml, "funding-group");
   const statements = groups.flatMap((group) =>
     elements(group, "funding-statement").map(plain),

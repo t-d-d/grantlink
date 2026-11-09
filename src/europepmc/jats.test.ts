@@ -105,6 +105,49 @@ describe("cutting a paper to its funding sections", () => {
     });
   });
 
+  it("reads a paragraph that holds a list of paragraphs whole", () => {
+    expect(
+      fundingSections(
+        "<article><back><ack><p>Supported by <list><list-item><p>grant A1</p></list-item><list-item><p>grant B2</p></list-item></list> and grant A2.</p><p>Thanks to Example Lab.</p></ack></back></article>",
+      ).text,
+    ).toEqual([
+      "Supported by grant A1 grant B2 and grant A2.",
+      "Thanks to Example Lab.",
+    ]);
+  });
+
+  it("reads past a paragraph tag in a comment or a CDATA section", () => {
+    expect(
+      fundingSections(
+        "<article><back><ack><p>Grant A1<!-- was <p> -->.</p><p>Grant <![CDATA[<p>]]>B2.</p><p>Grant A2.</p></ack></back></article>",
+      ).text,
+    ).toEqual(["Grant A1.", "Grant <p>B2.", "Grant A2."]);
+  });
+
+  it("keeps a paragraph whose closing tag is missing", () => {
+    expect(
+      fundingSections(
+        "<article><back><ack><p>Grant A1.</p><p>Grant B2 <p>and A2.</p></ack></back></article>",
+      ).text,
+    ).toEqual(["Grant A1.", "Grant B2 and A2."]);
+  });
+
+  it("keeps no more of a paper after an unclosed element than the next closing tag", () => {
+    const sections = fundingSections(
+      "<article><back><ack><p>Grant A1.</p><ref-list><ref>Refauthor 2020.</ref></ref-list></back><fn-group><fn><p>Note.</p></fn></fn-group></article>",
+    );
+    expect(sections.text).toEqual([]);
+    expect(JSON.stringify(sections)).not.toContain("Refauthor");
+  });
+
+  it("does not read a footnote group as a footnote", () => {
+    expect(
+      fundingSections(
+        '<article><back><fn-group fn-type="funding"><fn><p>Grant A1.</p></fn><p>Notes.</p></fn-group></back></article>',
+      ).text,
+    ).toEqual([]);
+  });
+
   it("leaves a character reference past Unicode's range as written", () => {
     expect(
       fundingSections(
@@ -152,6 +195,30 @@ describe("cutting a paper to its funding sections", () => {
         `<article><front><funding-group><award-group/></funding-group></front></article>`,
       ),
     ).toEqual({ text: [], awards: [] });
+  });
+
+  describe("matches a section, label or title tag only by its whole name (#216)", () => {
+    it.each([
+      [
+        "<sec-meta><title>Funding</title><p>Grant A1.</p></sec-meta><sec><title>Results</title><p>Body text.</p></sec>",
+      ],
+      ["<sec><title-group>Funding</title-group><p>Grant A1.</p></sec>"],
+      [
+        "<sec><label-group>5.</label><title>Funding</title><p>Grant A1.</p></sec>",
+      ],
+    ])("finds no funding section in %s", (body) => {
+      expect(
+        fundingSections(`<article><body>${body}</body></article>`).text,
+      ).toEqual([]);
+    });
+
+    it("strips only a title, not a tag whose name begins with title", () => {
+      expect(
+        fundingSections(
+          `<article><back><ack><title-group>Funded by grant A1.</title-group><title>Thanks</title></ack></back></article>`,
+        ).text,
+      ).toEqual(["Funded by grant A1."]);
+    });
   });
 
   it("finds nothing in a paper with no funding sections", () => {
