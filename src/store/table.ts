@@ -8,14 +8,14 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { z } from "zod";
 import { referenceSchema } from "../extract/rules.ts";
+import { batches } from "../shared/batches.ts";
+import { pmcid as PMCID } from "../shared/pmcid.ts";
 
 // The only module that reads or writes the results table
 // (docs/constraints/storage.md). Every row is checked against its schema
 // before it is written, and a row with any other field is refused, so
 // funding text or a name cannot reach the table
 // (docs/constraints/personal-data.md).
-
-const PMCID = z.string().regex(/^PMC\d+$/u);
 
 const versions = z
   .object({
@@ -85,10 +85,20 @@ interface Sender {
 const isConflict = (error: unknown) =>
   error instanceof Error && error.name === "ConditionalCheckFailedException";
 
-const batches = <T>(items: T[], size: number): T[][] =>
-  Array.from({ length: Math.ceil(items.length / size) }, (_, i) =>
-    items.slice(i * size, i * size + size),
-  );
+type Sleep = (ms: number) => Promise<void>;
+
+const realSleep: Sleep = (ms) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+// DynamoDB hands back the keys it could not read when the table is
+// throttled. Each try that reads none of them waits twice as long as the
+// one before; a try that reads some starts the count again. After the last
+// try in a row that reads none, the step that called fails, and its own
+// retries take over.
+const UNPROCESSED_FIRST_WAIT_MS = 50;
+const UNPROCESSED_TRIES = 8;
 
 const batchGetReply = z.object({
   Responses: z.record(z.string(), z.array(z.unknown())).optional(),
@@ -108,6 +118,7 @@ export function dynamoTable(
     new DynamoDBClient({ region: "eu-west-2" }),
     { marshallOptions: { removeUndefinedValues: true } },
   ),
+  sleep: Sleep = realSleep,
 ): Table {
   const send = (command: object) => client.send(command);
 
@@ -140,7 +151,16 @@ export function dynamoTable(
       const done = new Set<string>();
       for (const batch of batches(pmcids, 100)) {
         let keys = batch.map((pmcid) => ({ pmcid }));
-        while (keys.length > 0) {
+        let stalled = 0;
+        for (let tries = 0; keys.length > 0; tries += 1) {
+          if (stalled === UNPROCESSED_TRIES) {
+            throw new Error(
+              `${String(keys.length)} keys still unprocessed after ${String(UNPROCESSED_TRIES)} tries`,
+            );
+          }
+          if (tries > 0) {
+            await sleep(UNPROCESSED_FIRST_WAIT_MS * 2 ** stalled);
+          }
           const reply = batchGetReply.parse(
             await send(
               new BatchGetCommand({
@@ -160,7 +180,9 @@ export function dynamoTable(
               .parse(item);
             if (row.status === "processed") done.add(row.pmcid);
           }
-          keys = reply.UnprocessedKeys?.[name]?.Keys ?? [];
+          const left = reply.UnprocessedKeys?.[name]?.Keys ?? [];
+          stalled = left.length < keys.length ? 0 : stalled + 1;
+          keys = left;
         }
       }
       return done;

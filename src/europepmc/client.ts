@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { funder } from "../extract/rules.ts";
+import { isPmcid, pmcid as PMCID } from "../shared/pmcid.ts";
 
 // The only module that talks to Europe PMC, and the only outside service a
 // run reads papers from (docs/constraints/public-data.md). It keeps to
@@ -94,18 +95,13 @@ const searchReply = z.object({
   resultList: z.object({
     result: z.array(
       z.object({
-        pmcid: z
-          .string()
-          .regex(/^PMC\d+$/u)
-          .optional(),
+        pmcid: PMCID.optional(),
         title: z.string().optional(),
         firstPublicationDate: z.iso.date().optional(),
       }),
     ),
   }),
 });
-
-const PMCID = /^PMC\d+$/u;
 
 // A title as plain text: Europe PMC's titles may carry inline markup.
 export function plainTitle(title: string): string {
@@ -206,7 +202,7 @@ export function europePmc(
       const reply = searchReply.parse(await (await request(url)).json());
       const results = reply.resultList.result;
       const papers: SearchPaper[] = results.flatMap((result) =>
-        result.pmcid !== undefined && PMCID.test(result.pmcid)
+        result.pmcid !== undefined && isPmcid(result.pmcid)
           ? [
               {
                 pmcid: result.pmcid,
@@ -228,7 +224,7 @@ export function europePmc(
     },
 
     async fullText(pmcid) {
-      if (!PMCID.test(pmcid)) throw new Error(`not a PMCID: ${pmcid}`);
+      if (!isPmcid(pmcid)) throw new Error(`not a PMCID: ${pmcid}`);
       return (await request(new URL(`${pmcid}/fullTextXML`, BASE))).text();
     },
   };

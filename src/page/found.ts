@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { referenceSchema } from "../extract/rules.ts";
+import { pmcid as PMCID } from "../shared/pmcid.ts";
 import type { PaperRow } from "../store/table.ts";
 
 // What the page shows from a run, built from the results table. It holds a
@@ -7,7 +8,6 @@ import type { PaperRow } from "../store/table.ts";
 // (docs/constraints/no-republished-text.md). The run publishes it beside the
 // page as found.json, and the deploy builds the page again from it.
 
-const PMCID = z.string().regex(/^PMC\d+$/u);
 const title = z.string().max(500);
 
 export const found = z
