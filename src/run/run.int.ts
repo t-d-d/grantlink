@@ -215,8 +215,15 @@ describe("a run that finishes after a deploy", () => {
 describe("a paper Europe PMC has since linked to a grant", () => {
   it("is neither listed nor counted once a later complete search no longer returns it", async () => {
     const fake = fakeDeps();
-    await runWith(fake);
+    const first = await runWith(fake);
     expect(fake.site.files?.["index.html"]).toContain("Another made-up study.");
+    // Counted from the first run, so a change to the rules that finds more
+    // or fewer references in the fixtures leaves this test as it is.
+    const before = first.result?.published;
+    if (before?.published !== true)
+      throw new Error("the first run did not publish");
+    const dropped = fake.table.rows.get("PMC0000002")?.references?.length ?? 0;
+    expect(dropped).toBeGreaterThan(0);
 
     // Europe PMC now links PMC0000002 to a grant, so the search for papers
     // linked to none leaves it out.
@@ -234,8 +241,8 @@ describe("a paper Europe PMC has since linked to a grant", () => {
     expect(again.status).toBe("SUCCEEDED");
     expect(again.result?.published).toEqual({
       published: true,
-      papers: 7,
-      references: 7,
+      papers: before.papers - 1,
+      references: before.references - dropped,
       page: "written",
     });
     const page = fake.site.files?.["index.html"] ?? "";
