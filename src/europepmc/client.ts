@@ -22,6 +22,9 @@ const MAX_INTERVAL_MS = 16_000;
 const FIRST_BACKOFF_MS = 2_000;
 const MAX_BACKOFF_MS = 60_000;
 const ATTEMPTS = 5;
+// The longest the client waits within one try. A longer Retry-After ends
+// the try, and the run's step waits instead, outside the Lambda invocation.
+const MAX_WAIT_MS = 60_000;
 const TIMEOUT_MS = 60_000;
 
 export interface Clock {
@@ -173,8 +176,15 @@ export function europePmc(
       }
       // Refused, or failed on the way: wait as long as Europe PMC asks, or
       // longer after each try, and keep the slower pace for a while.
+      const asked = response && retryAfter(response, clock);
+      if (asked !== undefined && asked > MAX_WAIT_MS) {
+        throw new EuropePmcError(
+          `${failure}, asked to wait ${String(Math.ceil(asked / 1_000))}s`,
+          response?.status,
+        );
+      }
       const backoff =
-        (response && retryAfter(response, clock)) ??
+        asked ??
         Math.min(FIRST_BACKOFF_MS * 2 ** (attempt - 1), MAX_BACKOFF_MS);
       interval = Math.min(interval * 2, MAX_INTERVAL_MS);
       next = clock.now() + Math.max(backoff, interval);

@@ -11,6 +11,7 @@ import {
 } from "vitest";
 import { fakeDeps, reply } from "../../test/fakes.ts";
 import { NAMES } from "../../test/fixtures.ts";
+import { EuropePmcError } from "../europepmc/client.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
 // A whole run under the SDK's local runner, which replays the body as
@@ -144,6 +145,38 @@ describe("a run that fails or finds nothing leaves the page as it was", () => {
       reason: "the search found nothing",
     });
     expect(fake.site.files).toBeUndefined();
+  });
+
+  it("asks again for a paper Europe PMC kept refusing, but not for one it has no full text for, nor after a fault of its own", async () => {
+    const asked = async (error: Error) => {
+      const fake = fakeDeps();
+      const calls = new Map<string, number>();
+      fake.deps.europePmc = {
+        search: fake.deps.europePmc.search.bind(fake.deps.europePmc),
+        fullText: (pmcid) => {
+          calls.set(pmcid, (calls.get(pmcid) ?? 0) + 1);
+          return Promise.reject(error);
+        },
+      };
+      await runWith(fake);
+      return calls.get("PMC0000001");
+    };
+    expect(
+      await asked(
+        new EuropePmcError("Europe PMC answered 429, after 5 tries", undefined),
+      ),
+    ).toBe(3);
+    expect(
+      await asked(
+        new EuropePmcError("Europe PMC answered 503, after 5 tries", undefined),
+      ),
+    ).toBe(3);
+    expect(
+      await asked(new EuropePmcError("Europe PMC answered 404", 404)),
+    ).toBe(1);
+    // A fault in the paper or the code, such as a reply that does not
+    // parse, gives the same result however often it is tried.
+    expect(await asked(new Error("not the shape expected"))).toBe(1);
   });
 
   it("publishes nothing when no paper could be read", async () => {

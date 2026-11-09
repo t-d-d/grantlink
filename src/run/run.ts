@@ -30,12 +30,15 @@ const europePmcRetry = createRetryStrategy({
   maxDelay: { minutes: 5 },
 });
 
-// A paper Europe PMC has no full text for is not worth asking again in this
-// run.
+// Only Europe PMC's own refusals and failures are worth asking again in
+// this run, after the longer wait. A paper it has no full text for (a 4xx
+// other than 429) is not, and nor is a fault in the paper or the code,
+// which gives the same result however often it is tried.
 const paperRetry = (error: Error, attempt: number): RetryDecision =>
-  /answered 4\d\d/u.test(error.message)
-    ? { shouldRetry: false }
-    : europePmcRetry(error, attempt);
+  error.name === "EuropePmcError" &&
+  !/answered 4(?!29)\d\d/u.test(error.message)
+    ? europePmcRetry(error, attempt)
+    : { shouldRetry: false };
 
 const storeRetry = createRetryStrategy({
   maxAttempts: 3,

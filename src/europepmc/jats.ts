@@ -17,11 +17,12 @@ function decode(text: string): string {
   return text.replace(
     /&(#x[0-9a-f]+|#\d+|[a-z]+);/giu,
     (whole, entity: string) => {
-      if (entity.startsWith("#x") || entity.startsWith("#X")) {
-        return String.fromCodePoint(Number.parseInt(entity.slice(2), 16));
-      }
       if (entity.startsWith("#")) {
-        return String.fromCodePoint(Number.parseInt(entity.slice(1), 10));
+        const code = /^#x/iu.test(entity)
+          ? Number.parseInt(entity.slice(2), 16)
+          : Number.parseInt(entity.slice(1), 10);
+        // A reference past Unicode's range is left as written.
+        return code <= 0x10ffff ? String.fromCodePoint(code) : whole;
       }
       return ENTITIES[entity.toLowerCase()] ?? whole;
     },

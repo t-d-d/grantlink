@@ -109,9 +109,18 @@ jobs:
         id: first
         run: |
           set -euo pipefail
-          at="$(aws cloudformation describe-stacks --stack-name grantlink-prod \
+          # Only a stack that does not exist yet gets a new time. Any other
+          # error stops the deploy, so it never moves the first run.
+          if at="$(aws cloudformation describe-stacks --stack-name grantlink-prod \
             --query "Stacks[0].Outputs[?OutputKey=='FirstRunAt'].OutputValue" \
-            --output text 2>/dev/null || true)"
+            --output text 2>describe-stacks.err)"; then
+            :
+          elif grep -q "does not exist" describe-stacks.err; then
+            at=""
+          else
+            cat describe-stacks.err >&2
+            exit 1
+          fi
           if [ -z "$at" ] || [ "$at" = "None" ]; then
             at="$(date -u -d '+15 minutes' +%Y-%m-%dT%H:%M:%S)"
           fi

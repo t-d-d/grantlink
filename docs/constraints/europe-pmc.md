@@ -15,8 +15,13 @@ requests.
 - A refusal (429) or a server error waits as long as Europe PMC's
   `Retry-After` asks, or longer after each try with none. A request slower
   than five seconds halves the pace until Europe PMC is quick again.
-- After five tries a request gives up, and its paper waits for the next
-  run. A paper with no full text (404) is not asked for again in that run.
+- The client waits at most a minute within one try. A `Retry-After`
+  longer than that ends the try, and the run's step waits instead, so a
+  long wait never holds a Lambda invocation open.
+- After five tries a request gives up. The run's step asks again after a
+  longer wait, and after that the paper waits for the next run. A paper
+  with no full text (a 4xx other than 429) is not asked for again in that
+  run.
 - Every request carries a User-Agent that names grantlink, its address and
   a contact.
 - The back catalogue goes through the same web services, once. A paper

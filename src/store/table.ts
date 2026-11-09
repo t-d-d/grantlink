@@ -55,8 +55,13 @@ export const paperRow = z.object(fields).strict();
 export type PaperRow = z.infer<typeof paperRow>;
 
 // What is read: a row a later version wrote may carry a new field, which
-// this version drops (docs/constraints/durable-execution.md).
-const tolerantRow = z.object(fields);
+// this version drops (docs/constraints/durable-execution.md). So may a
+// reference or the versions within it.
+const tolerantRow = z.object({
+  ...fields,
+  references: z.array(z.object(referenceSchema.shape)).max(50).optional(),
+  versions: z.object(versions.shape).optional(),
+});
 export const readRow = (item: unknown): PaperRow => tolerantRow.parse(item);
 
 export interface FoundPaper {

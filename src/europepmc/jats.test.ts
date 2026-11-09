@@ -42,6 +42,14 @@ describe("cutting a paper to its funding sections", () => {
     ]);
   });
 
+  it("leaves a character reference past Unicode's range as written", () => {
+    expect(
+      fundingSections(
+        "<article><back><ack><p>Grant &#x110000; and &#99999999;.</p></ack></back></article>",
+      ).text,
+    ).toEqual(["Grant &#x110000; and &#99999999;."]);
+  });
+
   it("finds nothing in a paper with no funding sections", () => {
     expect(fundingSections("<article><body><p>x</p></body></article>")).toEqual(
       { text: [], awards: [] },

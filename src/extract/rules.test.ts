@@ -28,6 +28,12 @@ describe("the rules", () => {
     ).toEqual([{ asWritten: "A28707", normalised: "A28707", format: "An" }]);
   });
 
+  it("does not end a sentence at the dots in U.K.", () => {
+    expect(
+      findReferences(sections("Supported by Cancer Research U.K. (A12345).")),
+    ).toEqual([{ asWritten: "A12345", normalised: "A12345", format: "An" }]);
+  });
+
   it("leaves an A number in a sentence that names another funder", () => {
     expect(
       findReferences(

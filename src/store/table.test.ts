@@ -79,6 +79,19 @@ describe("reading rows tolerantly (durable-execution.md)", () => {
   it("reads a row a later version wrote with a new field", () => {
     expect(readRow({ ...processed, confidence: 0.9 })).toEqual(processed);
   });
+
+  it("reads a row a later version wrote with a new field in a reference or its versions", () => {
+    expect(
+      readRow({
+        ...processed,
+        references: processed.references.map((reference) => ({
+          ...reference,
+          confidence: 0.9,
+        })),
+        versions: { ...processed.versions, prompt: "prompt-1" },
+      }),
+    ).toEqual(processed);
+  });
 });
 
 describe("the table module", () => {

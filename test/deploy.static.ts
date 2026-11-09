@@ -123,6 +123,13 @@ describe("the deploy and the run (#19)", () => {
     expect(deployStep?.env?.FIRST_RUN_AT).toBe("${{ steps.first.outputs.at }}");
   });
 
+  it("sets a new first run time only when the stack does not exist, and stops on any other error", () => {
+    const first = all.find((step) => step.id === "first")?.run ?? "";
+    expect(first).not.toMatch(/2>\/dev\/null \|\| true/u);
+    expect(first).toContain("does not exist");
+    expect(first).toMatch(/exit 1/u);
+  });
+
   it("builds the page again from the last run's data, so a deploy keeps the findings", () => {
     const publish = runs("deploy");
     expect(publish).toMatch(

@@ -89,6 +89,17 @@ describe("fitness: requests back off (europe-pmc.md)", () => {
     expect(lastGap).toBeLessThan(gapAfterSlow + 100);
   });
 
+  it("does not sleep longer than a minute in one try, and leaves a longer wait to the run", async () => {
+    const { client, requests } = harness(
+      () =>
+        new Response("", { status: 429, headers: { "Retry-After": "3600" } }),
+    );
+    await expect(client.fullText("PMC1")).rejects.toThrow(
+      /asked to wait 3600s/u,
+    );
+    expect(requests).toHaveLength(1);
+  });
+
   it("gives up after a few refusals, so the paper waits for the next run", async () => {
     const { client, requests } = harness(
       () => new Response("", { status: 503 }),

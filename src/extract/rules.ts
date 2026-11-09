@@ -98,7 +98,8 @@ function normalise(written: string): string {
 }
 
 function sentences(paragraph: string): string[] {
-  return paragraph.split(/(?<=[.;!?])\s+(?=[A-Z(])/u);
+  // A full stop after a single capital, as in U.K., does not end one.
+  return paragraph.split(/(?<=(?<!\b[A-Z])[.;!?])\s+(?=[A-Z(])/u);
 }
 
 // Finds the references in one piece of text. An A number counts only where
