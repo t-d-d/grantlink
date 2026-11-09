@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/t-d-d/gh-governor/fda1887811d641f79cea18d4b1fa0f09ef65a238/schema/governor.schema.json",
   "environment": "grantlink",
-  "workflows": { "ci": ".github/workflows/deploy.yml" },
+  "workflows": { "ci": ".github/workflows/gate.yml" },
   "pickup": {
     "ready": ["mode: afk"],
     "claim": "claimed",

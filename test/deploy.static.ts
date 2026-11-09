@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { deploy, type Step } from "./app.ts";
+import { deploy, type Step, type Workflow } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The deploy workflow (#17). Only a green merge to main deploys, through
@@ -95,14 +95,25 @@ describe("the deploy workflow", () => {
   });
 });
 
-describe("governor sees each deploy", () => {
+// Governor's PR review waits for a run of `workflows.ci` at the pull
+// request's head. deploy.yml runs only on main, so naming it held every
+// review (#54). On main the gate runs inside deploy.yml, so no run there is
+// CI, and CI messages never fire. Governor reads a red main build as a
+// failed deploy instead, but only once a deploy has succeeded.
+describe("governor's CI workflow", () => {
   const governor = parse(readRepoFile(".github/governor.json")) as {
     workflows?: { ci?: string };
     ciMessages?: { enabled?: boolean };
   };
+  const ci = governor.workflows?.ci ?? "";
 
-  it("reads deploy.yml as the CI workflow, with CI messages on", () => {
-    expect(governor.workflows?.ci).toBe(".github/workflows/deploy.yml");
+  it("reads gate.yml as the CI workflow, with CI messages on", () => {
+    expect(ci).toBe(".github/workflows/gate.yml");
     expect(governor.ciMessages?.enabled).toBe(true);
+  });
+
+  it("names a workflow that runs on pull requests", () => {
+    const workflow = parse(readRepoFile(ci)) as Workflow;
+    expect(Object.keys(workflow.on)).toContain("pull_request");
   });
 });
