@@ -4,5 +4,13 @@
     "lib": ["ES2023"],
     "types": ["node"]
   },
-  "include": ["*.ts", "src", "evals", "test", "infra", "eslint-rules"]
+  "include": [
+    "*.ts",
+    "src",
+    "evals",
+    "test",
+    "infra",
+    "eslint-rules",
+    "scripts"
+  ]
 }
