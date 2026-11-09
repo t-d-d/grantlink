@@ -64,7 +64,7 @@ race() {
     run_publishes
   fi
 }
-key=; body=; cache=; if_match=; if_none_match=; delete=; excludes=()
+key=; body=; cache=; query=; if_match=; if_none_match=; delete=; excludes=()
 excluded() {
   local pattern
   for pattern in "\${excludes[@]}"; do [ "$1" = "$pattern" ] && return 0; done
@@ -77,6 +77,7 @@ while [ $# -gt 0 ]; do
     --key) key=$2; shift ;;
     --body) body=$2; shift ;;
     --cache-control) cache=$2; shift ;;
+    --query) query=$2; shift ;;
     --if-match) if_match=$2; shift ;;
     --if-none-match) if_none_match=$2; shift ;;
     --exclude) excludes+=("$2"); shift ;;
@@ -149,7 +150,10 @@ case "$1 $2" in
     cp "$body" "$bucket/$key"
     printf '%s' "$cache" > "$STATE/cache/$key"
     log "put $key"
-    echo "{\\"ETag\\": $(etag "$key")}" ;;
+    # What --query ETag --output text prints, or the whole reply.
+    if [ "$query" = ETag ]; then etag "$key"; echo
+    else echo "{\\"ETag\\": $(etag "$key")}"; fi
+    race "put $key" ;;
   "cloudfront create-invalidation") log "invalidate"; echo I-STUB ;;
   "cloudfront wait") log "wait" ;;
   *) log "unknown: $*"; echo "stub: no answer for $*" >&2; exit 97 ;;
@@ -188,6 +192,8 @@ interface Deploy {
   bucket: (key: string) => string | undefined;
   // The Cache-Control the object was last uploaded with.
   cache: (key: string) => string | undefined;
+  // A file in the copy of the repo the script ran from.
+  repoFile: (path: string) => string;
 }
 
 it("tells the old run's page from the new one's", () => {
@@ -216,6 +222,9 @@ function deploy(
     cpSync(join(root, dir), join(repo, dir), { recursive: true });
   for (const dir of ["evals", "node_modules", "package.json"])
     symlinkSync(join(root, dir), join(repo, dir));
+  // Running src/page/release.ts locally leaves site/release.json, which git
+  // ignores. Only the test's own record goes in the copy.
+  rmSync(join(repo, "site", "release.json"), { force: true });
   if (options.record !== undefined)
     writeFileSync(join(repo, "site", "release.json"), options.record);
   for (const [key, body] of Object.entries(before))
@@ -261,6 +270,7 @@ function deploy(
       existsSync(join(cache, key))
         ? readFileSync(join(cache, key), "utf8")
         : undefined,
+    repoFile: (path) => readFileSync(join(repo, path), "utf8"),
   };
 }
 
@@ -291,8 +301,9 @@ describe("the deploy publishes the page", () => {
   });
 
   it("leaves the repo's own copy of the page as it was", () => {
-    deploy(published);
-    expect(readRepoFile("site/index.html")).toBe(template);
+    const result = deploy(published);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.repoFile("site/index.html")).toBe(template);
   });
 
   it("stops before it writes anything when it cannot read the bucket", () => {
@@ -372,6 +383,18 @@ describe("the deploy publishes the release record with the page", () => {
     expect(result.status, result.stderr).toBe(0);
     expect(result.calls).toContain("refused index.html");
     expect(result.bucket("release.json")).toBe(record);
+  });
+
+  // A run on the last release reads the old record until the new one is
+  // up, so it can write its page between the deploy's page and the record.
+  it("and builds the page again when a run on the last release wrote it before the record went up", () => {
+    const result = withRecord({ race: "put index.html" });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.calls).toContain("run publishes");
+    expect(result.bucket("release.json")).toBe(record);
+    expect(result.bucket("index.html")).toBe(
+      buildPage(template, summary("run-new"), fakeRelease(200)),
+    );
   });
 
   it("not when S3 keeps refusing index.html", () => {

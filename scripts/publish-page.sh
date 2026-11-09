@@ -58,7 +58,8 @@ build_index() {
 }
 
 # Uploads index.html only if the page in the bucket is still the one
-# build_index read. Sets $refused when S3 refuses it for that reason:
+# build_index read, and keeps in $written the ETag S3 gave the upload.
+# Sets $refused when S3 refuses it for that reason:
 # PreconditionFailed when the page changed, NoSuchKey when it went, and
 # ConditionalRequestConflict when another write to it is under way.
 put_index() {
@@ -69,11 +70,12 @@ put_index() {
     unchanged=(--if-none-match "*")
   fi
   refused=
-  if aws s3api put-object --bucket "$BUCKET" --key index.html \
+  if written="$(aws s3api put-object --bucket "$BUCKET" --key index.html \
     --body "$work/site/index.html" \
     --content-type "text/html; charset=utf-8" \
     --cache-control "public, max-age=300" \
-    "${unchanged[@]}" >/dev/null 2>"$work/put.err"; then
+    --query ETag --output text \
+    "${unchanged[@]}" 2>"$work/put.err")"; then
     return
   fi
   if grep -qE "PreconditionFailed|NoSuchKey|ConditionalRequestConflict" "$work/put.err"; then
@@ -84,31 +86,44 @@ put_index() {
   exit 1
 }
 
+# Uploads the page build_index built, and builds it again each time a
+# run's page gets in the way, up to three tries.
+publish_index() {
+  local try
+  for try in 1 2 3; do
+    put_index
+    if [ -z "$refused" ]; then
+      return
+    fi
+    echo "::notice::The page changed while the deploy built it (try $try of 3)."
+    # Not under && or ||, which would turn off set -e inside the function.
+    if [ "$try" -lt 3 ]; then
+      build_index
+    fi
+  done
+  cat "$work/put.err" >&2
+  echo "The page kept changing while the deploy built it." >&2
+  exit 1
+}
+
 build_index
 aws s3 sync "$work/site/" "s3://$BUCKET/" --delete \
   --exclude found.json --exclude index.html --exclude release.json \
   --cache-control "public, max-age=300" --only-show-errors
-for try in 1 2 3; do
-  put_index
-  if [ -z "$refused" ]; then
-    break
-  fi
-  echo "::notice::The page changed while the deploy built it (try $try of 3)."
-  # Not under && or ||, which would turn off set -e inside the function.
-  if [ "$try" -lt 3 ]; then
-    build_index
-  fi
-done
-if [ -n "$refused" ]; then
-  cat "$work/put.err" >&2
-  echo "The page kept changing while the deploy built it." >&2
-  exit 1
-fi
+publish_index
 if [ -e "$repo/site/release.json" ]; then
   aws s3api put-object --bucket "$BUCKET" --key release.json \
     --body "$repo/site/release.json" \
     --content-type "application/json" \
     --cache-control "no-cache" >/dev/null
+  # Until the new record went up, a run on the last release read its own
+  # release as live, so it may have put its page, with the old template,
+  # over this one. A run that reads the record from here on writes the
+  # page only if it is on this release, so build the page once more.
+  if [ "$(etag index.html)" != "$written" ]; then
+    build_index
+    publish_index
+  fi
 fi
 
 id="$(aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" \
