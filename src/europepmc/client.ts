@@ -315,6 +315,14 @@ export function europePmc(
           },
         ];
       });
+      // A page whose every PMCID is malformed is taken as Europe PMC
+      // changing how it writes them, not as a page of no papers. The
+      // search fails, so its step tries again and then fails the run.
+      if (skipped > 0 && papers.length === 0) {
+        throw new Error(
+          `every PMCID on a page of ${String(results.length)} results was malformed (${String(skipped)} of them)`,
+        );
+      }
       const nextCursor =
         results.length === 0 ||
         reply.nextCursorMark === undefined ||
