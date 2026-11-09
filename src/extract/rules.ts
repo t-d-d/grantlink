@@ -126,13 +126,28 @@ function scan(text: string, anNumbers: boolean): Reference[] {
 
 // A bare number is common in any text, so it counts only when the metadata
 // gives it to the funder as a whole award id and the paper's own funding or
-// acknowledgement text gives the same number, standing alone (#97).
+// acknowledgement text gives the same number, standing alone (#97). A number
+// joined to a letter, a digit or a separator is part of a longer reference.
 const BARE_NUMBER = /^\d{5,7}$/u;
 
 function confirmedNumber(id: string, text: readonly string[]): boolean {
   if (!BARE_NUMBER.test(id)) return false;
-  const alone = new RegExp(`(?<![A-Za-z0-9])${id}(?![A-Za-z0-9])`, "u");
+  const alone = new RegExp(
+    `(?<![A-Za-z0-9]|${SEP})${id}(?![A-Za-z0-9]|${SEP})`,
+    "u",
+  );
   return text.some((paragraph) => alone.test(paragraph));
+}
+
+// Whether a reference already found gives this number, with its A or as the
+// last part of a longer reference, so the number alone would list it twice.
+function alreadyFound(id: string, found: readonly Reference[]): boolean {
+  return found.some(
+    ({ normalised }) =>
+      normalised === `A${id}` ||
+      normalised.endsWith(`/A${id}`) ||
+      normalised.endsWith(`/${id}`),
+  );
 }
 
 export function findReferences(sections: FundingSections): Reference[] {
@@ -153,10 +168,10 @@ export function findReferences(sections: FundingSections): Reference[] {
     if (!funderName.test(award.source)) continue;
     for (const id of award.ids) {
       const trimmed = id.trim();
-      if (confirmedNumber(trimmed, sections.text)) {
+      if (!confirmedNumber(trimmed, sections.text)) {
+        found.push(...scan(trimmed, true));
+      } else if (!alreadyFound(trimmed, found)) {
         found.push({ asWritten: trimmed, normalised: trimmed, format: "n" });
-      } else {
-        found.push(...scan(id, true));
       }
     }
   }

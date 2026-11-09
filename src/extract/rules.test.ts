@@ -105,6 +105,31 @@ describe("the rules", () => {
     ).toEqual([]);
   });
 
+  it.each([
+    ["Cancer Research UK (CTRQQR-2021/100010).", "CTRQQR-2021/100010"],
+    ["Cancer Research UK (CTRQQR-2021 / 100010).", "CTRQQR-2021/100010"],
+    ["Cancer Research UK (DRCMDPA∖100010).", "DRCMDPA/100010"],
+  ])(
+    "leaves a bare number the text gives only after a separator, in %s",
+    (text, normalised) => {
+      expect(
+        findReferences({
+          text: [text],
+          awards: [{ source: "Cancer Research UK", ids: ["100010"] }],
+        }).map((reference) => reference.normalised),
+      ).toEqual([normalised]);
+    },
+  );
+
+  it("lists a bare number once when the text also gives it with its A", () => {
+    expect(
+      findReferences({
+        text: ["Cancer Research UK (A28275). Grant 28275."],
+        awards: [{ source: "Cancer Research UK", ids: ["28275"] }],
+      }),
+    ).toEqual([{ asWritten: "A28275", normalised: "A28275", format: "An" }]);
+  });
+
   it("leaves a bare number the metadata gives another funder", () => {
     expect(
       findReferences({
