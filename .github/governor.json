@@ -21,8 +21,30 @@
   "prReview": {
     "prompt": { "file": ".claude/skills/pr-review/SKILL.md" },
     "tickets": { "forbid": [{ "labels": ["type: prd"] }] },
-    "requireChecks": ["gate"],
-    "merge": false
+    "humanOnly": [
+      {
+        "glob": "infra/**",
+        "reason": "The owner applies these stacks by hand."
+      },
+      {
+        "glob": ".github/**",
+        "reason": "It holds the gate, the deploy, the eval and governor's own config."
+      },
+      {
+        "glob": "docs/constraints/**",
+        "reason": "A change in what a constraint means needs a decision record the owner agrees to."
+      },
+      {
+        "glob": "CLAUDE.md",
+        "reason": "It holds the rules every session follows."
+      },
+      {
+        "glob": ".claude/**",
+        "reason": "It holds the sessions' skills and the review's own checklist."
+      }
+    ],
+    "requireChecks": ["gate", "eval"],
+    "merge": true
   },
   "heartbeat": { "issue": 31 },
   "periodics": {
