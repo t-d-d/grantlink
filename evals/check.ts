@@ -74,15 +74,32 @@ const NO_LIVE: Record<NoLive | OlderFormat, string> = {
 // comes from check.ts, not from eval.yml, so it is not in noLive.
 export type OlderFormat = "older-format";
 
-export function readLive(raw: string): Report | OlderFormat {
+// Why it could not be read goes to the job's log, as paths and codes and
+// never values, so a broken report can still be told from an old one.
+// stdout is the comment, so the default writes to stderr.
+export function readLive(
+  raw: string,
+  warn: (line: string) => void = (line) => {
+    console.error(line);
+  },
+): Report | OlderFormat {
   let json: unknown;
   try {
     json = JSON.parse(raw);
   } catch {
+    warn("::warning::The live release's report is not JSON.");
     return "older-format";
   }
   const parsed = report.safeParse(json);
-  return parsed.success ? parsed.data : "older-format";
+  if (parsed.success) return parsed.data;
+  const why = parsed.error.issues.map(
+    (issue) =>
+      `${issue.code} at ${issue.path.map(String).join(".") || "(root)"}${"keys" in issue ? ` (${issue.keys.join(", ")})` : ""}`,
+  );
+  warn(
+    `::warning::The live release's report does not parse: ${why.join("; ")}.`,
+  );
+  return "older-format";
 }
 
 export function comment(

@@ -119,6 +119,7 @@ describe("the pull request's comment", () => {
   ])("shows CI's scores alone when the live report is %s", (_, change) => {
     const live = readLive(
       JSON.stringify(change(report({ "recall-a": 0.9, spend: 0 }))),
+      () => undefined,
     );
     expect(live).toBe("older-format");
     const text = comment(report({ "recall-a": 0.96, spend: 0 }), live);
@@ -136,6 +137,23 @@ describe("the pull request's comment", () => {
   });
 
   it("treats a live report that is not JSON as one it cannot read", () => {
-    expect(readLive("{")).toBe("older-format");
+    expect(readLive("{", () => undefined)).toBe("older-format");
+  });
+
+  // The comment shows only that the live report could not be read. The
+  // job's log keeps why, as paths and codes and never values, so a report
+  // that is broken rather than old can still be told apart.
+  it("logs why it cannot read a live report, without its values", () => {
+    const lines: string[] = [];
+    const live = report({ spend: 0 });
+    readLive(JSON.stringify({ ...live, retired: "a value" }), (line) => {
+      lines.push(line);
+    });
+    readLive("{", (line) => {
+      lines.push(line);
+    });
+    expect(lines.join("\n")).toContain("unrecognized_keys");
+    expect(lines.join("\n")).toContain("not JSON");
+    expect(lines.join("\n")).not.toContain("a value");
   });
 });
