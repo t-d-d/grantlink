@@ -23,7 +23,8 @@ const deploy = resource(template, "DeployRole");
 const execution = resource(template, "DeployExecutionRole");
 const ciEval = resource(template, "CiEvalRole");
 const accessEval = resource(template, "AccessEvalRole");
-const roles = { deploy, execution, ciEval, accessEval };
+const conformance = resource(template, "ConformanceRole");
+const roles = { deploy, execution, ciEval, accessEval, conformance };
 
 const actions = (statement: Statement): string[] => list(statement.Action);
 const resources = (statement: Statement): string[] =>
@@ -31,8 +32,11 @@ const resources = (statement: Statement): string[] =>
 const allows = (statements: Statement[]): Statement[] =>
   statements.filter((statement) => statement.Effect === "Allow");
 
-// The trust a role gets from GitHub's OIDC provider for one environment.
-const githubTrust = (environment: string): Statement[] => [
+// The trust a role gets from GitHub's OIDC provider for one subject: an
+// environment, or a branch for a job that names none.
+const githubTrust = (environment: string): Statement[] =>
+  oidcTrust(`environment:${environment}`);
+const oidcTrust = (context: string): Statement[] => [
   {
     Effect: "Allow",
     Principal: { Federated: provider },
@@ -40,7 +44,7 @@ const githubTrust = (environment: string): Statement[] => [
     Condition: {
       StringEquals: {
         "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-        "token.actions.githubusercontent.com:sub": `${repo}:environment:${environment}`,
+        "token.actions.githubusercontent.com:sub": `${repo}:${context}`,
       },
     },
   },
@@ -568,6 +572,73 @@ describe("fitness: the session role reads the snapshot and nothing else (evals.m
       },
     ]);
     expect(accessEval.Properties.ManagedPolicyArns).toBeUndefined();
+  });
+});
+
+// The scheduled conformance run reads the private bucket's settings with
+// this role (#50). Its job names no environment, so it trusts runs on main.
+describe("the conformance role", () => {
+  const bucket = {
+    "Fn::Sub": "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}",
+  };
+
+  it("trusts only workflow runs on this repo's main", () => {
+    expect(trustOf(conformance)).toEqual(oidcTrust("ref:refs/heads/main"));
+  });
+
+  it("reads the private bucket's public access block, encryption and policy, and nothing else", () => {
+    expect(allows(rightsOf(conformance))).toEqual([
+      {
+        Sid: "ReadBucketSettings",
+        Effect: "Allow",
+        Action: [
+          "s3:GetBucketPolicy",
+          "s3:GetBucketPublicAccessBlock",
+          "s3:GetEncryptionConfiguration",
+        ],
+        Resource: bucket,
+      },
+    ]);
+  });
+
+  // A Deny holds even if a later Allow is widened by mistake.
+  it("is denied every object in the private bucket", () => {
+    expect(rightsOf(conformance)).toContainEqual({
+      Sid: "NoPrivateObjects",
+      Effect: "Deny",
+      Action: "s3:*",
+      Resource: {
+        "Fn::Sub":
+          "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/*",
+      },
+    });
+  });
+
+  it("can neither list nor read nor write what the bucket holds", () => {
+    const text =
+      "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/cache/PMC1.json";
+    const granted = allows(rightsOf(conformance));
+    for (const action of ["s3:ListBucket", "s3:GetObject", "s3:PutObject"]) {
+      expect(
+        granted.some((statement) =>
+          actions(statement).some((pattern) =>
+            wildcardMatches(pattern, action),
+          ),
+        ),
+        action,
+      ).toBe(false);
+    }
+    expect(
+      granted
+        .flatMap(resources)
+        .some((pattern) => wildcardMatches(pattern, text)),
+    ).toBe(false);
+  });
+
+  it("is an output, for the bootstrap to give GitHub", () => {
+    expect(template.Outputs?.ConformanceRoleArn?.Value).toEqual({
+      "Fn::GetAtt": ["ConformanceRole", "Arn"],
+    });
   });
 });
 

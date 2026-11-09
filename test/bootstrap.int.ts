@@ -47,6 +47,7 @@ const firstRun: Answers = {
   [`deploy ${roles}`]: ":",
   [`output ${roles} DeployRoleArn`]: "echo deploy-role",
   [`output ${roles} CiEvalRoleArn`]: "echo eval-role",
+  [`output ${roles} ConformanceRoleArn`]: "echo conformance-role",
 };
 
 // Names each aws call by what it asks for, logs it, and answers it.
@@ -192,10 +193,12 @@ const steps = (calls: string[]): string[] =>
   calls.filter((call) => call !== "aws zone dns" && !call.startsWith("sleep"));
 
 // GitHub holds only the role each job assumes (#43): one value per
-// environment. The five values earlier runs set are removed.
+// environment, and the conformance role's for the repository, since its job
+// names no environment (#50). The five values earlier runs set are removed.
 const gives = [
   "gh secret set AWS_DEPLOY_ROLE_ARN --repo t-d-d/grantlink --env prod < deploy-role",
   "gh secret set AWS_EVAL_ROLE_ARN --repo t-d-d/grantlink --env eval < eval-role",
+  "gh secret set AWS_CONFORMANCE_ROLE_ARN --repo t-d-d/grantlink < conformance-role",
   "gh secret delete AWS_DEPLOY_EXECUTION_ROLE_ARN --repo t-d-d/grantlink --env prod",
   "gh secret delete CERTIFICATE_ARN --repo t-d-d/grantlink --env prod",
   "gh variable delete HOSTED_ZONE_ID --repo t-d-d/grantlink --env prod",
@@ -220,6 +223,7 @@ describe("the bootstrap script, run against stub aws and gh", () => {
       `aws deploy ${roles}`,
       `aws output ${roles} DeployRoleArn`,
       `aws output ${roles} CiEvalRoleArn`,
+      `aws output ${roles} ConformanceRoleArn`,
       ...gives,
     ]);
     expect(stdout).toContain("ns-1.example\nns-2.example\n");
@@ -270,7 +274,7 @@ describe("the bootstrap script, run against stub aws and gh", () => {
         [`output ${roles} DeployRoleArn`]: answer,
       });
       expect(status).toBe(1);
-      expect(calls).toContain(`aws output ${roles} CiEvalRoleArn`);
+      expect(calls).toContain(`aws output ${roles} ConformanceRoleArn`);
       expect(ghCalls(calls)).toEqual([]);
       expect(stdout).toContain("gave no value for deploy_role");
     },
@@ -289,7 +293,7 @@ describe("the bootstrap script, run against stub aws and gh", () => {
   it("stops when GitHub refuses to remove a value for any other reason", () => {
     const { status, calls } = run(firstRun, ["broken-CERTIFICATE_ARN-prod"]);
     expect(status).toBe(1);
-    expect(ghCalls(calls)).toEqual(gives.slice(0, 4));
+    expect(ghCalls(calls)).toEqual(gives.slice(0, 5));
   });
 
   it("stops before it changes anything when the account has no /access/account-id parameter", () => {

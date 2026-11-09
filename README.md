@@ -13,7 +13,7 @@ The plan is the PRD, [#1](https://github.com/t-d-d/grantlink/issues/1). The deci
 Two stacks are applied by hand, once, before anything deploys, and both are code in [infra/](infra/):
 
 - **The DNS stack**, `dns`, from [infra/dns.cfn.yml](infra/dns.cfn.yml): the hosted zone for grantlink.uk and its certificate, in us-east-1, where CloudFront requires the certificate. The zone is kept if the stack is deleted, so its nameservers never change under the registrar.
-- **The roles stack**, `grantlink-github-oidc`, from [infra/github-oidc.cfn.yml](infra/github-oidc.cfn.yml): GitHub's OIDC provider, the deploy role and the role CloudFormation takes to build the app stack, `grantlink-app-boundary`, the permissions boundary every role in the app stack must carry, the CI eval role, and `access-eval` for aws-access's `grantlink-eval` profile. IAM is global, so it sits in us-east-1 beside the DNS stack. It reads the access account's id from aws-access's `/access/account-id` parameter in us-east-1.
+- **The roles stack**, `grantlink-github-oidc`, from [infra/github-oidc.cfn.yml](infra/github-oidc.cfn.yml): GitHub's OIDC provider, the deploy role and the role CloudFormation takes to build the app stack, `grantlink-app-boundary`, the permissions boundary every role in the app stack must carry, the CI eval role, the conformance role that reads the private bucket's settings, and `access-eval` for aws-access's `grantlink-eval` profile. IAM is global, so it sits in us-east-1 beside the DNS stack. It reads the access account's id from aws-access's `/access/account-id` parameter in us-east-1.
 
 Every later change to the account goes through the app stack, from a green merge to main.
 
@@ -27,14 +27,15 @@ It asks only whether the account is the right one. Then it:
 
 1. Applies the DNS stack, and prints the zone's nameservers as soon as the zone exists. If the registrar does not list them yet, set them there then: the certificate, and so the stack, waits until it does.
 2. Applies the roles stack. It takes no parameter a person fills. It reads the access account's id from SSM, and the private bucket is `grantlink-text-<account id>`, the name the app stack (#19) must give it.
-3. Gives GitHub the role each job assumes, one per environment:
+3. Gives GitHub the role each job assumes: one per environment, and the conformance role for the repository, since the scheduled conformance job names no environment:
 
 | Name | Kind | GitHub environment | Value |
 | --- | --- | --- | --- |
 | `AWS_DEPLOY_ROLE_ARN` | Secret | `prod` | The roles stack's `DeployRoleArn` output |
 | `AWS_EVAL_ROLE_ARN` | Secret | `eval` | The roles stack's `CiEvalRoleArn` output |
+| `AWS_CONFORMANCE_ROLE_ARN` | Secret | None, a repository secret | The roles stack's `ConformanceRoleArn` output |
 
-Role ARNs carry the account id, so they are secrets, never variables. The script reads both values before it gives GitHub either, and stops rather than give an empty one.
+Role ARNs carry the account id, so they are secrets, never variables. The script reads every value before it gives GitHub any, and stops rather than give an empty one.
 
 4. Removes the values earlier versions of the script set and no jobs read now: `AWS_DEPLOY_EXECUTION_ROLE_ARN`, `CERTIFICATE_ARN`, `HOSTED_ZONE_ID` and `PRIVATE_BUCKET_NAME` in `prod`, and `PRIVATE_BUCKET_NAME` in `eval`. A value that is already gone counts as removed.
 
@@ -42,7 +43,7 @@ Once a job has assumed its role, it finds or builds every other value it needs. 
 
 The script is safe to run again. Each step changes only what differs, and it waits for a stack an earlier run left part way. If the credentials expire while the certificate waits for the registrar, the script stops while the stack carries on. Run it again and it waits for the stack. A stack whose first create failed has to be deleted before a run can apply it, and the script says so.
 
-The deploy role trusts only the `prod` environment and the CI eval role only the `eval` environment, so a workflow job must name its environment to reach either. The gate checks both templates with [cfn-lint](https://github.com/aws-cloudformation/cfn-lint), so running the gate locally needs the version CI pins in [gate.yml](.github/workflows/gate.yml) (`pipx install cfn-lint==1.60.0`).
+The deploy role trusts only the `prod` environment and the CI eval role only the `eval` environment, so a workflow job must name its environment to reach either. The conformance role trusts only runs on main in a job that names no environment, and reads the private bucket's public access block, encryption and policy, and nothing the bucket holds. The gate checks both templates with [cfn-lint](https://github.com/aws-cloudformation/cfn-lint), so running the gate locally needs the version CI pins in [gate.yml](.github/workflows/gate.yml) (`pipx install cfn-lint==1.60.0`).
 
 ## How it deploys
 
@@ -79,7 +80,7 @@ A session runs the eval itself while it iterates, with `AWS_PROFILE=grantlink-ev
 
 ## How a run works
 
-A run is one Lambda Durable Function execution, in [src/run/](src/run/). It searches Europe PMC for open-access papers published since 1 January 2020 whose funding or acknowledgement text names Cancer Research UK and that Europe PMC links to none of its grants. It reads each paper not yet read, about 2 requests a second, and keeps only the paper's funding statement, acknowledgements and funding metadata, in the private bucket. Rules find the grant references, and the table records each one as written and normalised, with the versions that found it. The run then builds the page from the table and publishes it, with the data behind it as `found.json`. A paper that fails waits for the next run. A run that fails, or whose search finds nothing, publishes nothing, and the page keeps what it had. Until some run has read a paper, no run publishes. After that, a run that finds papers publishes even if it reads none of them, because each was read before or failed, and the page then carries that run's date.
+A run is one Lambda Durable Function execution, in [src/run/](src/run/). It searches Europe PMC for open-access papers published since 1 January 2020 whose funding or acknowledgement text names Cancer Research UK and that Europe PMC links to none of its grants. It reads each paper not yet read, about 2 requests a second, and keeps only the paper's funding statement, acknowledgements and funding metadata, in the private bucket. Rules find the grant references, and the table records each one as written and normalised, with the versions that found it. The run then builds the page from the table and publishes it, with the data behind it as `found.json`. A paper that fails waits for the next run. A run that fails, or whose search finds nothing, publishes nothing, and the page keeps what it had. The one exception is a run that fails while it publishes. It writes `found.json` before the page, so a run whose page write fails on every try can leave its `found.json` on the site, where anyone can read it straight away. The page served does not change, so for a while `found.json` holds newer data than the page. The next deploy builds the page from that `found.json`, and the page then shows the failed run's findings and its date. The next run that publishes shows those findings too, because the table already holds them. That is acceptable because the run had finished reading and its data is complete. Until some run has read a paper, no run publishes. After that, a run that finds papers publishes even if it reads none of them, because each was read before or failed, and the page then carries that run's date.
 
 ## Licence
 
