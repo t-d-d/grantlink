@@ -84,7 +84,19 @@ export const paperFile = z
     pmcid: PMCID,
     text: z.array(z.string()),
     awards: z.array(
-      z.object({ source: z.string(), ids: z.array(z.string()) }).strict(),
+      z.union([
+        z
+          .object({ sources: z.array(z.string()), ids: z.array(z.string()) })
+          .strict(),
+        // A snapshot taken before #128 joins an award's sources with "; ".
+        z
+          .object({ source: z.string(), ids: z.array(z.string()) })
+          .strict()
+          .transform(({ source, ids }) => ({
+            sources: source === "" ? [] : source.split("; "),
+            ids,
+          })),
+      ]),
     ),
   })
   .strict();

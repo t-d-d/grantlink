@@ -47,6 +47,53 @@ function elements(xml: string, name: string, attributes = ""): string[] {
   return [...xml.matchAll(pattern)].map((match) => match[1] ?? "");
 }
 
+// Every element with this name, as its opening tag and its inner XML.
+function tagged(xml: string, name: string): { tag: string; inner: string }[] {
+  const pattern = new RegExp(`(<${name}\\b[^>]*>)([\\s\\S]*?)</${name}>`, "gu");
+  return [...xml.matchAll(pattern)].map((match) => ({
+    tag: match[1] ?? "",
+    inner: match[2] ?? "",
+  }));
+}
+
+function attribute(tag: string, name: string): string[] {
+  const value = new RegExp(`\\s${name}="([^"]*)"`, "u").exec(tag)?.[1] ?? "";
+  return value.split(/\s+/u).filter((part) => part !== "");
+}
+
+// An award group's ids with the funding sources they belong to. An award id
+// whose rid names sources in its group goes to those sources alone. Any
+// other id goes to every source in the group, which then does not say whose
+// it is (#128).
+function awardsOf(group: string): FundingSections["awards"] {
+  const sources = tagged(group, "funding-source").map(({ tag, inner }) => ({
+    ids: attribute(tag, "id"),
+    name: plain(inner),
+  }));
+  const all = sources.map(({ name }) => name);
+  const untied: string[] = [];
+  const tied = new Map<string, { sources: string[]; ids: string[] }>();
+  for (const { tag, inner } of tagged(group, "award-id")) {
+    const id = plain(inner);
+    const rid = attribute(tag, "rid");
+    const named = sources
+      .filter((source) => source.ids.some((sourceId) => rid.includes(sourceId)))
+      .map(({ name }) => name);
+    if (named.length === 0) {
+      untied.push(id);
+      continue;
+    }
+    const key = JSON.stringify(named);
+    const award = tied.get(key) ?? { sources: named, ids: [] };
+    award.ids.push(id);
+    tied.set(key, award);
+  }
+  const awards = [...tied.values()];
+  return untied.length > 0 || awards.length === 0
+    ? [{ sources: all, ids: untied }, ...awards]
+    : awards;
+}
+
 // The paragraphs of a section, or its whole text less its title if it has
 // none.
 function paragraphs(section: string): string[] {
@@ -75,10 +122,7 @@ export function fundingSections(xml: string): FundingSections {
     elements(group, "funding-statement").map(plain),
   );
   const awards = groups.flatMap((group) =>
-    elements(group, "award-group").map((award) => ({
-      source: elements(award, "funding-source").map(plain).join("; "),
-      ids: elements(award, "award-id").map(plain),
-    })),
+    elements(group, "award-group").flatMap(awardsOf),
   );
   const sections = fundingBodySections(xml);
   const text = [

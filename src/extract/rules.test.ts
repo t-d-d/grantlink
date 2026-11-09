@@ -62,7 +62,7 @@ describe("the rules", () => {
     expect(
       findReferences({
         text: [],
-        awards: [{ source: "Cancer Research UK", ids: ["A29999", "x"] }],
+        awards: [{ sources: ["Cancer Research UK"], ids: ["A29999", "x"] }],
       }),
     ).toEqual([{ asWritten: "A29999", normalised: "A29999", format: "An" }]);
   });
@@ -71,7 +71,7 @@ describe("the rules", () => {
     expect(
       findReferences({
         text: [],
-        awards: [{ source: "Example Trust", ids: ["A29999"] }],
+        awards: [{ sources: ["Example Trust"], ids: ["A29999"] }],
       }),
     ).toEqual([]);
   });
@@ -82,7 +82,7 @@ describe("the rules", () => {
     expect(
       findReferences({
         text: ["This work was funded by a grant (Grant No. 12345)."],
-        awards: [{ source: "Cancer Research UK", ids: ["12345"] }],
+        awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
       }),
     ).toEqual([{ asWritten: "12345", normalised: "12345", format: "n" }]);
   });
@@ -91,7 +91,7 @@ describe("the rules", () => {
     expect(
       findReferences({
         text: ["This work was funded by Cancer Research UK."],
-        awards: [{ source: "Cancer Research UK", ids: ["12345"] }],
+        awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
       }),
     ).toEqual([]);
   });
@@ -100,7 +100,7 @@ describe("the rules", () => {
     expect(
       findReferences({
         text: ["Funded by the Example Trust (B12345 and 123456)."],
-        awards: [{ source: "Cancer Research UK", ids: ["12345"] }],
+        awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
       }),
     ).toEqual([]);
   });
@@ -115,7 +115,7 @@ describe("the rules", () => {
       expect(
         findReferences({
           text: [text],
-          awards: [{ source: "Cancer Research UK", ids: ["100010"] }],
+          awards: [{ sources: ["Cancer Research UK"], ids: ["100010"] }],
         }).map((reference) => reference.normalised),
       ).toEqual([normalised]);
     },
@@ -125,7 +125,7 @@ describe("the rules", () => {
     expect(
       findReferences({
         text: ["Cancer Research UK (A28275). Grant 28275."],
-        awards: [{ source: "Cancer Research UK", ids: ["28275"] }],
+        awards: [{ sources: ["Cancer Research UK"], ids: ["28275"] }],
       }),
     ).toEqual([{ asWritten: "A28275", normalised: "A28275", format: "An" }]);
   });
@@ -134,9 +134,42 @@ describe("the rules", () => {
     expect(
       findReferences({
         text: ["Cancer Research UK and the Example Trust (12345)."],
-        awards: [{ source: "Example Trust", ids: ["12345"] }],
+        awards: [{ sources: ["Example Trust"], ids: ["12345"] }],
       }),
     ).toEqual([]);
+  });
+
+  // An award group with more than one source does not say whose its ids
+  // are, unless an id names its source (#128).
+  it("leaves a bare number in an award group the funder shares with another", () => {
+    expect(
+      findReferences({
+        text: ["Funded by Cancer Research UK and the Example Trust (12345)."],
+        awards: [
+          { sources: ["Cancer Research UK", "Example Trust"], ids: ["12345"] },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it("reads a reference in a known format from an award group the funder shares", () => {
+    expect(
+      findReferences({
+        text: [],
+        awards: [
+          {
+            sources: ["Example Trust", "Cancer Research UK"],
+            ids: ["C1234/A56789"],
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        asWritten: "C1234/A56789",
+        normalised: "C1234/A56789",
+        format: "Cn/An",
+      },
+    ]);
   });
 
   it("leaves a bare number in the text that no award gives the funder", () => {
@@ -149,7 +182,9 @@ describe("the rules", () => {
     expect(
       findReferences({
         text: ["Grants 2021 and 12345678."],
-        awards: [{ source: "Cancer Research UK", ids: ["2021", "12345678"] }],
+        awards: [
+          { sources: ["Cancer Research UK"], ids: ["2021", "12345678"] },
+        ],
       }),
     ).toEqual([]);
   });

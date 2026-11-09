@@ -8,7 +8,7 @@ import funderFile from "./funder.json" with { type: "json" };
 
 // Bump this whenever a pattern changes, so every stored result says which
 // rules made it.
-export const RULES_VERSION = "rules-2";
+export const RULES_VERSION = "rules-3";
 
 export const funder = z
   .object({
@@ -20,10 +20,12 @@ export const funder = z
   .parse(funderFile);
 
 // What the rules read: the funding and acknowledgement text, one string per
-// paragraph, and the awards the paper's metadata lists with their funder.
+// paragraph, and the awards the paper's metadata lists with their funders.
+// An award lists more than one source when its metadata names several
+// funders and does not say whose its ids are (#128).
 export interface FundingSections {
   text: string[];
-  awards: { source: string; ids: string[] }[];
+  awards: { sources: string[]; ids: string[] }[];
 }
 
 export const referenceSchema = z
@@ -165,10 +167,13 @@ export function findReferences(sections: FundingSections): Reference[] {
     }
   }
   for (const award of sections.awards) {
-    if (!funderName.test(award.source)) continue;
+    if (!award.sources.some((source) => funderName.test(source))) continue;
+    // A bare number in an award shared with another funder may be that
+    // funder's, so only a reference in a known format counts there (#128).
+    const shared = award.sources.length > 1;
     for (const id of award.ids) {
       const trimmed = id.trim();
-      if (!confirmedNumber(trimmed, sections.text)) {
+      if (shared || !confirmedNumber(trimmed, sections.text)) {
         found.push(...scan(trimmed, true));
       } else if (!alreadyFound(trimmed, found)) {
         found.push({ asWritten: trimmed, normalised: trimmed, format: "n" });
