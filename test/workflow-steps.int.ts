@@ -285,14 +285,12 @@ const fieldPaths: Record<string, string> = {
   Arn: ".AssumedRoleUser.Arn",
 };
 
-const missingFields = [
-  "AccessKeyId",
-  "SecretAccessKey",
-  "SessionToken",
-  "Arn",
-  "AccountId",
-  "ArnFields",
-];
+// The error names the path, so its dots must match only dots.
+function namesPath(path: string): RegExp {
+  return new RegExp(`^::error::.*${path.replaceAll(".", "\\.")}\\b`, "mu");
+}
+
+const missingFields = [...Object.keys(fieldPaths), "AccountId", "ArnFields"];
 
 describe.each([
   {
@@ -335,7 +333,7 @@ describe.each([
     (field, path) => {
       const { status, stderr } = assumeRole(run, stsReply(field));
       expect(status).not.toBe(0);
-      expect(stderr).toMatch(new RegExp(`^::error::.*${path}\\b`, "mu"));
+      expect(stderr).toMatch(namesPath(path));
     },
   );
 
@@ -350,7 +348,7 @@ describe.each([
       );
       expect(status).not.toBe(0);
       expect(env).toBe("");
-      expect(stderr).toMatch(new RegExp(`^::error::.*${path}\\b`, "mu"));
+      expect(stderr).toMatch(namesPath(path));
     },
   );
 

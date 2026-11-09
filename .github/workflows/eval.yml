@@ -80,7 +80,7 @@ jobs:
           # it can quote the reply.
           field() {
             if ! jq -er "$2 | strings | select(length > 0)" <<< "$1" 2> /dev/null; then
-              echo "::error::The $3 reply has no $2, or it is empty." >&2
+              echo "::error::The $3 reply has no $2, or it is empty, or the reply is not JSON." >&2
               return 1
             fi
           }
