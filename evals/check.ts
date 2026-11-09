@@ -65,7 +65,7 @@ export type OlderFormat = "older-format";
 // A report that shares no row with this code has nothing to compare, so it
 // reads as one this code cannot read.
 // Newer code may file a row this code does not know, with a score of
-// another shape. It is never compared, so a malformed one is dropped. A
+// another shape. It is never compared, so it is dropped unread. A
 // malformed row this code knows still fails the report, so a broken report
 // is not shown as a partial one (#169).
 const known = new Set<string>(FLOORS.map((floor) => floor.id));
@@ -85,15 +85,16 @@ const liveReport = z.object({
   rows: z.array(z.unknown()).transform((list, ctx) => {
     const kept: z.infer<typeof liveRow>[] = [];
     list.forEach((item, index) => {
+      if (!knownId(item)) return;
       const parsed = liveRow.safeParse(item);
       if (parsed.success) kept.push(parsed.data);
-      else if (knownId(item)) {
+      else {
         for (const issue of parsed.error.issues) {
           ctx.addIssue({ ...issue, path: [index, ...issue.path] });
         }
       }
     });
-    if (!kept.some((row) => known.has(row.id))) {
+    if (kept.length === 0) {
       ctx.addIssue({
         code: "custom",
         message: "a live report shares a row with this code",
