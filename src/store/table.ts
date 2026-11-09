@@ -1,7 +1,11 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import {
+  ConditionalCheckFailedException,
+  DynamoDBClient,
+} from "@aws-sdk/client-dynamodb";
 import {
   BatchGetCommand,
   DynamoDBDocumentClient,
+  GetCommand,
   ScanCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
@@ -41,10 +45,12 @@ const fields = {
   // pending: found by a search, not yet read. processed: read by the rules.
   status: z.enum(["pending", "processed"]),
   foundAt: z.iso.datetime(),
-  // The run whose complete search last returned the paper. The search asks
-  // for papers linked to none of the funder's grants, so a paper a later
-  // search leaves out has since been linked, or dropped. Optional, so rows
-  // written before it read as before (docs/constraints/durable-execution.md).
+  // The latest-started run whose search returned the paper. A run that
+  // started earlier never replaces it, so two runs that overlap cannot
+  // take each other's papers off the page (#125). The search asks for papers
+  // linked to none of the funder's grants, so a paper a later search leaves
+  // out has since been linked, or dropped. Optional, so rows written before
+  // it read as before (docs/constraints/durable-execution.md).
   foundByRun: z.string().min(1).max(100).optional(),
   references: result.shape.references.optional(),
   versions: versions.optional(),
@@ -74,8 +80,20 @@ export interface FoundPaper {
   firstPublished?: string;
 }
 
+// The key of the one item that is not a paper: the run whose search is the
+// latest to complete. A run's id is `run-` and the time it started, as an
+// ISO 8601 string, so ids sort as their runs started.
+export const LATEST_SEARCH = "latest-search";
+
+const latestSearchItem = z.object({ runId: z.string().min(1).max(100) });
+
 export interface Table {
   addFound(papers: FoundPaper[], at: string, runId: string): Promise<void>;
+  // Records the run's search as the latest complete one, unless a run that
+  // started later has recorded its own. Safe to run twice.
+  recordSearch(runId: string): Promise<void>;
+  // The run whose search is the latest complete one, or null before any.
+  latestSearch(): Promise<string | null>;
   processed(pmcids: string[]): Promise<Set<string>>;
   markProcessed(pmcid: string, result: Result): Promise<void>;
   markFailed(pmcid: string): Promise<void>;
@@ -113,6 +131,11 @@ const scanReply = z.object({
   LastEvaluatedKey: z.record(z.string(), z.unknown()).optional(),
 });
 
+const latestSearchKey = z.object({ pmcid: z.literal(LATEST_SEARCH) });
+
+const isLatestSearch = (item: unknown): boolean =>
+  latestSearchKey.safeParse(item).success;
+
 export function dynamoTable(
   name: string,
   client: Sender = DynamoDBDocumentClient.from(
@@ -126,7 +149,8 @@ export function dynamoTable(
   return {
     // Records each paper a run's search found: adds it if the table does
     // not hold it, keeps what the table holds of it if it does, and notes
-    // that this run's search returned it. Safe to run twice.
+    // that this run's search returned it, unless a run that started later
+    // has noted its own. Safe to run twice.
     async addFound(papers, at, runId) {
       const rows = papers.map((paper) =>
         paperRow.parse({
@@ -153,24 +177,77 @@ export function dynamoTable(
               ([field]) =>
                 `${path(field)} = if_not_exists(${path(field)}, :${field})`,
             );
-            await send(
-              new UpdateCommand({
-                TableName: name,
-                Key: { pmcid: row.pmcid },
-                UpdateExpression: `SET ${[...keep, "foundByRun = :foundByRun"].join(", ")}`,
-                ExpressionAttributeNames: { "#status": "status" },
-                ExpressionAttributeValues: Object.fromEntries([
-                  ...kept.map(([field, value]): [string, unknown] => [
-                    `:${field}`,
-                    value,
+            const values = kept.map(([field, value]): [string, unknown] => [
+              `:${field}`,
+              value,
+            ]);
+            try {
+              await send(
+                new UpdateCommand({
+                  TableName: name,
+                  Key: { pmcid: row.pmcid },
+                  UpdateExpression: `SET ${[...keep, "foundByRun = :foundByRun"].join(", ")}`,
+                  ConditionExpression:
+                    "attribute_not_exists(foundByRun) OR foundByRun <= :foundByRun",
+                  ExpressionAttributeNames: { "#status": "status" },
+                  ExpressionAttributeValues: Object.fromEntries([
+                    ...values,
+                    [":foundByRun", row.foundByRun],
                   ]),
-                  [":foundByRun", row.foundByRun],
-                ]),
-              }),
-            );
+                }),
+              );
+            } catch (error) {
+              if (!(error instanceof ConditionalCheckFailedException)) {
+                throw error;
+              }
+              // A run that started later returned the paper too. Its mark
+              // stays, and so does the rest of what the table holds.
+              await send(
+                new UpdateCommand({
+                  TableName: name,
+                  Key: { pmcid: row.pmcid },
+                  UpdateExpression: `SET ${keep.join(", ")}`,
+                  ExpressionAttributeNames: { "#status": "status" },
+                  ExpressionAttributeValues: Object.fromEntries(values),
+                }),
+              );
+            }
           }),
         );
       }
+    },
+
+    async recordSearch(runId) {
+      try {
+        await send(
+          new UpdateCommand({
+            TableName: name,
+            Key: { pmcid: LATEST_SEARCH },
+            UpdateExpression: "SET runId = :runId",
+            ConditionExpression:
+              "attribute_not_exists(runId) OR runId <= :runId",
+            ExpressionAttributeValues: {
+              ":runId": latestSearchItem.shape.runId.parse(runId),
+            },
+          }),
+        );
+      } catch (error) {
+        // A run that started later has recorded its search, which stays.
+        if (!(error instanceof ConditionalCheckFailedException)) throw error;
+      }
+    },
+
+    async latestSearch() {
+      const reply = z.object({ Item: latestSearchItem.optional() }).parse(
+        await send(
+          new GetCommand({
+            TableName: name,
+            Key: { pmcid: LATEST_SEARCH },
+            ConsistentRead: true,
+          }),
+        ),
+      );
+      return reply.Item?.runId ?? null;
     },
 
     async processed(pmcids) {
@@ -265,7 +342,11 @@ export function dynamoTable(
             }),
           ),
         );
-        rows.push(...(reply.Items ?? []).map(readRow));
+        rows.push(
+          ...(reply.Items ?? [])
+            .filter((item) => !isLatestSearch(item))
+            .map(readRow),
+        );
         start = reply.LastEvaluatedKey;
       } while (start !== undefined);
       return rows;

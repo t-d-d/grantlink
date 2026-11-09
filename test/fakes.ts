@@ -11,17 +11,26 @@ import { readRepoFile } from "./repo.ts";
 // Stand-ins for the stores and for Europe PMC, held in memory, for tests of
 // a whole run. The table checks each row as the real one does.
 
-export function memoryTable(): Table & { rows: Map<string, PaperRow> } {
+export function memoryTable(): Table & {
+  rows: Map<string, PaperRow>;
+  search: { latest: string | null };
+} {
   const rows = new Map<string, PaperRow>();
+  const search: { latest: string | null } = { latest: null };
   const get = (pmcid: string) => {
     const row = rows.get(pmcid);
     if (row === undefined) throw new Error("ConditionalCheckFailed");
     return row;
   };
+  // As the real table: a run that started later sorts after.
+  const later = (held: string | undefined, runId: string) =>
+    held !== undefined && held > runId ? held : runId;
   return {
     rows,
+    search,
     // As the real table: checks every paper before writing any, keeps what
-    // a held row has, fills in what it lacks, and notes this run.
+    // a held row has, fills in what it lacks, and notes this run unless a
+    // run that started later has noted its own.
     addFound(papers, at, runId) {
       const found = papers.map((paper) =>
         paperRow.parse({
@@ -32,12 +41,24 @@ export function memoryTable(): Table & { rows: Map<string, PaperRow> } {
         }),
       );
       for (const row of found) {
+        const held = rows.get(row.pmcid);
         rows.set(
           row.pmcid,
-          paperRow.parse({ ...row, ...rows.get(row.pmcid), foundByRun: runId }),
+          paperRow.parse({
+            ...row,
+            ...held,
+            foundByRun: later(held?.foundByRun, runId),
+          }),
         );
       }
       return Promise.resolve();
+    },
+    recordSearch(runId) {
+      search.latest = later(search.latest ?? undefined, runId);
+      return Promise.resolve();
+    },
+    latestSearch() {
+      return Promise.resolve(search.latest);
     },
     processed(pmcids) {
       return Promise.resolve(

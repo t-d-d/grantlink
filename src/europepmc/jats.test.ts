@@ -90,6 +90,47 @@ describe("cutting a paper to its funding sections", () => {
     ).toEqual(["Grant &#x110000; and &#99999999;."]);
   });
 
+  it("reads an empty self-closing award id as no id, and the next one alone (#195)", () => {
+    const award = (inside: string) =>
+      fundingSections(
+        `<article><front><funding-group><award-group>${inside}</award-group></funding-group></front></article>`,
+      ).awards;
+    expect(
+      award(
+        `<funding-source>Cancer Research UK</funding-source><award-id/><award-id rid="x"/><award-id>A1</award-id>`,
+      ),
+    ).toEqual([{ source: "Cancer Research UK", ids: ["A1"] }]);
+    expect(
+      award(
+        `<award-id /><funding-source>Cancer Research UK</funding-source><award-id>A1</award-id><award-id></award-id>`,
+      ),
+    ).toEqual([{ source: "Cancer Research UK", ids: ["A1"] }]);
+  });
+
+  it("reads a self-closing element of any kind as empty", () => {
+    expect(
+      fundingSections(
+        `<article><back><ack/><p>Body text.</p><ack><p>Thanks.</p></ack></back></article>`,
+      ).text,
+    ).toEqual(["Thanks."]);
+  });
+
+  it("keeps a section's whole text when its only paragraph is self-closing", () => {
+    expect(
+      fundingSections(
+        `<article><back><ack><title>Acknowledgements</title><p/>Funded by grant A1.</ack></back></article>`,
+      ).text,
+    ).toEqual(["Funded by grant A1."]);
+  });
+
+  it("keeps no award for a self-closing award group", () => {
+    expect(
+      fundingSections(
+        `<article><front><funding-group><award-group/></funding-group></front></article>`,
+      ),
+    ).toEqual({ text: [], awards: [] });
+  });
+
   it("finds nothing in a paper with no funding sections", () => {
     expect(fundingSections("<article><body><p>x</p></body></article>")).toEqual(
       { text: [], awards: [] },
@@ -109,11 +150,7 @@ describe("reading an element by its name", () => {
     expect(elements("<fn>a</fn><fn\n>b</fn>", "fn")).toEqual(["a", "b"]);
   });
 
-  it("skips an empty element closed in its own tag", () => {
-    const funding = 'fn-type="funding"';
-    expect(
-      elements('<fn fn-type="funding"/><fn>x</fn>', "fn", funding),
-    ).toEqual([]);
-    expect(elements("<fn /><fn>x</fn>", "fn")).toEqual(["x"]);
+  it("reads a self-closing element by its whole name too", () => {
+    expect(elements("<fn-group/><fn/><fn>x</fn>", "fn")).toEqual(["", "x"]);
   });
 });
