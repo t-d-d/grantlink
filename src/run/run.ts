@@ -16,7 +16,9 @@ import { batches } from "../shared/batches.ts";
 // A run: search Europe PMC page by page, read each paper not yet read, then
 // publish the page. Every I/O call sits in a step
 // (docs/constraints/durable-execution.md). A paper that fails is left for
-// the next run. A run that fails, or reads nothing, publishes nothing.
+// the next run. A run that fails, or whose search finds nothing, publishes
+// nothing. Otherwise it publishes once the table holds any paper read, by
+// this run or an earlier one (publish in src/pipeline/steps.ts).
 
 // Papers per child context. Each batch ends with a short wait, so each
 // Lambda invocation does a bounded amount of work, and a replay skips each
