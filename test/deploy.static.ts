@@ -141,19 +141,21 @@ describe("the deploy and the run (#19)", () => {
     expect(first).toMatch(/exit 1/u);
   });
 
+  it("publishes the page with scripts/publish-page.sh, after the stack and before the live tier", () => {
+    const publishAt = at(/^scripts\/publish-page\.sh$/u);
+    expect(publishAt).toBeGreaterThan(at(/\bsls deploy\b/u));
+    expect(publishAt).toBeLessThan(at(/npm run test:live/u));
+    expect(all[publishAt]?.env).toEqual({
+      BUCKET: "${{ steps.stack.outputs.bucket }}",
+      DISTRIBUTION: "${{ steps.stack.outputs.distribution }}",
+    });
+  });
+
+  // test/publish-page.int.ts runs the script against a stub aws.
   it("builds the page again from the last run's data, so a deploy keeps the findings", () => {
-    const publish = runs("deploy");
-    expect(publish).toMatch(
-      /aws s3 cp "s3:\/\/\$BUCKET\/found\.json" found\.json/u,
-    );
-    expect(publish).toContain(
-      "node src/page/build.ts found.json site/index.html",
-    );
-    expect(publish).toMatch(
-      /aws s3 sync site\/ "s3:\/\/\$BUCKET\/" --delete --exclude found\.json/u,
-    );
-    expect(at(/node src\/page\/build\.ts/u)).toBeLessThanOrEqual(
-      at(/aws s3 sync/u),
-    );
+    const script = readRepoFile("scripts/publish-page.sh");
+    expect(script).toMatch(/aws s3 cp "s3:\/\/\$BUCKET\/found\.json"/u);
+    expect(script).toMatch(/node "\$repo\/src\/page\/build\.ts"/u);
+    expect(script).toMatch(/--exclude found\.json/u);
   });
 });
