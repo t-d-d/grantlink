@@ -167,6 +167,20 @@ Resources:
             Resource:
               - !Sub arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*/index.html
               - !Sub arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*/found.json
+          # A run reads the release record the last deploy put beside the
+          # page, and leaves a newer deploy's page alone (#73). Listing that
+          # key alone lets a missing record read as missing.
+          - Sid: ReadLiveRelease
+            Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*/release.json
+          - Sid: ListLiveRelease
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*
+            Condition:
+              StringEquals:
+                s3:prefix: release.json
           - Sid: RunLogs
             Effect: Allow
             Action:

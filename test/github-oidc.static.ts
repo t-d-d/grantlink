@@ -383,6 +383,21 @@ describe("the app roles' boundary", () => {
         ],
       },
       {
+        Sid: "ReadLiveRelease",
+        Effect: "Allow",
+        Action: "s3:GetObject",
+        Resource: sub(
+          "arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*/release.json",
+        ),
+      },
+      {
+        Sid: "ListLiveRelease",
+        Effect: "Allow",
+        Action: "s3:ListBucket",
+        Resource: sub("arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*"),
+        Condition: { StringEquals: { "s3:prefix": "release.json" } },
+      },
+      {
         Sid: "RunLogs",
         Effect: "Allow",
         Action: [
@@ -616,6 +631,8 @@ describe("the run's role inside the boundary", () => {
     expect(outside(held, drifted)).toEqual([
       `s3:PutObject arn:aws:s3:::${generated("SiteBucket").toLowerCase()}/index.html`,
       `s3:PutObject arn:aws:s3:::${generated("SiteBucket").toLowerCase()}/found.json`,
+      `s3:GetObject arn:aws:s3:::${generated("SiteBucket").toLowerCase()}/release.json`,
+      `s3:ListBucket arn:aws:s3:::${generated("SiteBucket").toLowerCase()}`,
     ]);
   });
 
