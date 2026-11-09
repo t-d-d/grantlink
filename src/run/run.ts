@@ -14,9 +14,9 @@ import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 // A run: search Europe PMC page by page, read each paper not yet read, then
 // publish the page. Every I/O call sits in a step
 // (docs/constraints/durable-execution.md). A paper that fails is left for
-// the next run. A run that fails, or finds nothing, publishes nothing, and so
-// does one while the table holds no paper read. A run that reads nothing
-// still publishes when an earlier run read a paper.
+// the next run. A run that fails, or whose search finds nothing, publishes
+// nothing. Otherwise it publishes if the table holds any paper read, by
+// this run or an earlier one (publish in src/pipeline/steps.ts).
 
 // Papers per child context. Each batch ends with a short wait, so each
 // Lambda invocation does a bounded amount of work, and a replay skips each

@@ -33,6 +33,9 @@ jobs:
   # is new; otherwise the report already filed is reused.
   eval:
     uses: ./.github/workflows/eval.yml
+    # Without this, the called job reads the eval environment's secrets as
+    # empty, though it names the environment (#81).
+    secrets: inherit
     permissions:
       contents: read
       id-token: write

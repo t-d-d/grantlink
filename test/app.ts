@@ -34,6 +34,7 @@ export interface Workflow {
 export interface Job {
   name?: string;
   uses?: string;
+  secrets?: string | Record<string, string>;
   needs?: string | string[];
   if?: string;
   environment?: string;
