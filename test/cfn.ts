@@ -125,10 +125,83 @@ export function subText(value: unknown): string {
 // IAM compares actions and ARNs: without regard to case for actions.
 export function wildcardMatches(pattern: string, value: string): boolean {
   return new RegExp(
-    `^${pattern
-      .replace(/[.+^${}()|[\]\\]/gu, "\\$&")
-      .replace(/\*/gu, ".*")
-      .replace(/\?/gu, ".")}$`,
+    `^${escapeLiterals(pattern).replace(/\*/gu, ".*").replace(/\?/gu, ".")}$`,
     "iu",
   ).test(value);
+}
+
+// Escapes every regular expression character an IAM pattern may hold,
+// leaving its * and ? wildcards for the caller to translate.
+function escapeLiterals(pattern: string): string {
+  return pattern.replace(/[.+^${}()|[\]\\]/gu, "\\$&");
+}
+
+// Two characters no ARN holds. They stand for the wildcards in the narrower
+// of two patterns: only a * in the wider one can take a *, which may be any
+// length, and a * or a ? can take a ?, which is one character.
+const anyLength = "\u0000";
+const oneCharacter = "\u0001";
+
+// Whether every value one IAM pattern covers is covered by another, as IAM
+// compares ARNs: with regard to case.
+export function patternWithin(narrow: string, wide: string): boolean {
+  return new RegExp(
+    `^${escapeLiterals(wide)
+      .replace(/\*/gu, "[^]*")
+      .replace(/\?/gu, "[^\\u0000]")}$`,
+    "u",
+  ).test(narrow.replace(/\*/gu, anyLength).replace(/\?/gu, oneCharacter));
+}
+
+// Whether some value is covered by both of two IAM patterns.
+export function patternsOverlap(a: string, b: string): boolean {
+  const seen = new Map<string, boolean>();
+  const from = (i: number, j: number): boolean => {
+    const key = `${String(i)},${String(j)}`;
+    const known = seen.get(key);
+    if (known !== undefined) return known;
+    let result: boolean;
+    if (i === a.length && j === b.length) result = true;
+    else if (a[i] === "*")
+      result = from(i + 1, j) || (j < b.length && from(i, j + 1));
+    else if (b[j] === "*")
+      result = from(i, j + 1) || (i < a.length && from(i + 1, j));
+    else if (i === a.length || j === b.length) result = false;
+    else
+      result =
+        (a[i] === b[j] || a[i] === "?" || b[j] === "?") && from(i + 1, j + 1);
+    seen.set(key, result);
+    return result;
+  };
+  return from(0, 0);
+}
+
+// A statement's resource as an ARN, with each Sub variable and GetAtt Arn
+// taken from `names`. It throws on a name it does not know, so a resource
+// nobody named for the test cannot pass by accident.
+export function renderArn(
+  value: unknown,
+  names: Record<string, string>,
+): string {
+  const named = (name: string): string => {
+    const found = names[name];
+    if (found === undefined) throw new Error(`no ARN for ${name}`);
+    return found;
+  };
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value !== null) {
+    if ("Fn::Sub" in value && typeof value["Fn::Sub"] === "string") {
+      return value["Fn::Sub"].replace(
+        /\$\{([^}]+)\}/gu,
+        (_match, name: string) => named(name),
+      );
+    }
+    if ("Fn::GetAtt" in value && Array.isArray(value["Fn::GetAtt"])) {
+      const [logicalId, attribute] = value["Fn::GetAtt"] as unknown[];
+      if (typeof logicalId === "string" && attribute === "Arn") {
+        return named(`${logicalId}.Arn`);
+      }
+    }
+  }
+  throw new Error(`cannot render ${JSON.stringify(value)}`);
 }
