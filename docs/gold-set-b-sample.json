@@ -1,0 +1,635 @@
+{
+  "about": "Gold set B's sample (#3): ids only, never text. scripts/gold-b/sample.ts draws it from Europe PMC with this plan: the papers the base query finds, a few for each hard case first (each from its query, in the seed's order, kept if scripts/gold-b/draw.ts's check finds the case in its text), then the rest shared across the years in proportion. Run the script without --write to draw again and compare. The sheet lists the same papers in sheetOrder.",
+  "base": "(ACK_FUND:\"Cancer Research UK\" OR ACK_FUND:\"Cancer Research U.K.\" OR ACK_FUND:\"CRUK\") AND NOT GRANT_AGENCY:\"Cancer Research UK\" AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]",
+  "seed": 20261110,
+  "size": 100,
+  "perHardCase": 2,
+  "hardCases": [
+    {
+      "name": "declared-interest",
+      "query": "((ACK_FUND:\"Cancer Research UK\" OR ACK_FUND:\"Cancer Research U.K.\" OR ACK_FUND:\"CRUK\") AND NOT GRANT_AGENCY:\"Cancer Research UK\" AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]) AND (COMP_INT:\"Cancer Research UK\" OR COMP_INT:\"CRUK\")"
+    },
+    {
+      "name": "centre-or-institute",
+      "query": "((ACK_FUND:\"Cancer Research UK\" OR ACK_FUND:\"Cancer Research U.K.\" OR ACK_FUND:\"CRUK\") AND NOT GRANT_AGENCY:\"Cancer Research UK\" AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]) AND (ACK_FUND:\"Cancer Research UK Centre\" OR ACK_FUND:\"CRUK Centre\" OR ACK_FUND:\"Cancer Research UK Manchester Institute\" OR ACK_FUND:\"Cancer Research UK Beatson Institute\" OR ACK_FUND:\"Cancer Research UK Scotland Institute\" OR ACK_FUND:\"Cancer Research UK Cambridge Institute\")"
+    },
+    {
+      "name": "affiliation-only",
+      "query": "((ACK_FUND:\"Cancer Research UK\" OR ACK_FUND:\"Cancer Research U.K.\" OR ACK_FUND:\"CRUK\") AND NOT GRANT_AGENCY:\"Cancer Research UK\" AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]) AND (AFF:\"Cancer Research UK\" OR AFF:\"CRUK\")"
+    },
+    {
+      "name": "several-funders",
+      "query": "(ACK_FUND:\"Cancer Research UK\" OR ACK_FUND:\"Cancer Research U.K.\" OR ACK_FUND:\"CRUK\") AND NOT GRANT_AGENCY:\"Cancer Research UK\" AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]"
+    },
+    {
+      "name": "no-reference",
+      "query": "(ACK_FUND:\"Cancer Research UK\" OR ACK_FUND:\"Cancer Research U.K.\" OR ACK_FUND:\"CRUK\") AND NOT GRANT_AGENCY:\"Cancer Research UK\" AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]"
+    }
+  ],
+  "ranOn": "2026-11-09",
+  "population": 3822,
+  "papers": [
+    {
+      "pmcid": "PMC13262640",
+      "year": "2026",
+      "pickedFor": "declared-interest"
+    },
+    {
+      "pmcid": "PMC9428278",
+      "year": "2022",
+      "pickedFor": "declared-interest"
+    },
+    {
+      "pmcid": "PMC11464399",
+      "year": "2024",
+      "pickedFor": "centre-or-institute"
+    },
+    {
+      "pmcid": "PMC13480988",
+      "year": "2026",
+      "pickedFor": "centre-or-institute"
+    },
+    {
+      "pmcid": "PMC9848478",
+      "year": "2023",
+      "pickedFor": "affiliation-only"
+    },
+    {
+      "pmcid": "PMC11408244",
+      "year": "2024",
+      "pickedFor": "affiliation-only"
+    },
+    {
+      "pmcid": "PMC9739275",
+      "year": "2022",
+      "pickedFor": "several-funders"
+    },
+    {
+      "pmcid": "PMC13373478",
+      "year": "2026",
+      "pickedFor": "several-funders"
+    },
+    {
+      "pmcid": "PMC8995852",
+      "year": "2022",
+      "pickedFor": "no-reference"
+    },
+    {
+      "pmcid": "PMC10447583",
+      "year": "2023",
+      "pickedFor": "no-reference"
+    },
+    {
+      "pmcid": "PMC7291800",
+      "year": "2020",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC7748986",
+      "year": "2020",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC7158071",
+      "year": "2020",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC7598675",
+      "year": "2020",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC7837204",
+      "year": "2020",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC7610906",
+      "year": "2020",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC7158048",
+      "year": "2020",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC8629105",
+      "year": "2021",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC8339669",
+      "year": "2021",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC9299146",
+      "year": "2021",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC8326498",
+      "year": "2021",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC8138946",
+      "year": "2021",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC8666432",
+      "year": "2021",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC8473033",
+      "year": "2021",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC8360042",
+      "year": "2021",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC8329051",
+      "year": "2021",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC7945676",
+      "year": "2021",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC9284807",
+      "year": "2022",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC9426505",
+      "year": "2022",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC8852707",
+      "year": "2022",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC9950460",
+      "year": "2022",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC9709457",
+      "year": "2022",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC9219675",
+      "year": "2022",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC8936182",
+      "year": "2022",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC8995953",
+      "year": "2022",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC9268040",
+      "year": "2022",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC8814240",
+      "year": "2022",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC10952845",
+      "year": "2023",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC10084499",
+      "year": "2023",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC9950969",
+      "year": "2023",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC10265057",
+      "year": "2023",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC10470213",
+      "year": "2023",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC10383791",
+      "year": "2023",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC10034903",
+      "year": "2023",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC10651478",
+      "year": "2023",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC10154221",
+      "year": "2023",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC9860244",
+      "year": "2023",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11406468",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC10914519",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11460673",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC10997261",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11706919",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11321995",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11503023",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11511714",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11251269",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11178934",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC10765786",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11261144",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11614300",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12056793",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11531586",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11383581",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11703843",
+      "year": "2024",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12131213",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12522831",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11998461",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12722073",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12433137",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12782617",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11839991",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12689363",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12399932",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12114188",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12749991",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11927039",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12079402",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12333483",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12484655",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC11849918",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12333441",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12593330",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12095150",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12440362",
+      "year": "2025",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC13640246",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC13052346",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC13097841",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12923573",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC13430223",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC13017919",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC13486581",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC13196778",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC13478614",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12931879",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC13553293",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC13573591",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC13725284",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC13151028",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC12905380",
+      "year": "2026",
+      "pickedFor": "year"
+    },
+    {
+      "pmcid": "PMC13125978",
+      "year": "2026",
+      "pickedFor": "year"
+    }
+  ],
+  "sheetOrder": [
+    "PMC12749991",
+    "PMC11408244",
+    "PMC12333483",
+    "PMC13573591",
+    "PMC9299146",
+    "PMC12484655",
+    "PMC8852707",
+    "PMC11321995",
+    "PMC7158048",
+    "PMC11614300",
+    "PMC13052346",
+    "PMC12782617",
+    "PMC11503023",
+    "PMC13478614",
+    "PMC13480988",
+    "PMC13430223",
+    "PMC9426505",
+    "PMC9848478",
+    "PMC10383791",
+    "PMC12931879",
+    "PMC9268040",
+    "PMC7748986",
+    "PMC9219675",
+    "PMC11531586",
+    "PMC7945676",
+    "PMC12593330",
+    "PMC12114188",
+    "PMC8326498",
+    "PMC9860244",
+    "PMC10914519",
+    "PMC8339669",
+    "PMC9950969",
+    "PMC12079402",
+    "PMC13486581",
+    "PMC9950460",
+    "PMC11464399",
+    "PMC10997261",
+    "PMC12905380",
+    "PMC12056793",
+    "PMC13097841",
+    "PMC11849918",
+    "PMC9709457",
+    "PMC12433137",
+    "PMC12440362",
+    "PMC13553293",
+    "PMC13640246",
+    "PMC8995953",
+    "PMC12399932",
+    "PMC9284807",
+    "PMC11511714",
+    "PMC8473033",
+    "PMC10084499",
+    "PMC11251269",
+    "PMC13151028",
+    "PMC12689363",
+    "PMC13725284",
+    "PMC7158071",
+    "PMC13262640",
+    "PMC7598675",
+    "PMC12131213",
+    "PMC9428278",
+    "PMC11998461",
+    "PMC8629105",
+    "PMC12923573",
+    "PMC10470213",
+    "PMC11706919",
+    "PMC11383581",
+    "PMC12333441",
+    "PMC11927039",
+    "PMC10651478",
+    "PMC11406468",
+    "PMC8329051",
+    "PMC8995852",
+    "PMC13125978",
+    "PMC7837204",
+    "PMC12722073",
+    "PMC13196778",
+    "PMC13373478",
+    "PMC7291800",
+    "PMC11839991",
+    "PMC11178934",
+    "PMC10765786",
+    "PMC8814240",
+    "PMC8936182",
+    "PMC10265057",
+    "PMC12095150",
+    "PMC11703843",
+    "PMC10154221",
+    "PMC11460673",
+    "PMC8360042",
+    "PMC10447583",
+    "PMC13017919",
+    "PMC7610906",
+    "PMC8666432",
+    "PMC8138946",
+    "PMC10034903",
+    "PMC9739275",
+    "PMC12522831",
+    "PMC10952845",
+    "PMC11261144"
+  ]
+}
