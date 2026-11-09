@@ -8,9 +8,9 @@ import { rules as grantlinkRules } from "./eslint-rules/index.ts";
 // Rules that bind particular modules, such as the store or the model, are
 // added here by the slices that land their constraint files.
 
-// Test files are left out of the module rules below: a conformance check
-// reads the bucket with S3's own client, and a test may write the shapes a
-// rule refuses in order to pin them.
+// Test files are left out of the rules below: a conformance check reads the
+// bucket with S3's own client, a test may write the shapes a rule refuses in
+// order to pin them, and a test of a run is not a durable body.
 const tests = [
   "**/*.static.ts",
   "**/*.test.ts",
@@ -41,6 +41,7 @@ export default defineConfig(
   {
     // A run's durable body and its steps (docs/constraints/durable-execution.md).
     files: ["src/run/**/*.ts"],
+    ignores: tests,
     rules: {
       "grantlink/no-await-outside-step": "error",
       "grantlink/no-non-deterministic-outside-step": "error",

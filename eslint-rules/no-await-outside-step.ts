@@ -1,4 +1,9 @@
-import { createRule, DURABLE_METHODS, isMethodCallIn } from "./create-rule.ts";
+import {
+  createRule,
+  DURABLE_METHODS,
+  insideCheckpointedCallback,
+  isMethodCallIn,
+} from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
 //
@@ -7,16 +12,12 @@ import { createRule, DURABLE_METHODS, isMethodCallIn } from "./create-rule.ts";
 //
 // 1. At the call site: `await ctx.step(...)` and the other durable
 //    operations. The SDK checkpoints the result.
-// 2. As an ancestor of an inner await: only the operations that checkpoint
-//    their callback as a unit (a step, the submitter of waitForCallback, the
-//    check of waitForCondition). A child context, parallel and map run their
-//    callbacks again on every replay, so an await inside one needs its own
-//    step.
-const CHECKPOINTS_CALLBACK = new Set([
-  "step",
-  "waitForCallback",
-  "waitForCondition",
-]);
+// 2. As an ancestor of an inner await: only the callback of an operation
+//    that checkpoints it as a unit (CHECKPOINTS_CALLBACK). A child context,
+//    parallel and map run their callbacks again on every replay, so an await
+//    inside one needs its own step.
+//
+// `for await` reads an async source on every pass, so it counts as an await.
 
 export const noAwaitOutsideStep = createRule({
   name: "no-await-outside-step",
@@ -38,10 +39,12 @@ export const noAwaitOutsideStep = createRule({
     return {
       AwaitExpression(node) {
         if (isMethodCallIn(node.argument, DURABLE_METHODS)) return;
-        const inStep = sourceCode
-          .getAncestors(node)
-          .some((ancestor) => isMethodCallIn(ancestor, CHECKPOINTS_CALLBACK));
-        if (inStep) return;
+        if (insideCheckpointedCallback(node, sourceCode)) return;
+        context.report({ node, messageId: "awaitOutsideStep" });
+      },
+      ForOfStatement(node) {
+        if (!node.await) return;
+        if (insideCheckpointedCallback(node, sourceCode)) return;
         context.report({ node, messageId: "awaitOutsideStep" });
       },
     };

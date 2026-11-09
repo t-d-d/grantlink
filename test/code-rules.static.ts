@@ -7,19 +7,18 @@ import { root } from "./repo.ts";
 // test/eslint-rules/.
 const eslint = new ESLint({ cwd: root });
 
-async function severity(path: string, rule: string): Promise<unknown> {
+async function setting(path: string, rule: string): Promise<unknown[]> {
   const config = (await eslint.calculateConfigForFile(path)) as {
     rules?: Record<string, unknown[]>;
   };
-  return config.rules?.[rule]?.[0];
+  return config.rules?.[rule] ?? [];
 }
 
-async function options(path: string, rule: string): Promise<unknown> {
-  const config = (await eslint.calculateConfigForFile(path)) as {
-    rules?: Record<string, unknown[]>;
-  };
-  return config.rules?.[rule]?.[1];
-}
+const severity = async (path: string, rule: string): Promise<unknown> =>
+  (await setting(path, rule))[0];
+
+const options = async (path: string, rule: string): Promise<unknown> =>
+  (await setting(path, rule))[1];
 
 const ERROR = 2;
 
@@ -35,6 +34,10 @@ describe("fitness: durable bodies stay deterministic (durable-execution.md)", ()
   it.each(rules)("%s is an error in src/run/", async (rule) => {
     expect(await severity("src/run/handler.ts", rule)).toBe(ERROR);
     expect(await severity("src/run/steps/paper.ts", rule)).toBe(ERROR);
+  });
+
+  it.each(rules)("%s is off for a test in src/run/", async (rule) => {
+    expect(await severity("src/run/handler.test.ts", rule)).toBeUndefined();
   });
 });
 

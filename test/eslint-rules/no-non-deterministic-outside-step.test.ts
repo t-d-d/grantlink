@@ -35,6 +35,30 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "reads the clock in an array's map, which is not a step",
+          code: `async function run(ctx: any, papers: string[]) {
+            const stamped = papers.map(() => Date.now());
+          }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "reads random in a durable map, which replays its callbacks",
+          code: `async function run(ctx: any, ids: string[]) {
+            await ctx.map("papers", ids, async (child: any) => Math.random());
+          }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "reads the clock in a step's name, which the body evaluates",
+          code: "async function run(ctx: any) { await ctx.step(`at-${Date.now()}`, async () => 1); }",
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "draws a random integer",
+          code: `const n = crypto.randomInt(5);`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
           name: "passes a random source by reference",
           code: `const pick = items.sort(Math.random);`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],

@@ -31,6 +31,20 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         errors: [{ messageId: "awaitOutsideStep" }],
       },
       {
+        name: "iterates an async source in the body",
+        code: `async function run(ctx: any) {
+          for await (const page of pages()) {}
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits I/O in a step's name, which the body evaluates",
+        code: `async function run(ctx: any) {
+          await ctx.step(await nameFor(), async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
         name: "awaits I/O directly in a child context, which replays",
         code: `async function run(ctx: any) {
           await ctx.runInChildContext("paper", async (child: any) => {

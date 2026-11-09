@@ -20,8 +20,9 @@ checkpoints recorded, and the SDK stops the run with
   `ctx.step`, and the body branches only on what a durable operation
   returned. `grantlink/no-await-outside-step` and
   `grantlink/no-non-deterministic-outside-step` check this.
-- A step's callback returns its result. It does not change a variable
-  from outside it, which a replay would skip.
+- The callback of a step, a child context, a map or a parallel returns
+  its result. It does not change a variable from outside it, which a
+  replay of a finished operation skips.
   `grantlink/no-closure-in-durable-operations` checks this.
 - A durable operation never uses the context of an operation it sits
   inside. Nest through `runInChildContext` and use the child.

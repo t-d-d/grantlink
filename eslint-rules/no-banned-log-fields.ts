@@ -6,14 +6,24 @@ import { createRule } from "./create-rule.ts";
 // (personal-data.md). Funding statements and acknowledgements name people,
 // so no log line carries them, or a name. Logs carry ids and counts.
 //
-// A logger call is a call of info, warn, error, debug, log or child on a
-// receiver named `console`, `log`, `logger`, or ending `Log` or `Logger`
-// (`runLog`, `requestLogger`), reached directly, as a property
+// A logger call is a call of trace, debug, info, log, warn, error, fatal or
+// child on a receiver named `console`, `log`, `logger`, or ending `Log` or
+// `Logger` (`runLog`, `requestLogger`), reached directly, as a property
 // (`ctx.logger`) or through `.child(...)`; and `createLogger(...)`. Every
-// argument is checked: an object's keys, nested objects, and a value or
-// bare argument whose name says it holds text or a name.
+// argument is checked: an object's keys, nested objects and arrays, and a
+// value or bare argument whose name says it holds text or a name, including
+// one placed in a template literal or joined to a string with `+`.
 
-const LEVELS = new Set(["info", "warn", "error", "debug", "log", "child"]);
+const LEVELS = new Set([
+  "trace",
+  "debug",
+  "info",
+  "log",
+  "warn",
+  "error",
+  "fatal",
+  "child",
+]);
 const RECEIVER = /^(?:console|log|logger|[a-z][A-Za-z0-9]*(?:Log|Logger))$/u;
 
 // A key or a variable is banned when one of its words is in this list, or
@@ -140,6 +150,21 @@ export const noBannedLogFields = createRule({
     const checkValue = (node: TSESTree.Node): void => {
       if (node.type === AST_NODE_TYPES.ObjectExpression) {
         checkObject(node);
+        return;
+      }
+      if (node.type === AST_NODE_TYPES.TemplateLiteral) {
+        for (const expression of node.expressions) checkValue(expression);
+        return;
+      }
+      if (node.type === AST_NODE_TYPES.BinaryExpression) {
+        checkValue(node.left);
+        checkValue(node.right);
+        return;
+      }
+      if (node.type === AST_NODE_TYPES.ArrayExpression) {
+        for (const element of node.elements) {
+          if (element !== null) checkValue(element);
+        }
         return;
       }
       const name = valueName(node);

@@ -1,6 +1,5 @@
-import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import { relative, sep } from "node:path";
-import { ESLintUtils } from "@typescript-eslint/utils";
+import { AST_NODE_TYPES, ESLintUtils } from "@typescript-eslint/utils";
 import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
 
 // Each rule's docs live in the constraint file that names it.
@@ -38,15 +37,34 @@ export function isMethodCallIn(
   );
 }
 
-// True when an ancestor of the node is a method call named in the set.
-export function insideMethodCall(
+// The operations that checkpoint their callback as a unit: a step, the
+// submitter of waitForCallback and the check of waitForCondition. A child
+// context, parallel and map run their callbacks again on every replay.
+export const CHECKPOINTS_CALLBACK = new Set([
+  "step",
+  "waitForCallback",
+  "waitForCondition",
+]);
+
+// True when the node sits inside a function passed to an operation that
+// checkpoints its callback. The operation's other arguments, such as the
+// step's name, are evaluated in the body on every replay, so they do not
+// count.
+export function insideCheckpointedCallback(
   node: TSESTree.Node,
   sourceCode: Readonly<TSESLint.SourceCode>,
-  names: ReadonlySet<string>,
 ): boolean {
-  return sourceCode
-    .getAncestors(node)
-    .some((ancestor) => isMethodCallIn(ancestor, names));
+  const ancestors = sourceCode.getAncestors(node);
+  return ancestors.some((fn, i) => {
+    const call = ancestors[i - 1];
+    return (
+      (fn.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+        fn.type === AST_NODE_TYPES.FunctionExpression) &&
+      call !== undefined &&
+      isMethodCallIn(call, CHECKPOINTS_CALLBACK) &&
+      call.arguments.includes(fn)
+    );
+  });
 }
 
 // Resolve a name from a scope outward. Null means an implicit global or a

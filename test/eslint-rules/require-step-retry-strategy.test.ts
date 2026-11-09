@@ -16,6 +16,10 @@ describe("fitness: every step names its retry strategy (durable-execution.md)", 
         code: `await ctx.step("fetch", async () => 1, stepOptions);`,
       },
       {
+        name: "passes a function and options it cannot read",
+        code: `await ctx.step(fetchPaper, stepOptions);`,
+      },
+      {
         name: "is not a durable step",
         code: `wizard.step(2);`,
       },
@@ -24,6 +28,16 @@ describe("fitness: every step names its retry strategy (durable-execution.md)", 
       {
         name: "passes no options",
         code: `await ctx.step("fetch", async () => 1);`,
+        errors: [{ messageId: "missing" }],
+      },
+      {
+        name: "names the step with a variable and passes no options",
+        code: `await ctx.step(stepName, async () => 1);`,
+        errors: [{ messageId: "missing" }],
+      },
+      {
+        name: "has no name and passes no options",
+        code: `await ctx.step(async () => 1);`,
         errors: [{ messageId: "missing" }],
       },
       {

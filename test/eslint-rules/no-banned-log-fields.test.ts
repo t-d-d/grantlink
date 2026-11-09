@@ -34,6 +34,21 @@ describe("fitness: no text in logs (personal-data.md)", () => {
         errors: [{ messageId: "bannedValue" }],
       },
       {
+        name: "logs funding text inside a template literal",
+        code: "logger.info(`paper ${pmcid}: ${paper.fundingText}`);",
+        errors: [{ messageId: "bannedValue" }],
+      },
+      {
+        name: "logs a statement joined to a string",
+        code: `console.log("statement: " + statement);`,
+        errors: [{ messageId: "bannedValue" }],
+      },
+      {
+        name: "logs funding text at trace level",
+        code: `logger.trace("paper", { fundingText });`,
+        errors: [{ messageId: "bannedField" }],
+      },
+      {
         name: "logs a statement passed bare",
         code: `console.log(statement);`,
         errors: [{ messageId: "bannedValue" }],
