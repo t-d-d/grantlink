@@ -10,12 +10,12 @@ The plan is the PRD, [#1](https://github.com/t-d-d/grantlink/issues/1). The deci
 
 Two stacks are applied by hand, once, before anything deploys, and both are code in [infra/](infra/):
 
-- **The DNS stack**, [infra/dns.cfn.yml](infra/dns.cfn.yml): the hosted zone for grantlink.uk and its certificate, in us-east-1, where CloudFront requires the certificate. The zone is kept if the stack is deleted, so its nameservers never change under the registrar.
-- **The roles stack**, [infra/github-oidc.cfn.yml](infra/github-oidc.cfn.yml): GitHub's OIDC provider, the deploy role and the role CloudFormation takes to build the app stack, the CI eval role, and `access-eval` for aws-access's `grantlink-eval` profile. IAM is global, so it sits in us-east-1 beside the DNS stack. It reads the access account's id from aws-access's `/access/account-id` parameter in us-east-1.
+- **The DNS stack**, `dns`, from [infra/dns.cfn.yml](infra/dns.cfn.yml): the hosted zone for grantlink.uk and its certificate, in us-east-1, where CloudFront requires the certificate. The zone is kept if the stack is deleted, so its nameservers never change under the registrar.
+- **The roles stack**, `grantlink-github-oidc`, from [infra/github-oidc.cfn.yml](infra/github-oidc.cfn.yml): GitHub's OIDC provider, the deploy role and the role CloudFormation takes to build the app stack, the CI eval role, and `access-eval` for aws-access's `grantlink-eval` profile. IAM is global, so it sits in us-east-1 beside the DNS stack. It reads the access account's id from aws-access's `/access/account-id` parameter in us-east-1.
 
 Every later change to the account goes through the app stack, from a green merge to main.
 
-Run one script, from the repo root on your own machine, with AWS credentials for the organization's management account as an administrator, and `gh` signed in with admin rights on this repo. The script finds grantlink's account by its name and works there through `OrganizationAccountAccessRole`. Before it changes anything, it checks that the account holds aws-access's `/access/account-id` parameter. The account must not already have a GitHub OIDC provider of its own, or the roles stack fails:
+Run one script, from the repo root on your own machine, with AWS credentials for grantlink's account as an administrator, however you come by them, and `gh` signed in with admin rights on this repo. Before it changes anything, the script checks that the account holds aws-access's `/access/account-id` parameter, which the roles stack reads. The account must not already have a GitHub OIDC provider of its own, or the roles stack fails:
 
 ```sh
 scripts/bootstrap.sh
@@ -38,7 +38,7 @@ It asks only whether the account it found is the right one. Then it:
 
 Role ARNs, the certificate's ARN and the bucket's name carry the account id, so they are secrets, never variables. The script reads every value before it gives GitHub any, and stops rather than give an empty one.
 
-The script is safe to run again. Each step changes only what differs, and it waits for a stack an earlier run left part way. The session in grantlink's account lasts an hour, so if the registrar is slow and the certificate is still waiting by then, the script stops while the stack carries on. Run it again and it waits for the stack. A stack whose first create failed has to be deleted before a run can apply it, and the script says so.
+The script is safe to run again. Each step changes only what differs, and it waits for a stack an earlier run left part way. If the credentials expire while the certificate waits for the registrar, the script stops while the stack carries on. Run it again and it waits for the stack. A stack whose first create failed has to be deleted before a run can apply it, and the script says so.
 
 The deploy role trusts only the `prod` environment and the CI eval role only the `eval` environment, so a workflow job must name its environment to reach either. The gate checks both templates with [cfn-lint](https://github.com/aws-cloudformation/cfn-lint), so running the gate locally needs the version CI pins in [gate.yml](.github/workflows/gate.yml) (`pipx install cfn-lint==1.60.0`).
 

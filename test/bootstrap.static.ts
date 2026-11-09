@@ -121,7 +121,8 @@ describe("the bootstrap script", () => {
 
   it("applies both stacks in us-east-1 under fixed names", () => {
     expect(script).toMatch(/^REGION=us-east-1$/mu);
-    expect(script).toMatch(/^DNS_STACK=grantlink-dns$/mu);
+    // The name the DNS stack was first applied under, by hand.
+    expect(script).toMatch(/^DNS_STACK=dns$/mu);
     expect(script).toMatch(/^ROLES_STACK=grantlink-github-oidc$/mu);
     expect([...templates]).toEqual([
       ["DNS_STACK", "infra/dns.cfn.yml"],
@@ -129,11 +130,19 @@ describe("the bootstrap script", () => {
     ]);
   });
 
-  it("reaches grantlink from the management account by its name", () => {
-    expect(script).toMatch(
-      /aws organizations list-accounts --query "Accounts\[\?Name=='grantlink'/u,
-    );
-    expect(script).toMatch(/role\/OrganizationAccountAccessRole/u);
+  // However the owner comes by admin credentials for grantlink's account,
+  // the script uses them as they are.
+  it("uses the credentials it is run with", () => {
+    expect(script).toMatch(/^account=\$\(aws sts get-caller-identity /mu);
+    for (const route of [
+      "organizations",
+      "assume-role",
+      "OrganizationAccountAccessRole",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_PROFILE",
+    ]) {
+      expect(script).not.toContain(route);
+    }
   });
 
   it("checks for aws-access's parameter before it changes anything", () => {
