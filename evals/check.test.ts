@@ -67,9 +67,12 @@ describe("the pull request's comment", () => {
   });
 
   it("says when no deploy of main was found to compare with", () => {
-    expect(comment(report({ spend: 0 }), "no-deploy")).toContain(
-      "No deploy of main was found",
-    );
+    const text = comment(report({ spend: 0 }), "no-deploy");
+    expect(text).toContain("No deploy of main was found");
+    // Only deploy.yml's newest runs are read, so an older live release
+    // may still exist.
+    expect(text).toContain("recent runs");
+    expect(text).not.toMatch(/no live release/iu);
   });
 
   it.each([
