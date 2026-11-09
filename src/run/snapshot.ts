@@ -11,6 +11,7 @@ import {
   type Taken,
 } from "../pipeline/snapshot.ts";
 import { readOrRefused, type Read } from "../pipeline/refused.ts";
+import { owedAfter, type Owed } from "./owed.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 
 // Takes the eval snapshot named in evals/snapshot.json, once
@@ -27,15 +28,23 @@ export type SnapshotSummary =
 // batches do.
 const BATCH = 50;
 
+// Takes a batch of gold papers, first waiting out any wait an earlier
+// refusal left `owed`, as a run's batch does. A gold set B batch stops at
+// its first paper that fails or is not kept, since the snapshot is lost
+// then and asking Europe PMC about the rest would be wasted.
 async function takeBatch(
   ctx: DurableContext,
   deps: Deps,
   pmcids: string[],
   set: "A" | "B",
-): Promise<{ entries: Entry[]; failed: number }> {
+  owed: Owed,
+): Promise<{ entries: Entry[]; failed: number; owed: Owed }> {
   const entries: Entry[] = [];
   let failed = 0;
+  let due = owed;
   for (const pmcid of pmcids) {
+    if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
+    due = null;
     let outcome: Read<Taken> | undefined;
     try {
       outcome = await ctx.step(
@@ -51,30 +60,35 @@ async function takeBatch(
     }
     if (outcome !== undefined && "read" in outcome) {
       if (outcome.read.kept) entries.push(outcome.read.entry);
+      else if (set === "B") break;
       continue;
     }
     failed += 1;
     // As in a run's batch: nothing more goes to Europe PMC until the wait
     // it asked for has passed.
-    if (outcome !== undefined && outcome.waitSeconds > 0) {
-      await ctx.wait(`gold-${set}-${pmcid}-wait`, {
-        seconds: outcome.waitSeconds,
-      });
-    }
+    due = owedAfter(`gold-${set}-${pmcid}-wait`, outcome);
+    if (set === "B") break;
   }
-  return { entries, failed };
+  return { entries, failed, owed: due };
 }
 
+// `owed` is a wait the run's last refusal left, which the snapshot waits
+// out before it first asks Europe PMC. It returns whatever wait is still
+// owed when it ends, which the run waits out before it ends, so no run
+// started after it asks Europe PMC too soon.
 export async function takeSnapshot(
   ctx: DurableContext,
   deps: Deps,
-): Promise<SnapshotSummary> {
+  owed: Owed,
+): Promise<{ snapshot: SnapshotSummary; owed: Owed }> {
   const done = await ctx.step(
     "snapshot-check",
     async () => snapshotTaken(deps),
     { retryStrategy: storeRetry },
   );
-  if (done) return { taken: false, reason: "already taken" };
+  if (done)
+    return { snapshot: { taken: false, reason: "already taken" }, owed };
+  let due = owed;
 
   // The order gold set A is drawn in.
   let candidates: string[] = goldA.papers.map((paper) => paper.pmcid);
@@ -85,6 +99,8 @@ export async function takeSnapshot(
     let page = 0;
     while (cursor !== null) {
       const from: string = cursor;
+      if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
+      due = null;
       const result = await ctx.step(
         `snapshot-search-${String(page)}`,
         async () => searchGoldA(deps, from),
@@ -110,8 +126,9 @@ export async function takeSnapshot(
     );
     const outcome = await ctx.runInChildContext(
       `snapshot-a-${String(index)}`,
-      async (child) => takeBatch(child, deps, batch, "A"),
+      async (child) => takeBatch(child, deps, batch, "A", due),
     );
+    due = outcome.owed;
     entries.push(...outcome.entries);
     keptA += outcome.entries.length;
     at += batch.length;
@@ -120,16 +137,24 @@ export async function takeSnapshot(
   }
 
   // Every labelled paper must be in the snapshot, or its labels score
-  // nothing, so one that cannot be read leaves the snapshot for next time.
+  // nothing, so one that cannot be read leaves the snapshot for next time,
+  // and the snapshot asks Europe PMC nothing more.
   const labelled = goldB.papers.map((paper) => paper.pmcid);
   for (let i = 0; i * BATCH < labelled.length; i += 1) {
     const batch = labelled.slice(i * BATCH, (i + 1) * BATCH);
     const outcome = await ctx.runInChildContext(
       `snapshot-b-${String(i)}`,
-      async (child) => takeBatch(child, deps, batch, "B"),
+      async (child) => takeBatch(child, deps, batch, "B", due),
     );
+    due = outcome.owed;
     if (outcome.failed > 0 || outcome.entries.length < batch.length) {
-      return { taken: false, reason: "a gold set B paper could not be read" };
+      return {
+        snapshot: {
+          taken: false,
+          reason: "a gold set B paper could not be read",
+        },
+        owed: due,
+      };
     }
     entries.push(...outcome.entries);
   }
@@ -140,8 +165,11 @@ export async function takeSnapshot(
     { retryStrategy: storeRetry },
   );
   return {
-    taken: true,
-    papers: entries.length,
-    manifestSha256: written.manifestSha256,
+    snapshot: {
+      taken: true,
+      papers: entries.length,
+      manifestSha256: written.manifestSha256,
+    },
+    owed: due,
   };
 }
