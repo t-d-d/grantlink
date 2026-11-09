@@ -118,10 +118,11 @@ Resources:
                   - !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/*
 
   # The role CloudFormation takes to build the app stack, so the deploy role
-  # itself holds no rights to create resources. It manages buckets but no
-  # objects, and only the app stack's own roles. Those roles have no
-  # permissions boundary yet, so what the app stack declares, reviewed and
-  # merged to main, bounds what a deploy can reach.
+  # itself holds no rights to create resources. It manages buckets, reads no
+  # object but a function's code, and manages only the app stack's own
+  # roles. Those roles have no permissions boundary yet, so what the app
+  # stack declares, reviewed and merged to main, bounds what a deploy can
+  # reach.
   DeployExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -169,6 +170,20 @@ Resources:
                   - s3:PutEncryptionConfiguration
                   - s3:PutLifecycleConfiguration
                 Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-*
+              # Lambda reads a new function's code from osls's deployment
+              # bucket with the credentials of the role CloudFormation runs
+              # as (#58). No other object.
+              - Sid: FunctionCode
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-prod-serverlessdeploymentbucket-*/*
+              # Funding text and names stay in the private bucket (#10). The
+              # role creates and configures that bucket, but never reads or
+              # writes what it holds.
+              - Sid: NoPrivateObjects
+                Effect: Deny
+                Action: s3:*
+                Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/*
               - Sid: Certificate
                 Effect: Allow
                 Action:

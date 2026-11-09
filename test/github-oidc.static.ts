@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { serverless } from "./app.ts";
 import {
   list,
   readTemplate,
@@ -137,19 +138,70 @@ describe("the deploy execution role", () => {
     ]);
   });
 
-  it("manages buckets but never touches an object", () => {
-    const objectActions = [
-      "s3:GetObject",
-      "s3:PutObject",
-      "s3:DeleteObject",
-      "s3:RestoreObject",
-    ];
-    const reaching = allows(rightsOf(execution))
-      .flatMap(actions)
-      .filter((pattern) =>
-        objectActions.some((action) => covers(pattern, action)),
-      );
-    expect(reaching).toEqual([]);
+  // Lambda reads a new function's code from osls's deployment bucket with
+  // the credentials of the role CloudFormation runs as (#58).
+  const objectActions = [
+    "s3:GetObject",
+    "s3:PutObject",
+    "s3:DeleteObject",
+    "s3:RestoreObject",
+  ];
+  const reachingObjects = allows(rightsOf(execution)).filter((statement) =>
+    actions(statement).some((pattern) =>
+      objectActions.some((action) => covers(pattern, action)),
+    ),
+  );
+
+  it("manages buckets, and reads objects only to fetch a function's code", () => {
+    expect(
+      reachingObjects.map((statement) => [
+        actions(statement),
+        resources(statement),
+      ]),
+    ).toEqual([
+      [
+        ["s3:GetObject"],
+        [
+          "arn:${AWS::Partition}:s3:::grantlink-prod-serverlessdeploymentbucket-*/*",
+        ],
+      ],
+    ]);
+  });
+
+  it("cannot read the private bucket's objects", () => {
+    const text =
+      "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/cache/PMC1.json";
+    expect(
+      reachingObjects
+        .flatMap(resources)
+        .some((pattern) => covers(pattern, text)),
+    ).toBe(false);
+  });
+
+  // A Deny holds even if a later Allow is widened by mistake.
+  it("is denied every object in the private bucket", () => {
+    expect(
+      rightsOf(execution).filter((statement) => statement.Effect === "Deny"),
+    ).toContainEqual(
+      expect.objectContaining({
+        Action: "s3:*",
+        Resource: {
+          "Fn::Sub":
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/*",
+        },
+      }),
+    );
+  });
+
+  // The pattern is the name CloudFormation gives osls's deployment bucket in
+  // the stack grantlink-prod. Naming the bucket in serverless.yml, or
+  // changing the service or the stage, would stop it matching.
+  it("names the deployment bucket as osls creates it", () => {
+    expect(serverless.service).toBe("grantlink");
+    expect(serverless.provider.stage).toBe("prod");
+    expect(
+      (serverless.provider as { deploymentBucket?: unknown }).deploymentBucket,
+    ).toBeUndefined();
   });
 
   it("can read, update and delete the roles it creates", () => {
