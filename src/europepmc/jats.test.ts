@@ -174,6 +174,30 @@ describe("cutting a paper to its funding sections", () => {
     ).toEqual({ text: [], awards: [] });
   });
 
+  it("takes no self-closing section for a funding section (#221)", () => {
+    expect(
+      fundingSections(
+        `<article><body><sec sec-type="funding"/><sec><title>Results</title><p>Body text.</p></sec></body></article>`,
+      ).text,
+    ).toEqual([]);
+  });
+
+  it("takes no self-closing section for one titled as funding by the title after it (#221)", () => {
+    expect(
+      fundingSections(
+        `<article><body><sec><sec/><title>Funding sources compared</title><p>Body text.</p></sec></body></article>`,
+      ).text,
+    ).toEqual([]);
+  });
+
+  it("strips a self-closing title and nothing after it (#221)", () => {
+    expect(
+      fundingSections(
+        `<article><back><ack><title/>Funded by grant A1.<sec><title>X</title></sec></ack></back></article>`,
+      ).text,
+    ).toEqual(["Funded by grant A1."]);
+  });
+
   describe("matches a section, label or title tag only by its whole name (#216)", () => {
     it.each([
       [
