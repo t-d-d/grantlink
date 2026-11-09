@@ -15,7 +15,7 @@ Two stacks are applied by hand, once, before anything deploys, and both are code
 
 Every later change to the account goes through the app stack, from a green merge to main.
 
-Run one script, from the repo root on your own machine, with AWS credentials for the organization's management account as an administrator, and `gh` signed in with admin rights on this repo. The script finds grantlink's account by its name and works there through `OrganizationAccountAccessRole`. That session lasts an hour, so if the registrar is slow and the certificate is still waiting, run the script again once the DNS stack has finished:
+Run one script, from the repo root on your own machine, with AWS credentials for the organization's management account as an administrator, and `gh` signed in with admin rights on this repo. The script finds grantlink's account by its name and works there through `OrganizationAccountAccessRole`. Before it changes anything, it checks that the account holds aws-access's `/access/account-id` parameter. The account must not already have a GitHub OIDC provider of its own, or the roles stack fails:
 
 ```sh
 scripts/bootstrap.sh
@@ -24,7 +24,7 @@ scripts/bootstrap.sh
 It asks only whether the account it found is the right one. Then it:
 
 1. Applies the DNS stack, and prints the zone's nameservers as soon as the zone exists. Set them at the registrar then: the certificate, and so the stack, waits until they take effect.
-2. Applies the roles stack. It takes no parameters: the private bucket is `grantlink-text-<account id>`, a name the app stack builds the same way.
+2. Applies the roles stack. It takes no parameters: the private bucket is `grantlink-text-<account id>`, the name the app stack (#19) must give it.
 3. Gives GitHub every value the deploy and the eval read:
 
 | Name | Kind | GitHub environment | Value |
@@ -36,7 +36,9 @@ It asks only whether the account it found is the right one. Then it:
 | `PRIVATE_BUCKET_NAME` | Secret | `prod` and `eval` | `grantlink-text-<account id>` |
 | `AWS_EVAL_ROLE_ARN` | Secret | `eval` | The roles stack's `CiEvalRoleArn` output |
 
-Role ARNs, the certificate's ARN and the bucket's name carry the account id, so they are secrets, never variables. The script is safe to run again: each step changes only what differs.
+Role ARNs, the certificate's ARN and the bucket's name carry the account id, so they are secrets, never variables. The script reads every value before it gives GitHub any, and stops rather than give an empty one.
+
+The script is safe to run again. Each step changes only what differs, and it waits for a stack an earlier run left part way. The session in grantlink's account lasts an hour, so if the registrar is slow and the certificate is still waiting by then, the script stops while the stack carries on. Run it again and it waits for the stack. A stack whose first create failed has to be deleted before a run can apply it, and the script says so.
 
 The deploy role trusts only the `prod` environment and the CI eval role only the `eval` environment, so a workflow job must name its environment to reach either. The gate checks both templates with [cfn-lint](https://github.com/aws-cloudformation/cfn-lint), so running the gate locally needs the version CI pins in [gate.yml](.github/workflows/gate.yml) (`pipx install cfn-lint==1.60.0`).
 

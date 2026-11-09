@@ -49,6 +49,12 @@ const githubTrust = (environment: string): Statement[] => [
   },
 ];
 
+describe("the roles stack", () => {
+  it("needs no value typed by the person applying it", () => {
+    expect(Object.keys(template.Parameters ?? {})).toEqual(["AccessAccountId"]);
+  });
+});
+
 describe("GitHub's OIDC provider", () => {
   it("is GitHub's issuer, for STS", () => {
     const { Properties } = resource(template, "GitHubOidcProvider");
@@ -251,10 +257,6 @@ describe("access-eval", () => {
     ]);
   });
 
-  it("needs no value typed by the person applying it", () => {
-    expect(Object.keys(template.Parameters ?? {})).toEqual(["AccessAccountId"]);
-  });
-
   it("reads the access account's id from SSM, not the template", () => {
     expect(template.Parameters?.AccessAccountId).toMatchObject({
       Type: "AWS::SSM::Parameter::Value<String>",
@@ -292,24 +294,53 @@ describe("access-eval", () => {
 });
 
 describe("only the CI eval role writes to eval-reports/", () => {
-  const writesReports = (statement: Statement): boolean =>
-    statement.Effect === "Allow" &&
-    actions(statement).some((action) =>
-      ["*", "s3:*", "s3:PutObject", "s3:Put*"].includes(action),
-    ) &&
-    resources(statement).some(
-      (arn) =>
-        arn === "*" ||
-        arn.includes("grantlink-text-${AWS::AccountId}") ||
-        arn.includes("eval-reports"),
+  const report =
+    "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval-reports/a-report.json";
+
+  // Whether a statement applies to putting a report, reading Action or
+  // NotAction and Resource or NotResource with their wildcards.
+  const appliesToReport = (statement: Statement): boolean => {
+    const action =
+      statement.NotAction === undefined
+        ? actions(statement).some((pattern) => covers(pattern, "s3:PutObject"))
+        : !list(statement.NotAction).some((pattern) =>
+            covers(pattern, "s3:PutObject"),
+          );
+    const resource =
+      statement.NotResource === undefined
+        ? resources(statement).some((pattern) => covers(pattern, report))
+        : !list(statement.NotResource)
+            .map(subText)
+            .some((pattern) => covers(pattern, report));
+    return action && resource;
+  };
+
+  // An Allow that applies, and no Deny that does.
+  const writesReports = (role: typeof deploy): boolean => {
+    const applying = rightsOf(role).filter(appliesToReport);
+    return (
+      applying.some((statement) => statement.Effect === "Allow") &&
+      !applying.some((statement) => statement.Effect === "Deny")
     );
+  };
 
   it.each(Object.entries(roles).filter(([name]) => name !== "ciEval"))(
     "%s cannot",
     (_name, role) => {
-      expect(rightsOf(role).filter(writesReports)).toEqual([]);
+      expect(writesReports(role)).toBe(false);
     },
   );
+
+  it("ciEval can", () => {
+    expect(writesReports(ciEval)).toBe(true);
+  });
+
+  // Its wildcard on grantlink-* reaches the bucket. Only the Deny stops it.
+  it("deploy is stopped by its Deny, not by its Allows", () => {
+    expect(
+      allows(rightsOf(deploy)).some((statement) => appliesToReport(statement)),
+    ).toBe(true);
+  });
 });
 
 describe("every role", () => {

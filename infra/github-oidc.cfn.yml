@@ -6,8 +6,8 @@
 # stack runs in, and access-eval reads the access account's id from SSM.
 # The ARNs in the outputs carry the account id, so they are secrets.
 #
-# The private bucket is grantlink-text-<account id>, a name the app stack
-# builds the same way, so nobody types it.
+# The private bucket is grantlink-text-<account id>, the name the app stack
+# (#19) must give it, so nobody types it.
 AWSTemplateFormatVersion: "2010-09-09"
 Description: grantlink roles for GitHub Actions and eval sessions (us-east-1)
 
@@ -163,9 +163,7 @@ Resources:
                   - s3:PutBucket*
                   - s3:PutEncryptionConfiguration
                   - s3:PutLifecycleConfiguration
-                Resource:
-                  - !Sub arn:${AWS::Partition}:s3:::grantlink-*
-                  - !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}
+                Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-*
               - Sid: Certificate
                 Effect: Allow
                 Action:
