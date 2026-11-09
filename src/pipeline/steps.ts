@@ -54,13 +54,15 @@ export async function searchPage(
   };
 }
 
-// Records each paper a page of the search found, and decides which still
-// need reading. Safe to run twice: a paper already held is left as it is.
+// Records each paper a page of the run's search found, and that this run's
+// search returned it, and decides which still need reading. Safe to run
+// twice: what the table holds of a paper is kept.
 export async function recordPage(
   deps: Deps,
   papers: SearchPaper[],
+  runId: string,
 ): Promise<string[]> {
-  await deps.table.addFound(papers, deps.now());
+  await deps.table.addFound(papers, deps.now(), runId);
   const ids = papers.map((paper) => paper.pmcid);
   const done = await deps.table.processed(ids);
   const todo = ids.filter((pmcid) => !done.has(pmcid));
@@ -126,8 +128,10 @@ async function newerDeployLive(
   return true;
 }
 
-// Builds the page from every row in the table and publishes it. A table
-// with no paper read yet publishes nothing, so the page keeps what it had.
+// Builds the page from the table and publishes it. Only a run whose search
+// finished gets here, so the page shows the papers that search returned
+// (summarise in src/page/found.ts). A table with no such paper read yet
+// publishes nothing, so the page keeps what it had.
 // The data always goes up. The page does only if no newer deploy is live,
 // and otherwise the findings reach it at the next deploy or run.
 export async function publish(deps: Deps, runId: string): Promise<Published> {

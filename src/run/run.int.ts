@@ -18,6 +18,7 @@ import {
 } from "../../test/fakes.ts";
 import { NAMES, RECORDED } from "../../test/fixtures.ts";
 import { EuropePmcError } from "../europepmc/client.ts";
+import { found } from "../page/found.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
 // A whole run under the SDK's local runner, which replays the body as
@@ -206,6 +207,47 @@ describe("a run that finishes after a deploy", () => {
     expect(result?.published).toMatchObject({ page: "written" });
     expect(fake.site.files?.["index.html"]).toContain("RRCOER-Jun24/100008");
     expect(fake.site.files?.["found.json"]).toContain("RRCOER-Jun24/100008");
+  });
+});
+
+describe("a paper Europe PMC has since linked to a grant", () => {
+  it("is neither listed nor counted once a later complete search no longer returns it", async () => {
+    const fake = fakeDeps();
+    await runWith(fake);
+    expect(fake.site.files?.["index.html"]).toContain("Another made-up study.");
+
+    // Europe PMC now links PMC0000002 to a grant, so the search for papers
+    // linked to none leaves it out.
+    const search = fake.deps.europePmc.search.bind(fake.deps.europePmc);
+    fake.deps.europePmc.search = async (...args) => {
+      const page = await search(...args);
+      return {
+        ...page,
+        papers: page.papers.filter((paper) => paper.pmcid !== "PMC0000002"),
+      };
+    };
+    fake.deps.now = () => "2026-12-09T12:00:00.000Z";
+
+    const again = await runWith(fake);
+    expect(again.status).toBe("SUCCEEDED");
+    expect(again.result?.published).toEqual({
+      published: true,
+      papers: 7,
+      references: 6,
+      page: "written",
+    });
+    const page = fake.site.files?.["index.html"] ?? "";
+    expect(page).not.toContain("Another made-up study.");
+    expect(page).not.toContain("RRCOER-Jun24/100008");
+    const data = found.parse(
+      JSON.parse(fake.site.files?.["found.json"] ?? "{}"),
+    );
+    expect(data.papers.map((paper) => paper.pmcid)).not.toContain("PMC0000002");
+    expect(data.counts.papers).toBe(7);
+    // The table keeps the paper and what was read from it.
+    expect(fake.table.rows.get("PMC0000002")).toMatchObject({
+      status: "processed",
+    });
   });
 });
 

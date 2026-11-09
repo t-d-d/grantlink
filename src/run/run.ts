@@ -16,8 +16,9 @@ import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 // each paper not yet read, then publish the page. Every I/O call sits in a
 // step (docs/constraints/durable-execution.md). A paper that fails is left for
 // the next run. A run that fails, or whose search finds nothing, publishes
-// nothing. Otherwise it publishes if the table holds any paper read, by
-// this run or an earlier one (publish in src/pipeline/steps.ts).
+// nothing. Otherwise it publishes if any paper its own search returned has
+// been read, by this run or an earlier one (publish in
+// src/pipeline/steps.ts).
 
 // Papers per child context. Each batch ends with a short wait, so each
 // Lambda invocation does a bounded amount of work, and a replay skips each
@@ -88,7 +89,7 @@ export function makeRun(deps: Deps) {
       // under the store's strategy and never asks Europe PMC again.
       const todo = await ctx.step(
         `record-${String(page)}`,
-        async () => recordPage(deps, result.papers),
+        async () => recordPage(deps, result.papers, runId),
         { retryStrategy: storeRetry },
       );
       found += result.papers.length;
