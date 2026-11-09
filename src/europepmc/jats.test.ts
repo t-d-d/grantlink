@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { fundingSections } from "./jats.ts";
+import { elements, fundingSections } from "./jats.ts";
 
 const fixture = (pmcid: string) =>
   readFileSync(
@@ -178,5 +178,22 @@ describe("cutting a paper to its funding sections", () => {
     expect(fundingSections("<article><body><p>x</p></body></article>")).toEqual(
       { text: [], awards: [] },
     );
+  });
+});
+
+describe("reading an element by its name", () => {
+  it("matches only the whole name, not a longer name it begins", () => {
+    const xml =
+      '<fn-group><fn id="a"><p>one</p></fn></fn-group><award-group><award>two</award></award-group>';
+    expect(elements(xml, "fn")).toEqual(["<p>one</p>"]);
+    expect(elements(xml, "award")).toEqual(["two"]);
+  });
+
+  it("matches an element with no attributes or with whitespace after its name", () => {
+    expect(elements("<fn>a</fn><fn\n>b</fn>", "fn")).toEqual(["a", "b"]);
+  });
+
+  it("reads a self-closing element by its whole name too", () => {
+    expect(elements("<fn-group/><fn/><fn>x</fn>", "fn")).toEqual(["", "x"]);
   });
 });

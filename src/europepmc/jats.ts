@@ -57,8 +57,9 @@ function markup(xml: string): string {
 // only to the next closing tag of its name, and one with none after it is
 // dropped, so a broken element never takes in the rest of the paper. A
 // self-closing element is empty, and does not run on to the next closing tag
-// of its name (#195).
-function elements(xml: string, name: string, attributes = ""): string[] {
+// of its name (#195). The name must end at whitespace, a slash or the tag's
+// close: \b would let "fn" match <fn-group>, since a hyphen ends a word.
+export function elements(xml: string, name: string, attributes = ""): string[] {
   const tags = new RegExp(`<(/?)${name}(?=[\\s/>])([^>]*)>`, "gu");
   const wanted = new RegExp(attributes, "u");
   const found: string[] = [];
