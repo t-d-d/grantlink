@@ -581,3 +581,130 @@ describe("fitness: only the run's own role reaches the private bucket's objects 
     ).toEqual([]);
   });
 });
+
+// Each access point in the stack that opens a route to the private bucket,
+// by resource. An access point keeps its own policy, which names its own
+// ARN, so the role check above does not see what it grants (#105). The app
+// needs none, so the stack may declare none on the private bucket. A bucket
+// it cannot work out counts as the private bucket.
+const privateBucket = `grantlink-text-${account}`;
+
+// The stack resource a value names by Ref, Fn::GetAtt or a lone Fn::Sub
+// variable, if it names one.
+function named(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const v = value as Record<string, unknown>;
+  if (typeof v.Ref === "string") return v.Ref;
+  const getAtt = v["Fn::GetAtt"];
+  if (Array.isArray(getAtt) && typeof getAtt[0] === "string") return getAtt[0];
+  const sub = v["Fn::Sub"];
+  const match =
+    typeof sub === "string" ? /^\$\{([^}.!]+)(\.[^}]*)?\}$/u.exec(sub) : null;
+  return match?.[1];
+}
+
+function accessPointsOnPrivateBucket(resources: Resources): string[] {
+  const onPrivate = (bucket: unknown): boolean =>
+    wildcardMatches(render(resources, bucket), privateBucket);
+  const pointOnPrivate = (logical: string): boolean => {
+    const r = resources[logical];
+    if (r === undefined) return false;
+    if (r.Type === "AWS::S3::AccessPoint")
+      return onPrivate(r.Properties.Bucket);
+    if (r.Type === "AWS::S3::MultiRegionAccessPoint") {
+      return list(r.Properties.Regions).some((region) =>
+        onPrivate((region as { Bucket?: unknown }).Bucket),
+      );
+    }
+    if (r.Type === "AWS::S3ObjectLambda::AccessPoint") {
+      // It reads through a supporting access point. Only one the stack
+      // declares on another bucket is safe.
+      const configuration = r.Properties.ObjectLambdaConfiguration as
+        { SupportingAccessPoint?: unknown } | undefined;
+      const supporting = named(configuration?.SupportingAccessPoint);
+      return (
+        supporting === undefined ||
+        resources[supporting]?.Type !== "AWS::S3::AccessPoint" ||
+        pointOnPrivate(supporting)
+      );
+    }
+    return false;
+  };
+  return Object.keys(resources).filter(pointOnPrivate);
+}
+
+describe("fitness: no access point opens the private bucket (storage.md)", () => {
+  it("finds none in the app stack", () => {
+    expect(accessPointsOnPrivateBucket(appStack)).toEqual([]);
+  });
+
+  const withBucket = (extra: Resources): Resources => ({
+    TextBucket: data.Resources.TextBucket as Resources[string],
+    SiteBucket: site.Resources.SiteBucket as Resources[string],
+    ...extra,
+  });
+  const accessPoint = (Bucket: unknown): Resources[string] => ({
+    Type: "AWS::S3::AccessPoint",
+    Properties: { Bucket },
+  });
+  const multiRegion = (Bucket: unknown): Resources[string] => ({
+    Type: "AWS::S3::MultiRegionAccessPoint",
+    Properties: { Regions: [{ Bucket }] },
+  });
+  const objectLambda = (SupportingAccessPoint: unknown): Resources[string] => ({
+    Type: "AWS::S3ObjectLambda::AccessPoint",
+    Properties: { ObjectLambdaConfiguration: { SupportingAccessPoint } },
+  });
+
+  it.each([
+    ["by its Ref", accessPoint({ Ref: "TextBucket" })],
+    [
+      "by its name",
+      accessPoint({ "Fn::Sub": "grantlink-text-${AWS::AccountId}" }),
+    ],
+    [
+      "by a bucket it cannot read",
+      accessPoint({ "Fn::ImportValue": "elsewhere" }),
+    ],
+    ["as a multi-region access point", multiRegion({ Ref: "TextBucket" })],
+  ])("finds an access point on the private bucket %s", (_what, point) => {
+    expect(accessPointsOnPrivateBucket(withBucket({ Point: point }))).toEqual([
+      "Point",
+    ]);
+  });
+
+  it("finds an Object Lambda access point that reads the private bucket", () => {
+    expect(
+      accessPointsOnPrivateBucket(
+        withBucket({
+          Point: accessPoint({ Ref: "TextBucket" }),
+          Lambda: objectLambda({ "Fn::GetAtt": ["Point", "Arn"] }),
+        }),
+      ),
+    ).toEqual(["Point", "Lambda"]);
+  });
+
+  it("finds an Object Lambda access point whose supporting point it cannot trace", () => {
+    expect(
+      accessPointsOnPrivateBucket(
+        withBucket({
+          Lambda: objectLambda(
+            "arn:aws:s3:eu-west-2:the-account:accesspoint/elsewhere",
+          ),
+        }),
+      ),
+    ).toEqual(["Lambda"]);
+  });
+
+  it("passes access points on another bucket", () => {
+    expect(
+      accessPointsOnPrivateBucket(
+        withBucket({
+          Point: accessPoint({ Ref: "SiteBucket" }),
+          Region: multiRegion({ Ref: "SiteBucket" }),
+          Lambda: objectLambda({ "Fn::GetAtt": ["Point", "Arn"] }),
+        }),
+      ),
+    ).toEqual([]);
+  });
+});
