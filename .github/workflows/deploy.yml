@@ -113,8 +113,19 @@ jobs:
           ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
         run: |
           set -euo pipefail
-          token="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)"
+          # Prints a JSON reply's field, or names the field in an error and
+          # fails. jq -e alone fails on a missing field without saying which,
+          # and passes an empty string (#160). jq's own error is dropped, as
+          # it can quote the reply.
+          field() {
+            if ! jq -er "$2 | strings | select(length > 0)" <<< "$1" 2> /dev/null; then
+              echo "::error::The $3 reply has no $2, or it is empty." >&2
+              return 1
+            fi
+          }
+          oidc="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com")"
+          token="$(field "$oidc" .value OIDC)"
           echo "::add-mask::$token"
           creds="$(aws sts assume-role-with-web-identity \
             --role-arn "$ROLE" \
@@ -122,19 +133,18 @@ jobs:
             --web-identity-token "$token" \
             --duration-seconds 3600 \
             --output json)"
-          # jq -e fails on a missing field, where jq -r prints null and
-          # succeeds (#122). An ARN with no account field leaves it empty,
-          # and cut -s leaves it empty too for a value with no colon.
-          arn="$(jq -er .AssumedRoleUser.Arn <<< "$creds")"
+          # An ARN with no account field leaves it empty, and cut -s leaves
+          # it empty too for a value with no colon.
+          arn="$(field "$creds" .AssumedRoleUser.Arn STS)"
           account="$(cut -s -d: -f5 <<< "$arn")"
           if [ -z "$account" ]; then
             echo "::error::The STS reply's role ARN names no account."
             exit 1
           fi
           echo "::add-mask::$account"
-          key="$(jq -er .Credentials.AccessKeyId <<< "$creds")"
-          secret="$(jq -er .Credentials.SecretAccessKey <<< "$creds")"
-          session="$(jq -er .Credentials.SessionToken <<< "$creds")"
+          key="$(field "$creds" .Credentials.AccessKeyId STS)"
+          secret="$(field "$creds" .Credentials.SecretAccessKey STS)"
+          session="$(field "$creds" .Credentials.SessionToken STS)"
           echo "::add-mask::$key"
           echo "::add-mask::$secret"
           echo "::add-mask::$session"

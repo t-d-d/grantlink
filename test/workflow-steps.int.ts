@@ -84,6 +84,7 @@ function runStep(
   });
   return {
     status: result.status,
+    stderr: result.stderr,
     output: readFileSync(output, "utf8"),
     env: readFileSync(githubEnv, "utf8"),
   };
@@ -210,9 +211,10 @@ describe("the deploy's stack outputs", () => {
 
 const account = "account-placeholder";
 
-// What STS answers, less any field a case drops. The stubs answer the
-// token request and the assume-role call; every value is a placeholder.
-function stsReply(drop?: string): string {
+// What STS answers, less any field a case drops or blanks. The stubs
+// answer the token request and the assume-role call; every value is a
+// placeholder.
+function stsReply(drop?: string, blank?: string): string {
   const reply = {
     Credentials: {
       AccessKeyId: "key-placeholder",
@@ -223,6 +225,15 @@ function stsReply(drop?: string): string {
       Arn: `arn:aws:sts::${account}:assumed-role/grantlink/run`,
     },
   };
+  if (blank === "Arn") {
+    return JSON.stringify({ ...reply, AssumedRoleUser: { Arn: "" } });
+  }
+  if (blank !== undefined) {
+    return JSON.stringify({
+      ...reply,
+      Credentials: { ...reply.Credentials, [blank]: "" },
+    });
+  }
   if (drop === "Arn") return JSON.stringify({ ...reply, AssumedRoleUser: {} });
   if (drop === "AccountId") {
     return JSON.stringify({
@@ -249,16 +260,30 @@ const roleEnv = {
   GITHUB_RUN_ID: "1",
 };
 
-function assumeRole(run: string, reply: string) {
+// The aws stub says on stderr that it ran, so a case can see whether the
+// step reached STS.
+function assumeRole(
+  run: string,
+  reply: string,
+  oidc = '{"value":"token-placeholder"}',
+) {
   return runStep(
     run,
     {
-      curl: `echo '{"value":"token-placeholder"}'`,
-      aws: `cat <<'EOF'\n${reply}\nEOF`,
+      curl: `cat <<'EOF'\n${oidc}\nEOF`,
+      aws: `echo aws-called >&2\ncat <<'EOF'\n${reply}\nEOF`,
     },
     roleEnv,
   );
 }
+
+// Where each field sits in the STS reply, as the step's error names it.
+const fieldPaths: Record<string, string> = {
+  AccessKeyId: ".Credentials.AccessKeyId",
+  SecretAccessKey: ".Credentials.SecretAccessKey",
+  SessionToken: ".Credentials.SessionToken",
+  Arn: ".AssumedRoleUser.Arn",
+};
 
 const missingFields = [
   "AccessKeyId",
@@ -303,4 +328,47 @@ describe.each([
     expect(status).not.toBe(0);
     expect(env).toBe("");
   });
+
+  // #160: jq -e fails on a missing field, but says nothing on its own.
+  it.each(Object.entries(fieldPaths))(
+    "names %s in an error when the reply has none",
+    (field, path) => {
+      const { status, stderr } = assumeRole(run, stsReply(field));
+      expect(status).not.toBe(0);
+      expect(stderr).toMatch(new RegExp(`^::error::.*${path}\\b`, "mu"));
+    },
+  );
+
+  // #160: jq -e passes an empty string, which the step wrote on as a
+  // credential.
+  it.each(Object.entries(fieldPaths))(
+    "fails, naming %s, when the reply's is empty",
+    (field, path) => {
+      const { status, env, stderr } = assumeRole(
+        run,
+        stsReply(undefined, field),
+      );
+      expect(status).not.toBe(0);
+      expect(env).toBe("");
+      expect(stderr).toMatch(new RegExp(`^::error::.*${path}\\b`, "mu"));
+    },
+  );
+
+  // #160: jq -r read a reply with no value as the word null, and sent it
+  // to STS.
+  it.each([
+    ["has no value", "{}"],
+    ["has an empty value", '{"value":""}'],
+    ["has a value that is not a string", '{"value":null}'],
+    ["is not JSON", "<html>"],
+  ])(
+    "fails before it calls STS, naming .value, when the OIDC reply %s",
+    (_, oidc) => {
+      const { status, env, stderr } = assumeRole(run, stsReply(), oidc);
+      expect(status).not.toBe(0);
+      expect(env).toBe("");
+      expect(stderr).not.toContain("aws-called");
+      expect(stderr).toMatch(/^::error::.*\.value\b/mu);
+    },
+  );
 });
