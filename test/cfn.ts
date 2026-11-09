@@ -120,3 +120,15 @@ export function subText(value: unknown): string {
   }
   return JSON.stringify(value);
 }
+
+// Whether an IAM pattern, with its * and ? wildcards, covers a value, as
+// IAM compares actions and ARNs: without regard to case for actions.
+export function wildcardMatches(pattern: string, value: string): boolean {
+  return new RegExp(
+    `^${pattern
+      .replace(/[.+^${}()|[\]\\]/gu, "\\$&")
+      .replace(/\*/gu, ".*")
+      .replace(/\?/gu, ".")}$`,
+    "iu",
+  ).test(value);
+}

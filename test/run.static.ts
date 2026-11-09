@@ -7,6 +7,7 @@ import {
   rightsOf,
   subText,
   trustOf,
+  wildcardMatches,
   type PolicyDocument,
   type Statement,
 } from "./cfn.ts";
@@ -29,6 +30,11 @@ const inline = (serverless.resources as unknown[]).flatMap((entry) =>
     : [],
 );
 const inlineResources: Resources = Object.assign({}, ...inline) as Resources;
+const appStack: Resources = {
+  ...site.Resources,
+  ...data.Resources,
+  ...inlineResources,
+};
 
 const run = serverless.functions?.run as {
   handler: string;
@@ -105,11 +111,6 @@ describe("fitness: the bucket stays private (storage.md)", () => {
   // The deploy role may put any policy on this bucket (#59), so the
   // template is where a policy granting funding text would show.
   it("has a policy that only denies, so it grants no one its objects", () => {
-    const appStack: Resources = {
-      ...site.Resources,
-      ...data.Resources,
-      ...inlineResources,
-    };
     const onTextBucket = Object.entries(appStack).filter(
       ([, r]) =>
         r.Type === "AWS::S3::BucketPolicy" &&
@@ -260,11 +261,6 @@ describe("every role in the app stack carries the boundary", () => {
   const roles = readTemplate("infra/github-oidc.cfn.yml");
   const name = roles.Resources.AppRoleBoundary?.Properties.ManagedPolicyName as
     string | undefined;
-  const appStack: Resources = {
-    ...site.Resources,
-    ...data.Resources,
-    ...inlineResources,
-  };
   const declared = Object.entries(appStack).filter(
     ([, r]) => r.Type === "AWS::IAM::Role",
   );
@@ -351,18 +347,23 @@ function render(resources: Resources, value: unknown): string {
   return "*";
 }
 
-const matches = (pattern: string, value: string): boolean =>
-  new RegExp(
-    `^${pattern
-      .replace(/[.+^${}()|[\]\\]/gu, "\\$&")
-      .replace(/\*/gu, ".*")
-      .replace(/\?/gu, ".")}$`,
-    "iu",
-  ).test(value);
-
-const privateObjects = ["cache", "eval", "eval-reports"].map(
-  (prefix) => `arn:aws:s3:::grantlink-text-${account}/${prefix}/PMC1.json`,
+// Keys in the private bucket, under each of its prefixes, another prefix
+// and none, to test a NotResource against.
+const privateObjects = ["cache/", "eval/", "eval-reports/", "names/", ""].map(
+  (prefix) => `arn:aws:s3:::grantlink-text-${account}/${prefix}PMC1.json`,
 );
+
+// Whether a resource pattern matches some object in the private bucket,
+// whatever its key. The text before the first wildcard must agree with the
+// start of the bucket's object ARNs, or name one of them outright.
+const bucketObjects = `arn:aws:s3:::grantlink-text-${account}/`;
+function coversAnObject(pattern: string): boolean {
+  const literal = (pattern.split(/[*?]/u)[0] ?? "").toLowerCase();
+  if (literal.length === pattern.length) {
+    return literal.startsWith(bucketObjects) && literal !== bucketObjects;
+  }
+  return literal.startsWith(bucketObjects) || bucketObjects.startsWith(literal);
+}
 const objectActions = [
   "s3:GetObject",
   "s3:GetObjectVersion",
@@ -382,28 +383,29 @@ function reachesPrivateObjects(
   const action =
     statement.NotAction === undefined
       ? list(statement.Action).some((pattern) =>
-          objectActions.some((a) => matches(pattern, a)),
+          objectActions.some((a) => wildcardMatches(pattern, a)),
         )
       : objectActions.some(
-          (a) => !list(statement.NotAction).some((p) => matches(p, a)),
+          (a) => !list(statement.NotAction).some((p) => wildcardMatches(p, a)),
         );
   const resource =
     statement.NotResource === undefined
       ? list(statement.Resource)
           .map((r) => render(resources, r))
-          .some((pattern) => privateObjects.some((o) => matches(pattern, o)))
+          .some(coversAnObject)
       : privateObjects.some(
           (o) =>
             !list(statement.NotResource)
               .map((r) => render(resources, r))
-              .some((pattern) => matches(pattern, o)),
+              .some((pattern) => wildcardMatches(pattern, o)),
         );
   return action && resource;
 }
 
 // Each role's or policy's statements that reach the private bucket's
 // objects, by resource. A role that attaches a managed policy from outside
-// the stack counts, since the stack cannot show what it grants.
+// the stack counts, since the stack cannot show what it grants. A Ref to a
+// parameter is from outside the stack too.
 function readersOfPrivateObjects(resources: Resources): string[] {
   return Object.entries(resources).flatMap(([logical, r]) => {
     const documents = [
@@ -416,19 +418,20 @@ function readersOfPrivateObjects(resources: Resources): string[] {
       .flatMap((d) => list<Statement>(d.Statement))
       .some((statement) => reachesPrivateObjects(resources, statement));
     const outside = list(r.Properties.ManagedPolicyArns).some(
-      (arn) => !(typeof arn === "object" && arn !== null && "Ref" in arn),
+      (arn) =>
+        !(
+          typeof arn === "object" &&
+          arn !== null &&
+          "Ref" in arn &&
+          typeof arn.Ref === "string" &&
+          resources[arn.Ref]?.Type === "AWS::IAM::ManagedPolicy"
+        ),
     );
     return reaching || outside ? [logical] : [];
   });
 }
 
 describe("fitness: only the run's own role reaches the private bucket's objects (storage.md)", () => {
-  const appStack: Resources = {
-    ...site.Resources,
-    ...data.Resources,
-    ...inlineResources,
-  };
-
   // osls makes the run's role from provider.iam.role, which this does not
   // read. Every other role and policy in the stack is here.
   it("finds no other role or policy that may read or write them", () => {
@@ -486,6 +489,8 @@ describe("fitness: only the run's own role reaches the private bucket's objects 
     ],
     ["a wildcard", "*"],
     ["something it cannot read", { "Fn::ImportValue": "elsewhere" }],
+    ["a prefix outside the three", { "Fn::Sub": "${TextBucket.Arn}/names/*" }],
+    ["a key at the top", { "Fn::Sub": "${TextBucket.Arn}/PMC1.json" }],
   ])("finds a role that names the bucket by %s", (_how, Resource) => {
     expect(readersOfPrivateObjects(role(allow(Resource)))).toEqual(["Reader"]);
   });
@@ -520,6 +525,38 @@ describe("fitness: only the run's own role reaches the private bucket's objects 
         },
       }),
     ).toEqual(["Reader"]);
+  });
+
+  it("finds a role that attaches a managed policy by a Ref to a parameter", () => {
+    expect(
+      readersOfPrivateObjects({
+        Reader: {
+          Type: "AWS::IAM::Role",
+          Properties: { ManagedPolicyArns: [{ Ref: "PolicyArn" }] },
+        },
+      }),
+    ).toEqual(["Reader"]);
+  });
+
+  it("passes a role that attaches the stack's own managed policy", () => {
+    expect(
+      readersOfPrivateObjects({
+        SiteBucket: site.Resources.SiteBucket as Resources[string],
+        Publish: {
+          Type: "AWS::IAM::ManagedPolicy",
+          Properties: {
+            PolicyDocument: {
+              Version: "2012-10-17",
+              Statement: [allow({ "Fn::Sub": "${SiteBucket.Arn}/*" })],
+            },
+          },
+        },
+        Reader: {
+          Type: "AWS::IAM::Role",
+          Properties: { ManagedPolicyArns: [{ Ref: "Publish" }] },
+        },
+      }),
+    ).toEqual([]);
   });
 
   it("passes a Deny, another bucket and a bucket-level action", () => {

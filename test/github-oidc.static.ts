@@ -7,6 +7,7 @@ import {
   rightsOf,
   subText,
   trustOf,
+  wildcardMatches,
   type Statement,
 } from "./cfn.ts";
 
@@ -29,13 +30,6 @@ const resources = (statement: Statement): string[] =>
   list(statement.Resource).map(subText);
 const allows = (statements: Statement[]): Statement[] =>
   statements.filter((statement) => statement.Effect === "Allow");
-
-// Whether an IAM action pattern, wildcards and all, covers an action.
-const covers = (pattern: string, action: string): boolean =>
-  new RegExp(
-    `^${pattern.replace(/[.+?^${}()|[\]\\]/gu, "\\$&").replace(/\*/gu, ".*")}$`,
-    "iu",
-  ).test(action);
 
 // The trust a role gets from GitHub's OIDC provider for one environment.
 const githubTrust = (environment: string): Statement[] => [
@@ -173,7 +167,7 @@ describe("the deploy execution role", () => {
   ];
   const reachingObjects = allows(rightsOf(execution)).filter((statement) =>
     actions(statement).some((pattern) =>
-      objectActions.some((action) => covers(pattern, action)),
+      objectActions.some((action) => wildcardMatches(pattern, action)),
     ),
   );
 
@@ -199,7 +193,7 @@ describe("the deploy execution role", () => {
     expect(
       reachingObjects
         .flatMap(resources)
-        .some((pattern) => covers(pattern, text)),
+        .some((pattern) => wildcardMatches(pattern, text)),
     ).toBe(false);
   });
 
@@ -262,7 +256,7 @@ describe("the deploy execution role", () => {
   it("gives a role rights only when the role carries the boundary", () => {
     const giving = allows(rightsOf(execution)).filter((statement) =>
       actions(statement).some((pattern) =>
-        granting.some((action) => covers(pattern, action)),
+        granting.some((action) => wildcardMatches(pattern, action)),
       ),
     );
     expect(giving).toEqual([
@@ -294,7 +288,7 @@ describe("the deploy execution role", () => {
       allows(rightsOf(execution))
         .flatMap(actions)
         .some((pattern) =>
-          covers(pattern, "iam:DeleteRolePermissionsBoundary"),
+          wildcardMatches(pattern, "iam:DeleteRolePermissionsBoundary"),
         ),
     ).toBe(false);
   });
@@ -586,16 +580,20 @@ describe("fitness: only CI files reports (evals.md)", () => {
   const appliesToReport = (statement: Statement): boolean => {
     const action =
       statement.NotAction === undefined
-        ? actions(statement).some((pattern) => covers(pattern, "s3:PutObject"))
+        ? actions(statement).some((pattern) =>
+            wildcardMatches(pattern, "s3:PutObject"),
+          )
         : !list(statement.NotAction).some((pattern) =>
-            covers(pattern, "s3:PutObject"),
+            wildcardMatches(pattern, "s3:PutObject"),
           );
     const resource =
       statement.NotResource === undefined
-        ? resources(statement).some((pattern) => covers(pattern, report))
+        ? resources(statement).some((pattern) =>
+            wildcardMatches(pattern, report),
+          )
         : !list(statement.NotResource)
             .map(subText)
-            .some((pattern) => covers(pattern, report));
+            .some((pattern) => wildcardMatches(pattern, report));
     return action && resource;
   };
 
@@ -643,8 +641,8 @@ describe("every role", () => {
   });
 
   it("knows a wildcard covers the actions it names", () => {
-    expect(covers("s3:Get*", "s3:GetObject")).toBe(true);
-    expect(covers("s3:*Object", "s3:PutObject")).toBe(true);
-    expect(covers("s3:GetBucket*", "s3:GetObject")).toBe(false);
+    expect(wildcardMatches("s3:Get*", "s3:GetObject")).toBe(true);
+    expect(wildcardMatches("s3:*Object", "s3:PutObject")).toBe(true);
+    expect(wildcardMatches("s3:GetBucket*", "s3:GetObject")).toBe(false);
   });
 });
