@@ -16,9 +16,11 @@ import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 // each paper not yet read, then publish the page. Every I/O call sits in a
 // step (docs/constraints/durable-execution.md). A paper that fails is left for
 // the next run. A run that fails, or whose search finds nothing, publishes
-// nothing. Otherwise it publishes if any paper its own search returned has
-// been read, by this run or an earlier one (publish in
-// src/pipeline/steps.ts).
+// nothing, with one exception: publish writes found.json before the page, so
+// a run whose page write fails on every try leaves its found.json on the site
+// (siteBucket.publish in src/store/bucket.ts, and the README). Otherwise it
+// publishes if any paper its own search returned has been read, by this run
+// or an earlier one (publish in src/pipeline/steps.ts).
 
 // Papers per child context. Each batch ends with a short wait, so each
 // Lambda invocation does a bounded amount of work, and a replay skips each
