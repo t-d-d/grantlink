@@ -108,6 +108,13 @@ export async function readPaper(
   return { references: references.length };
 }
 
+// Records the run's search as the latest complete one, once it has ended,
+// unless a run that started later has recorded its own. Safe to run twice.
+export async function recordSearch(deps: Deps, runId: string): Promise<void> {
+  await deps.table.recordSearch(runId);
+  logger.info("search-recorded", { runId });
+}
+
 export async function markFailed(deps: Deps, pmcid: string): Promise<void> {
   await deps.table.markFailed(pmcid);
   logger.warn("paper-failed", { pmcid });
@@ -150,9 +157,10 @@ async function otherReleaseLive(
 }
 
 // Builds the page from the table and publishes it. Only a run whose search
-// finished gets here, so the page shows the papers that search returned
-// (summarise in src/page/found.ts). A table with no such paper read yet
-// publishes nothing, so the page keeps what it had.
+// finished gets here, and the page shows the papers the latest complete
+// search returned, which may be another run's when two runs overlap
+// (summarise in src/page/found.ts, #125). A table with no such paper read
+// yet publishes nothing, so the page keeps what it had.
 // The data always goes up. The page does only if the live release is the
 // run's own, and otherwise the findings reach it at the next deploy or run.
 // The site writes found.json before the page (siteBucket in
@@ -160,10 +168,14 @@ async function otherReleaseLive(
 // leaves the new found.json on the site beside the old page. The README's
 // "How a run works" says why that is acceptable.
 export async function publish(deps: Deps, runId: string): Promise<Published> {
-  const found = summarise(await deps.table.all(), {
-    runId,
-    finishedAt: deps.now(),
-  });
+  // A run records its search before it publishes, so the record is there.
+  // Before any is, the run's own search is the latest it knows of.
+  const search = (await deps.table.latestSearch()) ?? runId;
+  const found = summarise(
+    await deps.table.all(),
+    { runId, finishedAt: deps.now() },
+    search,
+  );
   if (found.counts.processed === 0) {
     logger.warn("publish-skipped", { runId, reason: "nothing-read" });
     return { published: false, reason: "nothing read" };

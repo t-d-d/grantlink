@@ -43,16 +43,23 @@ export type Found = z.infer<typeof found>;
 const byPmcid = (a: { pmcid: string }, b: { pmcid: string }) =>
   Number(a.pmcid.slice(3)) - Number(b.pmcid.slice(3));
 
-// Lists and counts only the papers the run's own search returned. The run
-// publishes only once its search is complete, and the search asks for
-// papers linked to none of the funder's grants, so a paper it left out has
-// since been linked, or dropped, and is no longer one the page is about.
-// The table keeps its row.
+// Lists and counts only the papers the latest complete search returned,
+// `search` being the run whose search that was, whichever run publishes.
+// The search asks for papers linked to none of the funder's grants, so a
+// paper it left out has since been linked, or dropped, and is no longer one
+// the page is about. The table keeps its row. A row keeps the mark of the
+// latest-started run that returned it, and run ids sort as their runs
+// started, so a paper that search returned may carry the mark of a run that
+// started after it. Such a run's search is newer, so its papers count too
+// (#125).
 export function summarise(
   all: PaperRow[],
   run: { runId: string; finishedAt: string },
+  search: string = run.runId,
 ): Found {
-  const rows = all.filter((row) => row.foundByRun === run.runId);
+  const rows = all.filter(
+    (row) => row.foundByRun !== undefined && row.foundByRun >= search,
+  );
   const processed = rows.filter((row) => row.status === "processed");
   const papers = processed
     .filter((row) => (row.references ?? []).length > 0)
