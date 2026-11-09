@@ -14,7 +14,8 @@
     "cfn-lint": "cfn-lint infra/*.cfn.yml",
     "test": "vitest run --project static --project unit --project int",
     "test:live": "vitest run --project live",
-    "conformance": "vitest run --project conformance"
+    "conformance": "vitest run --project conformance",
+    "eval": "scripts/eval-snapshot.sh .eval && node evals/run.ts .eval"
   },
   "devDependencies": {
     "@aws/durable-execution-sdk-js-testing": "1.3.2",

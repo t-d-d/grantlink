@@ -65,6 +65,19 @@ Resources:
             Condition:
               Bool:
                 aws:SecureTransport: "false"
+          # The snapshot and the reports are written once and never
+          # replaced (#9): a write there must ask S3 to refuse it if the key
+          # exists. A write that does not ask is refused, whoever sends it.
+          - Sid: WriteOnceUnderEval
+            Effect: Deny
+            Principal: "*"
+            Action: s3:PutObject
+            Resource:
+              - !Sub ${TextBucket.Arn}/eval/*
+              - !Sub ${TextBucket.Arn}/eval-reports/*
+            Condition:
+              StringNotEquals:
+                s3:if-none-match: "*"
 
 Outputs:
   ResultsTableName:

@@ -74,3 +74,17 @@ describe("fitness: HTTPS only (hosting.md)", () => {
     expect(answer.headers.get("location")).toBe(page.href);
   });
 });
+
+describe("fitness: every release names its report (deploy-gates.md)", () => {
+  it("shows the live release's go/no-go table and links to its runs", () => {
+    expect(textOf(html)).toContain("How it's run");
+    expect(html).toContain('class="go-no-go"');
+    const runs = [
+      ...html.matchAll(
+        /href="(https:\/\/github\.com\/[^/"]+\/[^/"]+\/actions\/runs\/\d+)"/gu,
+      ),
+    ].map((match) => match[1]);
+    // The deploy's run and the run that filed the report.
+    expect(runs.length).toBeGreaterThanOrEqual(2);
+  });
+});

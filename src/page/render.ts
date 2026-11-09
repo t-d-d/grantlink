@@ -1,4 +1,7 @@
+import { shownScore } from "../../evals/floors.ts";
+import { verdict } from "../../evals/report.ts";
 import type { Found } from "./found.ts";
+import type { Release } from "./release.ts";
 
 // Builds the page from the template in site/index.html and what a run
 // found. The findings take the place of the not-yet-run notice, between
@@ -7,6 +10,8 @@ import type { Found } from "./found.ts";
 
 const START = "<!-- found -->";
 const END = "<!-- /found -->";
+const RUN_START = "<!-- run -->";
+const RUN_END = "<!-- /run -->";
 
 const escape = (text: string) =>
   text
@@ -107,18 +112,93 @@ ${cards.map(([n, label]) => `          <p class="card stat"><span class="value">
       </section>`;
 }
 
-export function buildPage(template: string, found: Found | null): string {
-  const start = template.indexOf(START);
-  const end = template.indexOf(END);
-  if (start < 0 || end < start) {
-    throw new Error("the template has no place for the findings");
-  }
-  if (found === null) return template;
-  return (
-    template.slice(0, start + START.length) +
-    "\n      " +
-    renderFound(found) +
-    "\n      " +
-    template.slice(end)
+const GATES: Record<string, string> = {
+  yes: "Yes",
+  reported: "No, reported",
+  "decides the model": "No, it decides the model",
+};
+
+// How it's run: the go/no-go table for the live release beside the rules
+// alone, the runs that deployed and scored it, and the snapshot it was
+// scored on (docs/constraints/deploy-gates.md).
+export function renderRun(release: Release): string {
+  const { report } = release;
+  const cell = (text: string, cls = "") =>
+    `<td${cls === "" ? "" : ` class="${cls}"`}>${escape(text)}</td>`;
+  const rows = verdict(report).rows.map(
+    (row) =>
+      `<tr>${[
+        cell(row.measure),
+        cell(row.on),
+        cell(row.goIf),
+        cell(GATES[row.gates] ?? row.gates),
+        cell(shownScore(row.id, row.score), "count"),
+        cell(shownScore(row.id, row.baseline), "count"),
+        cell(row.result, "status"),
+      ].join("")}</tr>`,
   );
+  const snapshot =
+    report.snapshot === null
+      ? "No eval snapshot is pinned yet, so the gold sets are not scored, and each row that needs them waits without blocking."
+      : `Scored on eval snapshot ${escape(report.snapshot.id)}, whose manifest has the SHA-256 <code class="ref">${escape(
+          report.snapshot.manifestSha256,
+        )}</code>.`;
+  return `<section aria-labelledby="run">
+        <h2 id="run">How it's run</h2>
+        <p>
+          Every release is gated by an evaluation, and only a green merge to
+          main deploys. The live release is commit
+          <code class="ref">${escape(release.commit.slice(0, 7))}</code>,
+          deployed by <a href="${escape(release.deployRunUrl)}">this run</a>.
+          Its scores come from <a href="${escape(report.runUrl)}">the run that
+          filed its eval report</a>, with model ${escape(report.modelId)}.
+        </p>
+        <div class="table-scroll">
+          <table class="go-no-go">
+            <tr><th scope="col">Measure</th><th scope="col">On</th><th scope="col">Go if</th><th scope="col">Gates a release</th><th scope="col">This release</th><th scope="col">Rules alone</th><th scope="col">Result</th></tr>
+            ${rows.join("\n            ")}
+          </table>
+        </div>
+        <p class="note">${snapshot}</p>
+      </section>`;
+}
+
+function replaceBetween(
+  page: string,
+  start: string,
+  end: string,
+  content: string,
+): string {
+  const from = page.indexOf(start);
+  return (
+    page.slice(0, from + start.length) +
+    "\n      " +
+    content +
+    "\n      " +
+    page.slice(page.indexOf(end))
+  );
+}
+
+export function buildPage(
+  template: string,
+  found: Found | null,
+  release: Release | null = null,
+): string {
+  for (const [start, end] of [
+    [START, END],
+    [RUN_START, RUN_END],
+  ] as const) {
+    const from = template.indexOf(start);
+    if (from < 0 || template.indexOf(end) < from) {
+      throw new Error(`the template has no place between ${start} and ${end}`);
+    }
+  }
+  let page = template;
+  if (found !== null) {
+    page = replaceBetween(page, START, END, renderFound(found));
+  }
+  if (release !== null) {
+    page = replaceBetween(page, RUN_START, RUN_END, renderRun(release));
+  }
+  return page;
 }

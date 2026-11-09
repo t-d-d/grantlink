@@ -36,8 +36,8 @@ describe("the deploy workflow", () => {
     expect(read).toContain("secrets.AWS_DEPLOY_EXECUTION_ROLE_ARN");
   });
 
-  it("deploys only after the gate, and only once the role's secret is set", () => {
-    expect(needs("deploy").sort()).toEqual(["gate", "role"]);
+  it("deploys only after the gate and the eval, and only once the role's secret is set", () => {
+    expect(needs("deploy").sort()).toEqual(["eval", "gate", "role"]);
     expect(jobs.deploy?.if).toBe("needs.role.outputs.set == 'true'");
   });
 
@@ -157,5 +157,51 @@ describe("the deploy and the run (#19)", () => {
     expect(script).toMatch(/aws s3 cp "s3:\/\/\$BUCKET\/found\.json"/u);
     expect(script).toMatch(/node "\$repo\/src\/page\/build\.ts"/u);
     expect(script).toMatch(/--exclude found\.json/u);
+    expect(script).toContain('"$repo/site/release.json"');
+  });
+});
+
+describe("fitness: the eval gates every deploy (deploy-gates.md)", () => {
+  const all = steps("deploy");
+  const at = (pattern: RegExp) =>
+    all.findIndex((step) => pattern.test(step.run ?? ""));
+
+  it("deploys only on a push to main", () => {
+    expect(deploy.on).toEqual({ push: { branches: ["main"] } });
+  });
+
+  it("runs the eval workflow, and the deploy needs it", () => {
+    expect(jobs.eval?.uses).toBe("./.github/workflows/eval.yml");
+    expect(needs("deploy")).toContain("eval");
+  });
+
+  it("lets the eval assume its role and read which commit is live", () => {
+    expect(jobs.eval?.permissions).toEqual({
+      contents: "read",
+      "id-token": "write",
+      actions: "read",
+      "pull-requests": "write",
+    });
+  });
+
+  it("checks the report is for main's own fingerprint and clears every floor, before it deploys", () => {
+    const record = at(/node src\/page\/release\.ts/u);
+    const check = all[record]?.run ?? "";
+    expect(check).toContain("node evals/fingerprint.ts");
+    expect(check).toContain("node evals/check.ts gate");
+    expect(all[record]?.env?.REPORT).toBe("${{ needs.eval.outputs.report }}");
+    expect(record).toBeGreaterThan(-1);
+    expect(record).toBeLessThan(at(/\bsls deploy\b/u));
+  });
+
+  it("records the release with its commit, fingerprint, report and run", () => {
+    const record = all[at(/node src\/page\/release\.ts/u)];
+    expect(record?.run).toContain("site/release.json");
+    expect(Object.keys(record?.env ?? {}).sort()).toEqual([
+      "COMMIT",
+      "DEPLOY_RUN_URL",
+      "FINGERPRINT",
+      "REPORT",
+    ]);
   });
 });

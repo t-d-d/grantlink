@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
 import { z } from "zod";
 import { europePmc } from "../europepmc/client.ts";
+import { release } from "../page/release.ts";
 import type { Deps } from "../pipeline/steps.ts";
 import { siteBucket, textBucket } from "../store/bucket.ts";
 import { dynamoTable } from "../store/table.ts";
@@ -19,6 +20,19 @@ const env = z
 
 // The page's template is deployed with the function.
 const TEMPLATE = new URL("../../site/index.html", import.meta.url);
+// So is the release record, which the deploy writes before it packages the
+// function. A function packaged without one shows no release.
+const RELEASE = new URL("../../site/release.json", import.meta.url);
+
+// Called only from inside the publish step.
+const readRelease = () =>
+  readFile(RELEASE, "utf8").then(
+    (text) => release.parse(JSON.parse(text)),
+    (error: unknown) => {
+      if ((error as { code?: string }).code === "ENOENT") return null;
+      throw error;
+    },
+  );
 
 // Made for each invocation, so no state, such as the Europe PMC client's
 // pace, carries from one run into the next.
@@ -29,6 +43,7 @@ function liveDeps(): Deps {
     text: textBucket(env.TEXT_BUCKET),
     site: siteBucket(env.SITE_BUCKET),
     template: () => readFile(TEMPLATE, "utf8"),
+    release: readRelease,
     codeVersion: env.CODE_VERSION,
     // Only a step's helpers call this, so every clock read sits in a step.
     // eslint-disable-next-line grantlink/no-non-deterministic-outside-step -- called only from inside steps

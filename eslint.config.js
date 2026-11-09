@@ -88,6 +88,17 @@ export default defineConfig(
     },
   },
   {
+    // The eval's fingerprint covers what it runs (docs/constraints/evals.md).
+    files: ["src/extract/**/*.ts", "src/shared/**/*.ts", "evals/**/*.ts"],
+    ignores: tests,
+    rules: {
+      "grantlink/imports-within": [
+        "error",
+        { paths: ["src/extract", "src/shared", "evals"] },
+      ],
+    },
+  },
+  {
     files: ["**/*.js"],
     extends: [tseslint.configs.disableTypeChecked],
   },
