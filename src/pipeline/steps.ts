@@ -3,7 +3,7 @@ import { fundingSections } from "../europepmc/jats.ts";
 import { findReferences, RULES_VERSION } from "../extract/rules.ts";
 import { logger } from "../log.ts";
 import { summarise } from "../page/found.ts";
-import type { Release } from "../page/release.ts";
+import { deployRun, liveRelease, type Release } from "../page/release.ts";
 import { buildPage } from "../page/render.ts";
 import type { SiteBucket, TextBucket } from "../store/bucket.ts";
 import type { Table } from "../store/table.ts";
@@ -97,13 +97,43 @@ export async function markFailed(deps: Deps, pmcid: string): Promise<void> {
 }
 
 export type Published =
-  | { published: true; papers: number; references: number }
+  | {
+      published: true;
+      papers: number;
+      references: number;
+      // "left" when a newer deploy's page was live, and kept.
+      page: "written" | "left";
+    }
   | { published: false; reason: string };
+
+// Whether a newer deploy than this run's own put the live page up. A run
+// stays on the version it started on, so one that finishes after a deploy
+// would put the old template back (#73). A run with no record of its own
+// counts as older than any deploy that recorded one.
+async function newerDeployLive(
+  deps: Deps,
+  runId: string,
+  own: Release | null,
+): Promise<boolean> {
+  const text = await deps.site.liveRelease();
+  if (text === null) return false;
+  const live = deployRun(liveRelease.parse(JSON.parse(text)));
+  const ownRun = own === null ? null : deployRun(own);
+  if (ownRun !== null && ownRun >= live) return false;
+  logger.info("page-left", {
+    runId,
+    ownDeploy: ownRun ?? "none",
+    liveDeploy: live,
+  });
+  return true;
+}
 
 // Builds the page from the table and publishes it. Only a run whose search
 // finished gets here, so the page shows the papers that search returned
 // (summarise in src/page/found.ts). A table with no such paper read yet
 // publishes nothing, so the page keeps what it had.
+// The data always goes up. The page does only if no newer deploy is live,
+// and otherwise the findings reach it at the next deploy or run.
 export async function publish(deps: Deps, runId: string): Promise<Published> {
   const found = summarise(await deps.table.all(), {
     runId,
@@ -113,18 +143,28 @@ export async function publish(deps: Deps, runId: string): Promise<Published> {
     logger.warn("publish-skipped", { runId, reason: "nothing-read" });
     return { published: false, reason: "nothing read" };
   }
-  await deps.site.publish({
-    "index.html": buildPage(await deps.template(), found, await deps.release()),
-    "found.json": JSON.stringify(found),
-  });
+  const data = JSON.stringify(found);
+  const own = await deps.release();
+  const left = await newerDeployLive(deps, runId, own);
+  await deps.site.publish(
+    left
+      ? { "found.json": data }
+      : {
+          "index.html": buildPage(await deps.template(), found, own),
+          "found.json": data,
+        },
+  );
+  const page = left ? "left" : "written";
   logger.info("published", {
     runId,
     papers: found.counts.papers,
     references: found.counts.references,
+    page,
   });
   return {
     published: true,
     papers: found.counts.papers,
     references: found.counts.references,
+    page,
   };
 }

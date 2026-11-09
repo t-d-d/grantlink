@@ -235,6 +235,32 @@ describe("the function", () => {
     });
   });
 
+  it("reads only the live release record from the page's bucket, so a missing one reads as missing", () => {
+    const statements =
+      (
+        serverless.provider as {
+          iam?: { role?: { statements?: Record<string, unknown>[] } };
+        }
+      ).iam?.role?.statements ?? [];
+    const onSite = statements.filter((statement) =>
+      JSON.stringify(statement.Resource).includes("SiteBucket"),
+    );
+    expect(onSite.map((statement) => statement.Action)).toEqual([
+      "s3:PutObject",
+      "s3:GetObject",
+      "s3:ListBucket",
+    ]);
+    expect(JSON.stringify(onSite[1]?.Resource)).toBe(
+      JSON.stringify({ "Fn::Sub": "${SiteBucket.Arn}/release.json" }),
+    );
+    expect(onSite[2]?.Resource).toEqual({
+      "Fn::GetAtt": ["SiteBucket", "Arn"],
+    });
+    expect(onSite[2]?.Condition).toEqual({
+      StringEquals: { "s3:prefix": "release.json" },
+    });
+  });
+
   it("carries the gold sets and the release record it publishes with", () => {
     const patterns = (
       serverless as unknown as { package: { patterns: string[] } }

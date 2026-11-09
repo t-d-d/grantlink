@@ -1,5 +1,7 @@
+import { FLOORS } from "../evals/floors.ts";
 import { goldA } from "../evals/gold.ts";
 import { europePmc, type Clock } from "../src/europepmc/client.ts";
+import { release, type Release } from "../src/page/release.ts";
 import type { Deps } from "../src/pipeline/steps.ts";
 import type { PageFiles } from "../src/store/bucket.ts";
 import { paperRow, type PaperRow, type Table } from "../src/store/table.ts";
@@ -171,6 +173,29 @@ export function fakeEuropePmc(options: FakeSearches = {}) {
   return { client: europePmc({ fetch, clock: instant }), requests };
 }
 
+// A release record, deployed by GitHub Actions run `run`. A later deploy
+// has a higher run id.
+export function fakeRelease(run: number): Release {
+  const rows = FLOORS.map((floor) => ({ id: floor.id, score: 1, n: 300 }));
+  return release.parse({
+    commit: "c".repeat(40),
+    fingerprint: "f".repeat(64),
+    deployRunUrl: `https://github.com/t-d-d/grantlink/actions/runs/${String(run)}`,
+    report: {
+      fingerprint: "f".repeat(64),
+      commit: "c".repeat(40),
+      runUrl: "https://github.com/t-d-d/grantlink/actions/runs/1",
+      modelId: "none: rules only",
+      rulesVersion: "rules-1",
+      snapshot: { id: "s1", manifestSha256: "d".repeat(64) },
+      createdAt: "2026-11-09T12:00:00.000Z",
+      rows,
+      baseline: rows,
+      missedA: [],
+    },
+  });
+}
+
 export function fakeDeps(options: FakeSearches = {}) {
   const table = memoryTable();
   const text = new Map<string, unknown>();
@@ -181,7 +206,12 @@ export function fakeDeps(options: FakeSearches = {}) {
     text.set(key, body);
     return body;
   };
-  const site: { files: PageFiles | undefined } = { files: undefined };
+  // The files a run published, and the release record the last deploy put
+  // in the page's bucket, or null before one has.
+  const site: { files: PageFiles | undefined; live: string | null } = {
+    files: undefined,
+    live: null,
+  };
   const epmc = fakeEuropePmc(options);
   const deps: Deps = {
     europePmc: epmc.client,
@@ -205,6 +235,9 @@ export function fakeDeps(options: FakeSearches = {}) {
       publish(files) {
         site.files = files;
         return Promise.resolve();
+      },
+      liveRelease() {
+        return Promise.resolve(site.live);
       },
     },
     template: () => Promise.resolve(readRepoFile("site/index.html")),

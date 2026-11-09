@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { fakeDeps, reply } from "../../test/fakes.ts";
+import { fakeDeps, fakeRelease, reply } from "../../test/fakes.ts";
 import { SEARCH_PAGE_SIZE } from "../europepmc/client.ts";
-import { recordPage, searchPage } from "./steps.ts";
+import { publish, recordPage, searchPage } from "./steps.ts";
 
 const logs: string[] = [];
 const spy = vi
@@ -125,5 +125,68 @@ describe("recording a page of the search", () => {
       runId: "run-1",
       foundByRun: "run-2",
     });
+  });
+});
+
+describe("publishing the page", () => {
+  // A run deployed by GitHub Actions run 200, with one paper read, and the
+  // release record the last deploy left in the page's bucket.
+  async function readOne(live: unknown) {
+    const fake = fakeDeps();
+    fake.deps.release = () => Promise.resolve(fakeRelease(200));
+    fake.site.live = live === null ? null : JSON.stringify(live);
+    await fake.deps.table.addFound(
+      [{ pmcid: "PMC11", title: "One" }],
+      fake.deps.now(),
+      "run-1",
+    );
+    await fake.deps.table.markProcessed("PMC11", {
+      references: [],
+      versions: { rules: "rules-1", code: "test" },
+      processedAt: fake.deps.now(),
+      runId: "run-1",
+    });
+    return fake;
+  }
+
+  it("leaves the page to a newer deploy, and writes its data", async () => {
+    const fake = await readOne(fakeRelease(300));
+    const result = await publish(fake.deps, "run-1");
+    expect(result).toMatchObject({ published: true, page: "left" });
+    expect(fake.site.files?.["found.json"]).toContain("run-1");
+    expect(fake.site.files?.["index.html"]).toBeUndefined();
+    const line = logs.find((log) => log.includes('"page-left"'));
+    expect(JSON.parse(line ?? "{}")).toMatchObject({
+      runId: "run-1",
+      ownDeploy: 200,
+      liveDeploy: 300,
+    });
+  });
+
+  it.each([
+    ["the live one", fakeRelease(200)],
+    ["newer than the live one", fakeRelease(100)],
+    ["the first, with no live record", null],
+  ])("writes both files when its release is %s", async (_, live) => {
+    const fake = await readOne(live);
+    const result = await publish(fake.deps, "run-1");
+    expect(result).toMatchObject({ published: true, page: "written" });
+    expect(fake.site.files?.["found.json"]).toContain("run-1");
+    expect(fake.site.files?.["index.html"]).toContain("What it found");
+  });
+
+  it("reads a newer deploy's record tolerantly, by its deploy run alone", async () => {
+    const fake = await readOne({
+      deployRunUrl: "https://github.com/t-d-d/grantlink/actions/runs/300",
+      aFieldFromLater: true,
+    });
+    expect(await publish(fake.deps, "run-1")).toMatchObject({ page: "left" });
+  });
+
+  it("leaves the page to any recorded deploy when it has no record of its own", async () => {
+    const fake = await readOne(fakeRelease(100));
+    fake.deps.release = () => Promise.resolve(null);
+    expect(await publish(fake.deps, "run-1")).toMatchObject({ page: "left" });
+    expect(fake.site.files?.["found.json"]).toBeDefined();
   });
 });

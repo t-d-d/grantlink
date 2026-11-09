@@ -21,8 +21,8 @@ provider:
     deploymentRole: arn:aws:iam::${aws:accountId}:role/grantlink-deploy-execution
     # What the run may do, and nothing more: read and write the results
     # table, write funding text under cache/, take the eval snapshot under
-    # eval/ once, and publish the page. It never reaches the eval reports,
-    # which only CI writes (#9).
+    # eval/ once, read the live release record, and publish the page. It
+    # never reaches the eval reports, which only CI writes (#9).
     role:
       # The roles stack's boundary, which the execution role requires on
       # every role it creates (#33).
@@ -63,6 +63,21 @@ provider:
           Resource:
             - Fn::Sub: ${SiteBucket.Arn}/index.html
             - Fn::Sub: ${SiteBucket.Arn}/found.json
+        # Before it writes the page, a run reads the release record the last
+        # deploy put there, and leaves a newer deploy's page alone (#73).
+        - Effect: Allow
+          Action: s3:GetObject
+          Resource:
+            Fn::Sub: ${SiteBucket.Arn}/release.json
+        # Listing the record's own key lets a missing one read as missing,
+        # not as refused.
+        - Effect: Allow
+          Action: s3:ListBucket
+          Resource:
+            Fn::GetAtt: [SiteBucket, Arn]
+          Condition:
+            StringEquals:
+              s3:prefix: release.json
 
 # Only what the function runs: its code, the gold sets the snapshot reads,
 # the page's template, the release record the deploy writes, and the

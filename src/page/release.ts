@@ -14,13 +14,16 @@ import { HEX, report, verdict } from "../../evals/report.ts";
 // reads COMMIT, FINGERPRINT and DEPLOY_RUN_URL, and refuses a report for
 // another fingerprint or below a gating floor.
 
+const DEPLOY_RUN =
+  /^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/(\d+)/u;
+
+const deployRunUrl = z.url({ protocol: /^https$/u }).regex(DEPLOY_RUN);
+
 export const release = z
   .object({
     commit: HEX(40),
     fingerprint: HEX(64),
-    deployRunUrl: z
-      .url({ protocol: /^https$/u })
-      .regex(/^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+/u),
+    deployRunUrl,
     report,
   })
   .strict()
@@ -29,6 +32,19 @@ export const release = z
   });
 
 export type Release = z.infer<typeof release>;
+
+// The live record as a run reads it from the page's bucket. A newer deploy
+// may have written fields this version does not know, so only the deploy's
+// run is read (docs/constraints/durable-execution.md).
+export const liveRelease = z.object({ deployRunUrl });
+
+// The id of the GitHub Actions run that deployed a release. GitHub numbers
+// runs in the order they start, so a later deploy has a higher id.
+export function deployRun(record: { deployRunUrl: string }): number {
+  const id = DEPLOY_RUN.exec(record.deployRunUrl)?.[1];
+  if (id === undefined) throw new Error("not a deploy run URL");
+  return Number(id);
+}
 
 export function makeRelease(fields: Release): Release {
   const parsed = release.parse(fields);

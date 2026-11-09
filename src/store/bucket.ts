@@ -120,14 +120,18 @@ export function textBucket(
 }
 
 // What a run publishes: the page, and the data it was built from, which the
-// deploy reads to build the page again.
+// deploy reads to build the page again. A run that leaves the page to a
+// newer deploy publishes only the data.
 export interface PageFiles {
-  "index.html": string;
+  "index.html"?: string;
   "found.json": string;
 }
 
 export interface SiteBucket {
   publish(files: PageFiles): Promise<void>;
+  // The release record the last deploy put beside the page, as text, or
+  // null if there is none.
+  liveRelease(): Promise<string | null>;
 }
 
 // CloudFront keeps a copy for as long as the file says, so a new run shows
@@ -151,6 +155,7 @@ export function siteBucket(
           Body: files["found.json"],
         }),
       );
+      if (files["index.html"] === undefined) return;
       await client.send(
         new PutObjectCommand({
           Bucket: name,
@@ -160,6 +165,21 @@ export function siteBucket(
           Body: files["index.html"],
         }),
       );
+    },
+
+    // The run's role may list only this key, so a missing record reads as
+    // NoSuchKey, not AccessDenied.
+    async liveRelease() {
+      try {
+        return await bodyOf(
+          await client.send(
+            new GetObjectCommand({ Bucket: name, Key: "release.json" }),
+          ),
+        );
+      } catch (error) {
+        if (errorName(error) === "NoSuchKey") return null;
+        throw error;
+      }
     },
   };
 }
