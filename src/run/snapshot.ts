@@ -1,4 +1,5 @@
 import type { DurableContext } from "@aws/durable-execution-sdk-js";
+import { checkWholeSearch } from "../europepmc/client.ts";
 import { goldA, goldB } from "../../evals/gold.ts";
 import type { Deps } from "../pipeline/steps.ts";
 import {
@@ -80,6 +81,7 @@ export async function takeSnapshot(
   let candidates: string[] = goldA.papers.map((paper) => paper.pmcid);
   if (candidates.length === 0) {
     const found: string[] = [];
+    let skipped = 0;
     let cursor: string | null = "*";
     let page = 0;
     while (cursor !== null) {
@@ -90,9 +92,11 @@ export async function takeSnapshot(
         { retryStrategy: europePmcRetry },
       );
       found.push(...result.pmcids);
+      skipped += result.skipped;
       cursor = result.nextCursor;
       page += 1;
     }
+    checkWholeSearch(found.length, skipped);
     candidates = sample(found, goldA.seed);
   }
 

@@ -32,6 +32,8 @@ export interface SearchResult {
   hitCount: number;
   // This page's papers with full text.
   papers: SearchPaper[];
+  // How many of this page's results carried a malformed PMCID.
+  skipped: number;
   nextCursor: string | null;
 }
 
@@ -50,6 +52,7 @@ export async function searchPage(
   return {
     hitCount: page.hitCount,
     papers: page.papers,
+    skipped: page.skipped,
     nextCursor: page.nextCursor,
   };
 }
