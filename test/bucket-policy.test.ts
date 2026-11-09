@@ -83,6 +83,22 @@ describe("refusesPlainHttp", () => {
     ).toBe(true);
   });
 
+  it("reads an unquoted false, as YAML parses it, as plain HTTP", () => {
+    expect(
+      refusesPlainHttp(
+        {
+          Statement: [
+            {
+              ...httpsOnly,
+              Condition: { Bool: { "aws:SecureTransport": false } },
+            },
+          ],
+        },
+        bucket,
+      ),
+    ).toBe(true);
+  });
+
   it("fails a policy with the statement removed", () => {
     expect(refusesPlainHttp({ Statement: [others] }, bucket)).toBe(false);
   });
@@ -111,6 +127,10 @@ describe("refusesPlainHttp", () => {
     [
       "it writes False, which AWS does not say Bool reads",
       { Condition: { Bool: { "aws:SecureTransport": "False" } } },
+    ],
+    [
+      "it denies an unquoted true instead",
+      { Condition: { Bool: { "aws:SecureTransport": true } } },
     ],
     ["it has no condition", { Condition: undefined }],
     [

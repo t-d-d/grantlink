@@ -41,6 +41,12 @@ const OnlySecureTransport = z.strictObject({
   Bool: z.strictObject({ "aws:SecureTransport": z.unknown() }),
 });
 
+// S3 returns condition values as strings, but YAML reads an unquoted
+// false in the template as a boolean, and CloudFormation deploys the two
+// alike (#157).
+const isFalse = (value: unknown): boolean =>
+  value === "false" || value === false;
+
 // Whether the policy holds a Deny, for everyone and every S3 action, on
 // both the bucket and its objects, when a request comes over plain HTTP.
 // That is the template's HttpsOnly statement. It is looked for by what it
@@ -60,17 +66,17 @@ export function refusesPlainHttp(
       (actions.includes("s3:*") || actions.includes("*")) &&
       resources.includes(bucketArn) &&
       resources.includes(`${bucketArn}/*`) &&
-      // Only a lowercase "false" counts (#168). AWS says the case of a
-      // condition value matters or not by its operator, and lists Bool as
-      // "Boolean matching" against "true" or "false", with no word that it
-      // ignores case. So "FALSE" or "False" fails here, which errs toward
+      // Only a lowercase false counts, quoted or not (#168). AWS says the
+      // case of a condition value matters or not by its operator, and lists
+      // Bool as "Boolean matching" against "true" or "false", with no word
+      // that it ignores case. So "FALSE" or "False" fails here, which errs toward
       // failing a policy that does refuse plain HTTP, never toward passing
       // one that does not. See the Condition element page,
       // https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html,
       // and the Boolean condition operators on
       // https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition_operators.html#Conditions_Boolean
       condition.success &&
-      list(condition.data.Bool["aws:SecureTransport"]).includes("false")
+      list(condition.data.Bool["aws:SecureTransport"]).some(isFalse)
     );
   });
 }
