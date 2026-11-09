@@ -51,13 +51,18 @@ export function elements(xml: string, name: string, attributes = ""): string[] {
 }
 
 // The paragraphs of a section, or its whole text less its title if it has
-// none. A self-closing paragraph is empty, so it does not count.
+// none. A self-closing paragraph is empty, so it does not count. A
+// self-closing title strips only itself (#221).
 function paragraphs(section: string): string[] {
   const found = elements(section, "p")
     .map(plain)
     .filter((paragraph) => paragraph !== "");
   if (found.length > 0) return found;
-  return [plain(section.replace(/<title\b[^>]*>[\s\S]*?<\/title>/gu, ""))];
+  return [
+    plain(
+      section.replace(/<title\b(?:[^>]*\/>|[^>]*>[\s\S]*?<\/title>)/gu, ""),
+    ),
+  ];
 }
 
 // What counts as a funding part, read here by the cutter and by the check on
@@ -71,8 +76,11 @@ export const FUNDING_FOOTNOTE = String.raw`\bfn-type="(?:financial-disclosure|fu
 // than an <ack>, and one journal titles its funding section Support. Support
 // must be the whole title, so a body section such as Support vector machines
 // is not kept. A label ends at its own closing tag, so a labelled section
-// is not taken for the labelled funding section after it.
-const FUNDING_SECTION_START = String.raw`<sec\b(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>|[^>]*>\s*(?:<label\b[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>\s*)?<title\b[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
+// is not taken for the labelled funding section after it. A self-closing
+// section is empty, and a self-closing title names nothing, so neither
+// starts a funding section: (?<!\/)> keeps each tag from closing itself
+// (#221).
+const FUNDING_SECTION_START = String.raw`<sec\b(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*(?<!\/)>|[^>]*(?<!\/)>\s*(?:<label\b[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>\s*)?<title\b[^>]*(?<!\/)>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
 
 const FUNDING_SECTION_AT = new RegExp(FUNDING_SECTION_START, "iuy");
 
