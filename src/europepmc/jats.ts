@@ -38,10 +38,11 @@ function plain(xml: string): string {
 }
 
 // Every element with this name, as its inner XML. JATS does not nest any of
-// the elements read here inside one of the same name.
+// the elements read here inside one of the same name. A self-closing element
+// is empty, and does not run on to the next closing tag of its name (#195).
 function elements(xml: string, name: string, attributes = ""): string[] {
   const pattern = new RegExp(
-    `<${name}\\b(?=[^>]*${attributes})[^>]*>([\\s\\S]*?)</${name}>`,
+    `<${name}\\b(?=[^>]*${attributes})(?:[^>]*/>|[^>]*>([\\s\\S]*?)</${name}>)`,
     "gu",
   );
   return [...xml.matchAll(pattern)].map((match) => match[1] ?? "");
@@ -77,7 +78,9 @@ export function fundingSections(xml: string): FundingSections {
   const awards = groups.flatMap((group) =>
     elements(group, "award-group").map((award) => ({
       source: elements(award, "funding-source").map(plain).join("; "),
-      ids: elements(award, "award-id").map(plain),
+      ids: elements(award, "award-id")
+        .map(plain)
+        .filter((id) => id !== ""),
     })),
   );
   const sections = fundingBodySections(xml);
