@@ -34,6 +34,13 @@ const isWildcardPrincipal = (principal: unknown): boolean =>
     "AWS" in principal &&
     list(principal.AWS).includes("*"));
 
+// A condition that tests plain HTTP and nothing else. Any other operator,
+// or another key in the Bool, is ANDed with it and narrows the Deny, so
+// the strict objects refuse them.
+const OnlySecureTransport = z.strictObject({
+  Bool: z.strictObject({ "aws:SecureTransport": z.unknown() }),
+});
+
 // Whether the policy holds a Deny, for everyone and every S3 action, on
 // both the bucket and its objects, when a request comes over plain HTTP.
 // That is the template's HttpsOnly statement. It is looked for by what it
@@ -46,17 +53,15 @@ export function refusesPlainHttp(
   return BucketPolicy.parse(document).Statement.some((statement) => {
     const actions = list(statement.Action);
     const resources = list(statement.Resource);
-    const bool = z
-      .object({ Bool: z.record(z.string(), z.unknown()) })
-      .safeParse(statement.Condition);
+    const condition = OnlySecureTransport.safeParse(statement.Condition);
     return (
       statement.Effect === "Deny" &&
       isWildcardPrincipal(statement.Principal) &&
       (actions.includes("s3:*") || actions.includes("*")) &&
       resources.includes(bucketArn) &&
       resources.includes(`${bucketArn}/*`) &&
-      bool.success &&
-      list(bool.data.Bool["aws:SecureTransport"]).includes("false")
+      condition.success &&
+      list(condition.data.Bool["aws:SecureTransport"]).includes("false")
     );
   });
 }

@@ -105,6 +105,26 @@ describe("refusesPlainHttp", () => {
       { Condition: { Bool: { "aws:SecureTransport": "true" } } },
     ],
     ["it has no condition", { Condition: undefined }],
+    [
+      "another condition narrows it",
+      {
+        Condition: {
+          Bool: { "aws:SecureTransport": "false" },
+          IpAddress: { "aws:SourceIp": "192.0.2.0/24" },
+        },
+      },
+    ],
+    [
+      "another key in its Bool narrows it",
+      {
+        Condition: {
+          Bool: {
+            "aws:SecureTransport": "false",
+            "aws:ViaAWSService": "false",
+          },
+        },
+      },
+    ],
   ])("fails when %s", (_, change) => {
     expect(
       refusesPlainHttp({ Statement: [{ ...httpsOnly, ...change }] }, bucket),
