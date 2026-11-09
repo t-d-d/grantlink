@@ -79,7 +79,7 @@ describe("a run over the back catalogue", () => {
       found: 8,
       read: 7,
       failed: 1,
-      published: { published: true, references: 7 },
+      published: { published: true, references: 8 },
     });
 
     const row = fake.table.rows.get("PMC0000001");
@@ -89,7 +89,7 @@ describe("a run over the back catalogue", () => {
       "CTRQQR-2021/100010",
       "A28707",
     ]);
-    expect(row?.versions).toEqual({ rules: "rules-1", code: "test" });
+    expect(row?.versions).toEqual({ rules: "rules-2", code: "test" });
     expect(fake.table.rows.get("PMC0000003")?.references).toEqual([]);
 
     const page = fake.site.files?.["index.html"] ?? "";
@@ -113,6 +113,8 @@ describe("a run over the back catalogue", () => {
     expect(references("PMC13642255")).toEqual(["C47608/A29957"]);
     // A CRUK studentship with no grant id gives no reference.
     expect(references("PMC13664392")).toEqual([]);
+    // A bare number the metadata gives CRUK, and the acknowledgements repeat.
+    expect(references("PMC13401056")).toEqual(["28275"]);
 
     const page = fake.site.files?.["index.html"] ?? "";
     expect(page).toContain("C9685/A25117");
@@ -160,7 +162,7 @@ describe("a run over the back catalogue", () => {
     expect(again.result?.published).toEqual({
       published: true,
       papers: 8,
-      references: 7,
+      references: 8,
     });
     expect(fake.site.files?.["index.html"]).toContain("RRCOER-Jun24/100008");
   });

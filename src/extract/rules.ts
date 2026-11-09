@@ -8,7 +8,7 @@ import funderFile from "./funder.json" with { type: "json" };
 
 // Bump this whenever a pattern changes, so every stored result says which
 // rules made it.
-export const RULES_VERSION = "rules-1";
+export const RULES_VERSION = "rules-2";
 
 export const funder = z
   .object({
@@ -124,6 +124,17 @@ function scan(text: string, anNumbers: boolean): Reference[] {
   return found;
 }
 
+// A bare number is common in any text, so it counts only when the metadata
+// gives it to the funder as a whole award id and the paper's own funding or
+// acknowledgement text gives the same number, standing alone (#97).
+const BARE_NUMBER = /^\d{5,7}$/u;
+
+function confirmedNumber(id: string, text: readonly string[]): boolean {
+  if (!BARE_NUMBER.test(id)) return false;
+  const alone = new RegExp(`(?<![A-Za-z0-9])${id}(?![A-Za-z0-9])`, "u");
+  return text.some((paragraph) => alone.test(paragraph));
+}
+
 export function findReferences(sections: FundingSections): Reference[] {
   const found: Reference[] = [];
   for (const paragraph of sections.text) {
@@ -140,7 +151,14 @@ export function findReferences(sections: FundingSections): Reference[] {
   }
   for (const award of sections.awards) {
     if (!funderName.test(award.source)) continue;
-    for (const id of award.ids) found.push(...scan(id, true));
+    for (const id of award.ids) {
+      const trimmed = id.trim();
+      if (confirmedNumber(trimmed, sections.text)) {
+        found.push({ asWritten: trimmed, normalised: trimmed, format: "n" });
+      } else {
+        found.push(...scan(id, true));
+      }
+    }
   }
   const seen = new Set<string>();
   return found.filter((reference) => {
