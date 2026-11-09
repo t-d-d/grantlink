@@ -75,6 +75,22 @@ describe("cutting a paper to its funding sections", () => {
     ).toEqual(["Thanks."]);
   });
 
+  it("keeps a section's whole text when its only paragraph is self-closing", () => {
+    expect(
+      fundingSections(
+        `<article><back><ack><title>Acknowledgements</title><p/>Funded by grant A1.</ack></back></article>`,
+      ).text,
+    ).toEqual(["Funded by grant A1."]);
+  });
+
+  it("keeps no award for a self-closing award group", () => {
+    expect(
+      fundingSections(
+        `<article><front><funding-group><award-group/></funding-group></front></article>`,
+      ),
+    ).toEqual({ text: [], awards: [] });
+  });
+
   it("finds nothing in a paper with no funding sections", () => {
     expect(fundingSections("<article><body><p>x</p></body></article>")).toEqual(
       { text: [], awards: [] },

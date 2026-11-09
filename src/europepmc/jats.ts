@@ -49,9 +49,11 @@ function elements(xml: string, name: string, attributes = ""): string[] {
 }
 
 // The paragraphs of a section, or its whole text less its title if it has
-// none.
+// none. A self-closing paragraph is empty, so it does not count.
 function paragraphs(section: string): string[] {
-  const found = elements(section, "p").map(plain);
+  const found = elements(section, "p")
+    .map(plain)
+    .filter((paragraph) => paragraph !== "");
   if (found.length > 0) return found;
   return [plain(section.replace(/<title\b[^>]*>[\s\S]*?<\/title>/gu, ""))];
 }
@@ -75,14 +77,17 @@ export function fundingSections(xml: string): FundingSections {
   const statements = groups.flatMap((group) =>
     elements(group, "funding-statement").map(plain),
   );
-  const awards = groups.flatMap((group) =>
-    elements(group, "award-group").map((award) => ({
-      source: elements(award, "funding-source").map(plain).join("; "),
-      ids: elements(award, "award-id")
-        .map(plain)
-        .filter((id) => id !== ""),
-    })),
-  );
+  const awards = groups
+    .flatMap((group) =>
+      elements(group, "award-group").map((award) => ({
+        source: elements(award, "funding-source").map(plain).join("; "),
+        ids: elements(award, "award-id")
+          .map(plain)
+          .filter((id) => id !== ""),
+      })),
+    )
+    // An empty award group, such as a self-closing one, names nothing.
+    .filter(({ source, ids }) => source !== "" || ids.length > 0);
   const sections = fundingBodySections(xml);
   const text = [
     ...statements,
