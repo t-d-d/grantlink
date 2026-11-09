@@ -123,14 +123,15 @@ jobs:
             --duration-seconds 3600 \
             --output json)"
           # jq -e fails on a missing field, where jq -r prints null and
-          # succeeds (#122). An ARN with no account field leaves it empty.
+          # succeeds (#122). An ARN with no account field leaves it empty,
+          # and cut -s leaves it empty too for a value with no colon.
           arn="$(jq -er .AssumedRoleUser.Arn <<< "$creds")"
-          account="$(cut -d: -f5 <<< "$arn")"
-          echo "::add-mask::$account"
+          account="$(cut -s -d: -f5 <<< "$arn")"
           if [ -z "$account" ]; then
             echo "::error::The STS reply's role ARN names no account."
             exit 1
           fi
+          echo "::add-mask::$account"
           key="$(jq -er .Credentials.AccessKeyId <<< "$creds")"
           secret="$(jq -er .Credentials.SecretAccessKey <<< "$creds")"
           session="$(jq -er .Credentials.SessionToken <<< "$creds")"

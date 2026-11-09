@@ -161,8 +161,7 @@ describe("the deploy's stack outputs", () => {
   );
 });
 
-// Built here so this file holds no id for test/infra.static.ts to find.
-const account = "1234567890" + "12";
+const account = "account-placeholder";
 
 // What STS answers, less any field a case drops. The stubs answer the
 // token request and the assume-role call; every value is a placeholder.
@@ -182,6 +181,12 @@ function stsReply(drop?: string): string {
     return JSON.stringify({
       ...reply,
       AssumedRoleUser: { Arn: "arn:aws:sts" },
+    });
+  }
+  if (drop === "ArnFields") {
+    return JSON.stringify({
+      ...reply,
+      AssumedRoleUser: { Arn: "not-an-arn" },
     });
   }
   const credentials = Object.fromEntries(
@@ -214,6 +219,7 @@ const missingFields = [
   "SessionToken",
   "Arn",
   "AccountId",
+  "ArnFields",
 ];
 
 describe.each([
