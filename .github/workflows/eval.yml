@@ -172,16 +172,31 @@ jobs:
         run: echo "json=$(jq -c . report.json)" >> "$GITHUB_OUTPUT"
 
       # The live release is the commit main last deployed. Its report is
-      # the one filed under that commit's fingerprint.
+      # the one filed under that commit's fingerprint. A deploy.yml run
+      # whose deploy job was skipped, because the prod role is not set,
+      # still concludes success, so the run counts only if its deploy job
+      # itself succeeded (#71). The newest twenty runs are read; with no
+      # deploy among them there is nothing to compare with.
       - name: Read the live release's report
         if: github.event_name == 'pull_request' && steps.cached.outputs.bucket != 'missing'
         env:
           BUCKET: ${{ secrets.PRIVATE_BUCKET_NAME }}
           GH_TOKEN: ${{ github.token }}
+          DEPLOY_JOB: "deploy · deployed: grantlink"
         run: |
           set -euo pipefail
-          live="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=1" \
-            --jq '.workflow_runs[0].head_sha // empty')"
+          live=""
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=20" \
+            --jq '.workflow_runs[] | "\(.id) \(.head_sha)"')"
+          while read -r id sha; do
+            [ -n "$id" ] || continue
+            deployed="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" \
+              --jq '[.jobs[] | select(.name == env.DEPLOY_JOB and .conclusion == "success")] | length')"
+            if [ "$deployed" != "0" ]; then
+              live="$sha"
+              break
+            fi
+          done <<< "$runs"
           if [ -z "$live" ] || ! git cat-file -e "$live^{commit}" 2>/dev/null; then
             echo "No live release to compare with."
             exit 0

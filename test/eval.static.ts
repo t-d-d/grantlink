@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { INPUTS } from "../evals/fingerprint.ts";
-import type { Step, Workflow } from "./app.ts";
+import { deploy, type Step, type Workflow } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The eval workflow (#9, #20): the report is a cache keyed by the
@@ -99,6 +99,19 @@ describe("the gate and the comment", () => {
     expect(live).toMatch(
       /if ! \w+="\$\(node evals\/fingerprint\.ts "\$live"[^)]*\)"; then[\s\S]*?exit 0/u,
     );
+  });
+
+  // A deploy.yml run whose deploy job was skipped, because the prod role
+  // is not set, still concludes success, but deployed nothing (#71).
+  it("takes as the live release only a run whose deploy job succeeded", () => {
+    const live = named("Read the live release's report");
+    expect(live?.env?.DEPLOY_JOB).toBe(deploy.jobs.deploy?.name);
+    const run = live?.run ?? "";
+    expect(run).toMatch(/actions\/runs\/\$\w+\/jobs/u);
+    expect(run).toContain(
+      'select(.name == env.DEPLOY_JOB and .conclusion == "success")',
+    );
+    expect(run).not.toContain(".workflow_runs[0].head_sha");
   });
 
   it("masks the account id before any line that could print it", () => {
