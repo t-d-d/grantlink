@@ -55,11 +55,13 @@ function paragraphs(section: string): string[] {
   return [plain(section.replace(/<title\b[^>]*>[\s\S]*?<\/title>/gu, ""))];
 }
 
-// A funding section in the body, found by its type or by its title. The
+// A funding or acknowledgements section in the body, found by its type or by
+// its title. Europe PMC often marks acknowledgements up as a section rather
+// than an <ack>, and one journal titles its funding section Support. The
 // match starts at the section's own opening tag, so one nested in another
 // section is found too.
 const FUNDING_SECTION =
-  /<sec\b(?:[^>]*sec-type="funding"[^>]*>|[^>]*>\s*(?:<label\b[^>]*>[\s\S]*?<\/label>\s*)?<title\b[^>]*>\s*(?:funding|financial support|grant support)\b)([\s\S]*?)<\/sec>/giu;
+  /<sec\b(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>|[^>]*>\s*(?:<label\b[^>]*>[\s\S]*?<\/label>\s*)?<title\b[^>]*>\s*(?:funding|financial support|grant support|support|acknowledge?ments?)\b)([\s\S]*?)<\/sec>/giu;
 
 function fundingBodySections(xml: string): string[] {
   // A match found by its title starts part way through the title, so the

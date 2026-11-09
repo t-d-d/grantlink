@@ -42,6 +42,39 @@ describe("cutting a paper to its funding sections", () => {
     ]);
   });
 
+  describe("keeps acknowledgements marked up as a body section", () => {
+    const paper = (section: string) =>
+      `<article><front><article-meta><contrib-group><contrib><name><surname>Authorname</surname></name></contrib></contrib-group><abstract><p>The abstract.</p></abstract></article-meta></front><body><sec><title>Results</title><p>Body text.</p></sec>${section}</body></article>`;
+
+    it.each([
+      ['<sec sec-type="ack"><title>Thanks</title><p>Grant A1.</p></sec>'],
+      ['<sec sec-type="acknowledgments"><p>Grant A1.</p></sec>'],
+      ["<sec><title>Acknowledgements</title><p>Grant A1.</p></sec>"],
+      ["<sec><title>Acknowledgments</title><p>Grant A1.</p></sec>"],
+      [
+        "<sec><label>5.</label><title>ACKNOWLEDGEMENTS</title><p>Grant A1.</p></sec>",
+      ],
+      ["<sec><title>Support</title><p>Grant A1.</p></sec>"],
+    ])("in %s", (section) => {
+      const sections = fundingSections(paper(section));
+      expect(sections.text).toEqual(["Grant A1."]);
+      const kept = JSON.stringify(sections);
+      expect(kept).not.toContain("abstract");
+      expect(kept).not.toContain("Body text");
+      expect(kept).not.toContain("Authorname");
+    });
+
+    it("but not a section whose title only starts with Support", () => {
+      expect(
+        fundingSections(
+          paper(
+            "<sec><title>Supporting information</title><p>Table S1.</p></sec>",
+          ),
+        ).text,
+      ).toEqual([]);
+    });
+  });
+
   it("leaves a character reference past Unicode's range as written", () => {
     expect(
       fundingSections(
