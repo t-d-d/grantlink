@@ -34,12 +34,13 @@ const account = "1234567890" + "12";
 // is a stack that does not exist.
 const awsStub = `#!${bash}
 log() { printf '%s\\n' "$1" >> "$STATE/calls"; }
-bucket=; stack=; output=json
+bucket=; stack=; output=json; query=
 args=("$@")
 while [ $# -gt 0 ]; do
   case $1 in
     --bucket) bucket=$2; shift ;;
     --output) output=$2; shift ;;
+    --query) query=$2; shift ;;
     --stack-name) stack=$2; shift ;;
   esac
   shift
@@ -63,6 +64,7 @@ case "$1 $2" in
     echo "$STATUS" ;;
   "cloudformation describe-stack-events")
     log "events $stack"
+    log "query $query"
     [ -n "$STATUS" ] || missing DescribeStackEvents
     # One row per event, newest first, as the script's --query renders it.
     [ -z "\${EVENTS:-}" ] || printf '%s\\n' "$EVENTS" ;;
@@ -270,6 +272,16 @@ describe("a stack stuck in cleanup or rollback stops the deploy (#89)", () => {
     expect(result.output).toContain("RunLambdaFunction (UPDATE_FAILED)");
     expect(result.output).not.toContain("ResultsTable (");
   });
+
+  // The stub hands back rows already split into columns, so this checks
+  // the query that marks where the current operation starts (#129).
+  it("marks the stack's own User Initiated event as the start of the current operation (#129)", () => {
+    const result = check({ status: "UPDATE_IN_PROGRESS" });
+    const query = result.calls.find((call) => call.startsWith("query "));
+    expect(query).toContain(
+      "LogicalResourceId=='grantlink-prod' && ResourceStatusReason=='User Initiated'",
+    );
+  });
 });
 
 describe("a funding text bucket outside the stack stops the deploy (#89)", () => {
@@ -312,7 +324,7 @@ describe("a funding text bucket outside the stack stops the deploy (#89)", () =>
   it("says to empty and delete the bucket when there is no stack, keeping any eval snapshot first (#129)", () => {
     const result = check({ bucket: "403" });
     expect(result.status).not.toBe(0);
-    expect(result.output).toMatch(/empty and delete TextBucket/iu);
+    expect(result.output).toMatch(/empty and delete the funding text bucket/iu);
     expect(result.output).toMatch(/run this deploy again/u);
     expect(result.output).toContain("eval/");
     expect(result.output).toMatch(/copy it out first/iu);

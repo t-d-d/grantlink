@@ -57,8 +57,9 @@ case "$status" in
     # before the operation started belong to an older one (#129).
     failed=
     while IFS=$'\t' read -r id event started; do
-      if [ "$id" != "$stack" ] && [ -z "$failed" ] && [[ "$event" == *_FAILED ]]; then
+      if [ "$id" != "$stack" ] && [[ "$event" == *_FAILED ]]; then
         failed="$id"$'\t'"$event"
+        break
       fi
       if [ "$started" = "True" ]; then
         break
@@ -113,9 +114,10 @@ else
 fi
 
 if [ -z "$status" ]; then
-  # With no stack there is nothing to import the bucket into. The owner's
-  # recovery (#129) is to empty and delete it, keeping any eval snapshot.
-  echo "::error::TextBucket, the funding text bucket, exists but $stack does not, as after a failed first create, so CloudFormation would refuse to create it. Empty and delete TextBucket in the S3 console, then run this deploy again. If it holds an eval snapshot under eval/, copy it out first: the repo pins the snapshot's hash, and the eval needs it back after the deploy."
+  # Creating the stack around the bucket by import is untested with osls,
+  # so the owner chose (#129) to empty and delete it, keeping any eval
+  # snapshot.
+  echo "::error::TextBucket, the funding text bucket, exists but $stack does not, as after a failed first create, so CloudFormation would refuse to create it. Empty and delete the funding text bucket in the S3 console, then run this deploy again. If it holds an eval snapshot under eval/, copy it out first: the repo pins the snapshot's hash, and the eval needs it back after the deploy."
   exit 1
 fi
 echo "::error::TextBucket, the funding text bucket, exists but $stack does not list it, so CloudFormation would refuse to create it. It holds the funding text: do not delete it. Import it into $stack under the logical id TextBucket (CloudFormation console, Import resources into stack), then run this deploy again."
