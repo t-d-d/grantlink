@@ -137,19 +137,44 @@ describe("the deploy execution role", () => {
     ]);
   });
 
-  it("manages buckets but never touches an object", () => {
-    const objectActions = [
-      "s3:GetObject",
-      "s3:PutObject",
-      "s3:DeleteObject",
-      "s3:RestoreObject",
-    ];
-    const reaching = allows(rightsOf(execution))
-      .flatMap(actions)
-      .filter((pattern) =>
-        objectActions.some((action) => covers(pattern, action)),
-      );
-    expect(reaching).toEqual([]);
+  // Lambda reads a new function's code from osls's deployment bucket with
+  // the credentials of the role CloudFormation runs as (#58).
+  const objectActions = [
+    "s3:GetObject",
+    "s3:PutObject",
+    "s3:DeleteObject",
+    "s3:RestoreObject",
+  ];
+  const reachingObjects = allows(rightsOf(execution)).filter((statement) =>
+    actions(statement).some((pattern) =>
+      objectActions.some((action) => covers(pattern, action)),
+    ),
+  );
+
+  it("manages buckets, and reads objects only to fetch a function's code", () => {
+    expect(
+      reachingObjects.map((statement) => [
+        actions(statement),
+        resources(statement),
+      ]),
+    ).toEqual([
+      [
+        ["s3:GetObject"],
+        [
+          "arn:${AWS::Partition}:s3:::grantlink-prod-serverlessdeploymentbucket-*/*",
+        ],
+      ],
+    ]);
+  });
+
+  it("cannot read the private bucket's objects", () => {
+    const text =
+      "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/cache/PMC1.json";
+    expect(
+      reachingObjects
+        .flatMap(resources)
+        .some((pattern) => covers(pattern, text)),
+    ).toBe(false);
   });
 
   it("can read, update and delete the roles it creates", () => {
