@@ -375,8 +375,8 @@ Resources:
                     s3:if-none-match: "*"
 
   # Reads the private bucket's settings for the scheduled conformance run
-  # (#50): its public access block, its encryption and its policy, and
-  # nothing the bucket holds. That job names no environment, so the role
+  # (#50): its public access block, its encryption, its policy and its
+  # ownership controls (#94), and nothing the bucket holds. That job names no environment, so the role
   # trusts runs on main.
   ConformanceRole:
     Type: AWS::IAM::Role
@@ -402,6 +402,7 @@ Resources:
               - Sid: ReadBucketSettings
                 Effect: Allow
                 Action:
+                  - s3:GetBucketOwnershipControls
                   - s3:GetBucketPolicy
                   - s3:GetBucketPublicAccessBlock
                   - s3:GetEncryptionConfiguration

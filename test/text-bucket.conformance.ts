@@ -1,5 +1,6 @@
 import {
   GetBucketEncryptionCommand,
+  GetBucketOwnershipControlsCommand,
   GetBucketPolicyCommand,
   GetPublicAccessBlockCommand,
   S3Client,
@@ -41,6 +42,17 @@ describe("fitness: the bucket stays private (storage.md)", () => {
     ).toEqual(
       expect.arrayContaining([expect.stringMatching(/^(?:AES256|aws:kms)$/u)]),
     );
+  });
+
+  // With ACLs off, no grant can hand an object to another account. A
+  // change made outside CloudFormation does not show in the template (#94).
+  it("disables ACLs, so the bucket owner owns every object", async () => {
+    const reply = await s3.send(
+      new GetBucketOwnershipControlsCommand({ Bucket: TEXT_BUCKET }),
+    );
+    expect(reply.OwnershipControls).toEqual({
+      Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }],
+    });
   });
 });
 
