@@ -51,7 +51,11 @@ async function runWith(fake: ReturnType<typeof fakeDeps>) {
   const status = execution.getStatus();
   return {
     status,
+    // The local runner's clock when the run ended.
+    ended: Date.now(),
     result: status === "SUCCEEDED" ? execution.getResult() : undefined,
+    // Why the run failed, if it did.
+    error: status === "FAILED" ? execution.getError().errorMessage : undefined,
     // How long each named step waited before its next attempt, in seconds.
     retryDelays: (step: string) =>
       execution
@@ -75,6 +79,25 @@ const malformedPage = () =>
         result: [{ pmcid: "PMC 1" }, { pmcid: "pmc2" }],
       },
     }),
+  );
+
+// A search of two pages: the first holds `pmcids`, and the last holds one
+// result alone, whose PMCID is malformed.
+const smallLastPageMalformed = (pmcids: string[]) => (cursor: string) =>
+  reply(
+    JSON.stringify(
+      cursor === "*"
+        ? {
+            hitCount: pmcids.length + 1,
+            nextCursorMark: "AoE",
+            resultList: { result: pmcids.map((pmcid) => ({ pmcid })) },
+          }
+        : {
+            hitCount: pmcids.length + 1,
+            nextCursorMark: "AoE",
+            resultList: { result: [{ pmcid: "PMC 9" }] },
+          },
+    ),
   );
 
 // A paper step whose full text Europe PMC refuses every time with `error`.
@@ -107,7 +130,7 @@ describe("a run over the back catalogue", () => {
       "CTRQQR-2021/100010",
       "A28707",
     ]);
-    expect(row?.versions).toEqual({ rules: "rules-2", code: "test" });
+    expect(row?.versions).toEqual({ rules: "rules-3", code: "test" });
     expect(fake.table.rows.get("PMC0000003")?.references).toEqual([]);
 
     const page = fake.site.files?.["index.html"] ?? "";
@@ -287,12 +310,27 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
     expect(fake.site.files).toBeUndefined();
   });
 
-  it("asks again, then fails, when every PMCID on a search page is malformed", async () => {
+  it("fails when the whole search skipped results for a malformed PMCID and found no papers", async () => {
     const fake = fakeDeps({ search: malformedPage });
-    const { status, retryDelays } = await runWith(fake);
+    const { status, error } = await runWith(fake);
     expect(status).toBe("FAILED");
-    expect(retryDelays("search-0")).toHaveLength(2);
+    expect(error).toContain(
+      "the search skipped 2 results for a malformed PMCID and found no papers",
+    );
     expect(fake.site.files).toBeUndefined();
+  });
+
+  it("publishes what the search found when a small last page holds one malformed PMCID alone", async () => {
+    const fake = fakeDeps({
+      search: smallLastPageMalformed(["PMC0000001", "PMC0000002"]),
+    });
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result).toMatchObject({
+      found: 2,
+      published: { published: true },
+    });
+    expect(fake.site.files?.["index.html"]).toBeDefined();
   });
 
   it("publishes nothing when the search finds nothing", async () => {
@@ -408,6 +446,59 @@ function refusingFor(seconds: number, from: "run" | "snapshot") {
   return { fake, early, refused };
 }
 
+// Europe PMC refusing only the run's last paper, with a Retry-After of two
+// hours. It records each request sent before that wait had passed, and
+// when the page was published.
+async function refusingLast() {
+  // The order the run reads its papers in.
+  const order: string[] = [];
+  const dry = fakeDeps();
+  const fullText = dry.deps.europePmc.fullText.bind(dry.deps.europePmc);
+  dry.deps.europePmc.fullText = (pmcid) => {
+    order.push(pmcid);
+    return fullText(pmcid);
+  };
+  dry.deps.text.hasSnapshot = () => Promise.resolve(true);
+  await runWith(dry);
+  const last = order.at(-1);
+  expect(last).toBeDefined();
+
+  const fake = fakeDeps();
+  const real = fake.deps.europePmc;
+  const seen = { notBefore: 0, publishedAt: 0, early: [] as string[] };
+  const check = (request: string) => {
+    if (Date.now() < seen.notBefore) seen.early.push(request);
+  };
+  fake.deps.europePmc = {
+    search: (cursor, selection, pageSize) => {
+      check("search");
+      return real.search(cursor, selection, pageSize);
+    },
+    grants: (pmcid) => {
+      check(`grants ${pmcid}`);
+      return real.grants(pmcid);
+    },
+    fullText: (pmcid) => {
+      check(`fullText ${pmcid}`);
+      if (pmcid !== last) return real.fullText(pmcid);
+      seen.notBefore = Date.now() + 7_200_000;
+      return Promise.reject(
+        new EuropePmcError(
+          "Europe PMC answered 429, asked to wait 7200s",
+          429,
+          7200,
+        ),
+      );
+    },
+  };
+  const publish = fake.deps.site.publish.bind(fake.deps.site);
+  fake.deps.site.publish = (files) => {
+    seen.publishedAt = Date.now();
+    return publish(files);
+  };
+  return { fake, seen };
+}
+
 describe("fitness: a step Europe PMC refused waits before asking again (europe-pmc.md)", () => {
   it("waits as long as a search's Retry-After asks, when that is longer than the client waits", async () => {
     const fake = fakeDeps({
@@ -475,6 +566,28 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
       expect(early).toEqual([]);
     },
   );
+
+  it("does not hold back the publish step for a refusal on the run's last paper", async () => {
+    const { fake, seen } = await refusingLast();
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.published).toMatchObject({ published: true });
+    expect(seen.notBefore).toBeGreaterThan(0);
+    expect(seen.publishedAt).toBeGreaterThan(0);
+    expect(seen.publishedAt).toBeLessThan(seen.notBefore);
+    // The snapshot, which asks Europe PMC, still waits.
+    expect(result?.snapshot).toMatchObject({ taken: true });
+    expect(seen.early).toEqual([]);
+  });
+
+  it("ends only once a refusal on its last paper has been waited out, when there is no snapshot to take", async () => {
+    const { fake, seen } = await refusingLast();
+    fake.deps.text.hasSnapshot = () => Promise.resolve(true);
+    const { status, ended } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(seen.publishedAt).toBeLessThan(seen.notBefore);
+    expect(ended).toBeGreaterThanOrEqual(seen.notBefore);
+  });
 
   it("never asks again sooner than its first wait, with no Retry-After", async () => {
     const search = await runWith(fakeDeps({ search: () => reply("", 503) }));
@@ -611,11 +724,24 @@ describe("the eval snapshot (evals.md)", () => {
 
   it("writes no manifest when every PMCID gold set A's search finds is malformed", async () => {
     const fake = fakeDeps({ goldSearch: malformedPage });
-    const { status, result, retryDelays } = await runWith(fake);
+    const { status, result } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
-    expect(retryDelays("snapshot-search-0")).toHaveLength(2);
     expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
     expect(fake.text.has("eval/s1/manifest.json")).toBe(false);
+  });
+
+  it("takes the snapshot when a small last page of gold set A's search holds one malformed PMCID alone", async () => {
+    const fake = fakeDeps({
+      goldSearch: smallLastPageMalformed([
+        "PMC0000001",
+        "PMC0000002",
+        "PMC0000003",
+      ]),
+    });
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toMatchObject({ taken: true });
+    expect(fake.text.has("eval/s1/manifest.json")).toBe(true);
   });
 
   it("publishes the page even when the snapshot fails, and leaves it for the next run", async () => {
