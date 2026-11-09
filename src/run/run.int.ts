@@ -104,6 +104,18 @@ describe("a run over the back catalogue", () => {
       new Set(["/europepmc/webservices/rest/PMC0000004/fullTextXML"]),
     );
   });
+
+  it("publishes again when a later run reads nothing but the table holds a paper read", async () => {
+    const fake = fakeDeps();
+    await runWith(fake);
+    fake.site.files = undefined;
+
+    const again = await runWith(fake);
+    expect(again.status).toBe("SUCCEEDED");
+    expect(again.result?.read).toBe(0);
+    expect(again.result?.published).toMatchObject({ published: true });
+    expect(fake.site.files?.["index.html"]).toContain("RRCOER-Jun24/100008");
+  });
 });
 
 describe("fitness: no name reaches the table, the logs or the page (personal-data.md)", () => {
@@ -179,7 +191,7 @@ describe("a run that fails or finds nothing leaves the page as it was", () => {
     expect(await asked(new Error("not the shape expected"))).toBe(1);
   });
 
-  it("publishes nothing when no paper could be read", async () => {
+  it("publishes nothing while the table holds no paper read", async () => {
     const fake = fakeDeps();
     fake.deps.europePmc = {
       search: fake.deps.europePmc.search.bind(fake.deps.europePmc),
