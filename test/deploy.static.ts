@@ -97,8 +97,9 @@ describe("the deploy workflow", () => {
 
 // Governor's PR review waits for a run of `workflows.ci` at the pull
 // request's head. deploy.yml runs only on main, so naming it held every
-// review (#54). On main the gate runs inside deploy.yml, so governor reads
-// a red main build as a failed deploy.
+// review (#54). On main the gate runs inside deploy.yml, so no run there is
+// CI, and CI messages never fire. Governor reads a red main build as a
+// failed deploy instead, but only once a deploy has succeeded.
 describe("governor's CI workflow", () => {
   const governor = parse(readRepoFile(".github/governor.json")) as {
     workflows?: { ci?: string };
