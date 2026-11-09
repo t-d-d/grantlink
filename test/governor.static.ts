@@ -40,9 +40,36 @@ describe("governor merges pull requests its review passes", () => {
         ".github/**",
         "CLAUDE.md",
         "docs/constraints/**",
+        "evals/**",
         "infra/**",
+        "package-lock.json",
+        "package.json",
+        "serverless.yml",
       ].sort(),
     );
+  });
+
+  // The review reads no source files, so the paths that change what ships
+  // wait for the owner too (#183): a merge deploys `serverless.yml`, the
+  // eval set's floors decide what may deploy, and the package files hold
+  // the dependencies.
+  it("names every human-only path in CLAUDE.md and the review checklist", () => {
+    const paths = (config.humanOnly ?? []).map(({ glob }) =>
+      glob.replace(/\*\*$/u, ""),
+    );
+    const claude = readRepoFile("CLAUDE.md");
+    const owner = /^- A pull request waits for the owner when.*$/mu.exec(
+      claude,
+    );
+    const checklist = readRepoFile(".claude/skills/pr-review/SKILL.md");
+    const test8 =
+      /^8\. \*\*No changed file is on the human-only list\.[\s\S]*?(?=^9\. )/mu.exec(
+        checklist,
+      );
+    for (const path of paths) {
+      expect(owner?.[0]).toContain(`\`${path}\``);
+      expect(test8?.[0]).toContain(`\`${path}\``);
+    }
   });
 
   it("leaves prReview.quote unset", () => {
