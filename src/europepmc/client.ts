@@ -229,6 +229,16 @@ export function europePmc(
     let lastAsked: number | undefined;
     for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
       const wait = next - clock.now();
+      // A wait longer than the client keeps within one try is what is left
+      // of a long Retry-After. Nothing is sent, and the run's step waits.
+      if (wait > MAX_WAIT_MS) {
+        const seconds = Math.ceil(wait / 1_000);
+        throw new EuropePmcError(
+          `Europe PMC asked to wait ${String(seconds)}s more`,
+          undefined,
+          seconds,
+        );
+      }
       if (wait > 0) await clock.sleep(wait);
       const started = clock.now();
       let response: Response | undefined;
@@ -261,6 +271,8 @@ export function europePmc(
       const asked = response && retryAfter(response, clock);
       lastAsked = asked;
       if (asked !== undefined && asked > MAX_WAIT_MS) {
+        // The next request this client sends, for any paper, waits too.
+        next = clock.now() + asked;
         const seconds = Math.ceil(asked / 1_000);
         throw new EuropePmcError(
           `${failure}, asked to wait ${String(seconds)}s`,

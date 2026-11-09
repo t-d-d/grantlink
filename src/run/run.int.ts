@@ -362,6 +362,47 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
   });
 });
 
+// Europe PMC refusing every full text with a Retry-After of `seconds`,
+// from the run's first paper or from the snapshot's first search on. It
+// records each request sent before the last refusal's wait had passed.
+// The local runner moves Date.now() on through each durable wait.
+function refusingFor(seconds: number, from: "run" | "snapshot") {
+  const fake = fakeDeps();
+  const real = fake.deps.europePmc;
+  let refusing = from === "run";
+  let notBefore = 0;
+  const early: string[] = [];
+  const refused: string[] = [];
+  const check = (request: string) => {
+    if (Date.now() < notBefore) early.push(request);
+  };
+  fake.deps.europePmc = {
+    search: (cursor, selection, pageSize) => {
+      check("search");
+      if (selection !== undefined) refusing = true;
+      return real.search(cursor, selection, pageSize);
+    },
+    grants: (pmcid) => {
+      check(`grants ${pmcid}`);
+      return real.grants(pmcid);
+    },
+    fullText: (pmcid) => {
+      check(`fullText ${pmcid}`);
+      if (!refusing) return real.fullText(pmcid);
+      refused.push(pmcid);
+      notBefore = Date.now() + seconds * 1_000;
+      return Promise.reject(
+        new EuropePmcError(
+          `Europe PMC answered 429, asked to wait ${String(seconds)}s`,
+          429,
+          seconds,
+        ),
+      );
+    },
+  };
+  return { fake, early, refused };
+}
+
 describe("fitness: a step Europe PMC refused waits before asking again (europe-pmc.md)", () => {
   it("waits as long as a search's Retry-After asks, when that is longer than the client waits", async () => {
     const fake = fakeDeps({
@@ -404,6 +445,30 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
       failures: 1,
     });
   });
+
+  it.each([300, 7200])(
+    "asks Europe PMC nothing more until a refused paper's Retry-After of %is has passed",
+    async (seconds) => {
+      const { fake, early, refused } = refusingFor(seconds, "run");
+      fake.deps.text.hasSnapshot = () => Promise.resolve(true);
+      const { status } = await runWith(fake);
+      expect(status).toBe("SUCCEEDED");
+      // Every paper was asked about in the end, each after the wait.
+      expect(new Set(refused).size).toBeGreaterThan(1);
+      expect(early).toEqual([]);
+    },
+  );
+
+  it.each([300, 7200])(
+    "asks nothing more until a refused gold paper's Retry-After of %is has passed",
+    async (seconds) => {
+      const { fake, early, refused } = refusingFor(seconds, "snapshot");
+      const { status } = await runWith(fake);
+      expect(status).toBe("SUCCEEDED");
+      expect(new Set(refused).size).toBeGreaterThan(1);
+      expect(early).toEqual([]);
+    },
+  );
 
   it("never asks again sooner than its first wait, with no Retry-After", async () => {
     const search = await runWith(fakeDeps({ search: () => reply("", 503) }));
