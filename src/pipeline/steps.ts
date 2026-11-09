@@ -108,11 +108,14 @@ export type Published =
 // stays on the version it started on, so one that finishes after a deploy
 // would put the old template back (#73). A run with no record of its own
 // counts as older than any deploy that recorded one.
-async function newerDeployLive(deps: Deps, runId: string): Promise<boolean> {
+async function newerDeployLive(
+  deps: Deps,
+  runId: string,
+  own: Release | null,
+): Promise<boolean> {
   const text = await deps.site.liveRelease();
   if (text === null) return false;
   const live = deployRun(liveRelease.parse(JSON.parse(text)));
-  const own = await deps.release();
   const ownRun = own === null ? null : deployRun(own);
   if (ownRun !== null && ownRun >= live) return false;
   logger.info("page-left", {
@@ -137,16 +140,13 @@ export async function publish(deps: Deps, runId: string): Promise<Published> {
     return { published: false, reason: "nothing read" };
   }
   const data = JSON.stringify(found);
-  const left = await newerDeployLive(deps, runId);
+  const own = await deps.release();
+  const left = await newerDeployLive(deps, runId, own);
   await deps.site.publish(
     left
       ? { "found.json": data }
       : {
-          "index.html": buildPage(
-            await deps.template(),
-            found,
-            await deps.release(),
-          ),
+          "index.html": buildPage(await deps.template(), found, own),
           "found.json": data,
         },
   );
