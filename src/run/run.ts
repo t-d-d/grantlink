@@ -1,9 +1,4 @@
-import {
-  createRetryStrategy,
-  type DurableContext,
-  type RetryDecision,
-} from "@aws/durable-execution-sdk-js";
-import { EuropePmcError } from "../europepmc/client.ts";
+import type { DurableContext } from "@aws/durable-execution-sdk-js";
 import {
   markFailed,
   publish,
@@ -13,6 +8,8 @@ import {
   type Published,
 } from "../pipeline/steps.ts";
 import { batches } from "../shared/batches.ts";
+import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
+import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 
 // A run: search Europe PMC page by page, read each paper not yet read, then
 // publish the page. Every I/O call sits in a step
@@ -24,51 +21,13 @@ import { batches } from "../shared/batches.ts";
 // finished batch whole.
 export const BATCH = 50;
 
-// Europe PMC's client already paces and backs off within one try. A step
-// that still fails waits longer before the next: 30 seconds, then a
-// minute, or as long as Europe PMC's last refusal asked if that is longer.
-// There is no jitter, so no step retry comes sooner than Europe PMC asked
-// (docs/constraints/europe-pmc.md). A step asked to wait more than an hour
-// does not ask again in this run: its paper waits for the next run, and a
-// search fails the run, which publishes nothing.
-const STEP_TRIES = 3;
-const FIRST_STEP_WAIT_SECONDS = 30;
-const LONGEST_STEP_WAIT_SECONDS = 3_600;
-
-function europePmcRetry(error: Error, attempt: number): RetryDecision {
-  if (attempt >= STEP_TRIES) return { shouldRetry: false };
-  const backoff = FIRST_STEP_WAIT_SECONDS * 2 ** (attempt - 1);
-  const asked = error instanceof EuropePmcError ? error.waitSeconds : undefined;
-  if (asked !== undefined && asked > LONGEST_STEP_WAIT_SECONDS) {
-    return { shouldRetry: false };
-  }
-  return {
-    shouldRetry: true,
-    delay: { seconds: Math.max(backoff, asked ?? 0) },
-  };
-}
-
-// Only Europe PMC's own refusals and failures are worth asking again in
-// this run, after the longer wait. A paper it has no full text for (a 4xx
-// other than 429) is not, and nor is a fault in the paper or the code,
-// which gives the same result however often it is tried.
-const paperRetry = (error: Error, attempt: number): RetryDecision =>
-  error.name === "EuropePmcError" &&
-  !/answered 4(?!29)\d\d/u.test(error.message)
-    ? europePmcRetry(error, attempt)
-    : { shouldRetry: false };
-
-const storeRetry = createRetryStrategy({
-  maxAttempts: 3,
-  initialDelay: { seconds: 5 },
-});
-
 export interface RunSummary {
   runId: string;
   found: number;
   read: number;
   failed: number;
   published: Published;
+  snapshot: SnapshotSummary;
 }
 
 interface BatchOutcome {
@@ -144,6 +103,17 @@ export function makeRun(deps: Deps) {
         : await ctx.step("publish", async () => publish(deps, runId), {
             retryStrategy: storeRetry,
           });
-    return { runId, found, read, failed, published };
+
+    // The eval snapshot, once, after the page is published, so the page
+    // never waits on it. A snapshot that fails is left for the next run.
+    let snapshot: SnapshotSummary;
+    try {
+      snapshot = await ctx.runInChildContext("snapshot", async (child) =>
+        takeSnapshot(child, deps),
+      );
+    } catch {
+      snapshot = { taken: false, reason: "failed" };
+    }
+    return { runId, found, read, failed, published, snapshot };
   };
 }

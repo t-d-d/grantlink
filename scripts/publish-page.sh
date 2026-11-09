@@ -4,8 +4,9 @@
 # DISTRIBUTION set; test/publish-page.int.ts runs it against a stub aws.
 #
 # A run publishes the page with its findings, and found.json, the data it
-# built them from. Build the page again from that data, so a new template
-# keeps the findings, and leave found.json alone. Only a missing found.json,
+# built them from. Build the page again from that data and the release
+# record, so a new template keeps the findings and the page shows this
+# release, and leave found.json alone. Only a missing found.json,
 # before the first run, skips this: any other error stops the deploy before
 # it overwrites the findings.
 #
@@ -36,17 +37,20 @@ etag() {
   fi
 }
 
-# Builds index.html from the template and the last run's data, and keeps
-# in $page the ETag of the page it read first. Only a missing found.json,
-# before the first run, leaves the template as it is.
+# Builds index.html from the template, the release record the deploy
+# wrote, and the last run's data, and keeps in $page the ETag of the page
+# it read first. Only a missing found.json, before the first run, builds the
+# page with no findings.
 build_index() {
   cp "$repo/site/index.html" "$work/site/index.html"
+  rm -f "$work/found.json"
   page="$(etag index.html)"
   data="$(etag found.json)"
   if [ -n "$data" ]; then
     aws s3 cp "s3://$BUCKET/found.json" "$work/found.json" --only-show-errors
-    node "$repo/src/page/build.ts" "$work/found.json" "$work/site/index.html"
   fi
+  node "$repo/src/page/build.ts" "$work/site/index.html" \
+    "$repo/site/release.json" "$work/found.json"
 }
 
 # Uploads index.html only if the page in the bucket is still the one

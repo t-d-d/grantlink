@@ -18,7 +18,9 @@ provider:
   iam:
     deploymentRole: ${env:AWS_DEPLOY_EXECUTION_ROLE_ARN}
     # What the run may do, and nothing more: read and write the results
-    # table, write funding text under cache/, and publish the page.
+    # table, write funding text under cache/, take the eval snapshot under
+    # eval/ once, and publish the page. It never reaches the eval reports,
+    # which only CI writes (#9).
     role:
       statements:
         - Effect: Allow
@@ -34,13 +36,31 @@ provider:
           Action: s3:PutObject
           Resource:
             Fn::Sub: arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/cache/*
+        # The bucket's policy refuses a write under eval/ that could
+        # replace an object, so the snapshot is written once.
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+          Resource:
+            Fn::Sub: arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval/*
+        # Listing lets a missing manifest read as missing, not as refused.
+        - Effect: Allow
+          Action: s3:ListBucket
+          Resource:
+            Fn::Sub: arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}
+          Condition:
+            StringLike:
+              s3:prefix:
+                - eval/*
         - Effect: Allow
           Action: s3:PutObject
           Resource:
             - Fn::Sub: ${SiteBucket.Arn}/index.html
             - Fn::Sub: ${SiteBucket.Arn}/found.json
 
-# Only what the function runs: its code, the page's template, and the
+# Only what the function runs: its code, the gold sets the snapshot reads,
+# the page's template, the release record the deploy writes, and the
 # production dependencies. osls leaves out the development ones.
 package:
   patterns:
@@ -48,7 +68,11 @@ package:
     - "src/**"
     - "!src/**/*.test.ts"
     - "!src/**/*.int.ts"
+    - "evals/**"
+    - "!evals/**/*.test.ts"
+    - "!evals/**/*.int.ts"
     - "site/index.html"
+    - "site/release.json"
     - "package.json"
     - "node_modules/**"
     - "!node_modules/.vite/**"

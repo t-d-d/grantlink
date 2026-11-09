@@ -71,6 +71,14 @@ export function reply(
   } as unknown as Response;
 }
 
+// The papers gold set A's search finds, and the grant each is linked to.
+// PMC0000003 is linked to none, so the snapshot passes it over.
+const GOLD_SEARCH = { PMC0000001: true, PMC0000002: true, PMC0000003: true };
+const GRANTS: Partial<Record<string, string>> = {
+  PMC0000001: "A56789",
+  PMC0000002: "RRCOER-Jun24\\100008",
+};
+
 // Europe PMC answering from the fixtures. A paper with no fixture fails as
 // a server error does; `search` may be replaced to fail the search.
 export function fakeEuropePmc(
@@ -81,6 +89,48 @@ export function fakeEuropePmc(
   const fetch = (url: URL) => {
     requests.push(url);
     if (url.pathname.endsWith("/search")) {
+      const query = url.searchParams.get("query") ?? "";
+      // A paper's grant links, as Europe PMC's core record holds them.
+      const linked = /^PMCID:(PMC\d+)$/u.exec(query)?.[1];
+      if (linked !== undefined) {
+        const grant = GRANTS[linked];
+        return Promise.resolve(
+          reply(
+            JSON.stringify({
+              hitCount: 1,
+              resultList: {
+                result: [
+                  {
+                    pmcid: linked,
+                    ...(grant === undefined
+                      ? {}
+                      : {
+                          grantsList: {
+                            grant: [
+                              { grantId: grant, agency: "Cancer Research UK" },
+                            ],
+                          },
+                        }),
+                  },
+                ],
+              },
+            }),
+          ),
+        );
+      }
+      // Gold set A's sampling query: papers already linked to the funder.
+      if (query.startsWith("GRANT_AGENCY:")) {
+        return Promise.resolve(
+          reply(
+            JSON.stringify({
+              hitCount: 3,
+              resultList: {
+                result: Object.keys(GOLD_SEARCH).map((pmcid) => ({ pmcid })),
+              },
+            }),
+          ),
+        );
+      }
       const cursor = url.searchParams.get("cursorMark") ?? "*";
       if (options.search) return Promise.resolve(options.search(cursor));
       const file = cursor === "*" ? "search-1.json" : "search-2.json";
@@ -101,6 +151,13 @@ export function fakeDeps(
 ) {
   const table = memoryTable();
   const text = new Map<string, unknown>();
+  // Written once, as the bucket's policy makes every write under eval/.
+  const putOnce = (key: string, body: string): string => {
+    const held = text.get(key);
+    if (typeof held === "string") return held;
+    text.set(key, body);
+    return body;
+  };
   const site: { files: PageFiles | undefined } = { files: undefined };
   const epmc = fakeEuropePmc(options);
   const deps: Deps = {
@@ -111,6 +168,15 @@ export function fakeDeps(
         text.set(`cache/${pmcid}.json`, sections);
         return Promise.resolve();
       },
+      hasSnapshot(id) {
+        return Promise.resolve(text.has(`eval/${id}/manifest.json`));
+      },
+      putSnapshotPaper(pmcid, body) {
+        return Promise.resolve(putOnce(`eval/papers/${pmcid}.json`, body));
+      },
+      putManifest(id, body) {
+        return Promise.resolve(putOnce(`eval/${id}/manifest.json`, body));
+      },
     },
     site: {
       publish(files) {
@@ -119,6 +185,7 @@ export function fakeDeps(
       },
     },
     template: () => Promise.resolve(readRepoFile("site/index.html")),
+    release: () => Promise.resolve(null),
     codeVersion: "test",
     now: () => "2026-11-09T12:00:00.000Z",
   };

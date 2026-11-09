@@ -3,6 +3,7 @@ import { fundingSections } from "../europepmc/jats.ts";
 import { findReferences, RULES_VERSION } from "../extract/rules.ts";
 import { logger } from "../log.ts";
 import { summarise } from "../page/found.ts";
+import type { Release } from "../page/release.ts";
 import { buildPage } from "../page/render.ts";
 import type { SiteBucket, TextBucket } from "../store/bucket.ts";
 import type { Table } from "../store/table.ts";
@@ -18,6 +19,9 @@ export interface Deps {
   site: SiteBucket;
   // The page's template, site/index.html as deployed with the function.
   template: () => Promise<string>;
+  // The release the function was deployed as, site/release.json as
+  // deployed with it, or null before the deploy records one.
+  release: () => Promise<Release | null>;
   // The commit the function was deployed from.
   codeVersion: string;
   now: () => string;
@@ -93,7 +97,7 @@ export async function publish(deps: Deps, runId: string): Promise<Published> {
     return { published: false, reason: "nothing read" };
   }
   await deps.site.publish({
-    "index.html": buildPage(await deps.template(), found),
+    "index.html": buildPage(await deps.template(), found, await deps.release()),
     "found.json": JSON.stringify(found),
   });
   logger.info("published", {

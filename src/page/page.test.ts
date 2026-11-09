@@ -182,12 +182,19 @@ describe("rendering the page", () => {
 describe("building the page again at deploy", () => {
   it("builds the same page from the published data", () => {
     const found = summarise(rows, run);
-    expect(rebuild(template, JSON.stringify(found))).toBe(
+    expect(rebuild(template, JSON.stringify(found), null)).toBe(
       buildPage(template, found),
     );
   });
 
+  it("builds the page before any run, with no findings", () => {
+    expect(rebuild(template, null, null)).toBe(template);
+  });
+
   it("refuses data it cannot read", () => {
-    expect(() => rebuild(template, JSON.stringify({ papers: [] }))).toThrow();
+    expect(() =>
+      rebuild(template, JSON.stringify({ papers: [] }), null),
+    ).toThrow();
+    expect(() => rebuild(template, null, JSON.stringify({}))).toThrow();
   });
 });

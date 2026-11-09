@@ -45,6 +45,7 @@ export interface Job {
 export interface Step {
   name?: string;
   id?: string;
+  if?: string;
   uses?: string;
   run?: string;
   env?: Record<string, string>;

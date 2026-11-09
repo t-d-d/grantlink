@@ -1,3 +1,5 @@
 # Prose is formatted by hand.
 *.md
 docs/
+# The eval snapshot and its reports.
+.eval/

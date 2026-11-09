@@ -54,6 +54,8 @@ describe("fitness: each code rule file names its decision record (README.md)", (
     "docs/constraints/model-calls.md": "#7",
     "docs/constraints/personal-data.md": "#10",
     "docs/constraints/hosting.md": "#4",
+    "docs/constraints/deploy-gates.md": "#8",
+    "docs/constraints/evals.md": "#9",
   };
 
   it.each(Object.entries(records))("%s cites %s", (path, record) => {

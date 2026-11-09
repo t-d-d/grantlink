@@ -233,3 +233,90 @@ describe("searching Europe PMC", () => {
     await expect(client.search("*")).rejects.toThrow();
   });
 });
+
+describe("sampling gold set A", () => {
+  const gold =
+    'GRANT_AGENCY:"Cancer Research UK" AND OPEN_ACCESS:y AND IN_EPMC:y AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]';
+
+  it("searches with the query it is given", async () => {
+    const { client, requests } = harness(() =>
+      Response.json({ hitCount: 0, resultList: { result: [] } }),
+    );
+    await client.search("*", gold);
+    expect(requests[0]?.url.searchParams.get("query")).toBe(gold);
+  });
+
+  it("refuses a query that could reach a paper that is not open access", async () => {
+    const { client, requests } = harness(() => ok());
+    await expect(
+      client.search("*", 'GRANT_AGENCY:"Cancer Research UK"'),
+    ).rejects.toThrow(/open-access/u);
+    expect(requests).toHaveLength(0);
+  });
+
+  it("reads the funder's grant ids Europe PMC links to a paper, and nothing about the people who hold them", async () => {
+    const { client, requests } = harness(() =>
+      Response.json({
+        hitCount: 1,
+        resultList: {
+          result: [
+            {
+              pmcid: "PMC11",
+              grantsList: {
+                grant: [
+                  {
+                    grantId: "C1234/A56789",
+                    agency: "Cancer Research UK",
+                    acronym: "CRUK",
+                    pi: "Made-up Holder",
+                  },
+                  { grantId: "A1", agency: "Another Funder" },
+                  { agency: "Cancer Research UK" },
+                  { grantId: "29374", agency: "Cancer Research UK" },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    );
+    const grants = await client.grants("PMC11");
+    expect(grants).toEqual(["C1234/A56789", "29374"]);
+    expect(JSON.stringify(grants)).not.toContain("Made-up");
+    const url = requests[0]?.url;
+    expect(url?.searchParams.get("query")).toBe("PMCID:PMC11");
+    expect(url?.searchParams.get("resultType")).toBe("core");
+  });
+
+  it("reads each grant id once, however often Europe PMC lists it", async () => {
+    const { client } = harness(() =>
+      Response.json({
+        hitCount: 1,
+        resultList: {
+          result: [
+            {
+              pmcid: "PMC11",
+              grantsList: {
+                grant: [
+                  { grantId: "A56789", agency: "Cancer Research UK" },
+                  { grantId: " A56789 ", agency: "Cancer Research UK" },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    );
+    expect(await client.grants("PMC11")).toEqual(["A56789"]);
+  });
+
+  it("reads no grants for a paper Europe PMC links to none", async () => {
+    const { client } = harness(() =>
+      Response.json({
+        hitCount: 1,
+        resultList: { result: [{ pmcid: "PMC11" }] },
+      }),
+    );
+    expect(await client.grants("PMC11")).toEqual([]);
+  });
+});

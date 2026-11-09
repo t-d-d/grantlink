@@ -57,8 +57,11 @@ export interface SearchPage {
 }
 
 export interface EuropePmc {
-  search(cursor: string): Promise<SearchPage>;
+  // The run's search by default, or gold set A's sampling query.
+  search(cursor: string, query?: string): Promise<SearchPage>;
   fullText(pmcid: string): Promise<string>;
+  // The funder's grant ids Europe PMC links to a paper.
+  grants(pmcid: string): Promise<string[]>;
 }
 
 // Europe PMC refused or failed the request, and this client will not try
@@ -111,6 +114,30 @@ const searchReply = z.object({
     ),
   }),
 });
+
+// Only grant ids and agencies are read. A grant's record also names the
+// people who hold it, which is never kept (personal-data.md).
+const grantsReply = z.object({
+  resultList: z.object({
+    result: z.array(
+      z.object({
+        grantsList: z
+          .object({
+            grant: z.array(
+              z.object({
+                grantId: z.string().optional(),
+                agency: z.string().optional(),
+              }),
+            ),
+          })
+          .optional(),
+      }),
+    ),
+  }),
+});
+
+const OPEN_ACCESS = /\bOPEN_ACCESS:y\b/u;
+const IN_EPMC = /\bIN_EPMC:y\b/u;
 
 // A title as plain text: Europe PMC's titles may carry inline markup.
 export function plainTitle(title: string): string {
@@ -207,9 +234,14 @@ export function europePmc(
   }
 
   return {
-    async search(cursor) {
+    async search(cursor, query = searchQuery()) {
+      if (!OPEN_ACCESS.test(query) || !IN_EPMC.test(query)) {
+        throw new Error(
+          "a search asks only for open-access papers in Europe PMC",
+        );
+      }
       const url = new URL("search", BASE);
-      url.searchParams.set("query", searchQuery());
+      url.searchParams.set("query", query);
       url.searchParams.set("resultType", "lite");
       url.searchParams.set("format", "json");
       url.searchParams.set("pageSize", "1000");
@@ -241,6 +273,27 @@ export function europePmc(
     async fullText(pmcid) {
       if (!isPmcid(pmcid)) throw new Error(`not a PMCID: ${pmcid}`);
       return (await request(new URL(`${pmcid}/fullTextXML`, BASE))).text();
+    },
+
+    async grants(pmcid) {
+      if (!isPmcid(pmcid)) throw new Error(`not a PMCID: ${pmcid}`);
+      const url = new URL("search", BASE);
+      url.searchParams.set("query", `PMCID:${pmcid}`);
+      url.searchParams.set("resultType", "core");
+      url.searchParams.set("format", "json");
+      const reply = grantsReply.parse(await (await request(url)).json());
+      // Europe PMC can list one grant more than once, as for each holder.
+      // Each counts once, or it would weigh twice in gold set A's recall.
+      const ids = reply.resultList.result.flatMap((result) =>
+        (result.grantsList?.grant ?? []).flatMap((grant) =>
+          grant.agency === funder.europePmcAgency &&
+          grant.grantId !== undefined &&
+          grant.grantId.trim() !== ""
+            ? [grant.grantId.trim()]
+            : [],
+        ),
+      );
+      return [...new Set(ids)];
     },
   };
 }
