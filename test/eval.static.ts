@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { noLive } from "../evals/check.ts";
 import { INPUTS, MISSING_INPUT } from "../evals/fingerprint.ts";
-import { deploy, type Step, type Workflow } from "./app.ts";
+import { site, type Step, type Workflow } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The eval workflow (#9, #20): the report is a cache keyed by the
@@ -163,40 +163,55 @@ describe("the gate and the comment", () => {
         /echo "reason=([\w-]+)" >> "\$GITHUB_OUTPUT"/gu,
       ),
     ].map((match) => match[1]);
-    expect([...new Set(reasons)].sort()).toEqual([...noLive.options].sort());
     const comment = named("Comment with CI's scores beside the live release's");
     // The default stands only for a skipped step. A step that ran and gave
     // no reason fails the comment instead of reading as no deploy.
     const skipped =
       /^\$\{\{ steps\.live\.outcome == 'skipped' && '([\w-]+)' \|\| steps\.live\.outputs\.reason \}\}$/u;
     const fallback = skipped.exec(comment?.env?.NO_LIVE ?? "")?.[1];
-    expect(noLive.safeParse(fallback).success).toBe(true);
+    expect(fallback).toBe("no-deploy");
+    // The step skips only before the first deploy creates the private
+    // bucket. Once it runs, the release record says which release is live.
+    expect(reasons).not.toContain("no-deploy");
+    expect([...new Set([...reasons, fallback])].sort()).toEqual(
+      [...noLive.options].sort(),
+    );
     expect(comment?.run).toContain('--no-live "$NO_LIVE"');
   });
 
-  // A deploy.yml run whose deploy job was skipped, because the prod role
-  // is not set, still concludes success, but deployed nothing (#71).
-  it("takes as the live release only a run whose deploy job succeeded", () => {
+  // A release is live once its page is published, whatever the deploy's
+  // later steps do. The deploy writes the release record, and publishes it
+  // beside the page, so the commit in it is the live release (#85).
+  it("takes the live release from the release record on the live page", () => {
     const live = named("Read the live release's report");
-    expect(live?.env?.DEPLOY_JOB).toBe(deploy.jobs.deploy?.name);
-    const run = live?.run ?? "";
-    expect(run).toMatch(/actions\/runs\/\$\w+\/jobs/u);
-    expect(run).toContain(
-      'any(.jobs[]; .name == env.DEPLOY_JOB and .conclusion == "success")',
+    const domain = site.Parameters?.DomainName?.Default;
+    expect(domain).toBe("grantlink.uk");
+    expect(live?.env?.RELEASE_URL).toBe(
+      `https://${String(domain)}/release.json`,
     );
-    // Only a positive answer counts: an empty or odd reply is no deploy.
-    expect(run).toContain('if [ "$deployed" = "true" ]');
-    expect(run).not.toContain(".workflow_runs[0].head_sha");
+    const run = live?.run ?? "";
+    expect(run).toMatch(/curl [^\n]*"\$RELEASE_URL"/u);
+    expect(run).toContain("jq -r .commit");
+    // Only a full commit hash counts: anything else is an unread page.
+    expect(run).toContain("^[0-9a-f]{40}$");
+    expect(run).not.toContain("deploy.yml/runs");
+    expect(run).not.toContain("gh api");
+    expect(live?.env?.GH_TOKEN).toBeUndefined();
   });
 
-  // The comparison is advice for the comment. A failed read of GitHub's
-  // runs leaves nothing to compare with; it does not fail the eval job.
-  it("treats a failed read of the deploy runs as nothing to compare with", () => {
+  it("does not read the deploy's run history, so needs no actions permission", () => {
+    expect(job?.permissions?.actions).toBeUndefined();
+  });
+
+  // The comparison is advice for the comment. A failed read of the live
+  // page leaves nothing to compare with; it does not fail the eval job.
+  it("treats a failed read of the live page as nothing to compare with", () => {
     const run = named("Read the live release's report")?.run ?? "";
-    const calls = run.match(/gh api/gu) ?? [];
-    const guarded = run.match(/if ! \w+="\$\(gh api/gu) ?? [];
-    expect(calls.length).toBeGreaterThan(0);
-    expect(guarded).toHaveLength(calls.length);
+    const calls = run.match(/\bcurl\b/gu) ?? [];
+    const guarded = run.match(/if ! \w+="\$\(curl\b/gu) ?? [];
+    expect(calls).toHaveLength(1);
+    expect(guarded).toHaveLength(1);
+    expect(run).toContain('echo "reason=page-unread" >> "$GITHUB_OUTPUT"');
   });
 
   it("masks the account id before any line that could print it", () => {
