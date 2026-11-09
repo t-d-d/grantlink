@@ -9,12 +9,16 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: grantlink app stack, the results table and the funding text bucket (eu-west-2)
 
 Resources:
+  # Both stores are retained, so no rollback, replacement or stack delete
+  # removes their data. A rollback that deletes a bucket holding data
+  # stalls in cleanup instead (#89).
+  #
   # One row per paper: its id, title, status, references and the versions
   # that made them. No funding text and no names.
   ResultsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
@@ -31,7 +35,7 @@ Resources:
   # eval-reports/ the eval reports.
   TextBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Delete
+    DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub grantlink-text-${AWS::AccountId}
