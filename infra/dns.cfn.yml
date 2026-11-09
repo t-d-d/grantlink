@@ -14,10 +14,13 @@ Parameters:
 
 Resources:
   # Kept if the stack is deleted or the zone replaced, since a new zone
-  # gets new nameservers and the registrar would need telling.
+  # gets new nameservers and the registrar would need telling. If the stack's
+  # first create rolls back, the zone goes with it, so a failed bootstrap
+  # leaves no unused zone behind (#38). UpdateReplacePolicy has no such
+  # option, so it stays Retain.
   HostedZone:
     Type: AWS::Route53::HostedZone
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       Name: !Ref DomainName
