@@ -101,17 +101,23 @@ describe("a run over the back catalogue", () => {
   it("reads the papers recorded from Europe PMC, and finds their references", async () => {
     const fake = fakeDeps();
     await runWith(fake);
-    expect(RECORDED.length).toBeGreaterThanOrEqual(3);
     for (const entry of RECORDED) {
-      const pmcid = entry.file.replace(/\.xml$/u, "");
-      expect(fake.table.rows.get(pmcid)?.status).toBe("processed");
+      expect(fake.table.rows.get(entry.pmcid)?.status).toBe("processed");
     }
+    const references = (pmcid: string) =>
+      fake.table.rows.get(pmcid)?.references?.map((r) => r.normalised);
+    expect(references("PMC13628515")).toEqual([
+      "C9685/A25117",
+      "SEBCATP-2024/100008",
+    ]);
+    expect(references("PMC13642255")).toEqual(["C47608/A29957"]);
+    // A CRUK studentship with no grant id gives no reference.
+    expect(references("PMC13664392")).toEqual([]);
+
     const page = fake.site.files?.["index.html"] ?? "";
     expect(page).toContain("C9685/A25117");
     expect(page).toContain("C47608/A29957");
     expect(page).toContain("https://europepmc.org/article/PMC/PMC13628515");
-    // A CRUK studentship with no grant id gives no reference.
-    expect(fake.table.rows.get("PMC13664392")?.references).toEqual([]);
   });
 
   it("keeps the funding text in the bucket, and only there", () => {

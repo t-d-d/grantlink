@@ -45,34 +45,19 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
     }
   });
 
-  // #49: the integration tier reads Europe PMC's real replies, not only
-  // ones written in their shape.
-  it("holds at least three full texts recorded from papers", () => {
-    expect(
-      RECORDED.filter((entry) => entry.file.endsWith(".xml")).length,
-    ).toBeGreaterThanOrEqual(3);
-  });
-
-  it.each(RECORDED)(
-    "$file names the Europe PMC full text it was recorded from",
-    (entry) => {
-      const pmcid = entry.file.replace(/\.xml$/u, "");
-      expect(entry.origin).toBe(
-        `recorded from https://www.ebi.ac.uk/europepmc/webservices/rest/${pmcid}/fullTextXML`,
-      );
-    },
-  );
-
-  // The licence a recorded paper carries is the one its entry lists.
+  // The licence a recorded paper carries, in its own licence element, is
+  // the one its entry lists.
   it.each(RECORDED)("$file carries the licence it is listed under", (entry) => {
-    const [, kind = "", version = ""] =
-      /^CC-(BY)-(\d\.\d)$/u.exec(entry.licence) ?? [];
+    const version = /^CC-BY-(\d\.\d)$/u.exec(entry.licence)?.[1];
     const url =
-      kind === ""
+      version === undefined
         ? "creativecommons.org/publicdomain/zero/1.0/"
         : `creativecommons.org/licenses/by/${version}/`;
-    expect(fixture(entry.file)).toMatch(/<license\b/u);
-    expect(fixture(entry.file)).toContain(url);
+    const licence = /<license\b[^>]*>([\s\S]*?)<\/license>/u.exec(
+      fixture(entry.file),
+    )?.[1];
+    expect(licence).toBeDefined();
+    expect(licence).toContain(url);
   });
 
   it("says how each fixture came to be", () => {
@@ -80,4 +65,21 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
       expect(entry.origin).toMatch(/^(?:recorded from |written by hand)/u);
     }
   });
+});
+
+// #49: the integration tier reads Europe PMC's real replies, not only ones
+// written in their shape.
+describe("full texts recorded for the integration tier", () => {
+  it("holds at least three full texts recorded from papers", () => {
+    expect(RECORDED.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it.each(RECORDED)(
+    "$file names the Europe PMC full text it was recorded from",
+    (entry) => {
+      expect(entry.origin).toBe(
+        `recorded from https://www.ebi.ac.uk/europepmc/webservices/rest/${entry.pmcid}/fullTextXML`,
+      );
+    },
+  );
 });

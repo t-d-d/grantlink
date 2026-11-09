@@ -27,7 +27,11 @@ export const fixture = (file: string): string =>
 // Every made-up name the fixtures carry.
 export const NAMES = sources.fixtures.flatMap((entry) => entry.names);
 
-// The fixtures recorded from papers in Europe PMC, not written by hand.
-export const RECORDED = sources.fixtures.filter((entry) =>
-  entry.origin.startsWith("recorded from "),
-);
+// The full texts recorded from papers in Europe PMC, not written by hand,
+// each with the PMCID its file is named for.
+export const RECORDED = sources.fixtures
+  .filter(
+    (entry) =>
+      entry.origin.startsWith("recorded from ") && entry.file.endsWith(".xml"),
+  )
+  .map((entry) => ({ ...entry, pmcid: entry.file.replace(/\.xml$/u, "") }));
