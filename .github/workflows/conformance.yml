@@ -1,14 +1,12 @@
 # Runs the conformance tests once a day and on demand (#56). They read setup
-# outside the repo: GitHub's record of the repository, which the deploy and
-# eval roles' OIDC subjects must match (#52), and the prod environment's
-# branch rule (deploy-gates.md). A rename, a transfer or a changed setting
-# then turns this run red instead of waiting for a deploy to fail, and
-# governor's redScheduledRun starts a session on the red run. A fix that
-# only the owner can make, such as a GitHub setting, goes from that session
-# to the owner as an issue.
-#
-# It runs only the files that need nothing but GitHub's token.
-# test/text-bucket.conformance.ts needs AWS, which #50 adds here.
+# outside the repo: GitHub's record of the repository, which the roles' OIDC
+# subjects must match (#52), the prod environment's branch rule
+# (deploy-gates.md), and the funding text bucket's settings (storage.md,
+# evals.md). A rename, a transfer or a changed setting then turns this run
+# red instead of waiting for a deploy to fail, and governor's
+# redScheduledRun starts a session on the red run. A fix that only the owner
+# can make, such as a GitHub setting, goes from that session to the owner as
+# an issue.
 name: conformance
 
 on:
@@ -18,16 +16,23 @@ on:
 
 # Checkout needs contents: read, and the repository's record needs no
 # permission. The prod environment and its branch policies need
-# actions: read.
+# actions: read. The OIDC token for the conformance role needs
+# id-token: write.
 permissions:
   contents: read
   actions: read
+  id-token: write
 
 jobs:
+  # The job names no environment. The conformance role trusts runs on main,
+  # and a job in an environment would carry that environment's subject.
   conformance:
     name: conformance
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      AWS_REGION: eu-west-2
+      AWS_DEFAULT_REGION: eu-west-2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -35,6 +40,49 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: npm run conformance -- test/github-oidc.conformance.ts test/environments.conformance.ts
+
+      # Assumes the conformance role through GitHub's OIDC token, as the
+      # deploy and the eval assume theirs. The account id, the token and the
+      # credentials are masked before anything else runs. The private bucket
+      # is grantlink-text-<account id>, as the app stack names it, so the
+      # role is the only value GitHub holds for this run (#43).
+      - name: Assume the conformance role
+        env:
+          ROLE: ${{ secrets.AWS_CONFORMANCE_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ROLE" ]; then
+            echo "::error::The AWS_CONFORMANCE_ROLE_ARN repository secret is not set. The README says how to set it."
+            exit 1
+          fi
+          token="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)"
+          echo "::add-mask::$token"
+          creds="$(aws sts assume-role-with-web-identity \
+            --role-arn "$ROLE" \
+            --role-session-name "grantlink-conformance-$GITHUB_RUN_ID" \
+            --web-identity-token "$token" \
+            --duration-seconds 3600 \
+            --output json)"
+          account="$(jq -r .AssumedRoleUser.Arn <<< "$creds" | cut -d: -f5)"
+          key="$(jq -r .Credentials.AccessKeyId <<< "$creds")"
+          secret="$(jq -r .Credentials.SecretAccessKey <<< "$creds")"
+          session="$(jq -r .Credentials.SessionToken <<< "$creds")"
+          echo "::add-mask::$account"
+          echo "::add-mask::$key"
+          echo "::add-mask::$secret"
+          echo "::add-mask::$session"
+          {
+            echo "AWS_ACCESS_KEY_ID=$key"
+            echo "AWS_SECRET_ACCESS_KEY=$secret"
+            echo "AWS_SESSION_TOKEN=$session"
+            echo "TEXT_BUCKET=grantlink-text-$account"
+          } >> "$GITHUB_ENV"
+
+      # Runs after a failed assume too. A rename or a transfer changes the
+      # OIDC subject, so STS refuses the role, and
+      # test/github-oidc.conformance.ts is the check that says why.
+      - run: npm run conformance
+        if: ${{ !cancelled() }}
         env:
           GITHUB_TOKEN: ${{ github.token }}

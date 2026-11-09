@@ -388,6 +388,44 @@ Resources:
                   StringEquals:
                     s3:if-none-match: "*"
 
+  # Reads the private bucket's settings for the scheduled conformance run
+  # (#50): its public access block, its encryption and its policy, and
+  # nothing the bucket holds. That job names no environment, so the role
+  # trusts runs on main.
+  ConformanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: grantlink-conformance
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: repo:t-d-d@4635510/grantlink@1449324689:ref:refs/heads/main
+      Policies:
+        - PolicyName: read-bucket-settings
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadBucketSettings
+                Effect: Allow
+                Action:
+                  - s3:GetBucketPolicy
+                  - s3:GetBucketPublicAccessBlock
+                  - s3:GetEncryptionConfiguration
+                Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}
+              # Funding text and names stay in the private bucket (#10).
+              - Sid: NoPrivateObjects
+                Effect: Deny
+                Action: s3:*
+                Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/*
+
   # A session's route to the eval snapshot, as aws-access's grantlink-eval
   # profile (#9). It reads eval/ and nothing else, and its explicit denies
   # hold even if a broader policy is attached later. It denies kms:Decrypt
@@ -432,6 +470,9 @@ Outputs:
   CiEvalRoleArn:
     Description: Store as the AWS_EVAL_ROLE_ARN secret on the eval environment.
     Value: !GetAtt CiEvalRole.Arn
+  ConformanceRoleArn:
+    Description: Store as the AWS_CONFORMANCE_ROLE_ARN repository secret.
+    Value: !GetAtt ConformanceRole.Arn
   AccessEvalRoleArn:
     Description: For reference. aws-access's endpoint finds the role by its name, so nothing needs copying.
     Value: !GetAtt AccessEvalRole.Arn

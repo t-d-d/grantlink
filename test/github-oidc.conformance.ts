@@ -34,7 +34,13 @@ const Repository = z.object({
 });
 
 const template = readTemplate("infra/github-oidc.cfn.yml");
-const roles = { DeployRole: "prod", CiEvalRole: "eval" };
+// What each role trusts after the repository's own subject: an environment,
+// or main for the conformance run, whose job names none (#50).
+const roles = {
+  DeployRole: "environment:prod",
+  CiEvalRole: "environment:eval",
+  ConformanceRole: "ref:refs/heads/main",
+};
 
 const subjectOf = (role: string): unknown =>
   trustOf(resource(template, role))[0]?.Condition?.StringEquals?.[
@@ -63,9 +69,9 @@ beforeAll(async () => {
 
 describe("the roles' OIDC subject", () => {
   it.each(Object.entries(roles))(
-    "%s trusts GitHub's subject for the %s environment",
-    (role, environment) => {
-      expect(subjectOf(role)).toBe(`${subject}:environment:${environment}`);
+    "%s trusts GitHub's subject for %s",
+    (role, context) => {
+      expect(subjectOf(role)).toBe(`${subject}:${context}`);
     },
   );
 });
