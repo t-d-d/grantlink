@@ -145,6 +145,56 @@ describe("the table module", () => {
     expect([...done]).toEqual(["PMC11"]);
   });
 
+  it("asks again for unprocessed keys after a growing wait", async () => {
+    let calls = 0;
+    const { client, sent } = recorder(() => {
+      calls += 1;
+      return calls < 4
+        ? {
+            Responses: { results: [] },
+            UnprocessedKeys: { results: { Keys: [{ pmcid: "PMC11" }] } },
+          }
+        : { Responses: { results: [{ pmcid: "PMC11", status: "processed" }] } };
+    });
+    const waits: number[] = [];
+    const sleep = (ms: number) => {
+      waits.push(ms);
+      return Promise.resolve();
+    };
+    const done = await dynamoTable("results", client, sleep).processed([
+      "PMC11",
+    ]);
+    expect([...done]).toEqual(["PMC11"]);
+    expect(sent).toHaveLength(4);
+    expect(waits).toHaveLength(3);
+    expect(waits[0]).toBeGreaterThan(0);
+    expect(waits[1]).toBeGreaterThan(waits[0] ?? 0);
+    expect(waits[2]).toBeGreaterThan(waits[1] ?? 0);
+  });
+
+  it("waits only when keys come back unprocessed", async () => {
+    const { client } = recorder(() => ({
+      Responses: { results: [{ pmcid: "PMC11", status: "processed" }] },
+    }));
+    const waits: number[] = [];
+    await dynamoTable("results", client, (ms) => {
+      waits.push(ms);
+      return Promise.resolve();
+    }).processed(["PMC11"]);
+    expect(waits).toEqual([]);
+  });
+
+  it("gives up when keys stay unprocessed", async () => {
+    const { client } = recorder(() => ({
+      UnprocessedKeys: { results: { Keys: [{ pmcid: "PMC11" }] } },
+    }));
+    await expect(
+      dynamoTable("results", client, () => Promise.resolve()).processed([
+        "PMC11",
+      ]),
+    ).rejects.toThrow(/unprocessed/u);
+  });
+
   it("reads every row, page by page", async () => {
     const { client, sent } = recorder((command) =>
       (command as { input: { ExclusiveStartKey?: unknown } }).input
