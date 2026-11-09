@@ -345,6 +345,19 @@ describe("a failure to write or read the table is retried apart from Europe PMC'
     return fake;
   }
 
+  it("asks Europe PMC for 150 results a page, which fits in a checkpoint", async () => {
+    const fake = fakeDeps();
+    await runWith(fake);
+    const sizes = fake.requests
+      .filter(
+        (url) =>
+          url.searchParams.get("resultType") === "lite" && !isGoldSearch(url),
+      )
+      .map((url) => url.searchParams.get("pageSize"));
+    expect(sizes.length).toBeGreaterThan(0);
+    for (const size of sizes) expect(size).toBe("150");
+  });
+
   for (const method of ["addFound", "processed"] as const) {
     it(`does not call Europe PMC again or use up its retries when ${method} keeps failing`, async () => {
       const fake = failingTable(method, Infinity);
