@@ -1,0 +1,27 @@
+{
+  "name": "grantlink",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^22.18.0 || >=23.6.0"
+  },
+  "scripts": {
+    "gate": "npm run format && npm run lint && npm run types && npm run test",
+    "format": "prettier --check .",
+    "lint": "eslint . --max-warnings 0",
+    "types": "tsc -p .",
+    "test": "vitest run --project static --project unit --project int",
+    "test:live": "vitest run --project live",
+    "conformance": "vitest run --project conformance"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.5",
+    "eslint": "10.12.0",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "vitest": "5.0.3"
+  }
+}
