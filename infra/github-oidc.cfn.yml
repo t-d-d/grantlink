@@ -1,0 +1,302 @@
+# The roles GitHub Actions and the eval sessions use, and GitHub's OIDC
+# provider. The owner applies it by hand in us-east-1, after the DNS stack
+# and before the first deploy. How to apply it is in the README.
+#
+# Nothing here holds an account id. Each ARN is built from the account the
+# stack runs in, and access-eval reads the access account's id from SSM.
+# The ARNs in the outputs carry the account id, so they are secrets.
+AWSTemplateFormatVersion: "2010-09-09"
+Description: grantlink roles for GitHub Actions and eval sessions (us-east-1)
+
+Parameters:
+  PrivateBucketName:
+    Type: String
+    AllowedPattern: "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+    Description: The private bucket for funding text and evals. The app stack creates it with the same name.
+  AccessAccountId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /access/account-id
+    Description: The SSM parameter holding the access account's id, so this template holds none.
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  # Deploys from a green merge to main, in the prod environment only (#8).
+  # It may change only the app stack, in London, through CloudFormation and
+  # the execution role, then publish the page's files and invalidate the
+  # cache. It can never read or write the private bucket.
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: grantlink-deploy
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: repo:t-d-d/grantlink:environment:prod
+      Policies:
+        - PolicyName: deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ValidateTemplates
+                Effect: Allow
+                Action: cloudformation:ValidateTemplate
+                Resource: "*"
+              - Sid: AppStackInLondon
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResource
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:GetTemplate
+                  - cloudformation:ListStackResources
+                  - cloudformation:UpdateStack
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:eu-west-2:${AWS::AccountId}:stack/grantlink-prod/*
+              - Sid: PassExecutionRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt DeployExecutionRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: cloudformation.amazonaws.com
+              - Sid: ReadAppFunctions
+                Effect: Allow
+                Action:
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:ListVersionsByFunction
+                Resource: !Sub arn:${AWS::Partition}:lambda:eu-west-2:${AWS::AccountId}:function:grantlink-prod-*
+              - Sid: ArtifactAndSiteBuckets
+                Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-*
+              - Sid: ArtifactAndSiteObjects
+                Effect: Allow
+                Action:
+                  - s3:DeleteObject
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-*/*
+              - Sid: InvalidatePage
+                Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                  - cloudfront:GetInvalidation
+                Resource: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*
+              # Funding text and names stay in the private bucket (#10), and
+              # only CI files eval reports (#9).
+              - Sid: NoPrivateBucket
+                Effect: Deny
+                Action: s3:*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}
+                  - !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/*
+
+  # The role CloudFormation takes to build the app stack, so the deploy role
+  # itself holds no rights to create resources. It manages buckets but no
+  # objects, and only the app stack's own roles. Those roles have no
+  # permissions boundary yet, so what the app stack declares, reviewed and
+  # merged to main, bounds what a deploy can reach.
+  DeployExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: grantlink-deploy-execution
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: app-stack
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AppServices
+                Effect: Allow
+                Action:
+                  - cloudfront:*
+                  - cloudwatch:*
+                  - dynamodb:*
+                  - events:*
+                  - lambda:*
+                  - logs:*
+                  - scheduler:*
+                  - sns:*
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: "*"
+              - Sid: Buckets
+                Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:DeleteBucket
+                  - s3:DeleteBucketPolicy
+                  - s3:GetBucket*
+                  - s3:GetEncryptionConfiguration
+                  - s3:GetLifecycleConfiguration
+                  - s3:ListBucket
+                  - s3:PutBucket*
+                  - s3:PutEncryptionConfiguration
+                  - s3:PutLifecycleConfiguration
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::grantlink-*
+                  - !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}
+              - Sid: Certificate
+                Effect: Allow
+                Action:
+                  - acm:DescribeCertificate
+                  - acm:ListCertificates
+                Resource: "*"
+              - Sid: AliasRecords
+                Effect: Allow
+                Action:
+                  - route53:ChangeResourceRecordSets
+                  - route53:GetChange
+                  - route53:GetHostedZone
+                  - route53:ListHostedZones
+                  - route53:ListResourceRecordSets
+                Resource: "*"
+              - Sid: AppRoles
+                Effect: Allow
+                Action:
+                  - iam:AttachRolePolicy
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:DeleteRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRolePolicies
+                  - iam:PassRole
+                  - iam:PutRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:UpdateRole
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/grantlink-prod-*
+
+  # Runs the eval in CI, in the eval environment only (#9). It reads the
+  # snapshot and the reports, and adds a report only under a key that is
+  # free: S3 refuses the write if the key exists, so a report is never
+  # overwritten. It deletes nothing.
+  CiEvalRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: grantlink-ci-eval
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: repo:t-d-d/grantlink:environment:eval
+      Policies:
+        - PolicyName: eval
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadSnapshotAndReports
+                Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval/*
+                  - !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval-reports/*
+              # Listing with a prefix is how the eval asks whether a report
+              # exists. A HeadObject on a missing key carries no prefix, so it
+              # is refused, not answered with 404.
+              - Sid: ListEvalPrefixes
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - eval/*
+                      - eval-reports/*
+              - Sid: AddReportsOnly
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval-reports/*
+                Condition:
+                  StringEquals:
+                    s3:if-none-match: "*"
+
+  # A session's route to the eval snapshot, as aws-access's grantlink-eval
+  # profile (#9). It reads eval/ and nothing else, and its explicit denies
+  # hold even if a broader policy is attached later. It denies kms:Decrypt
+  # too, so the private bucket uses S3's own encryption.
+  AccessEvalRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: access-eval
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AccessAccountId}:role/claude-grantlink
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: read-snapshot
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadSnapshot
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval/*
+              - Sid: DenyOtherActions
+                Effect: Deny
+                NotAction: s3:GetObject
+                Resource: "*"
+              - Sid: DenyOtherObjects
+                Effect: Deny
+                Action: s3:GetObject
+                NotResource: !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval/*
+
+Outputs:
+  DeployRoleArn:
+    Description: Store as the AWS_DEPLOY_ROLE_ARN secret on the prod environment.
+    Value: !GetAtt DeployRole.Arn
+  DeployExecutionRoleArn:
+    Description: Store as the AWS_DEPLOY_EXECUTION_ROLE_ARN secret on the prod environment.
+    Value: !GetAtt DeployExecutionRole.Arn
+  CiEvalRoleArn:
+    Description: Store as the AWS_EVAL_ROLE_ARN secret on the eval environment.
+    Value: !GetAtt CiEvalRole.Arn
+  AccessEvalRoleArn:
+    Description: Give to aws-access for the grantlink-eval profile.
+    Value: !GetAtt AccessEvalRole.Arn
