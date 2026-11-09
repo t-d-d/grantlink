@@ -70,6 +70,15 @@ describe("fitness: the bucket stays private (storage.md)", () => {
       Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }],
     });
     expect(bucket.AccessControl).toBeUndefined();
+    // osls merges serverless.yml's later entries over the template, so an
+    // override there would change the bucket without showing above.
+    const extensions = (serverless.resources as unknown[]).flatMap((entry) =>
+      typeof entry === "object" && entry !== null && "extensions" in entry
+        ? Object.keys((entry as { extensions: object }).extensions)
+        : [],
+    );
+    expect(Object.keys(inlineResources)).not.toContain("TextBucket");
+    expect(extensions).not.toContain("TextBucket");
   });
 
   it("is encrypted with S3's own keys", () => {
