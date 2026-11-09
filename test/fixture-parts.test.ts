@@ -70,6 +70,15 @@ describe("strayParts", () => {
       "article/body/sec",
     ],
     [
+      "the sec-meta of a funding section, which can name people (#222)",
+      {
+        body:
+          "<body><sec><sec-meta><contrib-group><contrib><name>A</name></contrib></contrib-group></sec-meta>" +
+          "<title>Funding</title><p>Funded.</p></sec></body>",
+      },
+      "article/body/sec/sec-meta",
+    ],
+    [
       "the author list",
       {
         meta: "<contrib-group><contrib><name>A</name></contrib></contrib-group>",
