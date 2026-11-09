@@ -1,8 +1,10 @@
-// Runs two workflow steps that write to $GITHUB_OUTPUT under bash, the way
-// a runner does when a step names no shell (`bash -e {0}`), and checks a
-// failing command inside the step fails the step (#111). A failure inside
-// `echo "x=$(cmd)"` does not stop a script, even under `set -e`, so the
-// step would succeed with an empty value.
+// Runs workflow steps that write to $GITHUB_OUTPUT or $GITHUB_ENV under
+// bash, the way a runner does when a step names no shell (`bash -e {0}`),
+// and checks a failing command inside the step fails the step (#111). A
+// failure inside `echo "x=$(cmd)"` does not stop a script, even under
+// `set -e`, so the step would succeed with an empty value. The role steps
+// must fail too when the STS reply lacks a field, where `jq -r` would print
+// `null` and succeed (#122).
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -21,7 +23,7 @@ import { deploy, evalWorkflow, type Workflow } from "./app.ts";
 // The system commands the steps and the stubs run. The step's PATH holds
 // only these and the stubs, so a call nothing stubs fails instead of
 // reaching AWS.
-const commands = ["bash", "cat", "jq"];
+const commands = ["bash", "cat", "cut", "jq"];
 const found = execFileSync("bash", ["-c", `command -v ${commands.join(" ")}`], {
   encoding: "utf8",
 })
@@ -29,8 +31,11 @@ const found = execFileSync("bash", ["-c", `command -v ${commands.join(" ")}`], {
   .split("\n");
 const bash = found[0] ?? "";
 
+// Finds a step by its id or, for a step with none, its name.
 function script(workflow: Workflow, job: string, id: string): string {
-  const step = workflow.jobs[job]?.steps?.find((each) => each.id === id);
+  const step = workflow.jobs[job]?.steps?.find(
+    (each) => each.id === id || each.name === id,
+  );
   if (step?.run === undefined) throw new Error(`no step ${job}.${id}`);
   return step.run;
 }
@@ -41,8 +46,13 @@ afterEach(() => {
 });
 
 // Runs the step in an empty directory, with the stubs and the system
-// commands above as its whole PATH.
-function runStep(run: string, stubs: Record<string, string> = {}) {
+// commands above as its whole PATH, and any extra environment the step
+// reads.
+function runStep(
+  run: string,
+  stubs: Record<string, string> = {},
+  env: Record<string, string> = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), "grantlink-step-"));
   dirs.push(dir);
   const bin = join(dir, "bin");
@@ -57,14 +67,26 @@ function runStep(run: string, stubs: Record<string, string> = {}) {
   }
   const output = join(dir, "output");
   writeFileSync(output, "");
+  const githubEnv = join(dir, "env");
+  writeFileSync(githubEnv, "");
   const step = join(dir, "step.sh");
   writeFileSync(step, run);
   const result = spawnSync(bash, ["-e", step], {
     cwd: work,
     encoding: "utf8",
-    env: { PATH: bin, GITHUB_OUTPUT: output, HOME: dir },
+    env: {
+      ...env,
+      PATH: bin,
+      GITHUB_OUTPUT: output,
+      GITHUB_ENV: githubEnv,
+      HOME: dir,
+    },
   });
-  return { status: result.status, output: readFileSync(output, "utf8") };
+  return {
+    status: result.status,
+    output: readFileSync(output, "utf8"),
+    env: readFileSync(githubEnv, "utf8"),
+  };
 }
 
 describe("the eval's fingerprint step", () => {
@@ -137,4 +159,101 @@ describe("the deploy's stack outputs", () => {
       expect(runStep(run, { aws: aws(outputs(keys)) }).status).not.toBe(0);
     },
   );
+});
+
+const account = "account-placeholder";
+
+// What STS answers, less any field a case drops. The stubs answer the
+// token request and the assume-role call; every value is a placeholder.
+function stsReply(drop?: string): string {
+  const reply = {
+    Credentials: {
+      AccessKeyId: "key-placeholder",
+      SecretAccessKey: "secret-placeholder",
+      SessionToken: "session-placeholder",
+    },
+    AssumedRoleUser: {
+      Arn: `arn:aws:sts::${account}:assumed-role/grantlink/run`,
+    },
+  };
+  if (drop === "Arn") return JSON.stringify({ ...reply, AssumedRoleUser: {} });
+  if (drop === "AccountId") {
+    return JSON.stringify({
+      ...reply,
+      AssumedRoleUser: { Arn: "arn:aws:sts" },
+    });
+  }
+  if (drop === "ArnFields") {
+    return JSON.stringify({
+      ...reply,
+      AssumedRoleUser: { Arn: "not-an-arn" },
+    });
+  }
+  const credentials = Object.fromEntries(
+    Object.entries(reply.Credentials).filter(([key]) => key !== drop),
+  );
+  return JSON.stringify({ ...reply, Credentials: credentials });
+}
+
+const roleEnv = {
+  ROLE: "role-placeholder",
+  ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-placeholder",
+  ACTIONS_ID_TOKEN_REQUEST_URL: "http://127.0.0.1/token?x=1",
+  GITHUB_RUN_ID: "1",
+};
+
+function assumeRole(run: string, reply: string) {
+  return runStep(
+    run,
+    {
+      curl: `echo '{"value":"token-placeholder"}'`,
+      aws: `cat <<'EOF'\n${reply}\nEOF`,
+    },
+    roleEnv,
+  );
+}
+
+const missingFields = [
+  "AccessKeyId",
+  "SecretAccessKey",
+  "SessionToken",
+  "Arn",
+  "AccountId",
+  "ArnFields",
+];
+
+describe.each([
+  {
+    title: "the eval's role step",
+    run: script(evalWorkflow, "eval", "Assume the eval role"),
+    extra: [`grantlink-text-${account}`],
+  },
+  {
+    title: "the deploy's role step",
+    run: script(deploy, "deploy", "Assume the deploy role"),
+    extra: [],
+  },
+])("$title", ({ run, extra }) => {
+  // The values only: no test in the gate names the variables that hold a
+  // key (code-and-tests.md), and the static tests read the names.
+  it("writes the credentials STS gave it", () => {
+    const { status, env } = assumeRole(run, stsReply());
+    expect(status).toBe(0);
+    const values = env
+      .trimEnd()
+      .split("\n")
+      .map((line) => line.slice(line.indexOf("=") + 1));
+    expect(values).toEqual([
+      "key-placeholder",
+      "secret-placeholder",
+      "session-placeholder",
+      ...extra,
+    ]);
+  });
+
+  it.each(missingFields)("fails when the reply has no %s", (field) => {
+    const { status, env } = assumeRole(run, stsReply(field));
+    expect(status).not.toBe(0);
+    expect(env).toBe("");
+  });
 });
