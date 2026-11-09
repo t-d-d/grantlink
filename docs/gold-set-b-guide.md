@@ -2,9 +2,13 @@
 
 Gold set B is 100 open-access papers that name Cancer Research UK in their
 funding or acknowledgement text, but that Europe PMC links to no CRUK grant
-(#3). You label each one by hand in the sheet, against this guide (#22).
-Your labels are the answers the eval scores the rules and the model
-against, so they say what the paper itself says, nothing more.
+(#3). Two model passes propose each paper's labels against this guide,
+and you check every one in the sheet (#22, #175). The labels are the
+answers the eval scores the rules and the model against, so they say what
+the paper itself says, nothing more.
+
+The eval scores only the references. `funded` and `note` help whoever
+checks a row, and `evals/gold-b.json` keeps only each paper's references.
 
 The sample and how it was drawn are in `docs/gold-set-b-sample.json`. The
 sheet's rows are in `docs/gold-set-b-sheet.csv`.
@@ -22,17 +26,39 @@ people are described by role. No example quotes a real paper.
 | `references_as_written` | Each CRUK grant reference exactly as the paper prints it, separated by `; `. Blank if there is none. |
 | `references_normalised` | The same references normalised, in the same order. Blank if there is none. |
 | `note` | Why, when the answer is `unclear` or the case is hard. A few words. |
+| `passes` | Filled in. `passes agreed`, `a pass was unsure`, `passes differed on funded`, or `settled with you` for the 18 papers you settled while setting the rules. |
+| `look_in` | Filled in. Where in the paper the passes found CRUK's funding or references. |
+| `checked` | `y` once you have checked the row and fixed anything wrong. |
+
+The sheet's `proposed` tab keeps the passes' labels as they were. Leave it
+alone: #23 compares it with your labels to count how many you changed.
 
 Never copy the paper's sentences or anyone's name into the sheet, the
 note included. The sheet holds ids and labels. The paper's text stays on
 Europe PMC (`docs/constraints/personal-data.md`).
 
+## Checking a proposed label
+
+Check the references first, as they are what the eval scores. Start with
+the rows marked `a pass was unsure` or `passes differed on funded`, then
+the rest.
+
+1. Open the paper and go to the place `look_in` names.
+2. Find each proposed reference with your browser's find. Check that the
+   text ties it to CRUK by one of the rules below, and that
+   `references_as_written` matches the print character for character.
+3. Find `Cancer Research`, `CRUK` and `CR-UK` too, and read every place
+   they appear, for any CRUK reference the passes missed.
+4. Fix `funded`, the references or the note if they are wrong, and put `y`
+   in `checked`.
+
 ## Finding the funding statement
 
 1. Open the link in the `europe_pmc` column. Every paper in the sample has
    its full text on Europe PMC.
-2. Use your browser's find for each of `Cancer Research`, `CRUK` and
-   `U.K.`, and read every place they appear.
+2. Use your browser's find for each of `Cancer Research`, `CRUK`, `CR-UK`
+   and `U.K.`, and read every place they appear. Another charity's name
+   can contain `Cancer Research, UK`, so read the whole name.
 3. Check each of these, as each journal puts funding in a different place:
    - a section headed Funding, Financial support or Grant support, in the
      body or near the end;
@@ -79,9 +105,12 @@ reference twice in different ways, record each way once.
 - every space removed;
 - every backslash (`\`) and set minus sign (`∖`) turned into a forward
   slash (`/`);
-- every letter in upper case.
+- every letter in upper case;
+- every Unicode hyphen or dash, such as `‐` (U+2010), turned into `-`;
+- a `CRUK` joined to the front of a reference dropped.
 
-This is the form the rules produce (`src/extract/rules.ts`).
+The rules produce the same form (`src/extract/rules.ts`). The last two
+steps cover forms the rules cannot read yet (#177).
 
 | As written | Normalised |
 | --- | --- |
@@ -91,6 +120,8 @@ This is the form the rules produce (`src/extract/rules.ts`).
 | `ABCDEF\100001` | `ABCDEF/100001` |
 | `ABCDEF-2021∖100002` | `ABCDEF-2021/100002` |
 | `ABCDE-Jun24/100003` | `ABCDE-JUN24/100003` |
+| `ABCDE‐Jun24/100003` | `ABCDE-JUN24/100003` |
+| `CRUKC1234/A56789` | `C1234/A56789` |
 
 Leave a reference out, and say so in the note, when:
 
@@ -135,8 +166,9 @@ Note: `centre and institute core funding`.
 > We thank the CRUK Exampletown Institute's imaging facility for their
 > help.
 
-`funded`: `unclear`. References: blank. Note: `facility thanked, no
-funding stated`.
+`funded`: `no` when the paper's funding statement leaves CRUK out, and
+`unclear` when the paper has no funding statement. References: blank.
+Note: `affiliation or facility only`.
 
 ### An affiliation only
 
@@ -174,8 +206,45 @@ which reference is CRUK's`.
 
 `funded`: `yes`. References: blank. Note: `no reference`.
 
+## Rules agreed while labelling
+
+The owner settled these on 18 papers the guide left open (#175).
+
+1. **An affiliation or a facility only.** CRUK named only in an
+   affiliation, or as a facility the authors used, is `no` when the paper's
+   funding statement leaves CRUK out, and `unclear` when the paper has no
+   funding statement.
+2. **CRUK's own format.** A reference like `C1234/A56789` counts even when
+   the text credits it to a CRUK-funded centre, as in "the Example Centre
+   of Excellence (C1111/A22222)". Note: `matched by CRUK's format`.
+3. **The Francis Crick Institute.** "Supported by the Francis Crick
+   Institute, which receives its core funding from Cancer Research UK
+   (FC001234), the Medical Research Council (FC001234) and Wellcome
+   (FC001234)" is `yes`, with `FC001234` once. The newer `CC2001` style
+   counts the same way. With no number, it is `yes` and the references are
+   blank.
+4. **"CRUK" joined to a reference.** As written keeps `CRUKC1234/A56789`.
+   Normalised drops the `CRUK`: `C1234/A56789`.
+5. **Consortium funding.** When the paper's funding section lists the CRUK
+   grants behind a consortium or cohort whose data it used, every one
+   counts. Note: `consortium funding listed`.
+6. **Malformed or truncated.** Record a reference as printed, such as
+   `C1234 /A567`, and never correct it. Note: `looks truncated`.
+7. **Generic support.** "The authors acknowledge support from Cancer
+   Research UK" in a funding or acknowledgement passage is `yes`.
+8. **Pooled schemes.** "Supported by the Example Prevention Partnership
+   (MR/X000000/1), which ten funders including Cancer Research UK fund" is
+   `yes`, but the number is the other funder's and is left out. Note:
+   `pooled scheme, number is not CRUK's`. A joint award named for CRUK, as
+   in "the Example-Cancer Research UK Challenge Award RT1234", counts.
+
+A bare number counts when the text ties it to CRUK by name, as in "a CRUK
+Example grant (12345)". Never count a DOI funder-registry number
+(`10.13039/…`), a GRID or ROR id, an ORCID, an ethics approval, a trial
+registration or a dataset accession.
+
 ## When you are done
 
-Every row has `funded` set, and its references where it has any (#22).
-Export the sheet as CSV. #23 commits the ids and labels to the repo, and
-nothing else from the sheet.
+Every row has `funded` set, its references where it has any, and `y` in
+`checked` (#22). Export the main tab as CSV. #23 commits the ids and
+references to the repo, and nothing else from the sheet.
