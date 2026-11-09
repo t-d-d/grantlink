@@ -187,12 +187,14 @@ export function fakeEuropePmc(options: FakeSearches = {}) {
       return Promise.resolve(reply(fixture(file)));
     }
     const pmcid = /\/(PMC\d+)\/fullTextXML$/u.exec(url.pathname)?.[1] ?? "";
-    // Gold set B's papers, which the snapshot reads from the real labels,
-    // answer with a full text written by hand.
-    const file = LABELLED.has(pmcid) ? "PMC0000003" : pmcid;
     try {
-      return Promise.resolve(reply(fixture(`${file}.xml`)));
+      return Promise.resolve(reply(fixture(`${pmcid}.xml`)));
     } catch {
+      // Gold set B's papers, which the snapshot reads from the real labels,
+      // answer with a full text written by hand unless one is recorded.
+      if (LABELLED.has(pmcid)) {
+        return Promise.resolve(reply(fixture("PMC0000003.xml")));
+      }
       return Promise.resolve(reply("", 503));
     }
   };
