@@ -324,7 +324,7 @@ describe("searching Europe PMC", () => {
     expect(page.skipped).toBe(1);
   });
 
-  it("fails a page whose every PMCID is malformed, rather than find nothing", async () => {
+  it("keeps a page whose every PMCID is malformed as a page of no papers, and counts them", async () => {
     const { client } = harness(() =>
       Response.json({
         hitCount: 3,
@@ -338,9 +338,10 @@ describe("searching Europe PMC", () => {
         },
       }),
     );
-    await expect(client.search("*")).rejects.toThrow(
-      "all 2 PMCIDs on a page of 3 results were malformed",
-    );
+    const page = await client.search("*");
+    expect(page.papers).toEqual([]);
+    expect(page.skipped).toBe(2);
+    expect(page.nextCursor).toBe("AoE");
   });
 
   it("returns a page of results with no PMCID as an empty page", async () => {

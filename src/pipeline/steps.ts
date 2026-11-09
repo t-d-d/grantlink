@@ -32,6 +32,8 @@ export interface SearchResult {
   hitCount: number;
   // This page's papers with full text.
   papers: SearchPaper[];
+  // How many of this page's results carried a malformed PMCID.
+  skipped: number;
   nextCursor: string | null;
 }
 
@@ -50,8 +52,23 @@ export async function searchPage(
   return {
     hitCount: page.hitCount,
     papers: page.papers,
+    skipped: page.skipped,
     nextCursor: page.nextCursor,
   };
+}
+
+// A whole search that skipped results for a malformed PMCID and found no
+// papers at all is taken as Europe PMC changing how it writes PMCIDs, not
+// as a search that found nothing, and fails. A page is not judged alone:
+// one bad record on a small page is skipped and counted, and the rest of
+// the search goes on (#118). The run's search then fails the run, and gold
+// set A's search fails the snapshot, which waits for the next run.
+export function checkWholeSearch(found: number, skipped: number): void {
+  if (skipped > 0 && found === 0) {
+    throw new Error(
+      `the search skipped ${String(skipped)} results for a malformed PMCID and found no papers`,
+    );
+  }
 }
 
 // Records each paper a page of the run's search found, and that this run's
