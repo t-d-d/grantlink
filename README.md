@@ -19,7 +19,7 @@ Apply them in this order.
      --stack-name grantlink-dns --template-file infra/dns.cfn.yml
    ```
 
-   The stack waits until ACM has validated the certificate, which needs the registrar to point at the new zone. While it waits, read the zone's nameservers in the Route 53 console, or with `aws route53 get-hosted-zone`, and set them at the registrar. The stack outputs them too, once it finishes. The zone is kept if the stack is deleted, so the nameservers never change under the registrar.
+   The stack waits until ACM has validated the certificate, which needs the registrar to point at the new zone. While it waits, read the zone's nameservers in the Route 53 console, or with `aws route53 get-hosted-zone`, and set them at the registrar. The stack outputs them too, once it finishes. Once the stack exists, the zone is kept if the stack is deleted, so the nameservers never change under the registrar. If this first create fails and rolls back, the zone is deleted with it. If you had already set its nameservers at the registrar, remove them there straight away, then apply the stack again and set the new zone's nameservers.
 
 2. **The roles stack**, [infra/github-oidc.cfn.yml](infra/github-oidc.cfn.yml): GitHub's OIDC provider, the deploy role and the role CloudFormation takes to build the app stack, the CI eval role, and `access-eval` for aws-access's `grantlink-eval` profile. It creates GitHub's OIDC provider, and an account holds only one, so the stack fails if the account already has it. It needs the SSM parameter `/access/account-id` in us-east-1 to hold the access account's id, and the private bucket's name, which the app stack uses too.
 

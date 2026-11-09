@@ -6,9 +6,8 @@ import { readTemplate, resource } from "./cfn.ts";
 const template = readTemplate("infra/dns.cfn.yml");
 
 describe("the DNS stack", () => {
-  // RetainExceptOnCreate keeps the zone when an established stack goes, but
-  // deletes it when the first create rolls back, so a failed bootstrap
-  // leaves no orphan zone behind (#38). Replacement has no such option.
+  // Not kept if the first create rolls back, so a failed bootstrap leaves
+  // no unused zone behind (#38).
   it("holds the hosted zone for grantlink.uk, kept if the stack goes", () => {
     const zone = resource(template, "HostedZone");
     expect(zone.Type).toBe("AWS::Route53::HostedZone");
