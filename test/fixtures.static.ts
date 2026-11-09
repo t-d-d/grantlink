@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FIXTURES, fixture, sources } from "./fixtures.ts";
+import { FIXTURES, RECORDED, fixture, sources } from "./fixtures.ts";
 import { repoFiles } from "./repo.ts";
 
 // Europe PMC's responses in the repo, which the repo being public makes
@@ -43,6 +43,36 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
     for (const [, open = ""] of text.matchAll(/<sec\b([^>]*)>/gu)) {
       expect(open).toContain('sec-type="funding"');
     }
+  });
+
+  // #49: the integration tier reads Europe PMC's real replies, not only
+  // ones written in their shape.
+  it("holds at least three full texts recorded from papers", () => {
+    expect(
+      RECORDED.filter((entry) => entry.file.endsWith(".xml")).length,
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it.each(RECORDED)(
+    "$file names the Europe PMC full text it was recorded from",
+    (entry) => {
+      const pmcid = entry.file.replace(/\.xml$/u, "");
+      expect(entry.origin).toBe(
+        `recorded from https://www.ebi.ac.uk/europepmc/webservices/rest/${pmcid}/fullTextXML`,
+      );
+    },
+  );
+
+  // The licence a recorded paper carries is the one its entry lists.
+  it.each(RECORDED)("$file carries the licence it is listed under", (entry) => {
+    const [, kind = "", version = ""] =
+      /^CC-(BY)-(\d\.\d)$/u.exec(entry.licence) ?? [];
+    const url =
+      kind === ""
+        ? "creativecommons.org/publicdomain/zero/1.0/"
+        : `creativecommons.org/licenses/by/${version}/`;
+    expect(fixture(entry.file)).toMatch(/<license\b/u);
+    expect(fixture(entry.file)).toContain(url);
   });
 
   it("says how each fixture came to be", () => {

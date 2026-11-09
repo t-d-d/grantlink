@@ -11,7 +11,7 @@ import {
   vi,
 } from "vitest";
 import { fakeDeps, isGoldSearch, reply } from "../../test/fakes.ts";
-import { NAMES } from "../../test/fixtures.ts";
+import { NAMES, RECORDED } from "../../test/fixtures.ts";
 import { EuropePmcError } from "../europepmc/client.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
@@ -76,10 +76,10 @@ describe("a run over the back catalogue", () => {
     const { status, result } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
     expect(result).toMatchObject({
-      found: 4,
-      read: 3,
+      found: 8,
+      read: 7,
       failed: 1,
-      published: { published: true, references: 4 },
+      published: { published: true, references: 7 },
     });
 
     const row = fake.table.rows.get("PMC0000001");
@@ -96,6 +96,22 @@ describe("a run over the back catalogue", () => {
     expect(page).toContain("What it found");
     expect(page).toContain("RRCOER-Jun24/100008");
     expect(page).toContain("https://europepmc.org/article/PMC/PMC0000002");
+  });
+
+  it("reads the papers recorded from Europe PMC, and finds their references", async () => {
+    const fake = fakeDeps();
+    await runWith(fake);
+    expect(RECORDED.length).toBeGreaterThanOrEqual(3);
+    for (const entry of RECORDED) {
+      const pmcid = entry.file.replace(/\.xml$/u, "");
+      expect(fake.table.rows.get(pmcid)?.status).toBe("processed");
+    }
+    const page = fake.site.files?.["index.html"] ?? "";
+    expect(page).toContain("C9685/A25117");
+    expect(page).toContain("C47608/A29957");
+    expect(page).toContain("https://europepmc.org/article/PMC/PMC13628515");
+    // A CRUK studentship with no grant id gives no reference.
+    expect(fake.table.rows.get("PMC13664392")?.references).toEqual([]);
   });
 
   it("keeps the funding text in the bucket, and only there", () => {
@@ -137,8 +153,8 @@ describe("a run over the back catalogue", () => {
     expect(again.result?.read).toBe(0);
     expect(again.result?.published).toEqual({
       published: true,
-      papers: 4,
-      references: 4,
+      papers: 8,
+      references: 7,
     });
     expect(fake.site.files?.["index.html"]).toContain("RRCOER-Jun24/100008");
   });
