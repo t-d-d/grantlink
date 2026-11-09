@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { shownScore } from "./floors.ts";
+import { FLOORS, shownScore } from "./floors.ts";
 import { report, verdict, type Judged, type Report } from "./report.ts";
 
 // What CI does with a report (docs/constraints/deploy-gates.md). Run
@@ -77,14 +77,19 @@ export type OlderFormat = "older-format";
 // score. Older code may have filed it before a row or a field was added, so
 // unknown keys are dropped and rows are matched by id, not position (#153).
 // CI's own report and the gate keep the strict schema in report.ts.
+// A report that shares no row with this code has nothing to compare, so it
+// reads as one this code cannot read.
+const known = new Set<string>(FLOORS.map((floor) => floor.id));
 const liveReport = z.object({
   // The link goes into the comment, so it must still be an Actions run.
-  runUrl: z
-    .url({ protocol: /^https$/u })
-    .regex(/^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+/u),
-  rows: z.array(
-    z.object({ id: z.string(), score: z.number().nonnegative().nullable() }),
-  ),
+  runUrl: report.shape.runUrl,
+  rows: z
+    .array(
+      z.object({ id: z.string(), score: z.number().nonnegative().nullable() }),
+    )
+    .refine((list) => list.some((row) => known.has(row.id)), {
+      message: "a live report shares a row with this code",
+    }),
 });
 export type LiveReport = z.infer<typeof liveReport>;
 
@@ -108,7 +113,7 @@ export function readLive(
   if (parsed.success) return parsed.data;
   const why = parsed.error.issues.map(
     (issue) =>
-      `${issue.code} at ${issue.path.map(String).join(".") || "(root)"}${"keys" in issue ? ` (${issue.keys.join(", ")})` : ""}`,
+      `${issue.code} at ${issue.path.map(String).join(".") || "(root)"}`,
   );
   warn(
     `::warning::The live release's report does not parse: ${why.join("; ")}.`,
@@ -121,7 +126,7 @@ export function comment(
   live: LiveReport | NoLive | OlderFormat,
 ): string {
   const mine = verdict(ci);
-  // The first row with an id stands, as verdict reads a report in order.
+  // The lenient schema lets an id repeat. The first row with it stands.
   const theirs = new Map<string, number | null>();
   if (typeof live !== "string") {
     for (const row of live.rows) {

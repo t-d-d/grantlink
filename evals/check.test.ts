@@ -152,11 +152,17 @@ describe("the pull request's comment", () => {
     expect(text).toContain(
       "| Recall | Gold set A | 95% or more | 96.0% | 90.0% | go |",
     );
-    expect(text).not.toContain("gone");
+    // The unknown row's score would show if rows were read by position.
+    expect(text).not.toContain("10.0%");
   });
 
   it.each([
     ["without rows", (live: Report) => ({ ...live, rows: "none" })],
+    ["with no rows", (live: Report) => ({ ...live, rows: [] })],
+    [
+      "with no row this code knows",
+      (live: Report) => ({ ...live, rows: [{ id: "gone", score: 0.1, n: 3 }] }),
+    ],
     ["without a run", (live: Report) => ({ ...live, runUrl: undefined })],
     [
       "with a row that has no score",
