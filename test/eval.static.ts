@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { noLive } from "../evals/check.ts";
 import { INPUTS } from "../evals/fingerprint.ts";
-import { evalWorkflow as workflow, site, type Step } from "./app.ts";
+import { appStack, evalWorkflow as workflow, type Step } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The eval workflow (#9, #20): the report is a cache keyed by the
@@ -182,7 +182,7 @@ describe("the gate and the comment", () => {
   // beside the page, so the commit in it is the live release (#85).
   it("takes the live release from the release record on the live page", () => {
     const live = named("Read the live release's report");
-    const domain = site.Parameters?.DomainName?.Default;
+    const domain = appStack.Parameters?.DomainName?.Default;
     expect(domain).toBe("grantlink.uk");
     expect(live?.env?.RELEASE_URL).toBe(
       `https://${String(domain)}/release.json`,

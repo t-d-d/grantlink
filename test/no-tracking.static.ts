@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { site } from "./app.ts";
+import { appStack } from "./app.ts";
 import { resource } from "./cfn.ts";
 import { foreignLoads } from "./page.ts";
 import { readRepoFile, repoFiles } from "./repo.ts";
@@ -11,13 +11,13 @@ const page = new URL("https://grantlink.uk/");
 
 describe("fitness: CloudFront keeps no access logs (no-tracking.md)", () => {
   it("gives the distribution no logging", () => {
-    const config = resource(site, "Distribution").Properties
+    const config = resource(appStack, "Distribution").Properties
       .DistributionConfig as Record<string, unknown>;
     expect(config.Logging).toBeUndefined();
   });
 
   it("declares no real-time logs or log delivery", () => {
-    const types = Object.values(site.Resources).map((r) => r.Type);
+    const types = Object.values(appStack.Resources).map((r) => r.Type);
     expect(
       types.filter(
         (type) =>
@@ -44,7 +44,7 @@ describe("fitness: the page runs no script and loads nothing from another host (
   });
 
   it("tells browsers to load nothing from another host, and run no script", () => {
-    const policy = resource(site, "ResponseHeaders").Properties
+    const policy = resource(appStack, "ResponseHeaders").Properties
       .ResponseHeadersPolicyConfig as {
       SecurityHeadersConfig: {
         ContentSecurityPolicy: {
