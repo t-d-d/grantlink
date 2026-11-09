@@ -255,6 +255,7 @@ describe("searching Europe PMC", () => {
     const query = searchQuery();
     expect(query).toContain('ACK_FUND:"Cancer Research UK"');
     expect(query).toContain('ACK_FUND:"CRUK"');
+    expect(query).toContain('ACK_FUND:"CR-UK"');
     expect(query).toContain('NOT GRANT_AGENCY:"Cancer Research UK"');
     expect(query).toContain("FIRST_PDATE:[2020-01-01 TO 3000-12-31]");
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findReferences, RULES_VERSION } from "./rules.ts";
+import { findReferences, referenceSchema, RULES_VERSION } from "./rules.ts";
 
 // Every reference here is made up in the shape of one the PRD (#1) quotes.
 const sections = (...text: string[]) => ({ text, awards: [] });
@@ -68,6 +68,20 @@ describe("the rules", () => {
         ),
       ),
     ).toEqual([]);
+  });
+
+  it("leaves a lowercase g number", () => {
+    expect(findReferences(sections("Cancer Research UK (g123/45)."))).toEqual(
+      [],
+    );
+  });
+
+  it("reads a G number after the funder's name in any case", () => {
+    expect(
+      findReferences(sections("Funded by cancer research uk (G123/45).")),
+    ).toEqual([
+      { asWritten: "G123/45", normalised: "G123/45", format: "Gn/n" },
+    ]);
   });
 
   it("leaves a G number in another funder's brackets", () => {
@@ -178,6 +192,26 @@ describe("the rules", () => {
         awards: [{ source: "Cancer Research UK", ids: ["28275"] }],
       }),
     ).toEqual([{ asWritten: "A28275", normalised: "A28275", format: "An" }]);
+  });
+
+  it("lists a bare number once when the text also gives it with its FC", () => {
+    expect(
+      findReferences({
+        text: ["Cancer Research UK (FC 001234)."],
+        awards: [{ source: "Cancer Research UK", ids: ["001234"] }],
+      }),
+    ).toEqual([
+      { asWritten: "FC 001234", normalised: "FC001234", format: "FCn" },
+    ]);
+  });
+
+  it("returns only references the table accepts, whatever space follows a hyphen", () => {
+    const found = findReferences(
+      sections("Cancer Research UK (ABCDEF-\u00a0Nov21/100001)."),
+    );
+    for (const reference of found) {
+      expect(referenceSchema.safeParse(reference).success).toBe(true);
+    }
   });
 
   it("leaves a bare number the metadata gives another funder", () => {

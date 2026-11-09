@@ -47,6 +47,12 @@ export type Reference = z.infer<typeof referenceSchema>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 const NAMES = funder.names.map(escape).join("|");
+// The names again, matching in any case without the `i` flag, for a pattern
+// whose own letters must keep their case.
+const ANY_CASE_NAMES = NAMES.replace(
+  /[A-Za-z]/gu,
+  (letter) => `[${letter.toUpperCase()}${letter.toLowerCase()}]`,
+);
 const funderName = new RegExp(`(?:^|[^A-Za-z])(?:${NAMES})(?![A-Za-z])`, "iu");
 
 // A separator may be written as a slash, a backslash or the set minus sign.
@@ -85,9 +91,10 @@ const PATTERNS: Pattern[] = [
       return "CODE-X/n";
     },
     // The suffix follows a hyphen, which a space may follow, or else is a
-    // month in title case written straight onto the code.
+    // month in title case written straight onto the code. Only a plain space
+    // may follow the hyphen, as referenceSchema allows no other.
     pattern: new RegExp(
-      String.raw`\b[A-Z]{4,12}(?:${DASH}\s?([A-Za-z0-9]{2,8})|((?:${MONTHS})(?:\d{4}|\d{2})))?${SEP}1\d{5}\b`,
+      String.raw`\b[A-Z]{4,12}(?:${DASH} ?([A-Za-z0-9]{2,8})|((?:${MONTHS})(?:\d{4}|\d{2})))?${SEP}1\d{5}\b`,
       "gu",
     ),
     sentenceOnly: false,
@@ -97,8 +104,8 @@ const PATTERNS: Pattern[] = [
     // name, as in "Cancer Research UK (G123/45)".
     format: "Gn/n",
     pattern: new RegExp(
-      String.raw`(?<=(?:^|[^A-Za-z])(?:${NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}\b`,
-      "giu",
+      String.raw`(?<=(?:^|[^A-Za-z])(?:${ANY_CASE_NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}\b`,
+      "gu",
     ),
     sentenceOnly: false,
   },
@@ -140,28 +147,25 @@ function sentences(paragraph: string): string[] {
   return paragraph.split(/(?<=(?<!\b[A-Z])[.;!?])\s+(?=[A-Z(])/u);
 }
 
-// Finds the references in one piece of text. A sentence-only pattern counts
-// only where `shortNumbers` is set, and never inside a longer reference, such
-// as the A part of a C/A reference.
-interface Found extends Reference {
-  sentenceOnly: boolean;
-}
-
-function scan(text: string, shortNumbers: boolean): Found[] {
-  const found: Found[] = [];
+// Finds the references in one piece of text. `long` keeps only the patterns
+// that count anywhere, `short` only the sentence-only ones, and `all` both.
+// A sentence-only match never counts inside a longer reference, such as the
+// A part of a C/A reference.
+function scan(text: string, keep: "long" | "short" | "all"): Reference[] {
+  const found: Reference[] = [];
   const taken: [number, number][] = [];
   for (const { format, pattern, sentenceOnly } of PATTERNS) {
-    if (sentenceOnly && !shortNumbers) continue;
+    if (sentenceOnly && keep === "long") continue;
     for (const match of text.matchAll(pattern)) {
       const start = match.index;
       const end = start + match[0].length;
       if (taken.some(([from, to]) => start < to && end > from)) continue;
       taken.push([start, end]);
+      if (!sentenceOnly && keep === "short") continue;
       found.push({
         asWritten: match[0],
         normalised: normalise(match[0]),
         format: typeof format === "string" ? format : format(match),
-        sentenceOnly,
       });
     }
   }
@@ -183,35 +187,22 @@ function confirmedNumber(id: string, text: readonly string[]): boolean {
   return text.some((paragraph) => alone.test(paragraph));
 }
 
-// Whether a reference already found gives this number, with its A or as the
-// last part of a longer reference, so the number alone would list it twice.
+// Whether a reference already found gives this number, after a letter such
+// as its A or FC, or as the last part of a longer reference, so the number
+// alone would list it twice.
 function alreadyFound(id: string, found: readonly Reference[]): boolean {
-  return found.some(
-    ({ normalised }) =>
-      normalised === `A${id}` ||
-      normalised.endsWith(`/A${id}`) ||
-      normalised.endsWith(`/${id}`),
-  );
+  const ending = new RegExp(`[A-Z/]${id}$`, "u");
+  return found.some(({ normalised }) => ending.test(normalised));
 }
-
-const reference = ({ asWritten, normalised, format }: Found): Reference => ({
-  asWritten,
-  normalised,
-  format,
-});
 
 export function findReferences(sections: FundingSections): Reference[] {
   const found: Reference[] = [];
   for (const paragraph of sections.text) {
     if (!funderName.test(paragraph)) continue;
-    found.push(...scan(paragraph, false).map(reference));
+    found.push(...scan(paragraph, "long"));
     for (const sentence of sentences(paragraph)) {
       if (!funderName.test(sentence)) continue;
-      found.push(
-        ...scan(sentence, true)
-          .filter(({ sentenceOnly }) => sentenceOnly)
-          .map(reference),
-      );
+      found.push(...scan(sentence, "short"));
     }
   }
   for (const award of sections.awards) {
@@ -219,7 +210,7 @@ export function findReferences(sections: FundingSections): Reference[] {
     for (const id of award.ids) {
       const trimmed = id.trim();
       if (!confirmedNumber(trimmed, sections.text)) {
-        found.push(...scan(trimmed, true).map(reference));
+        found.push(...scan(trimmed, "all"));
       } else if (!alreadyFound(trimmed, found)) {
         found.push({ asWritten: trimmed, normalised: trimmed, format: "n" });
       }
