@@ -375,6 +375,21 @@ describe("the app roles' boundary", () => {
         ],
       },
       {
+        Sid: "ReadLiveRelease",
+        Effect: "Allow",
+        Action: "s3:GetObject",
+        Resource: sub(
+          "arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*/release.json",
+        ),
+      },
+      {
+        Sid: "ListLiveRelease",
+        Effect: "Allow",
+        Action: "s3:ListBucket",
+        Resource: sub("arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*"),
+        Condition: { StringEquals: { "s3:prefix": "release.json" } },
+      },
+      {
         Sid: "RunLogs",
         Effect: "Allow",
         Action: [

@@ -10,7 +10,12 @@ import {
   it,
   vi,
 } from "vitest";
-import { fakeDeps, isGoldSearch, reply } from "../../test/fakes.ts";
+import {
+  fakeDeps,
+  fakeRelease,
+  isGoldSearch,
+  reply,
+} from "../../test/fakes.ts";
 import { NAMES, RECORDED } from "../../test/fixtures.ts";
 import { EuropePmcError } from "../europepmc/client.ts";
 import { makeRun, type RunSummary } from "./run.ts";
@@ -161,8 +166,34 @@ describe("a run over the back catalogue", () => {
       published: true,
       papers: 8,
       references: 7,
+      page: "written",
     });
     expect(fake.site.files?.["index.html"]).toContain("RRCOER-Jun24/100008");
+  });
+});
+
+// A deploy can land while a run is reading, and the run stays on the
+// version it started on (#73).
+describe("a run that finishes after a deploy", () => {
+  it("leaves a newer deploy's page, and publishes its data", async () => {
+    const fake = fakeDeps();
+    fake.deps.release = () => Promise.resolve(fakeRelease(200));
+    fake.site.live = JSON.stringify(fakeRelease(300));
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.published).toMatchObject({ published: true, page: "left" });
+    expect(fake.site.files?.["index.html"]).toBeUndefined();
+    expect(fake.site.files?.["found.json"]).toContain("RRCOER-Jun24/100008");
+  });
+
+  it("writes the page as before when its own deploy is the live one", async () => {
+    const fake = fakeDeps();
+    fake.deps.release = () => Promise.resolve(fakeRelease(300));
+    fake.site.live = JSON.stringify(fakeRelease(300));
+    const { result } = await runWith(fake);
+    expect(result?.published).toMatchObject({ page: "written" });
+    expect(fake.site.files?.["index.html"]).toContain("RRCOER-Jun24/100008");
+    expect(fake.site.files?.["found.json"]).toContain("RRCOER-Jun24/100008");
   });
 });
 

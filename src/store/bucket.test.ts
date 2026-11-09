@@ -64,6 +64,49 @@ describe("the page's bucket", () => {
   });
 });
 
+describe("the live release record in the page's bucket", () => {
+  const replying = (reply: () => Promise<unknown>) => {
+    const keys: unknown[] = [];
+    const client = {
+      send: (command: { input: { Bucket?: string; Key?: string } }) => {
+        keys.push([command.input.Bucket, command.input.Key]);
+        return reply();
+      },
+    };
+    return { client, keys };
+  };
+
+  it("reads release.json", async () => {
+    const { client, keys } = replying(() =>
+      Promise.resolve({
+        Body: { transformToString: () => Promise.resolve("{}") },
+      }),
+    );
+    expect(await siteBucket("site", client).liveRelease()).toBe("{}");
+    expect(keys).toEqual([["site", "release.json"]]);
+  });
+
+  it("reads a missing record as none", async () => {
+    const { client } = replying(() =>
+      Promise.reject(Object.assign(new Error("x"), { name: "NoSuchKey" })),
+    );
+    expect(await siteBucket("site", client).liveRelease()).toBeNull();
+  });
+
+  it("stops on any other error", async () => {
+    const { client } = replying(() =>
+      Promise.reject(Object.assign(new Error("x"), { name: "AccessDenied" })),
+    );
+    await expect(siteBucket("site", client).liveRelease()).rejects.toThrow();
+  });
+
+  it("publishes only the data when there is no page to write", async () => {
+    const { client, sent } = recorder();
+    await siteBucket("site", client).publish({ "found.json": "{}" });
+    expect(sent.map((s) => s.input.Key)).toEqual(["found.json"]);
+  });
+});
+
 // An S3 held in memory that refuses a write over an existing key when the
 // write asks it to, as the bucket's policy makes every write under eval/.
 // The run's role may list only under eval/, and S3 does not count a listing
