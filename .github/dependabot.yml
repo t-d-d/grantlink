@@ -1,0 +1,13 @@
+# Moves each outside action's pinned commit, and the tag comment beside it,
+# to the action's newest release. The cooldown holds back a version update
+# until its release is 7 days old; a security update is not held. The deploy
+# job runs these actions with a role that can change the account, and a week
+# gives a compromised release time to be found and pulled.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

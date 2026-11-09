@@ -1,0 +1,46 @@
+{
+  "$schema": "https://raw.githubusercontent.com/t-d-d/gh-governor/fda1887811d641f79cea18d4b1fa0f09ef65a238/schema/governor.schema.json",
+  "environment": "grantlink",
+  "pickup": {
+    "ready": ["mode: afk"],
+    "claim": "claimed",
+    "claimRemoves": [],
+    "exclude": ["type: prd", "type: adr", "mode: human"],
+    "sweepHours": 1
+  },
+  "summons": {},
+  "prMessages": {},
+  "subscribeMessages": {},
+  "redScheduledRun": { "enabled": false },
+  "unblocked": { "enabled": false },
+  "ciMessages": { "enabled": false },
+  "deployMessages": { "deployedLabels": true },
+  "branchRunMessages": { "enabled": false },
+  "conflicts": {},
+  "prReview": {
+    "prompt": { "file": ".claude/skills/pr-review/SKILL.md" },
+    "tickets": { "forbid": [{ "labels": ["type: prd"] }] },
+    "requireChecks": ["gate"],
+    "merge": false
+  },
+  "heartbeat": { "issue": 31 },
+  "periodics": {
+    "sessions": {
+      "Code review": {
+        "prompt": "Review the pull requests merged into the default branch that governor lists below, which are the ones merged since the time it gives. Where it says there are more than it lists, find the rest yourself. Read each one's change against the code as it stands now. Raise one issue for each defect, missing test or piece of drift worth fixing, after searching the open issues so you raise none twice. Change no code yourself. When you are done, make `Signing off.` the last line of your reply.",
+        "days": 7,
+        "counts": { "merges": 10 },
+        "gapHours": 4
+      },
+      "Weekly review": {
+        "prompt": "Look back over the repo since the last fire time governor gives below, or over the past week if this is the first run: the pull requests merged, the issues opened and closed, and the default branch's workflow runs that failed. Raise one issue for each lesson worth acting on, such as a failure that keeps coming back, a slow or flaky check, or work that had to be redone. Search the open issues first so you raise none twice. Change no code yourself. When you are done, make `Signing off.` the last line of your reply.",
+        "days": 7
+      }
+    }
+  },
+  "hooks": { "enabled": false },
+  "waits": { "enabled": false },
+  "signOff": {},
+  "sessionRules": {},
+  "issueReviews": { "enabled": false }
+}

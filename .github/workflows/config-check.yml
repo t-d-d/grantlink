@@ -1,0 +1,36 @@
+# Checks .github/governor.json on each pull request that changes it, with
+# the code governor runs, so a file governor would refuse fails here rather
+# than unserving the repo once it merges. It also fails an issue template
+# that names a ready label, so it runs when a template changes too, and,
+# once governor.json turns sessionRules on, warns where CLAUDE.md lacks the
+# session rules block, so it runs when CLAUDE.md changes. The check runs here, on this
+# repo's own token, pinned to a commit of gh-governor. To move to a newer
+# check, change the commit after `@`, in `commit:` and in governor.json's
+# `$schema` together, so the editor and the check read the same schema.
+#
+# If your prompts live in files ({ "file": "<path>" } in governor.json),
+# add their paths under `paths:` too, so a change to one runs the check.
+# Likewise, if governor.json sets `sessionRules.file` to a file other than
+# CLAUDE.md, add that path under `paths:`, so a change to the file that
+# carries the block runs the check.
+name: config check
+
+on:
+  pull_request:
+    paths:
+      - .github/governor.json
+      - .github/ISSUE_TEMPLATE/**
+      - ISSUE_TEMPLATE.md
+      - .github/ISSUE_TEMPLATE.md
+      - docs/ISSUE_TEMPLATE.md
+      - CLAUDE.md
+      - .claude/skills/pr-review/SKILL.md
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    uses: t-d-d/gh-governor/.github/workflows/config-check.yml@fda1887811d641f79cea18d4b1fa0f09ef65a238
+    with:
+      commit: fda1887811d641f79cea18d4b1fa0f09ef65a238

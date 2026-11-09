@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -z \"${ACCESS_URL:-}\" ] || { mkdir -p ~/.aws && curl -fsS \"${ACCESS_URL%/}/config?region=${AWS_REGION:-eu-west-2}\" > ~/.aws/config.part && mv ~/.aws/config.part ~/.aws/config && head -1 ~/.aws/config; }"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
