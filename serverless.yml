@@ -105,14 +105,17 @@ functions:
 resources:
   - ${file(./infra/site.cfn.yml)}
   - ${file(./infra/data.cfn.yml)}
-  # The certificate's ARN, read from the DNS stack in us-east-1 at deploy
-  # time (#43). A deploy before that stack exists fails (#44). It is set as
-  # the parameter's default, not passed as a stack parameter, because osls
-  # passes stack parameters to the stack's first create too, whose template
-  # holds only the deployment bucket, and CloudFormation refuses them.
+  # The certificate's ARN and the zone's id, read from the DNS stack in
+  # us-east-1 at deploy time (#43). A deploy before that stack exists fails
+  # (#44). They are set as the parameters' defaults, not passed as stack
+  # parameters, because osls passes stack parameters to the stack's first
+  # create too, whose template holds only the deployment bucket, and
+  # CloudFormation refuses them.
   - Parameters:
       CertificateArn:
         Default: ${cf(us-east-1):dns.CertificateArn}
+      HostedZoneId:
+        Default: ${cf(us-east-1):dns.HostedZoneId}
   # The first run over the back catalogue, once, with no person starting
   # it. The deploy keeps FIRST_RUN_AT from the stack's FirstRunAt output
   # once it is set, so a later deploy starts no second run. The schedule is

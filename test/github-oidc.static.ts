@@ -83,12 +83,16 @@ describe("the deploy role", () => {
       )
       .filter((statement) =>
         actions(statement).some(
-          (action) =>
-            action !== "cloudformation:ValidateTemplate" &&
-            action !== "cloudformation:DescribeStacks",
+          (action) => action !== "cloudformation:ValidateTemplate",
         ),
       )
-      .flatMap(resources);
+      .flatMap(resources)
+      // The read of the dns stack, which the next test pins.
+      .filter(
+        (resource) =>
+          resource !==
+          "arn:${AWS::Partition}:cloudformation:us-east-1:${AWS::AccountId}:stack/dns/*",
+      );
     expect(stacks).toEqual([
       "arn:${AWS::Partition}:cloudformation:eu-west-2:${AWS::AccountId}:stack/grantlink-prod/*",
     ]);

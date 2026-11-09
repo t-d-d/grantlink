@@ -21,9 +21,9 @@ what a visitor reads.
 - CloudFront sends every plain HTTP request to HTTPS, and tells browsers
   to keep to HTTPS.
 - The page is served at grantlink.uk. The app stack reads the
-  certificate's ARN from the `dns` stack in us-east-1 at deploy time and
-  names the zone `grantlink.uk.`, so a deploy before the DNS stack exists
-  fails. It never falls back to CloudFront's own address.
+  certificate's ARN and the zone's id from the `dns` stack in us-east-1 at
+  deploy time, so a deploy before the DNS stack exists fails. It never
+  falls back to CloudFront's own address.
 - The DNS stack and the roles stack sit in us-east-1, apart from the app
   stack, and the owner applies them by hand. Deleting the app stack never
   changes the nameservers.

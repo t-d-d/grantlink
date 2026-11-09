@@ -158,23 +158,26 @@ describe("the page's address (#44)", () => {
     });
   });
 
-  it("names the zone grantlink.uk. in its alias records, not by id", () => {
-    expect(site.Parameters?.HostedZoneId).toBeUndefined();
+  // The zone is read by id from the dns stack, as the certificate is. The
+  // records then keep the zone they were made in, so a deploy does not
+  // replace them, and a zone kept from an earlier dns stack, which has the
+  // same name, cannot be taken for it.
+  it("puts its alias records in the dns stack's zone, read by id", () => {
+    expect(site.Parameters?.HostedZoneId?.Default).toBeUndefined();
     expect(records.map((r) => r.Properties.Type).sort()).toEqual(["A", "AAAA"]);
     for (const record of records) {
       expect((record as { Condition?: string }).Condition).toBeUndefined();
-      expect(record.Properties.HostedZoneId).toBeUndefined();
-      expect(record.Properties.HostedZoneName).toEqual({
-        "Fn::Sub": "${DomainName}.",
-      });
+      expect(record.Properties.HostedZoneId).toEqual({ Ref: "HostedZoneId" });
+      expect(record.Properties.HostedZoneName).toBeUndefined();
     }
   });
 
-  it("reads the certificate from the dns stack in us-east-1 at deploy time", () => {
+  it("reads the certificate and the zone from the dns stack in us-east-1 at deploy time", () => {
     expect(site.Parameters?.CertificateArn?.Default).toBeUndefined();
     expect(serverless.resources).toContainEqual({
       Parameters: {
         CertificateArn: { Default: "${cf(us-east-1):dns.CertificateArn}" },
+        HostedZoneId: { Default: "${cf(us-east-1):dns.HostedZoneId}" },
       },
     });
   });

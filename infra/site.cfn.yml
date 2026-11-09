@@ -1,7 +1,7 @@
 # The page: files in a private S3 bucket, served by CloudFront over HTTPS
-# only (#4), always at grantlink.uk (#44). serverless.yml takes its resources from here, so this is part
-# of the app stack, grantlink-prod, in eu-west-2. It stands alone too, so
-# cfn-lint checks it in the gate.
+# only (#4), always at grantlink.uk (#44). serverless.yml takes its
+# resources from here, so this is part of the app stack, grantlink-prod, in
+# eu-west-2. It stands alone too, so cfn-lint checks it in the gate.
 #
 # CloudFront keeps no access logs and the page sets no cookie
 # (docs/constraints/no-tracking.md).
@@ -16,6 +16,9 @@ Parameters:
   CertificateArn:
     Type: String
     Description: The DNS stack's CertificateArn output, which serverless.yml reads from the stack at deploy time.
+  HostedZoneId:
+    Type: String
+    Description: The DNS stack's HostedZoneId output, which serverless.yml reads from the stack at deploy time.
 
 Resources:
   # Private: only the distribution reads it, through origin access control.
@@ -129,13 +132,13 @@ Resources:
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
           ResponseHeadersPolicyId: !Ref ResponseHeaders
 
-  # The zone is named, not given by id, so its id need not be copied
-  # anywhere. The alias target's zone id is CloudFront's own, the same for
-  # every distribution.
+  # The zone is the DNS stack's, read by id, since a zone kept from an
+  # earlier DNS stack has the same name. The alias target's zone id is
+  # CloudFront's own, the same for every distribution.
   AliasIpv4:
     Type: AWS::Route53::RecordSet
     Properties:
-      HostedZoneName: !Sub ${DomainName}.
+      HostedZoneId: !Ref HostedZoneId
       Name: !Ref DomainName
       Type: A
       AliasTarget:
@@ -145,7 +148,7 @@ Resources:
   AliasIpv6:
     Type: AWS::Route53::RecordSet
     Properties:
-      HostedZoneName: !Sub ${DomainName}.
+      HostedZoneId: !Ref HostedZoneId
       Name: !Ref DomainName
       Type: AAAA
       AliasTarget:

@@ -6,8 +6,9 @@
 #   scripts/eval-snapshot.sh <dir>
 #
 # The bucket is grantlink-text-<account> for the account the AWS
-# credentials are in, as the app stack names it. A session runs it with AWS_PROFILE=grantlink-eval, which may read eval/ and
-# nothing else, so it reads only the keys the manifest names.
+# credentials are in, as the app stack names it. A session runs it with
+# AWS_PROFILE=grantlink-eval, which may read eval/ and nothing else, so it
+# reads only the keys the manifest names.
 #
 # The files hold funding text and names. Keep them in the directory given,
 # which .gitignore leaves out, and never print them.

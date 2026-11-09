@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Applies the two stacks the owner applies by hand, and gives GitHub the
 # role each job assumes: the deploy's in prod and the eval's in eval. A job
-# finds or builds every other value once it has assumed its role (#43). Run it from the repo root on your own
-# machine, with:
+# finds or builds every other value once it has assumed its role (#43). Run
+# it from the repo root on your own machine, with:
 #
 #   - AWS credentials for grantlink's account, as an administrator, however
 #     you come by them;

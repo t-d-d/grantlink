@@ -38,7 +38,7 @@ Role ARNs carry the account id, so they are secrets, never variables. The script
 
 4. Removes the values earlier versions of the script set and no jobs read now: `AWS_DEPLOY_EXECUTION_ROLE_ARN`, `CERTIFICATE_ARN`, `HOSTED_ZONE_ID` and `PRIVATE_BUCKET_NAME` in `prod`, and `PRIVATE_BUCKET_NAME` in `eval`. A value that is already gone counts as removed.
 
-Once a job has assumed its role, it finds or builds every other value it needs. The app stack reads the certificate's ARN from the DNS stack, names the zone `grantlink.uk.`, and builds the execution role's ARN from the account and the role's fixed name, `grantlink-deploy-execution`. The eval builds the private bucket's name from the account. GitHub holds no copy of them to go stale (#43).
+Once a job has assumed its role, it finds or builds every other value it needs. The app stack reads the certificate's ARN and the zone's id from the DNS stack, and builds the execution role's ARN from the account and the role's fixed name, `grantlink-deploy-execution`. The eval builds the private bucket's name from the account. GitHub holds no copy of them to go stale (#43).
 
 The script is safe to run again. Each step changes only what differs, and it waits for a stack an earlier run left part way. If the credentials expire while the certificate waits for the registrar, the script stops while the stack carries on. Run it again and it waits for the stack. A stack whose first create failed has to be deleted before a run can apply it, and the script says so.
 
@@ -57,7 +57,7 @@ The app stack, `grantlink-prod`, is defined in [serverless.yml](serverless.yml) 
 5. Builds the page again from the release record and the last run's `found.json`, if there is one, copies [site/](site/) to the bucket and clears CloudFront's cache.
 6. Runs the live tier against the page. A failure turns the deploy red.
 
-CloudFront serves the page at grantlink.uk, with the certificate the deploy reads from the DNS stack. A deploy before the DNS stack exists fails (#44). A failed deploy is fixed forward. There is no rollback step, and CloudFormation rolls a failed stack update back by itself.
+CloudFront serves the page at grantlink.uk, with the certificate and the zone the deploy reads from the DNS stack. A deploy before the DNS stack exists fails (#44). A failed deploy is fixed forward. There is no rollback step, and CloudFormation rolls a failed stack update back by itself.
 
 ## How the eval gates a release
 
