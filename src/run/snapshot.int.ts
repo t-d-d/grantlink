@@ -38,11 +38,11 @@ async function runWith(fake: ReturnType<typeof fakeDeps>) {
   };
 }
 
-// Europe PMC failing the first labelled paper's full text with `error`
+// Europe PMC answering the first labelled paper's full text with `first`
 // once the snapshot starts, and recording every gold set B paper the
 // snapshot asks about. The run reads the same papers first, as it finds
 // them in its own search.
-function failingFirstLabelled(error: EuropePmcError) {
+function failingFirstLabelled(first: () => Promise<string>) {
   const fake = fakeDeps();
   const real = fake.deps.europePmc;
   let snapshot = false;
@@ -58,7 +58,7 @@ function failingFirstLabelled(error: EuropePmcError) {
     fullText: (pmcid) => {
       if (!snapshot) return real.fullText(pmcid);
       if (LABELLED.includes(pmcid)) asked.push(pmcid);
-      if (pmcid === LABELLED[0]) return Promise.reject(error);
+      if (pmcid === LABELLED[0]) return first();
       return real.fullText(pmcid);
     },
   };
@@ -86,7 +86,7 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
   ])(
     "asks Europe PMC nothing more once one labelled paper fails ($message)",
     async (error) => {
-      const { fake, asked } = failingFirstLabelled(error);
+      const { fake, asked } = failingFirstLabelled(() => Promise.reject(error));
       const { status, result } = await runWith(fake);
       expect(status).toBe("SUCCEEDED");
       expect(result?.snapshot).toEqual({
@@ -97,4 +97,18 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
       expect(fake.text.has("eval/s1/manifest.json")).toBe(false);
     },
   );
+
+  it("asks Europe PMC nothing more once one labelled paper has no funding text", async () => {
+    const { fake, asked } = failingFirstLabelled(() =>
+      Promise.resolve("<article></article>"),
+    );
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toEqual({
+      taken: false,
+      reason: "a gold set B paper could not be read",
+    });
+    expect(asked).toEqual([LABELLED[0]]);
+    expect(fake.text.has("eval/s1/manifest.json")).toBe(false);
+  });
 });
