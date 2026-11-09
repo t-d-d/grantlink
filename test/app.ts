@@ -10,7 +10,13 @@ export interface ServerlessConfig {
     name: string;
     region: string;
     stage: string;
-    iam?: { deploymentRole?: string };
+    iam?: {
+      deploymentRole?: string;
+      role?: {
+        permissionsBoundary?: unknown;
+        statements?: { Action?: string | string[] }[];
+      };
+    };
     stackParameters?: { ParameterKey: string; ParameterValue: string }[];
   };
   functions?: Record<string, Record<string, unknown>>;

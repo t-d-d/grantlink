@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { serverless } from "./app.ts";
+import { serverless, site } from "./app.ts";
 import {
   list,
   readTemplate,
@@ -246,9 +246,214 @@ describe("the deploy execution role", () => {
     const iam = allows(rightsOf(execution)).filter((statement) =>
       actions(statement).some((action) => action.startsWith("iam:")),
     );
-    expect(iam.flatMap(resources)).toEqual([
+    expect([...new Set(iam.flatMap(resources))]).toEqual([
       "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/grantlink-prod-*",
     ]);
+  });
+
+  // The actions that give a role its rights, and the boundary's own (#33).
+  const granting = [
+    "iam:AttachRolePolicy",
+    "iam:CreateRole",
+    "iam:PutRolePermissionsBoundary",
+    "iam:PutRolePolicy",
+  ];
+
+  it("gives a role rights only when the role carries the boundary", () => {
+    const giving = allows(rightsOf(execution)).filter((statement) =>
+      actions(statement).some((pattern) =>
+        granting.some((action) => covers(pattern, action)),
+      ),
+    );
+    expect(giving).toEqual([
+      {
+        Sid: "BoundedAppRoles",
+        Effect: "Allow",
+        Action: granting,
+        Resource: {
+          "Fn::Sub":
+            "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/grantlink-prod-*",
+        },
+        Condition: {
+          StringEquals: {
+            "iam:PermissionsBoundary": { Ref: "AppRoleBoundary" },
+          },
+        },
+      },
+    ]);
+  });
+
+  it("cannot take the boundary off a role", () => {
+    expect(rightsOf(execution)).toContainEqual({
+      Sid: "KeepBoundary",
+      Effect: "Deny",
+      Action: "iam:DeleteRolePermissionsBoundary",
+      Resource: "*",
+    });
+    expect(
+      allows(rightsOf(execution))
+        .flatMap(actions)
+        .some((pattern) =>
+          covers(pattern, "iam:DeleteRolePermissionsBoundary"),
+        ),
+    ).toBe(false);
+  });
+
+  it("cannot change the boundary policy", () => {
+    expect(rightsOf(execution)).toContainEqual({
+      Sid: "KeepBoundaryPolicy",
+      Effect: "Deny",
+      Action: [
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicy",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion",
+        "iam:TagPolicy",
+        "iam:UntagPolicy",
+      ],
+      Resource: { Ref: "AppRoleBoundary" },
+    });
+    expect(
+      allows(rightsOf(execution))
+        .flatMap(resources)
+        .some((resource) => resource.includes(":policy/")),
+    ).toBe(false);
+  });
+});
+
+describe("the app roles' boundary", () => {
+  const boundary = template.Resources.AppRoleBoundary;
+  const document = (boundary?.Properties.PolicyDocument ?? {
+    Statement: [],
+  }) as { Statement: Statement[] };
+  const sub = (text: string): { "Fn::Sub": string } => ({ "Fn::Sub": text });
+  const london = "eu-west-2:${AWS::AccountId}";
+  const text = "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}";
+  const run = `arn:\${AWS::Partition}:lambda:${london}:function:grantlink-prod-run`;
+
+  it("is a managed policy with the name the app stack gives its roles", () => {
+    expect(boundary?.Type).toBe("AWS::IAM::ManagedPolicy");
+    expect(boundary?.Properties.ManagedPolicyName).toBe(
+      "grantlink-app-boundary",
+    );
+  });
+
+  it("allows only what the app stack's roles use, and no write under eval-reports/", () => {
+    expect(document.Statement).toEqual([
+      {
+        Sid: "ResultsTable",
+        Effect: "Allow",
+        Action: [
+          "dynamodb:BatchGetItem",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Scan",
+          "dynamodb:UpdateItem",
+        ],
+        Resource: sub(
+          `arn:\${AWS::Partition}:dynamodb:${london}:table/grantlink-prod-ResultsTable-*`,
+        ),
+      },
+      {
+        Sid: "FundingText",
+        Effect: "Allow",
+        Action: ["s3:GetObject", "s3:PutObject"],
+        Resource: [sub(`${text}/cache/*`), sub(`${text}/eval/*`)],
+      },
+      {
+        Sid: "ListSnapshot",
+        Effect: "Allow",
+        Action: "s3:ListBucket",
+        Resource: sub(text),
+        Condition: { StringLike: { "s3:prefix": ["eval/*"] } },
+      },
+      {
+        Sid: "PublishPage",
+        Effect: "Allow",
+        Action: "s3:PutObject",
+        Resource: [
+          sub(
+            "arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*/index.html",
+          ),
+          sub(
+            "arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*/found.json",
+          ),
+        ],
+      },
+      {
+        Sid: "RunLogs",
+        Effect: "Allow",
+        Action: [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:TagResource",
+        ],
+        Resource: [
+          sub(
+            `arn:\${AWS::Partition}:logs:${london}:log-group:/aws/lambda/grantlink-prod-run`,
+          ),
+          sub(
+            `arn:\${AWS::Partition}:logs:${london}:log-group:/aws/lambda/grantlink-prod-run:*`,
+          ),
+        ],
+      },
+      {
+        Sid: "RunCheckpoints",
+        Effect: "Allow",
+        Action: [
+          "lambda:CheckpointDurableExecution",
+          "lambda:GetDurableExecutionState",
+        ],
+        Resource: sub(`${run}:*/durable-execution/*/*`),
+      },
+      {
+        Sid: "StartRun",
+        Effect: "Allow",
+        Action: "lambda:InvokeFunction",
+        Resource: sub(`${run}:*`),
+      },
+      {
+        Sid: "ModelKey",
+        Effect: "Allow",
+        Action: "secretsmanager:GetSecretValue",
+        Resource: sub(
+          `arn:\${AWS::Partition}:secretsmanager:${london}:secret:grantlink-*`,
+        ),
+      },
+      {
+        Sid: "NoEvalReports",
+        Effect: "Deny",
+        Action: "s3:*",
+        Resource: sub(`${text}/eval-reports/*`),
+      },
+    ]);
+  });
+
+  // The boundary names the table, the page's bucket and the function by
+  // the names CloudFormation and osls give them. Naming one in the app
+  // stack, or changing the service or the stage, would stop it matching.
+  it("names the app stack's resources as they are created", () => {
+    expect(serverless.service).toBe("grantlink");
+    expect(serverless.provider.stage).toBe("prod");
+    expect(Object.keys(serverless.functions ?? {})).toEqual(["run"]);
+    expect(serverless.functions?.run?.name).toBeUndefined();
+    const data = readTemplate("infra/data.cfn.yml");
+    expect(resource(data, "ResultsTable").Properties.TableName).toBeUndefined();
+    expect(resource(site, "SiteBucket").Properties.BucketName).toBeUndefined();
+  });
+
+  // Every action the run's role is given in serverless.yml, so the
+  // boundary does not quietly take one away.
+  it("allows every action the run's role uses", () => {
+    const used = (serverless.provider.iam?.role?.statements ?? []).flatMap(
+      (statement) => list(statement.Action),
+    );
+    const bounded = allows(document.Statement).flatMap(actions);
+    expect(used.length).toBeGreaterThan(0);
+    for (const action of used) {
+      expect(bounded, action).toContain(action);
+    }
   });
 });
 
