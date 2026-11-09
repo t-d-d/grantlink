@@ -4,6 +4,9 @@ import {
   EuropePmcError,
   HOSTS,
   INTERVAL_MS,
+  LARGEST_PAGE_SIZE,
+  plainTitle,
+  SEARCH_PAGE_SIZE,
   searchQuery,
   USER_AGENT,
   type Clock,
@@ -255,9 +258,13 @@ describe("searching Europe PMC", () => {
     const page = await client.search("*");
     expect(requests[0]?.url.searchParams.get("cursorMark")).toBe("*");
     expect(requests[0]?.url.searchParams.get("format")).toBe("json");
+    expect(requests[0]?.url.searchParams.get("pageSize")).toBe(
+      String(SEARCH_PAGE_SIZE),
+    );
     expect(page).toEqual({
       hitCount: 3,
       nextCursor: "AoE",
+      skipped: 0,
       papers: [
         {
           pmcid: "PMC11",
@@ -267,6 +274,60 @@ describe("searching Europe PMC", () => {
         { pmcid: "PMC12", title: "Two" },
       ],
     });
+  });
+
+  it("asks for a larger page when told to", async () => {
+    const { client, requests } = harness(() =>
+      Response.json({ hitCount: 0, resultList: { result: [] } }),
+    );
+    await client.search("*", "TITLE:x", LARGEST_PAGE_SIZE);
+    expect(requests[0]?.url.searchParams.get("pageSize")).toBe("1000");
+  });
+
+  it("skips a result with a malformed PMCID and keeps the rest of the page", async () => {
+    const { client } = harness(() =>
+      Response.json({
+        hitCount: 3,
+        resultList: {
+          result: [
+            { pmcid: "PMC11", title: "One" },
+            { pmcid: "PMC 12", title: "Malformed" },
+            { pmcid: "PMC13", title: "Three" },
+          ],
+        },
+      }),
+    );
+    const page = await client.search("*");
+    expect(page.papers.map((paper) => paper.pmcid)).toEqual(["PMC11", "PMC13"]);
+    expect(page.skipped).toBe(1);
+  });
+
+  it("keeps a paper whose first publication date is malformed, without a date", async () => {
+    const { client } = harness(() =>
+      Response.json({
+        hitCount: 2,
+        resultList: {
+          result: [
+            {
+              pmcid: "PMC11",
+              title: "One",
+              firstPublicationDate: "03/02/2021",
+            },
+            {
+              pmcid: "PMC12",
+              title: "Two",
+              firstPublicationDate: "2021-02-30",
+            },
+          ],
+        },
+      }),
+    );
+    const page = await client.search("*");
+    expect(page.papers).toEqual([
+      { pmcid: "PMC11", title: "One" },
+      { pmcid: "PMC12", title: "Two" },
+    ]);
+    expect(page.skipped).toBe(0);
   });
 
   it("ends at the last page", async () => {
@@ -364,5 +425,21 @@ describe("sampling gold set A", () => {
       }),
     );
     expect(await client.grants("PMC11")).toEqual([]);
+  });
+});
+
+describe("a title as plain text", () => {
+  it("keeps a title of 500 characters whole", () => {
+    const title = "€".repeat(500);
+    expect(plainTitle(title)).toBe(title);
+  });
+
+  it("drops control characters, which JSON spells in six bytes", () => {
+    expect(plainTitle("One\u0001 two\u001f")).toBe("One two");
+  });
+
+  it("drops half a surrogate pair, including one cut at the 500th character", () => {
+    expect(plainTitle("One \ud83d")).toBe("One");
+    expect(plainTitle(`${"€".repeat(499)}😀`)).toBe("€".repeat(499));
   });
 });

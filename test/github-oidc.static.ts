@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { serverless } from "./app.ts";
+import { serverless, site } from "./app.ts";
 import {
   list,
   readTemplate,
@@ -7,6 +7,7 @@ import {
   rightsOf,
   subText,
   trustOf,
+  wildcardMatches,
   type Statement,
 } from "./cfn.ts";
 
@@ -29,13 +30,6 @@ const resources = (statement: Statement): string[] =>
   list(statement.Resource).map(subText);
 const allows = (statements: Statement[]): Statement[] =>
   statements.filter((statement) => statement.Effect === "Allow");
-
-// Whether an IAM action pattern, wildcards and all, covers an action.
-const covers = (pattern: string, action: string): boolean =>
-  new RegExp(
-    `^${pattern.replace(/[.+?^${}()|[\]\\]/gu, "\\$&").replace(/\*/gu, ".*")}$`,
-    "iu",
-  ).test(action);
 
 // The trust a role gets from GitHub's OIDC provider for one environment.
 const githubTrust = (environment: string): Statement[] => [
@@ -86,9 +80,34 @@ describe("the deploy role", () => {
           (action) => action !== "cloudformation:ValidateTemplate",
         ),
       )
-      .flatMap(resources);
+      .flatMap(resources)
+      // The read of the dns stack, which the next test pins.
+      .filter(
+        (resource) =>
+          resource !==
+          "arn:${AWS::Partition}:cloudformation:us-east-1:${AWS::AccountId}:stack/dns/*",
+      );
     expect(stacks).toEqual([
       "arn:${AWS::Partition}:cloudformation:eu-west-2:${AWS::AccountId}:stack/grantlink-prod/*",
+    ]);
+  });
+
+  // The app stack reads the certificate's ARN from the dns stack at deploy
+  // time (#43). That read is the role's only right in us-east-1.
+  it("reads the dns stack in us-east-1, and does nothing else there", () => {
+    const east = allows(rightsOf(deploy)).filter((statement) =>
+      resources(statement).some((resource) => resource.includes("us-east-1")),
+    );
+    expect(east).toEqual([
+      {
+        Sid: "ReadDnsStack",
+        Effect: "Allow",
+        Action: "cloudformation:DescribeStacks",
+        Resource: {
+          "Fn::Sub":
+            "arn:${AWS::Partition}:cloudformation:us-east-1:${AWS::AccountId}:stack/dns/*",
+        },
+      },
     ]);
   });
 
@@ -148,7 +167,7 @@ describe("the deploy execution role", () => {
   ];
   const reachingObjects = allows(rightsOf(execution)).filter((statement) =>
     actions(statement).some((pattern) =>
-      objectActions.some((action) => covers(pattern, action)),
+      objectActions.some((action) => wildcardMatches(pattern, action)),
     ),
   );
 
@@ -174,7 +193,7 @@ describe("the deploy execution role", () => {
     expect(
       reachingObjects
         .flatMap(resources)
-        .some((pattern) => covers(pattern, text)),
+        .some((pattern) => wildcardMatches(pattern, text)),
     ).toBe(false);
   });
 
@@ -221,9 +240,214 @@ describe("the deploy execution role", () => {
     const iam = allows(rightsOf(execution)).filter((statement) =>
       actions(statement).some((action) => action.startsWith("iam:")),
     );
-    expect(iam.flatMap(resources)).toEqual([
+    expect([...new Set(iam.flatMap(resources))]).toEqual([
       "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/grantlink-prod-*",
     ]);
+  });
+
+  // The actions that give a role its rights, and the boundary's own (#33).
+  const granting = [
+    "iam:AttachRolePolicy",
+    "iam:CreateRole",
+    "iam:PutRolePermissionsBoundary",
+    "iam:PutRolePolicy",
+  ];
+
+  it("gives a role rights only when the role carries the boundary", () => {
+    const giving = allows(rightsOf(execution)).filter((statement) =>
+      actions(statement).some((pattern) =>
+        granting.some((action) => wildcardMatches(pattern, action)),
+      ),
+    );
+    expect(giving).toEqual([
+      {
+        Sid: "BoundedAppRoles",
+        Effect: "Allow",
+        Action: granting,
+        Resource: {
+          "Fn::Sub":
+            "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/grantlink-prod-*",
+        },
+        Condition: {
+          StringEquals: {
+            "iam:PermissionsBoundary": { Ref: "AppRoleBoundary" },
+          },
+        },
+      },
+    ]);
+  });
+
+  it("cannot take the boundary off a role", () => {
+    expect(rightsOf(execution)).toContainEqual({
+      Sid: "KeepBoundary",
+      Effect: "Deny",
+      Action: "iam:DeleteRolePermissionsBoundary",
+      Resource: "*",
+    });
+    expect(
+      allows(rightsOf(execution))
+        .flatMap(actions)
+        .some((pattern) =>
+          wildcardMatches(pattern, "iam:DeleteRolePermissionsBoundary"),
+        ),
+    ).toBe(false);
+  });
+
+  it("cannot change the boundary policy", () => {
+    expect(rightsOf(execution)).toContainEqual({
+      Sid: "KeepBoundaryPolicy",
+      Effect: "Deny",
+      Action: [
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicy",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion",
+        "iam:TagPolicy",
+        "iam:UntagPolicy",
+      ],
+      Resource: { Ref: "AppRoleBoundary" },
+    });
+    expect(
+      allows(rightsOf(execution))
+        .flatMap(resources)
+        .some((resource) => resource.includes(":policy/")),
+    ).toBe(false);
+  });
+});
+
+describe("the app roles' boundary", () => {
+  const boundary = template.Resources.AppRoleBoundary;
+  const document = (boundary?.Properties.PolicyDocument ?? {
+    Statement: [],
+  }) as { Statement: Statement[] };
+  const sub = (text: string): { "Fn::Sub": string } => ({ "Fn::Sub": text });
+  const london = "eu-west-2:${AWS::AccountId}";
+  const text = "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}";
+  const run = `arn:\${AWS::Partition}:lambda:${london}:function:grantlink-prod-run`;
+
+  it("is a managed policy with the name the app stack gives its roles", () => {
+    expect(boundary?.Type).toBe("AWS::IAM::ManagedPolicy");
+    expect(boundary?.Properties.ManagedPolicyName).toBe(
+      "grantlink-app-boundary",
+    );
+  });
+
+  it("allows only what the app stack's roles use, and no write under eval-reports/", () => {
+    expect(document.Statement).toEqual([
+      {
+        Sid: "ResultsTable",
+        Effect: "Allow",
+        Action: [
+          "dynamodb:BatchGetItem",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Scan",
+          "dynamodb:UpdateItem",
+        ],
+        Resource: sub(
+          `arn:\${AWS::Partition}:dynamodb:${london}:table/grantlink-prod-ResultsTable-*`,
+        ),
+      },
+      {
+        Sid: "FundingText",
+        Effect: "Allow",
+        Action: ["s3:GetObject", "s3:PutObject"],
+        Resource: [sub(`${text}/cache/*`), sub(`${text}/eval/*`)],
+      },
+      {
+        Sid: "ListSnapshot",
+        Effect: "Allow",
+        Action: "s3:ListBucket",
+        Resource: sub(text),
+        Condition: { StringLike: { "s3:prefix": ["eval/*"] } },
+      },
+      {
+        Sid: "PublishPage",
+        Effect: "Allow",
+        Action: "s3:PutObject",
+        Resource: [
+          sub(
+            "arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*/index.html",
+          ),
+          sub(
+            "arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*/found.json",
+          ),
+        ],
+      },
+      {
+        Sid: "RunLogs",
+        Effect: "Allow",
+        Action: [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:TagResource",
+        ],
+        Resource: [
+          sub(
+            `arn:\${AWS::Partition}:logs:${london}:log-group:/aws/lambda/grantlink-prod-run`,
+          ),
+          sub(
+            `arn:\${AWS::Partition}:logs:${london}:log-group:/aws/lambda/grantlink-prod-run:*`,
+          ),
+        ],
+      },
+      {
+        Sid: "RunCheckpoints",
+        Effect: "Allow",
+        Action: [
+          "lambda:CheckpointDurableExecution",
+          "lambda:GetDurableExecutionState",
+        ],
+        Resource: sub(`${run}:*/durable-execution/*/*`),
+      },
+      {
+        Sid: "StartRun",
+        Effect: "Allow",
+        Action: "lambda:InvokeFunction",
+        Resource: sub(`${run}:*`),
+      },
+      {
+        Sid: "ModelKey",
+        Effect: "Allow",
+        Action: "secretsmanager:GetSecretValue",
+        Resource: sub(
+          `arn:\${AWS::Partition}:secretsmanager:${london}:secret:grantlink-*`,
+        ),
+      },
+      {
+        Sid: "NoEvalReports",
+        Effect: "Deny",
+        Action: "s3:*",
+        Resource: sub(`${text}/eval-reports/*`),
+      },
+    ]);
+  });
+
+  // The boundary names the table, the page's bucket and the function by
+  // the names CloudFormation and osls give them. Naming one in the app
+  // stack, or changing the service or the stage, would stop it matching.
+  it("names the app stack's resources as they are created", () => {
+    expect(serverless.service).toBe("grantlink");
+    expect(serverless.provider.stage).toBe("prod");
+    expect(Object.keys(serverless.functions ?? {})).toEqual(["run"]);
+    expect(serverless.functions?.run?.name).toBeUndefined();
+    const data = readTemplate("infra/data.cfn.yml");
+    expect(resource(data, "ResultsTable").Properties.TableName).toBeUndefined();
+    expect(resource(site, "SiteBucket").Properties.BucketName).toBeUndefined();
+  });
+
+  // Every action the run's role is given in serverless.yml, so the
+  // boundary does not quietly take one away.
+  it("allows every action the run's role uses", () => {
+    const used = (serverless.provider.iam?.role?.statements ?? []).flatMap(
+      (statement) => list(statement.Action),
+    );
+    const bounded = allows(document.Statement).flatMap(actions);
+    expect(used.length).toBeGreaterThan(0);
+    for (const action of used) {
+      expect(bounded, action).toContain(action);
+    }
   });
 });
 
@@ -356,16 +580,20 @@ describe("fitness: only CI files reports (evals.md)", () => {
   const appliesToReport = (statement: Statement): boolean => {
     const action =
       statement.NotAction === undefined
-        ? actions(statement).some((pattern) => covers(pattern, "s3:PutObject"))
+        ? actions(statement).some((pattern) =>
+            wildcardMatches(pattern, "s3:PutObject"),
+          )
         : !list(statement.NotAction).some((pattern) =>
-            covers(pattern, "s3:PutObject"),
+            wildcardMatches(pattern, "s3:PutObject"),
           );
     const resource =
       statement.NotResource === undefined
-        ? resources(statement).some((pattern) => covers(pattern, report))
+        ? resources(statement).some((pattern) =>
+            wildcardMatches(pattern, report),
+          )
         : !list(statement.NotResource)
             .map(subText)
-            .some((pattern) => covers(pattern, report));
+            .some((pattern) => wildcardMatches(pattern, report));
     return action && resource;
   };
 
@@ -413,8 +641,8 @@ describe("every role", () => {
   });
 
   it("knows a wildcard covers the actions it names", () => {
-    expect(covers("s3:Get*", "s3:GetObject")).toBe(true);
-    expect(covers("s3:*Object", "s3:PutObject")).toBe(true);
-    expect(covers("s3:GetBucket*", "s3:GetObject")).toBe(false);
+    expect(wildcardMatches("s3:Get*", "s3:GetObject")).toBe(true);
+    expect(wildcardMatches("s3:*Object", "s3:PutObject")).toBe(true);
+    expect(wildcardMatches("s3:GetBucket*", "s3:GetObject")).toBe(false);
   });
 });

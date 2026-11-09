@@ -26,6 +26,37 @@
       "names": ["Ezekiel Thornbury-Vale", "Thornbury-Vale", "Ezekiel"]
     },
     {
+      "file": "PMC13401056.xml",
+      "origin": "recorded from https://www.ebi.ac.uk/europepmc/webservices/rest/PMC13401056/fullTextXML",
+      "licence": "CC-BY-4.0",
+      "names": ["Pellingrove", "Ashcombe-Tarrow"]
+    },
+    {
+      "file": "PMC13628515.xml",
+      "origin": "recorded from https://www.ebi.ac.uk/europepmc/webservices/rest/PMC13628515/fullTextXML",
+      "licence": "CC-BY-4.0",
+      "names": ["QXZ", "VJW"]
+    },
+    {
+      "file": "PMC13642255.xml",
+      "origin": "recorded from https://www.ebi.ac.uk/europepmc/webservices/rest/PMC13642255/fullTextXML",
+      "licence": "CC-BY-4.0",
+      "names": [
+        "Marrowdene",
+        "Philippa",
+        "Quenby-Hask",
+        "Ottoline",
+        "Barnaby Teasdrill",
+        "Teasdrill"
+      ]
+    },
+    {
+      "file": "PMC13664392.xml",
+      "origin": "recorded from https://www.ebi.ac.uk/europepmc/webservices/rest/PMC13664392/fullTextXML",
+      "licence": "CC-BY-4.0",
+      "names": ["Q.X.Z.", "V.J.W.", "K.Y.T.R."]
+    },
+    {
       "file": "search-1.json",
       "origin": "written by hand in the shape of Europe PMC's search reply; not recorded",
       "licence": "CC0-1.0",
@@ -33,7 +64,7 @@
     },
     {
       "file": "search-2.json",
-      "origin": "written by hand in the shape of Europe PMC's search reply; not recorded",
+      "origin": "written by hand in the shape of Europe PMC's search reply; not recorded. Its papers and their titles are those of the recorded full texts",
       "licence": "CC0-1.0",
       "names": []
     }

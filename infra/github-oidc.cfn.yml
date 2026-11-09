@@ -33,7 +33,8 @@ Resources:
   # Deploys from a green merge to main, in the prod environment only (#8).
   # It may change only the app stack, in London, through CloudFormation and
   # the execution role, then publish the page's files and invalidate the
-  # cache. It can never read or write the private bucket.
+  # cache. In us-east-1 it may only read the DNS stack, whose certificate the
+  # app stack uses (#43). It can never read or write the private bucket.
   DeployRole:
     Type: AWS::IAM::Role
     Properties:
@@ -75,6 +76,10 @@ Resources:
                   - cloudformation:ListStackResources
                   - cloudformation:UpdateStack
                 Resource: !Sub arn:${AWS::Partition}:cloudformation:eu-west-2:${AWS::AccountId}:stack/grantlink-prod/*
+              - Sid: ReadDnsStack
+                Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:us-east-1:${AWS::AccountId}:stack/dns/*
               - Sid: PassExecutionRole
                 Effect: Allow
                 Action: iam:PassRole
@@ -117,12 +122,89 @@ Resources:
                   - !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}
                   - !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/*
 
+  # The permissions boundary every role in the app stack carries (#33). A
+  # role may do only what this allows, whatever its own policies say, so a
+  # broad role declared in the app stack still cannot reach the private
+  # bucket's other prefixes. It names the table, the page's bucket and the
+  # function by the names CloudFormation and osls give them in the stack
+  # grantlink-prod, in London.
+  AppRoleBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: grantlink-app-boundary
+      Description: The most any role in the grantlink-prod stack may do.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ResultsTable
+            Effect: Allow
+            Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:Scan
+              - dynamodb:UpdateItem
+            Resource: !Sub arn:${AWS::Partition}:dynamodb:eu-west-2:${AWS::AccountId}:table/grantlink-prod-ResultsTable-*
+          - Sid: FundingText
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/cache/*
+              - !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval/*
+          - Sid: ListSnapshot
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}
+            Condition:
+              StringLike:
+                s3:prefix:
+                  - eval/*
+          - Sid: PublishPage
+            Effect: Allow
+            Action: s3:PutObject
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*/index.html
+              - !Sub arn:${AWS::Partition}:s3:::grantlink-prod-sitebucket-*/found.json
+          - Sid: RunLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:TagResource
+            Resource:
+              - !Sub arn:${AWS::Partition}:logs:eu-west-2:${AWS::AccountId}:log-group:/aws/lambda/grantlink-prod-run
+              - !Sub arn:${AWS::Partition}:logs:eu-west-2:${AWS::AccountId}:log-group:/aws/lambda/grantlink-prod-run:*
+          - Sid: RunCheckpoints
+            Effect: Allow
+            Action:
+              - lambda:CheckpointDurableExecution
+              - lambda:GetDurableExecutionState
+            Resource: !Sub arn:${AWS::Partition}:lambda:eu-west-2:${AWS::AccountId}:function:grantlink-prod-run:*/durable-execution/*/*
+          # The first-run schedule starts the run.
+          - Sid: StartRun
+            Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource: !Sub arn:${AWS::Partition}:lambda:eu-west-2:${AWS::AccountId}:function:grantlink-prod-run:*
+          # The model key (#24).
+          - Sid: ModelKey
+            Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Sub arn:${AWS::Partition}:secretsmanager:eu-west-2:${AWS::AccountId}:secret:grantlink-*
+          # Only CI files eval reports (#9).
+          - Sid: NoEvalReports
+            Effect: Deny
+            Action: s3:*
+            Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval-reports/*
+
   # The role CloudFormation takes to build the app stack, so the deploy role
   # itself holds no rights to create resources. It manages buckets, reads no
   # object but a function's code, and manages only the app stack's own
-  # roles. Those roles have no permissions boundary yet, so what the app
-  # stack declares, reviewed and merged to main, bounds what a deploy can
-  # reach.
+  # roles. It gives one of those roles rights only when the role carries
+  # AppRoleBoundary, and can neither take the boundary off nor change it, so
+  # the boundary bounds what a deploy can reach (#33).
   DeployExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -202,8 +284,6 @@ Resources:
               - Sid: AppRoles
                 Effect: Allow
                 Action:
-                  - iam:AttachRolePolicy
-                  - iam:CreateRole
                   - iam:DeleteRole
                   - iam:DeleteRolePolicy
                   - iam:DetachRolePolicy
@@ -212,12 +292,36 @@ Resources:
                   - iam:ListAttachedRolePolicies
                   - iam:ListRolePolicies
                   - iam:PassRole
-                  - iam:PutRolePolicy
                   - iam:TagRole
                   - iam:UntagRole
                   - iam:UpdateAssumeRolePolicy
                   - iam:UpdateRole
                 Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/grantlink-prod-*
+              - Sid: BoundedAppRoles
+                Effect: Allow
+                Action:
+                  - iam:AttachRolePolicy
+                  - iam:CreateRole
+                  - iam:PutRolePermissionsBoundary
+                  - iam:PutRolePolicy
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/grantlink-prod-*
+                Condition:
+                  StringEquals:
+                    iam:PermissionsBoundary: !Ref AppRoleBoundary
+              - Sid: KeepBoundary
+                Effect: Deny
+                Action: iam:DeleteRolePermissionsBoundary
+                Resource: "*"
+              - Sid: KeepBoundaryPolicy
+                Effect: Deny
+                Action:
+                  - iam:CreatePolicyVersion
+                  - iam:DeletePolicy
+                  - iam:DeletePolicyVersion
+                  - iam:SetDefaultPolicyVersion
+                  - iam:TagPolicy
+                  - iam:UntagPolicy
+                Resource: !Ref AppRoleBoundary
 
   # Runs the eval in CI, in the eval environment only (#9). It reads the
   # snapshot and the reports, and adds a report only under a key that is
@@ -309,7 +413,7 @@ Outputs:
     Description: Store as the AWS_DEPLOY_ROLE_ARN secret on the prod environment.
     Value: !GetAtt DeployRole.Arn
   DeployExecutionRoleArn:
-    Description: Store as the AWS_DEPLOY_EXECUTION_ROLE_ARN secret on the prod environment.
+    Description: For reference. The deploy builds it from its own account and the role's name, so nothing needs copying.
     Value: !GetAtt DeployExecutionRole.Arn
   CiEvalRoleArn:
     Description: Store as the AWS_EVAL_ROLE_ARN secret on the eval environment.

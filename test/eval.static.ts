@@ -33,6 +33,28 @@ describe("the eval workflow", () => {
     expect(JSON.stringify(steps)).toContain("secrets.AWS_EVAL_ROLE_ARN");
   });
 
+  // The private bucket is grantlink-text-<account id>, built from the
+  // account the role is in, as the app stack names it (#43).
+  it("reads nothing from GitHub but the eval role's ARN", () => {
+    const text = readRepoFile(".github/workflows/eval.yml");
+    const names = [...text.matchAll(/\b(secrets|vars)\.(\w+)/gu)].map(
+      ([, kind, name]) => `${kind ?? ""}.${name ?? ""}`,
+    );
+    expect([...new Set(names)]).toEqual(["secrets.AWS_EVAL_ROLE_ARN"]);
+  });
+
+  it("builds the private bucket's name from the account it assumed the role in", () => {
+    const assume = steps[at(/assume-role-with-web-identity/u)]?.run ?? "";
+    const mask = assume.indexOf('::add-mask::$account"');
+    const bucket = assume.indexOf('echo "BUCKET=grantlink-text-$account"');
+    expect(mask).toBeGreaterThan(-1);
+    expect(bucket).toBeGreaterThan(mask);
+    expect(assume.indexOf("GITHUB_ENV", bucket)).toBeGreaterThan(bucket);
+    expect(readRepoFile("scripts/eval-snapshot.sh")).not.toContain(
+      "PRIVATE_BUCKET_NAME",
+    );
+  });
+
   it("hands its fingerprint and report to the deploy", () => {
     expect(Object.keys(job?.outputs ?? {}).sort()).toEqual([
       "fingerprint",

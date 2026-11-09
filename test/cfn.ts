@@ -73,6 +73,7 @@ export interface Resource {
 
 export interface Template {
   Parameters?: Record<string, Record<string, unknown>>;
+  Conditions?: Record<string, unknown>;
   Resources: Record<string, Resource>;
   Outputs?: Record<string, { Value: unknown }>;
 }
@@ -118,4 +119,16 @@ export function subText(value: unknown): string {
     if (Array.isArray(sub) && typeof sub[0] === "string") return sub[0];
   }
   return JSON.stringify(value);
+}
+
+// Whether an IAM pattern, with its * and ? wildcards, covers a value, as
+// IAM compares actions and ARNs: without regard to case for actions.
+export function wildcardMatches(pattern: string, value: string): boolean {
+  return new RegExp(
+    `^${pattern
+      .replace(/[.+^${}()|[\]\\]/gu, "\\$&")
+      .replace(/\*/gu, ".*")
+      .replace(/\?/gu, ".")}$`,
+    "iu",
+  ).test(value);
 }

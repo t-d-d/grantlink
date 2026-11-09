@@ -20,9 +20,10 @@ what a visitor reads.
   CloudFront reads it through origin access control.
 - CloudFront sends every plain HTTP request to HTTPS, and tells browsers
   to keep to HTTPS.
-- The page is served at grantlink.uk once the DNS stack's certificate and
-  zone are set in the `prod` environment, and at CloudFront's own address
-  until then.
+- The page is served at grantlink.uk. The app stack reads the
+  certificate's ARN and the zone's id from the `dns` stack in us-east-1 at
+  deploy time, so a deploy before the DNS stack exists fails. It never
+  falls back to CloudFront's own address.
 - The DNS stack and the roles stack sit in us-east-1, apart from the app
   stack, and the owner applies them by hand. Deleting the app stack never
   changes the nameservers.
@@ -45,4 +46,4 @@ The static checks read the templates. A setting changed in the console
 does not show there, and only the app stack should change the account.
 The live tier checks after each deploy that plain HTTP is sent to HTTPS.
 
-History: #4
+History: #4, #44

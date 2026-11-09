@@ -45,12 +45,6 @@ const describeValue = (variable: string): string => {
   if (read) {
     return `The ${stackLabels[read.stack] ?? read.stack} stack's \`${read.key}\` output`;
   }
-  if (
-    variable === "bucket" &&
-    lines.includes('bucket="grantlink-text-${account}"')
-  ) {
-    return "`grantlink-text-<account id>`";
-  }
   return `an unknown value in $${variable}`;
 };
 
@@ -100,11 +94,38 @@ describe("the bootstrap script", () => {
     }
   });
 
-  it("reaches GitHub only through give, which pipes the value to gh", () => {
+  it("reaches GitHub only through give, which pipes the value to gh, and drop", () => {
     const gh = lines.filter((line) => /(^|[|;&(`]\s*)gh\b/u.test(line));
     expect(gh).toEqual([
       `printf '%s' "$4" | gh "$1" set "$2" --repo "$REPO" --env "$3"`,
+      `if ! err=$(gh "$1" delete "$2" --repo "$REPO" --env "$3" 2>&1 >/dev/null); then`,
     ]);
+  });
+
+  // GitHub holds only the role each job assumes (#43). The values earlier
+  // runs set are removed, and none of them is one the script still gives.
+  it("gives GitHub one value per environment, and removes the five it no longer sets", () => {
+    expect([...given].map((value) => value.split(":")[0]).sort()).toEqual([
+      "secret AWS_DEPLOY_ROLE_ARN prod",
+      "secret AWS_EVAL_ROLE_ARN eval",
+    ]);
+    const dropped = lines.flatMap((line) => {
+      const [, kind, name, environment] =
+        /^drop (secret|variable) ([A-Z_]+) ([a-z]+)$/u.exec(line) ?? [];
+      return kind && name && environment
+        ? [`${kind} ${name} ${environment}`]
+        : [];
+    });
+    expect(dropped.sort()).toEqual([
+      "secret AWS_DEPLOY_EXECUTION_ROLE_ARN prod",
+      "secret CERTIFICATE_ARN prod",
+      "secret PRIVATE_BUCKET_NAME eval",
+      "secret PRIVATE_BUCKET_NAME prod",
+      "variable HOSTED_ZONE_ID prod",
+    ]);
+    expect(lines.filter((line) => /^drop\s/u.test(line))).toHaveLength(
+      dropped.length,
+    );
   });
 
   // So a session that runs out part way, or an output that is missing,

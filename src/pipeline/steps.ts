@@ -1,4 +1,4 @@
-import type { EuropePmc } from "../europepmc/client.ts";
+import type { EuropePmc, SearchPaper } from "../europepmc/client.ts";
 import { fundingSections } from "../europepmc/jats.ts";
 import { findReferences, RULES_VERSION } from "../extract/rules.ts";
 import { logger } from "../log.ts";
@@ -28,31 +28,44 @@ export interface Deps {
 }
 
 export interface SearchResult {
-  // How many papers with full text this page of the search found.
-  found: number;
-  // The ones not yet processed, which this run reads.
-  todo: string[];
+  // How many results the whole search holds, as Europe PMC counts them.
+  hitCount: number;
+  // This page's papers with full text.
+  papers: SearchPaper[];
   nextCursor: string | null;
 }
 
-// Reads one page of the search, records each paper it finds, and decides
-// which still need reading. Safe to run twice: a paper already held is
-// left as it is.
+// Reads one page of the search, and nothing else, so a step that retries
+// it retries only Europe PMC.
 export async function searchPage(
   deps: Deps,
   cursor: string,
 ): Promise<SearchResult> {
   const page = await deps.europePmc.search(cursor);
-  await deps.table.addFound(page.papers, deps.now());
-  const ids = page.papers.map((paper) => paper.pmcid);
-  const done = await deps.table.processed(ids);
-  const todo = ids.filter((pmcid) => !done.has(pmcid));
   logger.info("search-page", {
     hitCount: page.hitCount,
-    found: ids.length,
-    todo: todo.length,
+    found: page.papers.length,
+    skipped: page.skipped,
   });
-  return { found: ids.length, todo, nextCursor: page.nextCursor };
+  return {
+    hitCount: page.hitCount,
+    papers: page.papers,
+    nextCursor: page.nextCursor,
+  };
+}
+
+// Records each paper a page of the search found, and decides which still
+// need reading. Safe to run twice: a paper already held is left as it is.
+export async function recordPage(
+  deps: Deps,
+  papers: SearchPaper[],
+): Promise<string[]> {
+  await deps.table.addFound(papers, deps.now());
+  const ids = papers.map((paper) => paper.pmcid);
+  const done = await deps.table.processed(ids);
+  const todo = ids.filter((pmcid) => !done.has(pmcid));
+  logger.info("page-recorded", { found: ids.length, todo: todo.length });
+  return todo;
 }
 
 // Reads one paper: fetches its full text, keeps its funding sections in the

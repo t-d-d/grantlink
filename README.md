@@ -13,7 +13,7 @@ The plan is the PRD, [#1](https://github.com/t-d-d/grantlink/issues/1). The deci
 Two stacks are applied by hand, once, before anything deploys, and both are code in [infra/](infra/):
 
 - **The DNS stack**, `dns`, from [infra/dns.cfn.yml](infra/dns.cfn.yml): the hosted zone for grantlink.uk and its certificate, in us-east-1, where CloudFront requires the certificate. The zone is kept if the stack is deleted, so its nameservers never change under the registrar.
-- **The roles stack**, `grantlink-github-oidc`, from [infra/github-oidc.cfn.yml](infra/github-oidc.cfn.yml): GitHub's OIDC provider, the deploy role and the role CloudFormation takes to build the app stack, the CI eval role, and `access-eval` for aws-access's `grantlink-eval` profile. IAM is global, so it sits in us-east-1 beside the DNS stack. It reads the access account's id from aws-access's `/access/account-id` parameter in us-east-1.
+- **The roles stack**, `grantlink-github-oidc`, from [infra/github-oidc.cfn.yml](infra/github-oidc.cfn.yml): GitHub's OIDC provider, the deploy role and the role CloudFormation takes to build the app stack, `grantlink-app-boundary`, the permissions boundary every role in the app stack must carry, the CI eval role, and `access-eval` for aws-access's `grantlink-eval` profile. IAM is global, so it sits in us-east-1 beside the DNS stack. It reads the access account's id from aws-access's `/access/account-id` parameter in us-east-1.
 
 Every later change to the account goes through the app stack, from a green merge to main.
 
@@ -27,18 +27,18 @@ It asks only whether the account is the right one. Then it:
 
 1. Applies the DNS stack, and prints the zone's nameservers as soon as the zone exists. If the registrar does not list them yet, set them there then: the certificate, and so the stack, waits until it does.
 2. Applies the roles stack. It takes no parameter a person fills. It reads the access account's id from SSM, and the private bucket is `grantlink-text-<account id>`, the name the app stack (#19) must give it.
-3. Gives GitHub every value the deploy and the eval read:
+3. Gives GitHub the role each job assumes, one per environment:
 
 | Name | Kind | GitHub environment | Value |
 | --- | --- | --- | --- |
 | `AWS_DEPLOY_ROLE_ARN` | Secret | `prod` | The roles stack's `DeployRoleArn` output |
-| `AWS_DEPLOY_EXECUTION_ROLE_ARN` | Secret | `prod` | The roles stack's `DeployExecutionRoleArn` output |
-| `CERTIFICATE_ARN` | Secret | `prod` | The DNS stack's `CertificateArn` output |
-| `HOSTED_ZONE_ID` | Variable | `prod` | The DNS stack's `HostedZoneId` output |
-| `PRIVATE_BUCKET_NAME` | Secret | `prod` and `eval` | `grantlink-text-<account id>` |
 | `AWS_EVAL_ROLE_ARN` | Secret | `eval` | The roles stack's `CiEvalRoleArn` output |
 
-Role ARNs, the certificate's ARN and the bucket's name carry the account id, so they are secrets, never variables. The script reads every value before it gives GitHub any, and stops rather than give an empty one.
+Role ARNs carry the account id, so they are secrets, never variables. The script reads both values before it gives GitHub either, and stops rather than give an empty one.
+
+4. Removes the values earlier versions of the script set and no jobs read now: `AWS_DEPLOY_EXECUTION_ROLE_ARN`, `CERTIFICATE_ARN`, `HOSTED_ZONE_ID` and `PRIVATE_BUCKET_NAME` in `prod`, and `PRIVATE_BUCKET_NAME` in `eval`. A value that is already gone counts as removed.
+
+Once a job has assumed its role, it finds or builds every other value it needs. The app stack reads the certificate's ARN and the zone's id from the DNS stack, and builds the execution role's ARN from the account and the role's fixed name, `grantlink-deploy-execution`. The eval builds the private bucket's name from the account. GitHub holds no copy of them to go stale (#43).
 
 The script is safe to run again. Each step changes only what differs, and it waits for a stack an earlier run left part way. If the credentials expire while the certificate waits for the registrar, the script stops while the stack carries on. Run it again and it waits for the stack. A stack whose first create failed has to be deleted before a run can apply it, and the script says so.
 
@@ -50,14 +50,14 @@ The app stack, `grantlink-prod`, is defined in [serverless.yml](serverless.yml) 
 
 [deploy.yml](.github/workflows/deploy.yml) runs on every push to main, and nothing else deploys. It runs the gate and the eval, then:
 
-1. Reads whether `AWS_DEPLOY_ROLE_ARN` and `AWS_DEPLOY_EXECUTION_ROLE_ARN` are set in `prod`. Until the bootstrap above has run, it stops there and deploys nothing.
+1. Reads whether `AWS_DEPLOY_ROLE_ARN` is set in `prod`. Until the bootstrap above has run, it stops there and deploys nothing.
 2. Checks that the eval's report is for main's own fingerprint and clears every gating floor, and records the release in `site/release.json`: its commit, its fingerprint, the report and the run that produced it, and the deploy's own run. A report below a floor stops the deploy, and the page keeps the last release.
 3. Assumes the deploy role through GitHub's OIDC token, and masks the account id.
 4. Deploys the app stack. The first deploy also sets a one-time schedule that starts the first run a quarter of an hour later.
 5. Builds the page again from the release record and the last run's `found.json`, if there is one, copies [site/](site/) to the bucket and clears CloudFront's cache.
 6. Runs the live tier against the page. A failure turns the deploy red.
 
-CloudFront serves the page at grantlink.uk once `CERTIFICATE_ARN` and `HOSTED_ZONE_ID` are set in `prod`, and at its own `cloudfront.net` address until then. A failed deploy is fixed forward. There is no rollback step, and CloudFormation rolls a failed stack update back by itself.
+CloudFront serves the page at grantlink.uk, with the certificate and the zone the deploy reads from the DNS stack. A deploy before the DNS stack exists fails (#44). A failed deploy is fixed forward. There is no rollback step, and CloudFormation rolls a failed stack update back by itself.
 
 ## How the eval gates a release
 

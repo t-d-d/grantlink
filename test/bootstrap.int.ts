@@ -46,10 +46,7 @@ const firstRun: Answers = {
     ": > \"$STATE/released\"; printf 'ns-1.example\\tns-2.example\\n'",
   [`deploy ${roles}`]: ":",
   [`output ${roles} DeployRoleArn`]: "echo deploy-role",
-  [`output ${roles} DeployExecutionRoleArn`]: "echo execution-role",
   [`output ${roles} CiEvalRoleArn`]: "echo eval-role",
-  "output dns CertificateArn": "echo certificate",
-  "output dns HostedZoneId": "echo Z-STUB",
 };
 
 // Names each aws call by what it asks for, logs it, and answers it.
@@ -86,9 +83,23 @@ log "aws $call"
 answer "$call"
 `;
 
-// Logs what gh is asked to set and the value it reads on standard input.
+// Logs what gh is asked to set and the value it reads on standard input,
+// or what it is asked to delete. A delete answers as the file named for
+// the value in $STATE says: gone, as gh reports a missing value, or broken.
 const ghStub = `#!${bash}
 . "$STATE/lib.sh"
+if [ "$2" = delete ]; then
+  log "gh $*"
+  if [ -e "$STATE/gone-$3-$7" ]; then
+    echo "failed to delete $1 $3: HTTP 404: Not Found (https://api.github.com/stub)" >&2
+    exit 1
+  fi
+  if [ -e "$STATE/broken-$3-$7" ]; then
+    echo "failed to delete $1 $3: HTTP 403: Forbidden (https://api.github.com/stub)" >&2
+    exit 1
+  fi
+  exit 0
+fi
 log "gh $* < $(</dev/stdin)"
 `;
 
@@ -180,21 +191,23 @@ function run(answers: Answers, setup: string[] = []): Run {
 const steps = (calls: string[]): string[] =>
   calls.filter((call) => call !== "aws zone dns" && !call.startsWith("sleep"));
 
+// GitHub holds only the role each job assumes (#43): one value per
+// environment. The five values earlier runs set are removed.
 const gives = [
   "gh secret set AWS_DEPLOY_ROLE_ARN --repo t-d-d/grantlink --env prod < deploy-role",
-  "gh secret set AWS_DEPLOY_EXECUTION_ROLE_ARN --repo t-d-d/grantlink --env prod < execution-role",
-  "gh secret set CERTIFICATE_ARN --repo t-d-d/grantlink --env prod < certificate",
-  "gh variable set HOSTED_ZONE_ID --repo t-d-d/grantlink --env prod < Z-STUB",
-  "gh secret set PRIVATE_BUCKET_NAME --repo t-d-d/grantlink --env prod < grantlink-text-stub-account",
-  "gh secret set PRIVATE_BUCKET_NAME --repo t-d-d/grantlink --env eval < grantlink-text-stub-account",
   "gh secret set AWS_EVAL_ROLE_ARN --repo t-d-d/grantlink --env eval < eval-role",
+  "gh secret delete AWS_DEPLOY_EXECUTION_ROLE_ARN --repo t-d-d/grantlink --env prod",
+  "gh secret delete CERTIFICATE_ARN --repo t-d-d/grantlink --env prod",
+  "gh variable delete HOSTED_ZONE_ID --repo t-d-d/grantlink --env prod",
+  "gh secret delete PRIVATE_BUCKET_NAME --repo t-d-d/grantlink --env prod",
+  "gh secret delete PRIVATE_BUCKET_NAME --repo t-d-d/grantlink --env eval",
 ];
 
 const ghCalls = (calls: string[]): string[] =>
   calls.filter((call) => call.startsWith("gh "));
 
 describe("the bootstrap script, run against stub aws and gh", () => {
-  it("applies both stacks on a first run, shows the nameservers while the DNS deploy runs, and gives GitHub every value", () => {
+  it("applies both stacks on a first run, shows the nameservers while the DNS deploy runs, and sets and removes GitHub's values", () => {
     const { status, stdout, calls } = run(firstRun);
     expect(status).toBe(0);
     expect(steps(calls)).toEqual([
@@ -206,10 +219,7 @@ describe("the bootstrap script, run against stub aws and gh", () => {
       `aws status ${roles}`,
       `aws deploy ${roles}`,
       `aws output ${roles} DeployRoleArn`,
-      `aws output ${roles} DeployExecutionRoleArn`,
       `aws output ${roles} CiEvalRoleArn`,
-      "aws output dns CertificateArn",
-      "aws output dns HostedZoneId",
       ...gives,
     ]);
     expect(stdout).toContain("ns-1.example\nns-2.example\n");
@@ -257,14 +267,30 @@ describe("the bootstrap script, run against stub aws and gh", () => {
     (answer) => {
       const { status, stdout, calls } = run({
         ...firstRun,
-        "output dns CertificateArn": answer,
+        [`output ${roles} DeployRoleArn`]: answer,
       });
       expect(status).toBe(1);
-      expect(calls).toContain("aws output dns HostedZoneId");
+      expect(calls).toContain(`aws output ${roles} CiEvalRoleArn`);
       expect(ghCalls(calls)).toEqual([]);
-      expect(stdout).toContain("gave no value for certificate");
+      expect(stdout).toContain("gave no value for deploy_role");
     },
   );
+
+  it("treats a value that is already gone as removed", () => {
+    const { status, calls } = run(firstRun, [
+      "gone-CERTIFICATE_ARN-prod",
+      "gone-HOSTED_ZONE_ID-prod",
+      "gone-PRIVATE_BUCKET_NAME-eval",
+    ]);
+    expect(status).toBe(0);
+    expect(ghCalls(calls)).toEqual(gives);
+  });
+
+  it("stops when GitHub refuses to remove a value for any other reason", () => {
+    const { status, calls } = run(firstRun, ["broken-CERTIFICATE_ARN-prod"]);
+    expect(status).toBe(1);
+    expect(ghCalls(calls)).toEqual(gives.slice(0, 4));
+  });
 
   it("stops before it changes anything when the account has no /access/account-id parameter", () => {
     const { status, stdout, calls } = run({

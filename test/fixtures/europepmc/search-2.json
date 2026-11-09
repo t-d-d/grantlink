@@ -1,11 +1,42 @@
 {
   "version": "6.9",
-  "hitCount": 5,
+  "hitCount": 9,
   "nextCursorMark": "AoIIPwAAACgxMjM0",
   "request": {
     "queryString": "written by hand",
     "cursorMark": "AoIIPwAAACgxMjM0",
     "pageSize": 1000
   },
-  "resultList": { "result": [] }
+  "resultList": {
+    "result": [
+      {
+        "id": "42498499",
+        "source": "MED",
+        "pmcid": "PMC13401056",
+        "title": "Investigating the role of CpG islands and DNA methylation at 3'UTRs in cancer.",
+        "firstPublicationDate": "2026-07-24"
+      },
+      {
+        "id": "42824982",
+        "source": "MED",
+        "pmcid": "PMC13628515",
+        "title": "Receptor tyrosine kinase targeted therapies in glioblastoma: a systematic review.",
+        "firstPublicationDate": "2026-09-17"
+      },
+      {
+        "id": "PMC13642255",
+        "source": "PMC",
+        "pmcid": "PMC13642255",
+        "title": "SETD2 is a novel and druggable dependency in IMiD/CELMoD resistant multiple myeloma models",
+        "firstPublicationDate": "2026-10-06"
+      },
+      {
+        "id": "PMC13664392",
+        "source": "PMC",
+        "pmcid": "PMC13664392",
+        "title": "Fast-Dissociating High-Supply Peptides as Contributors to MHC-I Antigen Presentation",
+        "firstPublicationDate": "2026-09-23"
+      }
+    ]
+  }
 }

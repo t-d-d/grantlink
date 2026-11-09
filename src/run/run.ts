@@ -3,6 +3,7 @@ import {
   markFailed,
   publish,
   readPaper,
+  recordPage,
   searchPage,
   type Deps,
   type Published,
@@ -11,9 +12,9 @@ import { batches } from "../shared/batches.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 
-// A run: search Europe PMC page by page, read each paper not yet read, then
-// publish the page. Every I/O call sits in a step
-// (docs/constraints/durable-execution.md). A paper that fails is left for
+// A run: search Europe PMC page by page, record what each page found, read
+// each paper not yet read, then publish the page. Every I/O call sits in a
+// step (docs/constraints/durable-execution.md). A paper that fails is left for
 // the next run. A run that fails, or whose search finds nothing, publishes
 // nothing. Otherwise it publishes if the table holds any paper read, by
 // this run or an earlier one (publish in src/pipeline/steps.ts).
@@ -83,8 +84,15 @@ export function makeRun(deps: Deps) {
         async () => searchPage(deps, from),
         { retryStrategy: europePmcRetry },
       );
-      found += result.found;
-      for (const [index, batch] of batches(result.todo, BATCH).entries()) {
+      // The table's own step, so a failure to write or read it is retried
+      // under the store's strategy and never asks Europe PMC again.
+      const todo = await ctx.step(
+        `record-${String(page)}`,
+        async () => recordPage(deps, result.papers),
+        { retryStrategy: storeRetry },
+      );
+      found += result.papers.length;
+      for (const [index, batch] of batches(todo, BATCH).entries()) {
         const name = `papers-${String(page)}-${String(index)}`;
         const outcome = await ctx.runInChildContext(name, async (child) =>
           readBatch(child, deps, batch, runId),

@@ -137,25 +137,61 @@ describe("fitness: HTTPS only (hosting.md)", () => {
   });
 });
 
-describe("the page's address", () => {
-  it("serves at grantlink.uk only once the certificate and the zone are given", () => {
+// hosting.md states no rule on ACLs, so this is not a fitness check (#95).
+describe("the page's bucket", () => {
+  // With ACLs disabled, no grant in the template can let another account
+  // write or change the page's files. The deploy role's s3:PutBucket* can
+  // still change the bucket outside the template, which this tier cannot see.
+  it("lets no ACL grant access to the bucket", () => {
+    const bucket = resource(site, "SiteBucket").Properties;
+    expect(bucket.OwnershipControls).toEqual({
+      Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }],
+    });
+    expect(bucket.AccessControl).toBeUndefined();
+  });
+});
+
+describe("the page's address (#44)", () => {
+  const records = Object.values(site.Resources).filter(
+    (r) => r.Type === "AWS::Route53::RecordSet",
+  );
+
+  it("always serves at grantlink.uk, with no fallback to CloudFront's own address", () => {
     expect(site.Parameters?.DomainName?.Default).toBe("grantlink.uk");
-    expect(site.Parameters?.CertificateArn?.Default).toBe("");
-    expect(site.Parameters?.HostedZoneId?.Default).toBe("");
-    const records = Object.values(site.Resources).filter(
-      (r) => r.Type === "AWS::Route53::RecordSet",
-    );
-    expect(records.length).toBeGreaterThan(0);
+    expect(site.Conditions).toBeUndefined();
+    const config = resource(site, "Distribution").Properties
+      .DistributionConfig as Record<string, unknown>;
+    expect(config.Aliases).toEqual([{ Ref: "DomainName" }]);
+    expect(config.ViewerCertificate).toEqual({
+      AcmCertificateArn: { Ref: "CertificateArn" },
+      SslSupportMethod: "sni-only",
+      MinimumProtocolVersion: "TLSv1.2_2021",
+    });
+    expect(site.Outputs?.PageUrl?.Value).toEqual({
+      "Fn::Sub": "https://${DomainName}/",
+    });
+  });
+
+  // The zone is read by id from the dns stack, as the certificate is. The
+  // records then keep the zone they were made in, so a deploy does not
+  // replace them, and a zone kept from an earlier dns stack, which has the
+  // same name, cannot be taken for it.
+  it("puts its alias records in the dns stack's zone, read by id", () => {
+    expect(site.Parameters?.HostedZoneId?.Default).toBeUndefined();
+    expect(records.map((r) => r.Properties.Type).sort()).toEqual(["A", "AAAA"]);
     for (const record of records) {
-      expect((record as { Condition?: string }).Condition).toBe("HasDomain");
+      expect((record as { Condition?: string }).Condition).toBeUndefined();
+      expect(record.Properties.HostedZoneId).toEqual({ Ref: "HostedZoneId" });
+      expect(record.Properties.HostedZoneName).toBeUndefined();
     }
   });
 
-  it("takes the certificate and the zone from the deploy's environment", () => {
+  it("reads the certificate and the zone from the dns stack in us-east-1 at deploy time", () => {
+    expect(site.Parameters?.CertificateArn?.Default).toBeUndefined();
     expect(serverless.resources).toContainEqual({
       Parameters: {
-        CertificateArn: { Default: "${env:CERTIFICATE_ARN, ''}" },
-        HostedZoneId: { Default: "${env:HOSTED_ZONE_ID, ''}" },
+        CertificateArn: { Default: "${cf(us-east-1):dns.CertificateArn}" },
+        HostedZoneId: { Default: "${cf(us-east-1):dns.HostedZoneId}" },
       },
     });
   });
@@ -167,9 +203,22 @@ describe("the page's address", () => {
     expect(serverless.provider.stackParameters).toBeUndefined();
   });
 
-  it("builds the stack through the execution role", () => {
+  it("builds the stack through the execution role, named in the deploy's own account", () => {
     expect(serverless.provider.iam?.deploymentRole).toBe(
-      "${env:AWS_DEPLOY_EXECUTION_ROLE_ARN}",
+      "arn:aws:iam::${aws:accountId}:role/grantlink-deploy-execution",
     );
+    expect(
+      resource(readTemplate("infra/github-oidc.cfn.yml"), "DeployExecutionRole")
+        .Properties.RoleName,
+    ).toBe("grantlink-deploy-execution");
+  });
+
+  // Only the role a job assumes lives in GitHub (#43). The commit and the
+  // first run's time come from the workflow itself.
+  it("reads nothing from the deploy's environment but the commit and the first run's time", () => {
+    const names = [
+      ...readRepoFile("serverless.yml").matchAll(/\$\{env:(\w+)/gu),
+    ].map(([, name]) => name);
+    expect([...new Set(names)].sort()).toEqual(["FIRST_RUN_AT", "GITHUB_SHA"]);
   });
 });
