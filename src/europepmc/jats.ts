@@ -37,16 +37,27 @@ function plain(xml: string): string {
     .trim();
 }
 
+// What ends a tag's name: whitespace, a slash or the tag's close. \b would
+// let "fn" match <fn-group> and "title" match <title-group>, since a hyphen
+// ends a word (#210, #216).
+const NAME_END = String.raw`(?=[\s/>])`;
+
 // Every element with this name, as its inner XML. JATS does not nest any of
 // the elements read here inside one of the same name. A self-closing element
 // is empty, and does not run on to the next closing tag of its name (#195).
-function elements(xml: string, name: string, attributes = ""): string[] {
+export function elements(xml: string, name: string, attributes = ""): string[] {
   const pattern = new RegExp(
-    `<${name}\\b(?=[^>]*${attributes})(?:[^>]*/>|[^>]*>([\\s\\S]*?)</${name}>)`,
+    `<${name}${NAME_END}(?=[^>]*${attributes})(?:[^>]*/>|[^>]*>([\\s\\S]*?)</${name}>)`,
     "gu",
   );
   return [...xml.matchAll(pattern)].map((match) => match[1] ?? "");
 }
+
+// A section's title.
+const TITLE = new RegExp(
+  String.raw`<title${NAME_END}[^>]*>[\s\S]*?<\/title>`,
+  "gu",
+);
 
 // The paragraphs of a section, or its whole text less its title if it has
 // none. A self-closing paragraph is empty, so it does not count.
@@ -55,20 +66,39 @@ function paragraphs(section: string): string[] {
     .map(plain)
     .filter((paragraph) => paragraph !== "");
   if (found.length > 0) return found;
-  return [
-    plain(section.replace(/<title(?=[\s/>])[^>]*>[\s\S]*?<\/title>/gu, "")),
-  ];
+  return [plain(section.replace(TITLE, ""))];
 }
 
-// A funding or acknowledgements section in the body, found by its type or by
+// What counts as a funding part, read here by the cutter and by the check on
+// recorded fixtures (test/fixture-parts.ts), so the two agree (#159).
+
+// The attribute that marks a footnote as funding text.
+export const FUNDING_FOOTNOTE = String.raw`\bfn-type="(?:financial-disclosure|funding|supported-by)"`;
+
+// The start of a funding or acknowledgements section, found by its type or by
 // its title. Europe PMC often marks acknowledgements up as a section rather
 // than an <ack>, and one journal titles its funding section Support. Support
 // must be the whole title, so a body section such as Support vector machines
 // is not kept. A tag matches only by its whole name, so <sec-meta> is not a
-// section and <title-group> is not a title (#216). The match starts at the
-// section's own opening tag, so one nested in another section is found too.
-const FUNDING_SECTION =
-  /<sec(?=[\s/>])(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>|[^>]*>\s*(?:<label(?=[\s/>])[^>]*>[\s\S]*?<\/label>\s*)?<title(?=[\s/>])[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))([\s\S]*?)<\/sec>/giu;
+// section and <title-group> is not a title (#216). A label ends at its own closing tag, so a labelled section
+// is not taken for the labelled funding section after it.
+const FUNDING_SECTION_START = String.raw`<sec${NAME_END}(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>|[^>]*>\s*(?:<label${NAME_END}[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>\s*)?<title${NAME_END}[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
+
+const FUNDING_SECTION_AT = new RegExp(FUNDING_SECTION_START, "iuy");
+
+// Whether the section that opens at this index of the XML is a funding
+// section.
+export function isFundingSectionAt(xml: string, index: number): boolean {
+  FUNDING_SECTION_AT.lastIndex = index;
+  return FUNDING_SECTION_AT.test(xml);
+}
+
+// Every funding section, wherever it is. The match starts at the section's
+// own opening tag, so one nested in another section is found too.
+const FUNDING_SECTION = new RegExp(
+  String.raw`${FUNDING_SECTION_START}([\s\S]*?)<\/sec>`,
+  "giu",
+);
 
 function fundingBodySections(xml: string): string[] {
   // A match found by its title starts part way through the title, so the
@@ -99,11 +129,7 @@ export function fundingSections(xml: string): FundingSections {
     ...statements,
     ...sections.flatMap(paragraphs),
     ...elements(xml, "ack").flatMap(paragraphs),
-    ...elements(
-      xml,
-      "fn",
-      `fn-type="(?:financial-disclosure|funding|supported-by)"`,
-    ).flatMap(paragraphs),
+    ...elements(xml, "fn", FUNDING_FOOTNOTE).flatMap(paragraphs),
   ].filter((paragraph) => paragraph !== "");
   return { text: [...new Set(text)], awards };
 }

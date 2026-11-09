@@ -4,23 +4,31 @@
 // sections and footnotes. Anything else, such as the author list, the
 // affiliations, the title, the abstract, the reference list or the body, can
 // carry real names, and is named here.
+//
+// Whether a section or footnote is a funding part is decided by the
+// definitions the cutter in src/europepmc/jats.ts exports, so the two agree
+// (#159). The check does not look inside a part it allows. One difference
+// stays: the cutter finds a funding section nested in another
+// section, but the check refuses the outer section, whose other parts can
+// carry names. A recording keeps only the funding section, moved up into the
+// body or the back.
+
+import { FUNDING_FOOTNOTE, isFundingSectionAt } from "../src/europepmc/jats.ts";
 
 interface Element {
   name: string;
-  open: string;
   children: Element[];
   text: boolean;
+  // Whether the cutter reads the element as a funding section or footnote.
+  funding: boolean;
 }
 
-// The footnote types jats.ts reads as funding text.
-const FUNDING_FOOTNOTE =
-  /\bfn-type="(?:financial-disclosure|funding|supported-by)"/u;
-const FUNDING_SECTION = /\bsec-type="funding"/u;
+const FOOTNOTE = new RegExp(FUNDING_FOOTNOTE, "u");
 
 const isFundingSection = (element: Element): boolean =>
-  element.name === "sec" && FUNDING_SECTION.test(element.open);
+  element.name === "sec" && element.funding;
 const isFundingFootnote = (element: Element): boolean =>
-  element.name === "fn" && FUNDING_FOOTNOTE.test(element.open);
+  element.name === "fn" && element.funding;
 
 // For each element whose children are checked, which children it may hold.
 // The children of an element allowed here, but not listed, are not checked.
@@ -43,7 +51,7 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
 // processing instructions are dropped. CDATA and comments count as text,
 // since a comment can hold a cut part kept by mistake.
 function parse(xml: string): Element {
-  const root: Element = { name: "", open: "", children: [], text: false };
+  const root: Element = { name: "", children: [], text: false, funding: false };
   const stack = [root];
   const tokens =
     /<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->|<[?!][^>]*>|<(\/?)([^\s/>]+)([^>]*?)(\/?)>|[^<]+/gu;
@@ -58,7 +66,10 @@ function parse(xml: string): Element {
     } else if (close === "/") {
       stack.pop();
     } else {
-      const element = { name, open: attributes, children: [], text: false };
+      const funding =
+        (name === "sec" && isFundingSectionAt(xml, match.index)) ||
+        (name === "fn" && FOOTNOTE.test(attributes));
+      const element = { name, children: [], text: false, funding };
       parent.children.push(element);
       if (empty !== "/") stack.push(element);
     }
