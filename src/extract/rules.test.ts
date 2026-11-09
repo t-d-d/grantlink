@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findReferences, RULES_VERSION } from "./rules.ts";
+import { findReferences, referenceSchema, RULES_VERSION } from "./rules.ts";
 
 // Every reference here is made up in the shape of one the PRD (#1) quotes.
 const sections = (...text: string[]) => ({ text, awards: [] });
@@ -15,6 +15,15 @@ describe("the rules", () => {
     ["CTRQQR-2021\\100010", "CTRQQR-2021/100010", "CODE-YYYY/n"],
     ["RRCOER-Jun24/100008", "RRCOER-JUN24/100008", "CODE-MonYY/n"],
     ["DRCMDPA∖100010", "DRCMDPA/100010", "CODE/n"],
+    // The forms gold set B holds that rules-2 missed (#177).
+    ["FC001234", "FC001234", "FCn"],
+    ["CC2001", "CC2001", "CCn"],
+    ["RT1234", "RT1234", "RTn"],
+    ["G123/45", "G123/45", "Gn/n"],
+    ["ABCDEF- Nov21/100001", "ABCDEF-NOV21/100001", "CODE-MonYY/n"],
+    ["ABCDEF\u2010Nov21/100001", "ABCDEF-NOV21/100001", "CODE-MonYY/n"],
+    ["ABCDEFApr2020\\100001", "ABCDEFAPR2020/100001", "CODEMonYYYY/n"],
+    ["ABCDEFNov21/100001", "ABCDEFNOV21/100001", "CODEMonYY/n"],
   ])("reads %s as %s", (written, normalised, format) => {
     const found = findReferences(
       sections(`This work was funded by Cancer Research UK (${written}).`),
@@ -26,6 +35,61 @@ describe("the rules", () => {
     expect(
       findReferences(sections("Supported by CRUK grant A28707 to the lab.")),
     ).toEqual([{ asWritten: "A28707", normalised: "A28707", format: "An" }]);
+  });
+
+  it("reads the A numbers after CR-UK", () => {
+    expect(
+      findReferences(sections("Supported by CR-UK (A12345 and A23456).")),
+    ).toEqual([
+      { asWritten: "A12345", normalised: "A12345", format: "An" },
+      { asWritten: "A23456", normalised: "A23456", format: "An" },
+    ]);
+  });
+
+  it.each([
+    ["a Crick core funding number", "FC001234"],
+    ["a newer Crick core funding number", "CC2001"],
+    ["a joint award number", "Award RT1234"],
+  ])("leaves %s in a sentence that names another funder", (_, written) => {
+    expect(
+      findReferences(
+        sections(
+          `We thank Cancer Research UK for support. The Example Trust funded ${written}.`,
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves a reference credited to Cancer Research, UK, another charity", () => {
+    expect(
+      findReferences(
+        sections(
+          "Funded by the Example Foundation for Cancer Research, UK (A12345).",
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves a lowercase g number", () => {
+    expect(findReferences(sections("Cancer Research UK (g123/45)."))).toEqual(
+      [],
+    );
+  });
+
+  it("reads a G number after the funder's name in any case", () => {
+    expect(
+      findReferences(sections("Funded by cancer research uk (G123/45).")),
+    ).toEqual([
+      { asWritten: "G123/45", normalised: "G123/45", format: "Gn/n" },
+    ]);
+  });
+
+  it("leaves a G number in another funder's brackets", () => {
+    expect(
+      findReferences(
+        sections("Cancer Research UK and the Example Council (G123/45)."),
+      ),
+    ).toEqual([]);
   });
 
   it("does not end a sentence at the dots in U.K.", () => {
@@ -128,6 +192,26 @@ describe("the rules", () => {
         awards: [{ sources: ["Cancer Research UK"], ids: ["28275"] }],
       }),
     ).toEqual([{ asWritten: "A28275", normalised: "A28275", format: "An" }]);
+  });
+
+  it("lists a bare number once when the text also gives it with its FC", () => {
+    expect(
+      findReferences({
+        text: ["Cancer Research UK (FC 001234)."],
+        awards: [{ sources: ["Cancer Research UK"], ids: ["001234"] }],
+      }),
+    ).toEqual([
+      { asWritten: "FC 001234", normalised: "FC001234", format: "FCn" },
+    ]);
+  });
+
+  it("returns only references the table accepts, whatever space follows a hyphen", () => {
+    const found = findReferences(
+      sections("Cancer Research UK (ABCDEF-\u00a0Nov21/100001)."),
+    );
+    for (const reference of found) {
+      expect(referenceSchema.safeParse(reference).success).toBe(true);
+    }
   });
 
   it("leaves a bare number the metadata gives another funder", () => {

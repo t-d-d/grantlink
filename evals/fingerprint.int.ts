@@ -4,11 +4,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { INPUTS, MISSING_INPUT } from "./fingerprint.ts";
+import { INPUTS } from "./fingerprint.ts";
 
-// The fingerprint script run against a scratch repository, as eval.yml
-// runs it against the live release's commit (#90). Its exit code tells a
-// commit that lacks an input apart from any other failure.
+// The fingerprint script run in a scratch repository, as eval.yml and
+// deploy.yml run it for their own checkout. It reads HEAD and takes no
+// argument, so it fails rather than print a fingerprint for the wrong
+// commit.
 const script = join(dirname(fileURLToPath(import.meta.url)), "fingerprint.ts");
 
 const dirs: string[] = [];
@@ -58,45 +59,51 @@ function repoWith(inputs: readonly string[]): { dir: string; commit: string } {
   return { dir, commit: git(dir, "rev-parse", "HEAD") };
 }
 
-const run = (dir: string, commit: string) =>
-  spawnSync(process.execPath, [script, commit], {
+const run = (dir: string, ...args: string[]) =>
+  spawnSync(process.execPath, [script, ...args], {
     cwd: dir,
     encoding: "utf8",
     env,
     timeout: 4_000,
   });
 
-describe("node evals/fingerprint.ts <commit>", () => {
-  it("prints the fingerprint of a commit that holds every input", () => {
-    const { dir, commit } = repoWith(INPUTS);
-    const result = run(dir, commit);
+describe("node evals/fingerprint.ts", () => {
+  it("prints the fingerprint of HEAD when it holds every input", () => {
+    const { dir } = repoWith(INPUTS);
+    const result = run(dir);
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toMatch(/^[0-9a-f]{64}$/u);
   });
 
-  it("exits with its own code when an input is missing at the commit", () => {
-    const { dir, commit } = repoWith(
-      INPUTS.filter((path) => path !== "src/shared"),
-    );
-    const result = run(dir, commit);
-    expect(result.status).toBe(MISSING_INPUT);
+  it("fails, and names the input, when HEAD lacks one", () => {
+    const { dir } = repoWith(INPUTS.filter((path) => path !== "src/shared"));
+    const result = run(dir);
+    expect(result.status).not.toBe(0);
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("src/shared");
   });
 
-  it("exits with another code, and says why, when the commit is unknown", () => {
-    const { dir } = repoWith(INPUTS);
-    const result = run(dir, "f".repeat(40));
+  it("fails, and says why, when the repository has no commit yet", () => {
+    const dir = scratch("grantlink-empty-repo-");
+    git(dir, "init", "--quiet");
+    const result = run(dir);
     expect(result.status).not.toBe(0);
-    expect(result.status).not.toBe(MISSING_INPUT);
-    expect(result.stderr).toContain("f".repeat(40));
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("HEAD is not a commit");
   });
 
-  it("exits with another code when it is not in a repository at all", () => {
-    const dir = scratch("grantlink-no-repo-");
-    const result = run(dir, "HEAD");
+  it("refuses a commit argument rather than print HEAD's fingerprint", () => {
+    const { dir, commit } = repoWith(INPUTS);
+    const result = run(dir, commit);
     expect(result.status).not.toBe(0);
-    expect(result.status).not.toBe(MISSING_INPUT);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("usage");
+  });
+
+  it("fails, and says why, when it is not in a repository at all", () => {
+    const dir = scratch("grantlink-no-repo-");
+    const result = run(dir);
+    expect(result.status).not.toBe(0);
     expect(result.stderr).not.toBe("");
   });
 });

@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { fakeDeps, fakeRelease, reply } from "../../test/fakes.ts";
 import { SEARCH_PAGE_SIZE } from "../europepmc/client.ts";
-import { publish, recordPage, searchPage } from "./steps.ts";
+import { checkWholeSearch, publish, recordPage, searchPage } from "./steps.ts";
 
 const logs: string[] = [];
 const spy = vi
@@ -17,6 +17,20 @@ afterAll(() => {
 });
 
 describe("reading a page of the search", () => {
+  it("fails a whole search that skipped results for a malformed PMCID and found no papers", () => {
+    expect(() => {
+      checkWholeSearch(0, 3);
+    }).toThrow(
+      "the search skipped 3 results for a malformed PMCID and found no papers",
+    );
+    expect(() => {
+      checkWholeSearch(1, 3);
+    }).not.toThrow();
+    expect(() => {
+      checkWholeSearch(0, 0);
+    }).not.toThrow();
+  });
+
   it("logs how many results it skipped, and nothing from them", async () => {
     const { deps } = fakeDeps({
       search: () =>

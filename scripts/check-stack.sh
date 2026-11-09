@@ -5,8 +5,9 @@
 #
 # - the stack is stuck in a cleanup or rollback state, or in any state but
 #   a settled one; or
-# - the funding text bucket exists but the stack does not list it, as a
-#   retained bucket would after a failed create.
+# - the funding text bucket exists but the stack does not list it. With a
+#   stack, the owner imports it. With none, as after a failed first create,
+#   the owner empties and deletes it (#129).
 #
 # The deploy workflow runs it once the deploy role is assumed;
 # test/check-stack.int.ts runs it against a stub aws.
@@ -44,13 +45,27 @@ case "$status" in
   "" | CREATE_COMPLETE | UPDATE_COMPLETE | UPDATE_ROLLBACK_COMPLETE | \
     IMPORT_COMPLETE | IMPORT_ROLLBACK_COMPLETE) ;;
   *)
-    # The newest resource that failed, from the latest page of events. Only
-    # its logical id and status are printed: a reason can name the bucket.
-    failed="$(aws cloudformation describe-stack-events --stack-name "$stack" \
+    # The latest page of events, newest first: each one's logical id, its
+    # status, and whether it is the stack's own "User Initiated" event, which
+    # starts an operation. Only ids and statuses are printed: a reason can
+    # name the bucket.
+    aws cloudformation describe-stack-events --stack-name "$stack" \
       --no-paginate --output text \
-      --query "StackEvents[?ends_with(ResourceStatus, '_FAILED') && ResourceType!='AWS::CloudFormation::Stack'] | [0].[LogicalResourceId, ResourceStatus]" \
-      2>"$work/err")" || fail_with "$work/err"
-    if [ "$failed" = "None" ] || [ -z "$failed" ]; then
+      --query "StackEvents[].[LogicalResourceId, ResourceStatus, LogicalResourceId=='$stack' && ResourceStatusReason=='User Initiated']" \
+      >"$work/events" 2>"$work/err" || fail_with "$work/err"
+    # The newest resource that failed in the current operation. Events from
+    # before the operation started belong to an older one (#129).
+    failed=
+    while IFS=$'\t' read -r id event started; do
+      if [ "$id" != "$stack" ] && [[ "$event" == *_FAILED ]]; then
+        failed="$id"$'\t'"$event"
+        break
+      fi
+      if [ "$started" = "True" ]; then
+        break
+      fi
+    done <"$work/events"
+    if [ -z "$failed" ]; then
       resource="$stack"
       named="No resource in it has failed."
     else
@@ -98,5 +113,12 @@ else
   fail_with "$work/err"
 fi
 
+if [ -z "$status" ]; then
+  # Creating the stack around the bucket by import is untested with osls,
+  # so the owner chose (#129) to empty and delete it, keeping any eval
+  # snapshot.
+  echo "::error::TextBucket, the funding text bucket, exists but $stack does not, as after a failed first create, so CloudFormation would refuse to create it. Empty and delete the funding text bucket in the S3 console, then run this deploy again. If it holds an eval snapshot under eval/, copy it out first: the repo pins the snapshot's hash, and the eval needs it back after the deploy."
+  exit 1
+fi
 echo "::error::TextBucket, the funding text bucket, exists but $stack does not list it, so CloudFormation would refuse to create it. It holds the funding text: do not delete it. Import it into $stack under the logical id TextBucket (CloudFormation console, Import resources into stack), then run this deploy again."
 exit 1
