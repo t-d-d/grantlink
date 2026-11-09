@@ -4,18 +4,24 @@ import { readTemplate, resource, trustOf } from "./cfn.ts";
 
 // Checks the OIDC subject each role trusts against GitHub's own record of
 // the repository, so an id typed wrongly in both the template and
-// test/github-oidc.static.ts, or a rename or a transfer, fails here rather
-// than at the next deploy (#52). GitHub answers a renamed or transferred
+// test/github-oidc.static.ts, or a rename or a transfer, fails here and not
+// only at a deploy (#52). GitHub answers a renamed or transferred
 // repository's old name with its new record, so the name here can go stale
 // without hiding a change.
 const repository = "t-d-d/grantlink";
 
 // Anonymous calls share a small rate limit per address, so a token is sent
-// when there is one: Actions' own GITHUB_TOKEN, or in a cloud session the
-// placeholder its proxy replaces, which Node's fetch reaches only with
-// NODE_USE_ENV_PROXY=1 set.
+// when GITHUB_TOKEN holds one: a token a workflow maps, or in a cloud
+// session the placeholder its proxy replaces, which Node's fetch reaches
+// only with NODE_USE_ENV_PROXY=1 set. An empty token, as a workflow passes for a
+// secret that is not set, counts as none.
 const { GITHUB_TOKEN } = z
-  .object({ GITHUB_TOKEN: z.string().min(1).optional() })
+  .object({
+    GITHUB_TOKEN: z
+      .string()
+      .optional()
+      .transform((token) => (token === "" ? undefined : token)),
+  })
   .parse(process.env);
 
 const Repository = z.object({
@@ -47,10 +53,13 @@ beforeAll(async () => {
         : { Authorization: `Bearer ${GITHUB_TOKEN}` }),
     },
   });
-  expect(response.status).toBe(200);
-  const { id, name, owner } = Repository.parse(await response.json());
-  subject = `repo:${owner.login}@${owner.id}/${name}@${id}`;
-});
+  // GitHub's reply says why a call failed, such as a bad token or the rate
+  // limit, so a failure shows it.
+  const reply = await response.text();
+  expect(response.status, reply).toBe(200);
+  const { id, name, owner } = Repository.parse(JSON.parse(reply));
+  subject = `repo:${owner.login}@${String(owner.id)}/${name}@${String(id)}`;
+}, 30_000);
 
 describe("the roles' OIDC subject", () => {
   it.each(Object.entries(roles))(
