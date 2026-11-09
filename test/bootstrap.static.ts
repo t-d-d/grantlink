@@ -84,6 +84,11 @@ describe("the bootstrap script", () => {
     expect([...given].sort()).toEqual([...listed].sort());
   });
 
+  it("gives GitHub nothing through a line the check above cannot read", () => {
+    const gives = lines.filter((line) => /^give\s/u.test(line));
+    expect(gives).toHaveLength(given.length);
+  });
+
   it("reads only outputs its templates declare", () => {
     expect(reads.size).toBeGreaterThan(0);
     for (const { stack, key } of reads.values()) {
@@ -96,7 +101,7 @@ describe("the bootstrap script", () => {
   });
 
   it("reaches GitHub only through give, which pipes the value to gh", () => {
-    const gh = lines.filter((line) => /(^|[|;&]\s*)gh\b/u.test(line));
+    const gh = lines.filter((line) => /(^|[|;&(`]\s*)gh\b/u.test(line));
     expect(gh).toEqual([
       `printf '%s' "$4" | gh "$1" set "$2" --repo "$REPO" --env "$3"`,
     ]);
@@ -121,6 +126,14 @@ describe("the bootstrap script", () => {
 
   it("applies both stacks in us-east-1 under fixed names", () => {
     expect(script).toMatch(/^REGION=us-east-1$/mu);
+    // The script sets no default region, so each regional call names it.
+    const regional = lines.filter((line) =>
+      /\baws (cloudformation|ssm) /u.test(line),
+    );
+    expect(regional.length).toBeGreaterThan(0);
+    for (const line of regional) {
+      expect(line).toContain('--region "$REGION"');
+    }
     // The name the DNS stack was first applied under, by hand.
     expect(script).toMatch(/^DNS_STACK=dns$/mu);
     expect(script).toMatch(/^ROLES_STACK=grantlink-github-oidc$/mu);
@@ -140,6 +153,8 @@ describe("the bootstrap script", () => {
       "OrganizationAccountAccessRole",
       "AWS_ACCESS_KEY_ID",
       "AWS_PROFILE",
+      "--profile",
+      "export AWS_",
     ]) {
       expect(script).not.toContain(route);
     }
@@ -180,7 +195,22 @@ describe("the bootstrap script", () => {
         /describe-stack-resource .*--stack-name "\$DNS_STACK" --logical-resource-id HostedZone /u,
       ),
     ).toBeGreaterThan(-1);
+    expect(
+      readTemplate(templates.get("DNS_STACK") ?? "").Resources.HostedZone?.Type,
+    ).toBe("AWS::Route53::HostedZone");
+    expect(
+      index(
+        /^aws route53 get-hosted-zone --id "\$1" --query 'DelegationSet\.NameServers'/u,
+      ),
+    ).toBeGreaterThan(-1);
     expect(script).not.toMatch(/list-hosted-zones-by-name/u);
+  });
+
+  // A rerun that waits on a stack still being created shows them first.
+  it("prints the nameservers of a zone that exists before it waits on the stack", () => {
+    const shown = index(/^\[ "\$zone" = "None" \] \|\| nameservers "\$zone"$/u);
+    expect(shown).toBeGreaterThan(-1);
+    expect(shown).toBeLessThan(index(/^settle "\$DNS_STACK"$/u));
   });
 
   it("stops waiting for the hosted zone if the DNS deploy has ended", () => {
@@ -188,9 +218,8 @@ describe("the bootstrap script", () => {
   });
 
   it("asks for no value by hand but the go-ahead", () => {
-    const reading = lines.filter(
-      (line) =>
-        /(^|[|;&]\s*)(read|select)\b/u.test(line) && !line.includes("<<<"),
+    const reading = lines.filter((line) =>
+      /(^|[|;&]\s*)(read|select)\b/u.test(line),
     );
     expect(reading).toHaveLength(1);
     expect(reading[0]).toMatch(/^read -r -p /u);

@@ -21,10 +21,10 @@ Run one script, from the repo root on your own machine, with AWS credentials for
 scripts/bootstrap.sh
 ```
 
-It asks only whether the account it found is the right one. Then it:
+It asks only whether the account is the right one. Then it:
 
-1. Applies the DNS stack, and prints the zone's nameservers as soon as the zone exists. Set them at the registrar then: the certificate, and so the stack, waits until they take effect.
-2. Applies the roles stack. It takes no parameters: the private bucket is `grantlink-text-<account id>`, the name the app stack (#19) must give it.
+1. Applies the DNS stack, and prints the zone's nameservers as soon as the zone exists. If the registrar does not list them yet, set them there then: the certificate, and so the stack, waits until it does.
+2. Applies the roles stack. It takes no parameter a person fills. It reads the access account's id from SSM, and the private bucket is `grantlink-text-<account id>`, the name the app stack (#19) must give it.
 3. Gives GitHub every value the deploy and the eval read:
 
 | Name | Kind | GitHub environment | Value |

@@ -57,6 +57,18 @@ settle() {
       echo "Waiting for $1, which an earlier run left being updated."
       aws cloudformation wait stack-update-complete --region "$REGION" --stack-name "$1"
       ;;
+    UPDATE_ROLLBACK_IN_PROGRESS | UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS)
+      echo "Waiting for $1, which is rolling back an update."
+      aws cloudformation wait stack-rollback-complete --region "$REGION" --stack-name "$1"
+      ;;
+    DELETE_IN_PROGRESS)
+      echo "Waiting for $1, which is being deleted."
+      aws cloudformation wait stack-delete-complete --region "$REGION" --stack-name "$1"
+      ;;
+    UPDATE_ROLLBACK_FAILED)
+      echo "$1 failed to roll back an update. Continue its rollback in the console, then run this again."
+      exit 1
+      ;;
     ROLLBACK_IN_PROGRESS | ROLLBACK_COMPLETE | ROLLBACK_FAILED)
       echo "$1 failed when it was first created, so CloudFormation cannot update it."
       echo "Delete it once its rollback has finished, then run this again."
@@ -76,30 +88,35 @@ stack_zone() {
   echo "${id:-None}"
 }
 
+# Prints a zone's nameservers for the owner to set at the registrar.
+nameservers() {
+  echo
+  echo "The nameservers for $DOMAIN. If the registrar does not list them yet, set them there now."
+  echo "The certificate, and so the DNS stack, waits until the registrar points at them."
+  aws route53 get-hosted-zone --id "$1" --query 'DelegationSet.NameServers' --output text | tr '\t' '\n'
+  echo
+}
+
 # 1. The DNS stack. CloudFormation waits for ACM to validate the
-# certificate, which needs the registrar to point at the new zone, so the
-# zone's nameservers are printed as soon as it exists.
+# certificate, which needs the registrar to point at the zone, so the zone's
+# nameservers are printed as soon as it exists: before the wait for a stack
+# an earlier run left being created, or else while the deploy runs.
+zone=$(stack_zone)
+[ "$zone" = "None" ] || nameservers "$zone"
 settle "$DNS_STACK"
 aws cloudformation deploy --region "$REGION" --no-fail-on-empty-changeset \
   --stack-name "$DNS_STACK" --template-file infra/dns.cfn.yml &
 dns=$!
-zone=None
 while [ "$zone" = "None" ] && kill -0 "$dns" 2>/dev/null; do
   sleep 10
   zone=$(stack_zone)
+  [ "$zone" = "None" ] || nameservers "$zone"
 done
-if [ "$zone" != "None" ]; then
-  echo
-  echo "Set these as the nameservers for $DOMAIN at the registrar now."
-  echo "The certificate, and so the DNS stack, waits until they take effect."
-  aws route53 get-hosted-zone --id "$zone" \
-    --query 'DelegationSet.NameServers' --output text | tr '\t' '\n'
-  echo
-fi
 wait "$dns"
 
 # 2. The roles stack. It reads the access account's id from SSM, and builds
-# the private bucket's name from this account, so it takes no parameters.
+# the private bucket's name from this account, so it takes no parameter a
+# person fills.
 settle "$ROLES_STACK"
 aws cloudformation deploy --region "$REGION" --no-fail-on-empty-changeset \
   --stack-name "$ROLES_STACK" --template-file infra/github-oidc.cfn.yml \
