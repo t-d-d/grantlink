@@ -1,0 +1,33 @@
+{
+  "about": "Gold set B's sample (#3): ids only, never text. scripts/gold-b/sample.ts draws it from Europe PMC with this plan: the papers the base query finds, a few for each hard case first (each from its query, in the seed's order, kept if scripts/gold-b/draw.ts's check finds the case in its text), then the rest shared across the years in proportion. Run the script without --write to draw again and compare. The sheet lists the same papers in sheetOrder.",
+  "base": "(ACK_FUND:\"Cancer Research UK\" OR ACK_FUND:\"Cancer Research U.K.\" OR ACK_FUND:\"CRUK\") AND NOT GRANT_AGENCY:\"Cancer Research UK\" AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]",
+  "seed": 20261110,
+  "size": 100,
+  "perHardCase": 2,
+  "hardCases": [
+    {
+      "name": "declared-interest",
+      "query": "((ACK_FUND:\"Cancer Research UK\" OR ACK_FUND:\"Cancer Research U.K.\" OR ACK_FUND:\"CRUK\") AND NOT GRANT_AGENCY:\"Cancer Research UK\" AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]) AND (COMP_INT:\"Cancer Research UK\" OR COMP_INT:\"CRUK\")"
+    },
+    {
+      "name": "centre-or-institute",
+      "query": "((ACK_FUND:\"Cancer Research UK\" OR ACK_FUND:\"Cancer Research U.K.\" OR ACK_FUND:\"CRUK\") AND NOT GRANT_AGENCY:\"Cancer Research UK\" AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]) AND (ACK_FUND:\"Cancer Research UK Centre\" OR ACK_FUND:\"CRUK Centre\" OR ACK_FUND:\"Cancer Research UK Manchester Institute\" OR ACK_FUND:\"Cancer Research UK Beatson Institute\" OR ACK_FUND:\"Cancer Research UK Scotland Institute\" OR ACK_FUND:\"Cancer Research UK Cambridge Institute\")"
+    },
+    {
+      "name": "affiliation-only",
+      "query": "((ACK_FUND:\"Cancer Research UK\" OR ACK_FUND:\"Cancer Research U.K.\" OR ACK_FUND:\"CRUK\") AND NOT GRANT_AGENCY:\"Cancer Research UK\" AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]) AND (AFF:\"Cancer Research UK\" OR AFF:\"CRUK\")"
+    },
+    {
+      "name": "several-funders",
+      "query": "(ACK_FUND:\"Cancer Research UK\" OR ACK_FUND:\"Cancer Research U.K.\" OR ACK_FUND:\"CRUK\") AND NOT GRANT_AGENCY:\"Cancer Research UK\" AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]"
+    },
+    {
+      "name": "no-reference",
+      "query": "(ACK_FUND:\"Cancer Research UK\" OR ACK_FUND:\"Cancer Research U.K.\" OR ACK_FUND:\"CRUK\") AND NOT GRANT_AGENCY:\"Cancer Research UK\" AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]"
+    }
+  ],
+  "ranOn": null,
+  "population": null,
+  "papers": [],
+  "sheetOrder": []
+}
