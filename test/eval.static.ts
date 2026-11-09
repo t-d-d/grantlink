@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { noLive } from "../evals/check.ts";
 import { INPUTS } from "../evals/fingerprint.ts";
 import { deploy, type Step, type Workflow } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
@@ -99,6 +100,26 @@ describe("the gate and the comment", () => {
     expect(live).toMatch(
       /if ! \w+="\$\(node evals\/fingerprint\.ts "\$live"[^)]*\)"; then[\s\S]*?exit 0/u,
     );
+  });
+
+  it("hands the comment the reason it has no live report to compare with", () => {
+    // #88: a live release with no report must not read as no release.
+    const live = named("Read the live release's report");
+    expect(live?.id).toBe("live");
+    const reasons = [
+      ...(live?.run ?? "").matchAll(
+        /echo "reason=([\w-]+)" >> "\$GITHUB_OUTPUT"/gu,
+      ),
+    ].map((match) => match[1]);
+    expect([...new Set(reasons)].sort()).toEqual([...noLive.options].sort());
+    const comment = named("Comment with CI's scores beside the live release's");
+    // The default stands only for a skipped step. A step that ran and gave
+    // no reason fails the comment instead of reading as no deploy.
+    const skipped =
+      /^\$\{\{ steps\.live\.outcome == 'skipped' && '([\w-]+)' \|\| steps\.live\.outputs\.reason \}\}$/u;
+    const fallback = skipped.exec(comment?.env?.NO_LIVE ?? "")?.[1];
+    expect(noLive.safeParse(fallback).success).toBe(true);
+    expect(comment?.run).toContain('--no-live "$NO_LIVE"');
   });
 
   // A deploy.yml run whose deploy job was skipped, because the prod role

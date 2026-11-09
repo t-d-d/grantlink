@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { comment, gate } from "./check.ts";
+import { comment, gate, noLive } from "./check.ts";
 import { FLOORS } from "./floors.ts";
 import type { Report } from "./report.ts";
 
@@ -66,9 +66,35 @@ describe("the pull request's comment", () => {
     expect(text).toContain("<!-- grantlink:eval -->");
   });
 
-  it("says when there is no live release to compare with", () => {
-    expect(comment(report({ spend: 0 }), null)).toContain(
-      "No release is live yet",
-    );
+  it("says when no deploy of main was found to compare with", () => {
+    const text = comment(report({ spend: 0 }), "no-deploy");
+    expect(text).toContain("No deploy of main was found");
+    // Only deploy.yml's newest runs are read, so an older live release
+    // may still exist.
+    expect(text).toContain("recent runs");
+    expect(text).not.toMatch(/no live release/iu);
+  });
+
+  it.each([
+    ["predates-eval", "The live release predates the eval's inputs"],
+    ["no-report", "The live release has no report filed"],
+    [
+      "unknown-commit",
+      "The live release's commit is not in this repository's history",
+    ],
+    ["history-unread", "GitHub's deploy history could not be read"],
+  ] as const)(
+    "says why a live release has nothing to compare with (%s), without saying none is live",
+    (reason, words) => {
+      const text = comment(report({ spend: 0 }), reason);
+      expect(text).toContain(words);
+      expect(text).not.toMatch(
+        /no live release|no release is live|no deploy/iu,
+      );
+    },
+  );
+
+  it("refuses a reason it does not know", () => {
+    expect(() => noLive.parse("gone")).toThrow();
   });
 });

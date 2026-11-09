@@ -177,8 +177,10 @@ jobs:
       # still concludes success, so the run counts only if its deploy job
       # itself succeeded (#71). The newest twenty runs are read; with no
       # deploy among them, or if GitHub cannot be read, there is nothing
-      # to compare with, and the comment shows CI's scores alone.
-      - name: Read the live release's report
+      # to compare with, and the comment shows CI's scores alone. Without a
+      # report, the step hands the comment its reason (#88).
+      - id: live
+        name: Read the live release's report
         if: github.event_name == 'pull_request' && steps.cached.outputs.bucket != 'missing'
         env:
           BUCKET: ${{ secrets.PRIVATE_BUCKET_NAME }}
@@ -190,6 +192,7 @@ jobs:
           if ! runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=20" \
             --jq '.workflow_runs[] | "\(.id) \(.head_sha)"')"; then
             echo "::warning::Could not read deploy.yml's runs, so there is nothing to compare with."
+            echo "reason=history-unread" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           while read -r id sha; do
@@ -197,6 +200,7 @@ jobs:
             if ! deployed="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" \
               --jq 'any(.jobs[]; .name == env.DEPLOY_JOB and .conclusion == "success")')"; then
               echo "::warning::Could not read the jobs of deploy.yml run $id, so there is nothing to compare with."
+              echo "reason=history-unread" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             if [ "$deployed" = "true" ]; then
@@ -204,14 +208,21 @@ jobs:
               break
             fi
           done <<< "$runs"
-          if [ -z "$live" ] || ! git cat-file -e "$live^{commit}" 2>/dev/null; then
-            echo "No live release to compare with."
+          if [ -z "$live" ]; then
+            echo "No deploy of main was found."
+            echo "reason=no-deploy" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git cat-file -e "$live^{commit}" 2>/dev/null; then
+            echo "The live release's commit is not in this repository's history."
+            echo "reason=unknown-commit" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # A live commit from before the eval, or before one of its inputs
           # existed, has no fingerprint, and so no report to compare with.
           if ! fingerprint="$(node evals/fingerprint.ts "$live" 2>/dev/null)"; then
             echo "The live release predates the eval's inputs."
+            echo "reason=predates-eval" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           key="eval-reports/$fingerprint.json"
@@ -221,20 +232,25 @@ jobs:
             aws s3api get-object --bucket "$BUCKET" --key "$key" live.json >/dev/null
           else
             echo "The live release has no report."
+            echo "reason=no-report" >> "$GITHUB_OUTPUT"
           fi
 
-      # One comment per pull request, updated on each run.
+      # One comment per pull request, updated on each run. When the step
+      # above was skipped, the private bucket does not exist yet, so no
+      # deploy has run. When it ran, it gives its own reason, and a missing
+      # one fails here rather than reading as no deploy.
       - name: Comment with CI's scores beside the live release's
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
+          NO_LIVE: ${{ steps.live.outcome == 'skipped' && 'no-deploy' || steps.live.outputs.reason }}
         run: |
           set -euo pipefail
           if [ -f live.json ]; then
             node evals/check.ts comment report.json live.json > comment.md
           else
-            node evals/check.ts comment report.json > comment.md
+            node evals/check.ts comment report.json --no-live "$NO_LIVE" > comment.md
           fi
           id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
             --jq '.[] | select(.body | startswith("<!-- grantlink:eval -->")) | .id' | head -n 1)"
