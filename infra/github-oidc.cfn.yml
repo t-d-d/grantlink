@@ -5,14 +5,13 @@
 # Nothing here holds an account id. Each ARN is built from the account the
 # stack runs in, and access-eval reads the access account's id from SSM.
 # The ARNs in the outputs carry the account id, so they are secrets.
+#
+# The private bucket is grantlink-text-<account id>, a name the app stack
+# builds the same way, so nobody types it.
 AWSTemplateFormatVersion: "2010-09-09"
 Description: grantlink roles for GitHub Actions and eval sessions (us-east-1)
 
 Parameters:
-  PrivateBucketName:
-    Type: String
-    AllowedPattern: "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
-    Description: The private bucket for funding text and evals. The app stack creates it with the same name.
   AccessAccountId:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /access/account-id
@@ -110,8 +109,8 @@ Resources:
                 Effect: Deny
                 Action: s3:*
                 Resource:
-                  - !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}
-                  - !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/*
+                  - !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}
+                  - !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/*
 
   # The role CloudFormation takes to build the app stack, so the deploy role
   # itself holds no rights to create resources. It manages buckets but no
@@ -166,7 +165,7 @@ Resources:
                   - s3:PutLifecycleConfiguration
                 Resource:
                   - !Sub arn:${AWS::Partition}:s3:::grantlink-*
-                  - !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}
+                  - !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}
               - Sid: Certificate
                 Effect: Allow
                 Action:
@@ -231,15 +230,15 @@ Resources:
                 Effect: Allow
                 Action: s3:GetObject
                 Resource:
-                  - !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval/*
-                  - !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval-reports/*
+                  - !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval/*
+                  - !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval-reports/*
               # Listing with a prefix is how the eval asks whether a report
               # exists. A HeadObject on a missing key carries no prefix, so it
               # is refused, not answered with 404.
               - Sid: ListEvalPrefixes
                 Effect: Allow
                 Action: s3:ListBucket
-                Resource: !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}
+                Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}
                 Condition:
                   StringLike:
                     s3:prefix:
@@ -248,7 +247,7 @@ Resources:
               - Sid: AddReportsOnly
                 Effect: Allow
                 Action: s3:PutObject
-                Resource: !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval-reports/*
+                Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval-reports/*
                 Condition:
                   StringEquals:
                     s3:if-none-match: "*"
@@ -277,7 +276,7 @@ Resources:
               - Sid: ReadSnapshot
                 Effect: Allow
                 Action: s3:GetObject
-                Resource: !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval/*
+                Resource: !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval/*
               - Sid: DenyOtherActions
                 Effect: Deny
                 NotAction: s3:GetObject
@@ -285,7 +284,7 @@ Resources:
               - Sid: DenyOtherObjects
                 Effect: Deny
                 Action: s3:GetObject
-                NotResource: !Sub arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval/*
+                NotResource: !Sub arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval/*
 
 Outputs:
   DeployRoleArn:
@@ -298,5 +297,5 @@ Outputs:
     Description: Store as the AWS_EVAL_ROLE_ARN secret on the eval environment.
     Value: !GetAtt CiEvalRole.Arn
   AccessEvalRoleArn:
-    Description: Give to aws-access for the grantlink-eval profile.
+    Description: For reference. aws-access's endpoint finds the role by its name, so nothing needs copying.
     Value: !GetAtt AccessEvalRole.Arn

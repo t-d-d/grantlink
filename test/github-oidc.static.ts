@@ -102,8 +102,14 @@ describe("the deploy role", () => {
       Effect: "Deny",
       Action: "s3:*",
       Resource: [
-        { "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}" },
-        { "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}/*" },
+        {
+          "Fn::Sub":
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}",
+        },
+        {
+          "Fn::Sub":
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/*",
+        },
       ],
     });
   });
@@ -173,11 +179,12 @@ describe("the CI eval role", () => {
       Action: "s3:GetObject",
       Resource: [
         {
-          "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval/*",
+          "Fn::Sub":
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval/*",
         },
         {
           "Fn::Sub":
-            "arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval-reports/*",
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval-reports/*",
         },
       ],
     });
@@ -196,7 +203,7 @@ describe("the CI eval role", () => {
         Action: "s3:PutObject",
         Resource: {
           "Fn::Sub":
-            "arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval-reports/*",
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval-reports/*",
         },
         Condition: { StringEquals: { "s3:if-none-match": "*" } },
       },
@@ -213,7 +220,8 @@ describe("the CI eval role", () => {
         Effect: "Allow",
         Action: "s3:ListBucket",
         Resource: {
-          "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}",
+          "Fn::Sub":
+            "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}",
         },
         Condition: {
           StringLike: { "s3:prefix": ["eval/*", "eval-reports/*"] },
@@ -243,6 +251,10 @@ describe("access-eval", () => {
     ]);
   });
 
+  it("needs no value typed by the person applying it", () => {
+    expect(Object.keys(template.Parameters ?? {})).toEqual(["AccessAccountId"]);
+  });
+
   it("reads the access account's id from SSM, not the template", () => {
     expect(template.Parameters?.AccessAccountId).toMatchObject({
       Type: "AWS::SSM::Parameter::Value<String>",
@@ -252,7 +264,8 @@ describe("access-eval", () => {
 
   it("allows only s3:GetObject on eval/*, and denies everything else", () => {
     const snapshot = {
-      "Fn::Sub": "arn:${AWS::Partition}:s3:::${PrivateBucketName}/eval/*",
+      "Fn::Sub":
+        "arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/eval/*",
     };
     expect(rightsOf(accessEval)).toEqual([
       {
@@ -287,7 +300,7 @@ describe("only the CI eval role writes to eval-reports/", () => {
     resources(statement).some(
       (arn) =>
         arn === "*" ||
-        arn.includes("${PrivateBucketName}") ||
+        arn.includes("grantlink-text-${AWS::AccountId}") ||
         arn.includes("eval-reports"),
     );
 
