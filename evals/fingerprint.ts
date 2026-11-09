@@ -47,7 +47,7 @@ function revParse(spec: string): string | null {
 
 // The git hash of each input at HEAD: a tree for a directory, a blob for a
 // file.
-export function hashesAtHead(): Record<string, string> {
+function hashesAtHead(): Record<string, string> {
   if (revParse("HEAD^{commit}") === null) {
     throw new Error("HEAD is not a commit in this repository");
   }

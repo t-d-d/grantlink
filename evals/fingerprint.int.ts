@@ -83,6 +83,15 @@ describe("node evals/fingerprint.ts", () => {
     expect(result.stderr).toContain("src/shared");
   });
 
+  it("fails, and says why, when the repository has no commit yet", () => {
+    const dir = scratch("grantlink-empty-repo-");
+    git(dir, "init", "--quiet");
+    const result = run(dir);
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("HEAD is not a commit");
+  });
+
   it("refuses a commit argument rather than print HEAD's fingerprint", () => {
     const { dir, commit } = repoWith(INPUTS);
     const result = run(dir, commit);
