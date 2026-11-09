@@ -121,6 +121,16 @@ describe("fitness: HTTPS only (hosting.md)", () => {
     expect(bucket.WebsiteConfiguration).toBeUndefined();
   });
 
+  // With ACLs disabled, no grant can let another account write or change
+  // the page's files, whatever the deploy role's s3:PutBucket* allows (#95).
+  it("lets no ACL grant access to the bucket", () => {
+    const bucket = resource(site, "SiteBucket").Properties;
+    expect(bucket.OwnershipControls).toEqual({
+      Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }],
+    });
+    expect(bucket.AccessControl).toBeUndefined();
+  });
+
   it("tells browsers to keep to HTTPS", () => {
     const policy = resource(site, "ResponseHeaders").Properties
       .ResponseHeadersPolicyConfig as {
