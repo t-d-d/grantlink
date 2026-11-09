@@ -3,9 +3,10 @@
 Gold set B is 100 open-access papers that name Cancer Research UK in their
 funding or acknowledgement text, but that Europe PMC links to no CRUK grant
 (#3). Two model passes propose each paper's labels against this guide,
-and you check every one in the sheet (#22, #175). The labels are the
-answers the eval scores the rules and the model against, so they say what
-the paper itself says, nothing more.
+and you check the rows they flag, the rows you settled, and a random
+sample of the rest in the sheet (#22, #175). The labels are the answers the eval scores the rules
+and the model against, so they say what the paper itself says, nothing
+more.
 
 The eval scores only the references. `funded` and `note` help whoever
 checks a row, and `evals/gold-b.json` keeps only each paper's references.
@@ -28,7 +29,7 @@ people are described by role. No example quotes a real paper.
 | `note` | Why, when the answer is `unclear` or the case is hard. A few words. |
 | `passes` | Filled in. `passes agreed`, `a pass was unsure`, `passes differed on funded`, or `settled with you` for the 18 papers you settled while setting the rules. |
 | `look_in` | Filled in. Where in the paper the passes found CRUK's funding or references. |
-| `checked` | `y` once you have checked the row and fixed anything wrong. |
+| `checked` | `y` once you have checked the row and fixed anything wrong, `y, sample` for an agreed row the sample drew, or `agreed, not checked` for an agreed row the sample stands for. |
 
 The sheet's `proposed` tab keeps the passes' labels as they were. Leave it
 alone: #23 compares it with your labels to count how many you changed.
@@ -39,9 +40,10 @@ Europe PMC (`docs/constraints/personal-data.md`).
 
 ## Checking a proposed label
 
-Check the references first, as they are what the eval scores. Start with
-the rows marked `a pass was unsure` or `passes differed on funded`, then
-the rest.
+Check the references first, as they are what the eval scores. Check every
+row marked `settled with you`, `a pass was unsure` or `passes differed on
+funded`. Of the rows marked `passes agreed`, check 10 drawn at random with
+a recorded seed.
 
 1. Open the paper and go to the place `look_in` names.
 2. Find each proposed reference with your browser's find. Check that the
@@ -249,7 +251,7 @@ registration or a dataset accession.
 
 ## When you are done
 
-Every row has `funded` set, its references where it has any, and `y` in
-`checked` (#22). Export the main tab and the `proposed` tab as CSV. #23
-compares the two, and commits the ids and references to the repo, and
-nothing else from the sheet.
+Every row has `funded` set, its references where it has any, and
+`checked` filled in (#22). Export the main tab and the `proposed` tab as
+CSV. #23 compares the two, and commits the ids and references to the
+repo, and nothing else from the sheet.
