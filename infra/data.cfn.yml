@@ -1,0 +1,72 @@
+# The run's stores (#6): one on-demand DynamoDB table for results, and one
+# private, encrypted bucket for funding text. serverless.yml takes its
+# resources from here, so this is part of the app stack, grantlink-prod, in
+# eu-west-2. It stands alone too, so cfn-lint checks it in the gate.
+#
+# Funding text names people, so it stays in the bucket and never reaches
+# the table (docs/constraints/personal-data.md).
+AWSTemplateFormatVersion: "2010-09-09"
+Description: grantlink app stack, the results table and the funding text bucket (eu-west-2)
+
+Resources:
+  # One row per paper: its id, title, status, references and the versions
+  # that made them. No funding text and no names.
+  ResultsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pmcid
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pmcid
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # Named by convention, so the roles stack can name it too (#36). cache/
+  # holds each paper's funding sections, eval/ the eval snapshot and
+  # eval-reports/ the eval reports.
+  TextBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub grantlink-text-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  TextBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TextBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: HttpsOnly
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt TextBucket.Arn
+              - !Sub ${TextBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+Outputs:
+  ResultsTableName:
+    Description: The results table the run writes and the page is built from.
+    Value: !Ref ResultsTable

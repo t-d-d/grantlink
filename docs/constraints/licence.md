@@ -24,6 +24,6 @@ credit.
 ## Judgment
 
 What the page may show from a paper, titles, links and grant references
-only, lands with the page's results in #19.
+only, is in no-republished-text.md.
 
 History: #1

@@ -1,0 +1,11 @@
+{
+  "version": "6.9",
+  "hitCount": 5,
+  "nextCursorMark": "AoIIPwAAACgxMjM0",
+  "request": {
+    "queryString": "written by hand",
+    "cursorMark": "AoIIPwAAACgxMjM0",
+    "pageSize": 1000
+  },
+  "resultList": { "result": [] }
+}

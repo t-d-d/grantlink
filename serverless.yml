@@ -12,11 +12,73 @@ provider:
   # Stored data stays in the UK (docs/constraints/hosting.md).
   region: eu-west-2
   stage: prod
+  runtime: nodejs24.x
+  architecture: arm64
+  logRetentionInDays: 30
   iam:
     deploymentRole: ${env:AWS_DEPLOY_EXECUTION_ROLE_ARN}
+    # What the run may do, and nothing more: read and write the results
+    # table, write funding text under cache/, and publish the page.
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:BatchGetItem
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:Scan
+            - dynamodb:UpdateItem
+          Resource:
+            Fn::GetAtt: [ResultsTable, Arn]
+        - Effect: Allow
+          Action: s3:PutObject
+          Resource:
+            Fn::Sub: arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/cache/*
+        - Effect: Allow
+          Action: s3:PutObject
+          Resource:
+            - Fn::Sub: ${SiteBucket.Arn}/index.html
+            - Fn::Sub: ${SiteBucket.Arn}/found.json
+
+# Only what the function runs: its code, the page's template, and the
+# production dependencies. osls leaves out the development ones.
+package:
+  patterns:
+    - "!**"
+    - "src/**"
+    - "!src/**/*.test.ts"
+    - "!src/**/*.int.ts"
+    - "site/index.html"
+    - "package.json"
+    - "node_modules/**"
+    - "!node_modules/.vite/**"
+
+functions:
+  # A run (#5): one Lambda Durable Function execution. osls publishes a
+  # version for a durable function and points the `durable` alias at it, so
+  # a run starts on a published version and a later deploy never changes a
+  # run in progress.
+  run:
+    handler: src/run/lambda.handler
+    description: Reads papers from Europe PMC and publishes what the rules find
+    memorySize: 512
+    timeout: 900
+    durableConfig:
+      # The back catalogue takes a few hours at 2 requests a second.
+      executionTimeout: 259200
+      retentionPeriodInDays: 30
+    environment:
+      TABLE_NAME:
+        Ref: ResultsTable
+      TEXT_BUCKET:
+        Ref: TextBucket
+      SITE_BUCKET:
+        Ref: SiteBucket
+      CODE_VERSION: ${env:GITHUB_SHA, 'local'}
 
 resources:
   - ${file(./infra/site.cfn.yml)}
+  - ${file(./infra/data.cfn.yml)}
   # The DNS stack's values, from the prod environment. Until both are set
   # the page is served at CloudFront's own address. They are set as the
   # parameters' defaults, not passed as stack parameters, because osls
@@ -27,3 +89,51 @@ resources:
         Default: ${env:CERTIFICATE_ARN, ''}
       HostedZoneId:
         Default: ${env:HOSTED_ZONE_ID, ''}
+  # The first run over the back catalogue, once, with no person starting
+  # it. The deploy keeps FIRST_RUN_AT from the stack's FirstRunAt output
+  # once it is set, so a later deploy starts no second run. The schedule is
+  # declared here, not as a function event, because osls accepts only rate()
+  # and cron() expressions there.
+  - Resources:
+      FirstRunSchedule:
+        Type: AWS::Scheduler::Schedule
+        Properties:
+          Description: The first run over the back catalogue
+          ScheduleExpression: at(${env:FIRST_RUN_AT})
+          ScheduleExpressionTimezone: UTC
+          FlexibleTimeWindow:
+            Mode: "OFF"
+          State: ENABLED
+          Target:
+            Arn:
+              Ref: RunDurableLambdaAlias
+            RoleArn:
+              Fn::GetAtt: [FirstRunRole, Arn]
+            Input: '{"source":"first-run"}'
+      FirstRunRole:
+        Type: AWS::IAM::Role
+        Properties:
+          AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Principal:
+                  Service: scheduler.amazonaws.com
+                Action: sts:AssumeRole
+                Condition:
+                  StringEquals:
+                    aws:SourceAccount:
+                      Ref: AWS::AccountId
+          Policies:
+            - PolicyName: start-run
+              PolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                  - Effect: Allow
+                    Action: lambda:InvokeFunction
+                    Resource:
+                      Ref: RunDurableLambdaAlias
+    Outputs:
+      FirstRunAt:
+        Description: When the first run started, which later deploys keep.
+        Value: ${env:FIRST_RUN_AT}

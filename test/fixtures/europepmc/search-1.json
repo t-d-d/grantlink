@@ -1,0 +1,48 @@
+{
+  "version": "6.9",
+  "hitCount": 5,
+  "nextCursorMark": "AoIIPwAAACgxMjM0",
+  "request": {
+    "queryString": "written by hand",
+    "cursorMark": "*",
+    "pageSize": 1000
+  },
+  "resultList": {
+    "result": [
+      {
+        "id": "PMC0000001",
+        "source": "PMC",
+        "pmcid": "PMC0000001",
+        "title": "A made-up study of <i>EXMP1</i> in cell lines.",
+        "firstPublicationDate": "2021-03-04"
+      },
+      {
+        "id": "PMC0000002",
+        "source": "PMC",
+        "pmcid": "PMC0000002",
+        "title": "Another made-up study.",
+        "firstPublicationDate": "2024-07-01"
+      },
+      {
+        "id": "PMC0000003",
+        "source": "PMC",
+        "pmcid": "PMC0000003",
+        "title": "A made-up study that gives no reference.",
+        "firstPublicationDate": "2022-01-15"
+      },
+      {
+        "id": "PMC0000004",
+        "source": "PMC",
+        "pmcid": "PMC0000004",
+        "title": "A made-up study whose full text fails.",
+        "firstPublicationDate": "2023-05-05"
+      },
+      {
+        "id": "39999999",
+        "source": "MED",
+        "pmid": "39999999",
+        "title": "A made-up record with no full text."
+      }
+    ]
+  }
+}

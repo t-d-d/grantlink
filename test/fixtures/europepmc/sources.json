@@ -1,0 +1,41 @@
+{
+  "about": "Every Europe PMC response the tests read, where it came from and under what licence. A recorded response comes only from a paper under CC BY or CC0, cut to its funding sections, with every name replaced (docs/constraints/personal-data.md). The names listed are the made-up ones the fixtures carry, which the tests check never reach the table, the logs or the page.",
+  "fixtures": [
+    {
+      "file": "PMC0000001.xml",
+      "origin": "written by hand in the shape of Europe PMC's JATS full text; not recorded from a paper",
+      "licence": "CC0-1.0",
+      "names": [
+        "Morwenna Quillfeather",
+        "Quillfeather",
+        "Morwenna",
+        "Tobias Wrenfield-Oakes",
+        "Wrenfield-Oakes"
+      ]
+    },
+    {
+      "file": "PMC0000002.xml",
+      "origin": "written by hand in the shape of Europe PMC's JATS full text; not recorded from a paper",
+      "licence": "CC0-1.0",
+      "names": ["Isolde Brackenridge", "Brackenridge", "Isolde"]
+    },
+    {
+      "file": "PMC0000003.xml",
+      "origin": "written by hand in the shape of Europe PMC's JATS full text; not recorded from a paper",
+      "licence": "CC0-1.0",
+      "names": ["Ezekiel Thornbury-Vale", "Thornbury-Vale", "Ezekiel"]
+    },
+    {
+      "file": "search-1.json",
+      "origin": "written by hand in the shape of Europe PMC's search reply; not recorded",
+      "licence": "CC0-1.0",
+      "names": []
+    },
+    {
+      "file": "search-2.json",
+      "origin": "written by hand in the shape of Europe PMC's search reply; not recorded",
+      "licence": "CC0-1.0",
+      "names": []
+    }
+  ]
+}

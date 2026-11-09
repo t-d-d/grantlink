@@ -36,11 +36,13 @@ somewhere public.
 ## Judgment
 
 The lint rule matches names: a field called `detail` that holds funding
-text gets past it, so what a log line carries is also for review. Two
-checks need code that lands in #19: a unit test that the page built from
-fixtures with known names contains none of them, and a static test that
-every recorded fixture is listed in its sources file with a CC BY or CC0
-licence and its names replaced. Nothing a machine runs keeps funding text
+text gets past it, so what a log line carries is also for review.
+`src/run/run.int.ts` runs the pipeline over fixtures with made-up names
+and finds none of them in the table, the logs or the page.
+`test/fixtures.static.ts` checks that every fixture is listed in its
+sources file with a CC BY or CC0 licence, and that one recorded from a
+paper is cut to its funding sections. Whether a recorded fixture's names
+were all replaced is for review. Nothing a machine runs keeps funding text
 out of issues and pull requests; each session's instructions do.
 
 History: #10

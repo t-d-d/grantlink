@@ -101,6 +101,22 @@ jobs:
             echo "AWS_SESSION_TOKEN=$session"
           } >> "$GITHUB_ENV"
 
+      # The first run over the back catalogue starts from a one-time
+      # schedule, a quarter of an hour after the deploy that creates it.
+      # Later deploys keep that time from the stack's FirstRunAt output, so
+      # they start no second run.
+      - name: Keep the first run's time
+        id: first
+        run: |
+          set -euo pipefail
+          at="$(aws cloudformation describe-stacks --stack-name grantlink-prod \
+            --query "Stacks[0].Outputs[?OutputKey=='FirstRunAt'].OutputValue" \
+            --output text 2>/dev/null || true)"
+          if [ -z "$at" ] || [ "$at" = "None" ]; then
+            at="$(date -u -d '+15 minutes' +%Y-%m-%dT%H:%M:%S)"
+          fi
+          echo "at=$at" >> "$GITHUB_OUTPUT"
+
       # The stack is grantlink-prod in eu-west-2, as serverless.yml names it.
       # CloudFront serves at grantlink.uk once the certificate and the zone
       # are set in prod, and at its own address until then.
@@ -109,6 +125,7 @@ jobs:
           AWS_DEPLOY_EXECUTION_ROLE_ARN: ${{ secrets.AWS_DEPLOY_EXECUTION_ROLE_ARN }}
           CERTIFICATE_ARN: ${{ secrets.CERTIFICATE_ARN }}
           HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
+          FIRST_RUN_AT: ${{ steps.first.outputs.at }}
         run: npx sls deploy
 
       - name: Read the stack's outputs
@@ -132,7 +149,19 @@ jobs:
           DISTRIBUTION: ${{ steps.stack.outputs.distribution }}
         run: |
           set -euo pipefail
-          aws s3 sync site/ "s3://$BUCKET/" --delete --cache-control "public, max-age=300"
+          # A run publishes the page with its findings, and found.json, the
+          # data it built them from. Build the page again from that data, so
+          # a new template keeps the findings, and leave found.json alone.
+          # Only a missing found.json, before the first run, skips this: any
+          # other error stops the deploy before it overwrites the findings.
+          if missing="$(aws s3api head-object --bucket "$BUCKET" --key found.json 2>&1 >/dev/null)"; then
+            aws s3 cp "s3://$BUCKET/found.json" found.json --only-show-errors
+            node src/page/build.ts found.json site/index.html
+          elif ! grep -qE "Not Found|404" <<< "$missing"; then
+            echo "$missing" >&2
+            exit 1
+          fi
+          aws s3 sync site/ "s3://$BUCKET/" --delete --exclude found.json --cache-control "public, max-age=300"
           id="$(aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" \
             --paths "/*" --query Invalidation.Id --output text)"
           aws cloudfront wait invalidation-completed --distribution-id "$DISTRIBUTION" --id "$id"

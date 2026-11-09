@@ -1,0 +1,146 @@
+import { describe, expect, it } from "vitest";
+import { dynamoTable, paperRow, readRow } from "./table.ts";
+
+const processed = {
+  pmcid: "PMC11",
+  title: "A title",
+  status: "processed",
+  foundAt: "2026-11-09T10:00:00.000Z",
+  references: [
+    { asWritten: "C1/A12345", normalised: "C1/A12345", format: "Cn/An" },
+  ],
+  versions: { rules: "rules-1", code: "abc123" },
+  processedAt: "2026-11-09T10:05:00.000Z",
+  runId: "run-1",
+};
+
+// A DynamoDB client that records what it is sent.
+function recorder(reply: (command: object) => unknown = () => ({})) {
+  const sent: { name: string; input: Record<string, unknown> }[] = [];
+  const client = {
+    send: (command: { constructor: { name: string }; input: object }) => {
+      sent.push({
+        name: command.constructor.name,
+        input: command.input as Record<string, unknown>,
+      });
+      return Promise.resolve(reply(command));
+    },
+  };
+  return { client, sent };
+}
+
+describe("fitness: no text in the table (storage.md)", () => {
+  it("takes a row with only its own fields", () => {
+    expect(paperRow.parse(processed)).toEqual(processed);
+  });
+
+  it.each([
+    "fundingText",
+    "acknowledgements",
+    "authors",
+    "abstract",
+    "sections",
+  ])("refuses a row with a %s field", (field) => {
+    expect(() => paperRow.parse({ ...processed, [field]: "x" })).toThrow();
+  });
+
+  it("refuses a reference that carries more than a reference", () => {
+    expect(() =>
+      paperRow.parse({
+        ...processed,
+        references: [
+          {
+            asWritten: "Dr Ada Example, C1/A12345",
+            normalised: "C1/A12345",
+            format: "Cn/An",
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("refuses to write a result with a field outside the schema", async () => {
+    const { client, sent } = recorder();
+    const table = dynamoTable("results", client);
+    await expect(
+      table.markProcessed("PMC11", {
+        references: [],
+        versions: { rules: "rules-1", code: "abc" },
+        processedAt: "2026-11-09T10:05:00.000Z",
+        runId: "run-1",
+        fundingText: "Funded by ...",
+      } as never),
+    ).rejects.toThrow();
+    expect(sent).toEqual([]);
+  });
+});
+
+describe("reading rows tolerantly (durable-execution.md)", () => {
+  it("reads a row a later version wrote with a new field", () => {
+    expect(readRow({ ...processed, confidence: 0.9 })).toEqual(processed);
+  });
+});
+
+describe("the table module", () => {
+  it("adds a paper the search found only if it is new", async () => {
+    const { client, sent } = recorder();
+    await dynamoTable("results", client).addFound(
+      [{ pmcid: "PMC11", title: "A title" }],
+      "2026-11-09T10:00:00.000Z",
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.name).toBe("PutCommand");
+    expect(sent[0]?.input.ConditionExpression).toBe(
+      "attribute_not_exists(pmcid)",
+    );
+    expect(sent[0]?.input.Item).toEqual({
+      pmcid: "PMC11",
+      title: "A title",
+      status: "pending",
+      foundAt: "2026-11-09T10:00:00.000Z",
+    });
+  });
+
+  it("ignores a paper it already holds", async () => {
+    const { client } = recorder(() => {
+      throw Object.assign(new Error("exists"), {
+        name: "ConditionalCheckFailedException",
+      });
+    });
+    await expect(
+      dynamoTable("results", client).addFound(
+        [{ pmcid: "PMC11", title: "A title" }],
+        "2026-11-09T10:00:00.000Z",
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("names which papers are already processed", async () => {
+    const { client } = recorder(() => ({
+      Responses: {
+        results: [
+          { pmcid: "PMC11", status: "processed" },
+          { pmcid: "PMC12", status: "pending" },
+        ],
+      },
+    }));
+    const done = await dynamoTable("results", client).processed([
+      "PMC11",
+      "PMC12",
+      "PMC13",
+    ]);
+    expect([...done]).toEqual(["PMC11"]);
+  });
+
+  it("reads every row, page by page", async () => {
+    const { client, sent } = recorder((command) =>
+      (command as { input: { ExclusiveStartKey?: unknown } }).input
+        .ExclusiveStartKey
+        ? { Items: [{ ...processed, pmcid: "PMC12" }] }
+        : { Items: [processed], LastEvaluatedKey: { pmcid: "PMC11" } },
+    );
+    const rows = await dynamoTable("results", client).all();
+    expect(rows.map((row) => row.pmcid)).toEqual(["PMC11", "PMC12"]);
+    expect(sent).toHaveLength(2);
+  });
+});

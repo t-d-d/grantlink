@@ -1,0 +1,94 @@
+import type { FundingSections } from "../extract/rules.ts";
+
+// Cuts a paper's full text, in JATS XML as Europe PMC serves it, down to its
+// funding statement, its acknowledgements and its funding metadata. Nothing
+// else of the paper is kept: not the abstract, the body or the author list.
+
+const ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+};
+
+function decode(text: string): string {
+  return text.replace(
+    /&(#x[0-9a-f]+|#\d+|[a-z]+);/giu,
+    (whole, entity: string) => {
+      if (entity.startsWith("#x") || entity.startsWith("#X")) {
+        return String.fromCodePoint(Number.parseInt(entity.slice(2), 16));
+      }
+      if (entity.startsWith("#")) {
+        return String.fromCodePoint(Number.parseInt(entity.slice(1), 10));
+      }
+      return ENTITIES[entity.toLowerCase()] ?? whole;
+    },
+  );
+}
+
+function plain(xml: string): string {
+  return decode(xml.replace(/<[^>]*>/gu, " "))
+    .replace(/\s+/gu, " ")
+    .replace(/\s+([.,;:)])/gu, "$1")
+    .replace(/\(\s+/gu, "(")
+    .trim();
+}
+
+// Every element with this name, as its inner XML. JATS does not nest any of
+// the elements read here inside one of the same name.
+function elements(xml: string, name: string, attributes = ""): string[] {
+  const pattern = new RegExp(
+    `<${name}\\b(?=[^>]*${attributes})[^>]*>([\\s\\S]*?)</${name}>`,
+    "gu",
+  );
+  return [...xml.matchAll(pattern)].map((match) => match[1] ?? "");
+}
+
+// The paragraphs of a section, or its whole text less its title if it has
+// none.
+function paragraphs(section: string): string[] {
+  const found = elements(section, "p").map(plain);
+  if (found.length > 0) return found;
+  return [plain(section.replace(/<title\b[^>]*>[\s\S]*?<\/title>/gu, ""))];
+}
+
+// A funding section in the body, found by its type or by its title. The
+// match starts at the section's own opening tag, so one nested in another
+// section is found too.
+const FUNDING_SECTION =
+  /<sec\b(?:[^>]*sec-type="funding"[^>]*>|[^>]*>\s*(?:<label\b[^>]*>[\s\S]*?<\/label>\s*)?<title\b[^>]*>\s*(?:funding|financial support|grant support)\b)([\s\S]*?)<\/sec>/giu;
+
+function fundingBodySections(xml: string): string[] {
+  // A match found by its title starts part way through the title, so the
+  // rest of the title is dropped.
+  return [...xml.matchAll(FUNDING_SECTION)].map((match) =>
+    (match[1] ?? "").replace(/^[^<]*<\/title>/u, ""),
+  );
+}
+
+export function fundingSections(xml: string): FundingSections {
+  const groups = elements(xml, "funding-group");
+  const statements = groups.flatMap((group) =>
+    elements(group, "funding-statement").map(plain),
+  );
+  const awards = groups.flatMap((group) =>
+    elements(group, "award-group").map((award) => ({
+      source: elements(award, "funding-source").map(plain).join("; "),
+      ids: elements(award, "award-id").map(plain),
+    })),
+  );
+  const sections = fundingBodySections(xml);
+  const text = [
+    ...statements,
+    ...sections.flatMap(paragraphs),
+    ...elements(xml, "ack").flatMap(paragraphs),
+    ...elements(
+      xml,
+      "fn",
+      `fn-type="(?:financial-disclosure|funding|supported-by)"`,
+    ).flatMap(paragraphs),
+  ].filter((paragraph) => paragraph !== "");
+  return { text: [...new Set(text)], awards };
+}

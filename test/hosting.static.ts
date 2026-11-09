@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { deploy, serverless, site, SITE_TEMPLATE } from "./app.ts";
-import { resource } from "./cfn.ts";
+import { readTemplate, resource } from "./cfn.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The app stack runs serverless in London, its own account's only
@@ -21,10 +21,7 @@ describe("fitness: data stays in London (hosting.md)", () => {
   });
 
   it("takes its resources from the site template", () => {
-    expect(serverless.resources).toEqual([
-      `\${file(./${SITE_TEMPLATE})}`,
-      expect.anything(),
-    ]);
+    expect(serverless.resources).toContain(`\${file(./${SITE_TEMPLATE})}`);
   });
 
   it("deploys with no region or stage given on the command line", () => {
@@ -49,8 +46,8 @@ describe("fitness: no always-on compute (hosting.md)", () => {
     "AWS::Lambda::Version",
   ];
 
-  // The app stack is the site template plus anything serverless.yml
-  // declares inline beside it.
+  // The app stack is the site and data templates plus anything
+  // serverless.yml declares inline beside them.
   const entries: unknown[] = Array.isArray(serverless.resources)
     ? serverless.resources
     : [serverless.resources];
@@ -63,14 +60,20 @@ describe("fitness: no always-on compute (hosting.md)", () => {
   );
 
   it("declares no instance, service, NAT gateway or database server", () => {
-    const types = [...Object.values(site.Resources), ...inline].map(
-      (r) => r.Type,
-    );
+    const data = readTemplate("infra/data.cfn.yml");
+    const types = [
+      ...Object.values(site.Resources),
+      ...Object.values(data.Resources),
+      ...inline,
+    ].map((r) => r.Type);
     expect(types.filter((type) => alwaysOn.includes(type))).toEqual([]);
   });
 
   it("gives no function provisioned concurrency", () => {
-    const text = readRepoFile("serverless.yml") + readRepoFile(SITE_TEMPLATE);
+    const text =
+      readRepoFile("serverless.yml") +
+      readRepoFile(SITE_TEMPLATE) +
+      readRepoFile("infra/data.cfn.yml");
     expect(text).not.toMatch(/provisionedConcurrency|ProvisionedConcurrency/u);
   });
 });
@@ -149,15 +152,12 @@ describe("the page's address", () => {
   });
 
   it("takes the certificate and the zone from the deploy's environment", () => {
-    expect(serverless.resources).toEqual([
-      expect.anything(),
-      {
-        Parameters: {
-          CertificateArn: { Default: "${env:CERTIFICATE_ARN, ''}" },
-          HostedZoneId: { Default: "${env:HOSTED_ZONE_ID, ''}" },
-        },
+    expect(serverless.resources).toContainEqual({
+      Parameters: {
+        CertificateArn: { Default: "${env:CERTIFICATE_ARN, ''}" },
+        HostedZoneId: { Default: "${env:HOSTED_ZONE_ID, ''}" },
       },
-    ]);
+    });
   });
 
   // osls passes stack parameters to the stack's first create as well, whose

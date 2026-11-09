@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<article article-type="research-article">
+  <front>
+    <article-meta>
+      <article-id pub-id-type="pmcid">PMC0000003</article-id>
+      <title-group><article-title>A made-up study that gives no reference</article-title></title-group>
+    </article-meta>
+  </front>
+  <back>
+    <ack><p>Ezekiel Thornbury-Vale thanks Cancer Research UK &amp; the Example Trust.</p></ack>
+  </back>
+</article>
