@@ -3,6 +3,7 @@ import { serverless, site } from "./app.ts";
 import {
   list,
   readTemplate,
+  renderArn,
   resource,
   rightsOf,
   subText,
@@ -11,7 +12,11 @@ import {
   type PolicyDocument,
   type Statement,
 } from "./cfn.ts";
-import { grantsInPolicy } from "./bucket-policy.ts";
+import {
+  BucketPolicy,
+  grantsInPolicy,
+  refusesPlainHttp,
+} from "./bucket-policy.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The run's resources in the app stack (#19): the results table and the
@@ -96,17 +101,24 @@ describe("fitness: the bucket stays private (storage.md)", () => {
     });
   });
 
-  it("refuses plain HTTP", () => {
-    const policy = resource(data, "TextBucketPolicy").Properties
-      .PolicyDocument as {
-      Statement: { Effect: string; Condition?: unknown }[];
-    };
-    expect(policy.Statement).toContainEqual(
-      expect.objectContaining({
-        Effect: "Deny",
-        Condition: { Bool: { "aws:SecureTransport": "false" } },
-      }),
+  // The same check test/text-bucket.conformance.ts makes of the deployed
+  // policy (#135), so a narrowed Deny fails here before it deploys (#148).
+  // The template names the bucket by GetAtt and Sub, so each resource is
+  // rendered with a stand-in ARN first.
+  it("refuses plain HTTP for everyone, every action, the bucket and its objects", () => {
+    const bucketArn = "arn:aws:s3:::text-bucket";
+    const policy = BucketPolicy.parse(
+      resource(data, "TextBucketPolicy").Properties.PolicyDocument,
     );
+    const rendered = {
+      Statement: policy.Statement.map((statement) => ({
+        ...statement,
+        Resource: list(statement.Resource).map((value) =>
+          renderArn(value, { "TextBucket.Arn": bucketArn }),
+        ),
+      })),
+    };
+    expect(refusesPlainHttp(rendered, bucketArn)).toBe(true);
   });
 
   // The deploy role may put any policy on this bucket (#59), so the
