@@ -1,3 +1,4 @@
+import { goldA } from "../evals/gold.ts";
 import { europePmc, type Clock } from "../src/europepmc/client.ts";
 import type { Deps } from "../src/pipeline/steps.ts";
 import type { PageFiles } from "../src/store/bucket.ts";
@@ -79,6 +80,12 @@ const GRANTS: Partial<Record<string, string>> = {
   PMC0000002: "RRCOER-Jun24\\100008",
 };
 
+// Whether a request is gold set A's sampling search. The client wraps the
+// recorded query, so the request holds it rather than starts with it.
+export const isGoldSearch = (url: URL) =>
+  url.pathname.endsWith("/search") &&
+  (url.searchParams.get("query") ?? "").includes(goldA.query);
+
 // Europe PMC answering from the fixtures. A paper with no fixture fails as
 // a server error does; `search` may be replaced to fail the search.
 export function fakeEuropePmc(
@@ -119,7 +126,7 @@ export function fakeEuropePmc(
         );
       }
       // Gold set A's sampling query: papers already linked to the funder.
-      if (query.startsWith("GRANT_AGENCY:")) {
+      if (isGoldSearch(url)) {
         return Promise.resolve(
           reply(
             JSON.stringify({
