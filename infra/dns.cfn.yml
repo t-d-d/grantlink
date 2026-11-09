@@ -1,0 +1,46 @@
+# The DNS stack: the hosted zone for grantlink.uk and the certificate
+# CloudFront serves it with. The owner applies it once, by hand, in
+# us-east-1, where CloudFront requires its certificate (#4). It sits apart
+# from the app stack, so deleting or rebuilding that stack never changes the
+# nameservers the registrar points to. How to apply it is in the README.
+AWSTemplateFormatVersion: "2010-09-09"
+Description: grantlink DNS, the hosted zone and its certificate (us-east-1)
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: grantlink.uk
+    Description: The domain the page is served at.
+
+Resources:
+  # Kept if the stack is deleted or the zone replaced, since a new zone
+  # gets new nameservers and the registrar would need telling.
+  HostedZone:
+    Type: AWS::Route53::HostedZone
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Ref DomainName
+
+  # CloudFormation writes the validation record into the zone itself. The
+  # stack finishes once the registrar points at the zone's nameservers and
+  # ACM has seen the record.
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZone
+
+Outputs:
+  NameServers:
+    Description: Give these to the registrar.
+    Value: !Join [", ", !GetAtt HostedZone.NameServers]
+  HostedZoneId:
+    Description: The zone the app stack adds its alias records to.
+    Value: !Ref HostedZone
+  CertificateArn:
+    Description: The certificate CloudFront serves. It carries the account id, so it is a secret.
+    Value: !Ref Certificate

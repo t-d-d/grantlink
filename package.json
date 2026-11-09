@@ -6,10 +6,11 @@
     "node": "^22.18.0 || >=23.6.0"
   },
   "scripts": {
-    "gate": "npm run format && npm run lint && npm run types && npm run test",
+    "gate": "npm run format && npm run lint && npm run types && npm run cfn-lint && npm run test",
     "format": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
     "types": "tsc -p .",
+    "cfn-lint": "cfn-lint infra/*.cfn.yml",
     "test": "vitest run --project static --project unit --project int",
     "test:live": "vitest run --project live",
     "conformance": "vitest run --project conformance"
@@ -24,6 +25,7 @@
     "prettier": "3.9.10",
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.1",
-    "vitest": "5.0.3"
+    "vitest": "5.0.3",
+    "yaml": "2.9.1"
   }
 }

@@ -33,4 +33,8 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci --ignore-scripts
+      # cfn-lint checks the templates in infra/. pipx ships on the runner
+      # image, and the version is pinned here because Dependabot does not
+      # read this line.
+      - run: pipx install cfn-lint==1.60.0
       - run: npm run gate
