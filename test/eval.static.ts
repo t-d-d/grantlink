@@ -75,8 +75,17 @@ describe("computing the fingerprint", () => {
     const run = named("Compute the fingerprint")?.run ?? "";
     const lines = run.split("\n").map((line) => line.trim());
     expect(lines[0]).toBe("set -euo pipefail");
-    expect(lines).toContainEqual(
-      expect.stringMatching(/^\w+="\$\(node evals\/fingerprint\.ts\)"$/u),
+    const assigned = lines
+      .map(
+        (line) =>
+          /^(\w+)="\$\(node evals\/fingerprint\.ts\)"$/u.exec(line)?.[1],
+      )
+      .find((name) => name !== undefined);
+    expect(assigned).toBeDefined();
+    // The output is the variable the script's value went into, so the
+    // fingerprint handed on is the one whose exit code was checked.
+    expect(lines).toContain(
+      `echo "value=$${assigned ?? ""}" >> "$GITHUB_OUTPUT"`,
     );
     expect(run).not.toMatch(/\becho\b[^\n]*\$\(node evals\/fingerprint\.ts/u);
   });
