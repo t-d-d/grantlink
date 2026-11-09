@@ -26,3 +26,37 @@ export function grantsInPolicy(document: unknown): string[] {
         : `statement ${String(index + 1)}`,
     );
 }
+
+const isWildcardPrincipal = (principal: unknown): boolean =>
+  principal === "*" ||
+  (typeof principal === "object" &&
+    principal !== null &&
+    "AWS" in principal &&
+    list(principal.AWS).includes("*"));
+
+// Whether the policy holds a Deny, for everyone and every S3 action, on
+// both the bucket and its objects, when a request comes over plain HTTP.
+// That is the template's HttpsOnly statement. It is looked for by what it
+// does, not by its Sid, so a renamed copy passes and a narrowed one fails
+// (#135).
+export function refusesPlainHttp(
+  document: unknown,
+  bucketArn: string,
+): boolean {
+  return BucketPolicy.parse(document).Statement.some((statement) => {
+    const actions = list(statement.Action);
+    const resources = list(statement.Resource);
+    const bool = z
+      .object({ Bool: z.record(z.string(), z.unknown()) })
+      .safeParse(statement.Condition);
+    return (
+      statement.Effect === "Deny" &&
+      isWildcardPrincipal(statement.Principal) &&
+      (actions.includes("s3:*") || actions.includes("*")) &&
+      resources.includes(bucketArn) &&
+      resources.includes(`${bucketArn}/*`) &&
+      bool.success &&
+      list(bool.data.Bool["aws:SecureTransport"]).includes("false")
+    );
+  });
+}
