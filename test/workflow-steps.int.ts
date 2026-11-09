@@ -127,6 +127,53 @@ describe("the eval's report hand-on", () => {
   });
 });
 
+// #139: the live release filed its report under the fingerprint its own
+// code worked out, which a pull request that changes the fingerprint's
+// inputs cannot work out again. The release record on the live page holds
+// that report, so the step takes it from there. Nothing but curl is
+// stubbed, so a call to node, git or aws fails the step.
+describe("the eval's read of the live release's report", () => {
+  const run = script(evalWorkflow, "eval", "live");
+  const live = { fingerprint: "f".repeat(64), rows: [{ id: "recall-a" }] };
+  const record = JSON.stringify({
+    commit: "c".repeat(40),
+    fingerprint: "f".repeat(64),
+    deployRunUrl: "https://github.com/o/r/actions/runs/1",
+    report: live,
+  });
+  const curl = (body: string) => `cat <<'EOF'\n${body}\nEOF`;
+  // Appended to the step, so the test can see what it left in live.json.
+  const env = { RELEASE_URL: "https://example.test/release.json" };
+  const show = `\nif [ -f live.json ]; then echo "file=$(jq -c . live.json)" >> "$GITHUB_OUTPUT"; fi`;
+
+  it("takes the report from the release record, with no fingerprint, git or AWS call", () => {
+    const { status, output } = runStep(
+      `${run}${show}`,
+      {
+        curl: curl(record),
+      },
+      env,
+    );
+    expect(status).toBe(0);
+    expect(output).toBe(`file=${JSON.stringify(live)}\n`);
+  });
+
+  it.each([
+    ["the page cannot be fetched", "exit 22"],
+    ["the reply is not JSON", curl("<html>")],
+    ["the record holds no report", curl('{"commit":"x"}')],
+    ["the record's report is not an object", curl('{"report":"x"}')],
+    ["the reply holds more than one record", curl(`${record}\n${record}`)],
+  ])(
+    "says the page is unread, and leaves no live report, when %s",
+    (_, stub) => {
+      const { status, output } = runStep(`${run}${show}`, { curl: stub }, env);
+      expect(status).toBe(0);
+      expect(output).toBe("reason=page-unread\n");
+    },
+  );
+});
+
 describe("the deploy's stack outputs", () => {
   const run = script(deploy, "deploy", "stack");
   const outputs = (keys: string[]) =>

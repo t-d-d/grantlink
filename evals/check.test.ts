@@ -75,33 +75,23 @@ describe("the pull request's comment", () => {
     expect(text).not.toContain("recent runs");
   });
 
-  it.each([
-    ["predates-eval", "The live release predates the eval's inputs"],
-    ["no-report", "The live release has no report filed"],
-    [
-      "unknown-commit",
-      "The live release's commit is not in this repository's history",
-    ],
-    ["page-unread", "The release record on the live page could not be read"],
-    [
-      "fingerprint-failed",
-      "The live release's fingerprint could not be worked out",
-    ],
-  ] as const)(
-    "says why a live release has nothing to compare with (%s), without saying none is live",
-    (reason, words) => {
-      const text = comment(report({ spend: 0 }), reason);
-      expect(text).toContain(words);
-      expect(text).not.toMatch(
-        /no live release|no release is live|no deploy/iu,
-      );
-    },
-  );
+  it("says the live report is not known when its record cannot be read or holds none", () => {
+    const text = comment(report({ spend: 0 }), "page-unread");
+    expect(text).toContain(
+      "The release record on the live page could not be read, or holds no report",
+    );
+    expect(text).not.toMatch(/no live release|no release is live|no deploy/iu);
+  });
 
-  it("blames a failed fingerprint on the release only when an input is missing (#90)", () => {
-    const text = comment(report({ spend: 0 }), "fingerprint-failed");
-    expect(text).not.toContain("predates");
-    expect(text).toContain("the eval job's log");
+  // #139: the report comes from the release record, so there is no
+  // fingerprint to work out and no report to look up.
+  it.each([
+    "unknown-commit",
+    "predates-eval",
+    "fingerprint-failed",
+    "no-report",
+  ])("no longer knows %s", (reason) => {
+    expect(() => noLive.parse(reason)).toThrow();
   });
 
   it("refuses a reason it does not know", () => {

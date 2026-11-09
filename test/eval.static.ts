@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { noLive } from "../evals/check.ts";
-import { INPUTS, MISSING_INPUT } from "../evals/fingerprint.ts";
+import { INPUTS } from "../evals/fingerprint.ts";
 import { evalWorkflow as workflow, site, type Step } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
 
@@ -12,10 +12,6 @@ const steps: Step[] = job?.steps ?? [];
 const at = (pattern: RegExp) =>
   steps.findIndex((step) => pattern.test(step.run ?? ""));
 const named = (name: string) => steps.find((step) => step.name === name);
-// The live release's fingerprint, its exit status kept rather than tested
-// with `if !`, so a missing input can be told from any other failure (#90).
-const fingerprintCall =
-  /\w+="\$\(node evals\/fingerprint\.ts "\$live"\)" \|\| (\w+)=\$\?/u;
 
 describe("the eval workflow", () => {
   it("runs on every pull request, and on main when deploy.yml calls it", () => {
@@ -141,39 +137,19 @@ describe("the gate and the comment", () => {
     expect(comment?.run).toContain("-X PATCH");
   });
 
-  it("compares with nothing, and does not fail, when the live release has no fingerprint", () => {
-    // A live commit from before the eval, or before an input was added,
-    // has no git hash for every input, so its fingerprint cannot be read.
+  // #139: the live release filed its report under the fingerprint its own
+  // code worked out. A pull request that changes the fingerprint's inputs
+  // works out another, so the step takes the report the release record
+  // holds instead of looking one up.
+  it("takes the live report from the release record, not from the live commit's fingerprint", () => {
     const live = named("Read the live release's report")?.run ?? "";
-    expect(live).toMatch(fingerprintCall);
-  });
-
-  // #90: only a missing input means the live release predates the eval.
-  // Any other failure has its own reason, and its error stays in the log.
-  it("says the live release predates the eval only when an input is missing", () => {
-    const live = named("Read the live release's report")?.run ?? "";
-    const call = fingerprintCall.exec(live);
-    const status = call?.[1] ?? "";
-    expect(status).not.toBe("");
-    // The step runs under set -u, so the status starts at 0 for the run
-    // that succeeds and never assigns it.
-    const initialised = new RegExp(
-      String.raw`(?:^|\n)\s*${status}=0\n\s*\w+="\$\(node evals/fingerprint\.ts`,
-      "u",
+    // Slurped, so a reply of several records is not taken as one.
+    expect(live).toMatch(
+      /jq -ces 'select\(length == 1\) \| \.\[0\]\.report \| objects'/u,
     );
-    const after = live.slice(call?.index ?? 0);
-    const missing = new RegExp(
-      String.raw`if \[ "\$${status}" -eq ${String(MISSING_INPUT)} \]; then\n.*\n\s*echo "reason=predates-eval"[^\n]*\n\s*exit 0\n`,
-      "u",
-    );
-    const other = new RegExp(
-      String.raw`elif \[ "\$${status}" -ne 0 \]; then\n.*\n\s*echo "reason=fingerprint-failed"[^\n]*\n\s*exit 0\n\s*fi\n`,
-      "u",
-    );
-    expect(live).toMatch(initialised);
-    expect(after).toMatch(missing);
-    expect(after).toMatch(other);
-    expect(live).not.toMatch(/fingerprint\.ts[^\n]*2>/u);
+    expect(live).not.toContain("fingerprint.ts");
+    expect(live).not.toMatch(/\bgit\b/u);
+    expect(live).not.toMatch(/\baws\b/u);
   });
 
   it("hands the comment the reason it has no live report to compare with", () => {
@@ -213,12 +189,6 @@ describe("the gate and the comment", () => {
     );
     const run = live?.run ?? "";
     expect(run).toMatch(/curl [^\n]*"\$RELEASE_URL"/u);
-    expect(run).toContain("jq -r .commit");
-    // Only a full commit hash counts: anything else is an unread page. The
-    // whole value must match, so a reply of several lines with one hash
-    // among them does not pass as a hash.
-    expect(run).toContain('[[ "$live" =~ ^[0-9a-f]{40}$ ]]');
-    expect(run).not.toMatch(/grep [^\n]*<<< "\$live"/u);
     expect(run).not.toContain("deploy.yml/runs");
     expect(run).not.toContain("gh api");
     expect(live?.env?.GH_TOKEN).toBeUndefined();

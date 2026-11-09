@@ -41,14 +41,7 @@ export function gate(
 
 // Why eval.yml has no live report to compare with, as its "Read the live
 // release's report" step finds it.
-export const noLive = z.enum([
-  "no-deploy",
-  "page-unread",
-  "unknown-commit",
-  "predates-eval",
-  "fingerprint-failed",
-  "no-report",
-]);
+export const noLive = z.enum(["no-deploy", "page-unread"]);
 export type NoLive = z.infer<typeof noLive>;
 
 const NO_LIVE: Record<NoLive | OlderFormat, string> = {
@@ -57,15 +50,7 @@ const NO_LIVE: Record<NoLive | OlderFormat, string> = {
   "no-deploy":
     "No deploy of main has run yet, so there is nothing to compare with.",
   "page-unread":
-    "The release record on the live page could not be read, so the live release is not known and there is nothing to compare with.",
-  "unknown-commit":
-    "The live release's commit is not in this repository's history, so there is nothing to compare with.",
-  "predates-eval":
-    "The live release predates the eval's inputs, so it has no report to compare with.",
-  "fingerprint-failed":
-    "The live release's fingerprint could not be worked out, so its report could not be looked up. The error is in the eval job's log.",
-  "no-report":
-    "The live release has no report filed, so there is nothing to compare with.",
+    "The release record on the live page could not be read, or holds no report, so there is nothing to compare with.",
 };
 
 // A live report this code cannot read even leniently (#138). The comparison

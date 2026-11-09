@@ -44,10 +44,7 @@ jobs:
       AWS_REGION: eu-west-2
       AWS_DEFAULT_REGION: eu-west-2
     steps:
-      # The whole history, so the live release's commit can be read too.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -183,13 +180,14 @@ jobs:
           echo "json=$json" >> "$GITHUB_OUTPUT"
 
       # A release is live once its page is published (#85). The deploy
-      # writes the release record and publishes it beside the page, so the
-      # commit in the record on the live page is the live release, even
-      # when a later step of that deploy failed. Its report is the one filed
-      # under that commit's fingerprint. If the record cannot be read, or
-      # holds no full commit hash, there is nothing to compare with, and the
-      # comment shows CI's scores alone. Without a report, the step hands
-      # the comment its reason (#88).
+      # writes the release record and publishes it beside the page, with the
+      # report that covers the live release. That report was filed under the
+      # fingerprint the live release's own code worked out, which this pull
+      # request's code cannot work out again when it changes the inputs, so
+      # the step takes the report from the record (#139). If the record
+      # cannot be read, is not one JSON value, or holds no report, there is
+      # nothing to compare with, and the comment shows CI's scores alone
+      # (#88). The report is written to live.json only, never printed.
       - id: live
         name: Read the live release's report
         if: github.event_name == 'pull_request' && steps.cached.outputs.bucket != 'missing'
@@ -197,41 +195,13 @@ jobs:
           RELEASE_URL: https://grantlink.uk/release.json
         run: |
           set -euo pipefail
-          if ! live="$(curl -sSf --retry 2 --max-time 30 "$RELEASE_URL" | jq -r .commit)" \
-            || ! [[ "$live" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::warning::Could not read the commit in the live page's release record, so there is nothing to compare with."
+          if ! record="$(curl -sSf --retry 2 --max-time 30 "$RELEASE_URL")" \
+            || ! live="$(jq -ces 'select(length == 1) | .[0].report | objects' <<< "$record" 2>/dev/null)"; then
+            echo "::warning::Could not read the report in the live page's release record, so there is nothing to compare with."
             echo "reason=page-unread" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if ! git cat-file -e "$live^{commit}" 2>/dev/null; then
-            echo "The live release's commit is not in this repository's history."
-            echo "reason=unknown-commit" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # A live commit from before the eval, or before one of its inputs
-          # existed, has no fingerprint, and so no report to compare with.
-          # fingerprint.ts exits 3 for that alone. Any other failure is its
-          # own reason, and its error stays in this log (#90).
-          status=0
-          fingerprint="$(node evals/fingerprint.ts "$live")" || status=$?
-          if [ "$status" -eq 3 ]; then
-            echo "The live release predates the eval's inputs."
-            echo "reason=predates-eval" >> "$GITHUB_OUTPUT"
-            exit 0
-          elif [ "$status" -ne 0 ]; then
-            echo "::warning::The live release's fingerprint could not be worked out, so there is nothing to compare with."
-            echo "reason=fingerprint-failed" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          key="eval-reports/$fingerprint.json"
-          count="$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$key" \
-            --query KeyCount --output text)"
-          if [ "$count" = "1" ]; then
-            aws s3api get-object --bucket "$BUCKET" --key "$key" live.json >/dev/null
-          else
-            echo "The live release has no report."
-            echo "reason=no-report" >> "$GITHUB_OUTPUT"
-          fi
+          printf '%s\n' "$live" > live.json
 
       # One comment per pull request, updated on each run. When the step
       # above was skipped, the private bucket does not exist yet, so no
