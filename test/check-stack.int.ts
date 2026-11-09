@@ -19,7 +19,7 @@ import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { root } from "./repo.ts";
 
-const commands = ["bash", "cat", "grep", "mktemp", "rm", "sed"];
+const commands = ["bash", "grep", "mktemp", "rm", "sed"];
 const found = execFileSync("bash", ["-c", `command -v ${commands.join(" ")}`], {
   encoding: "utf8",
 })
@@ -34,11 +34,12 @@ const account = "1234567890" + "12";
 // is a stack that does not exist.
 const awsStub = `#!${bash}
 log() { printf '%s\\n' "$1" >> "$STATE/calls"; }
-bucket=; stack=
+bucket=; stack=; output=json
 args=("$@")
 while [ $# -gt 0 ]; do
   case $1 in
     --bucket) bucket=$2; shift ;;
+    --output) output=$2; shift ;;
     --stack-name) stack=$2; shift ;;
   esac
   shift
@@ -67,7 +68,11 @@ case "$1 $2" in
   "cloudformation list-stack-resources")
     log "resources $stack"
     [ -n "$STATUS" ] || missing ListStackResources
-    echo "\${LISTED:-1}" ;;
+    # With --output text, the CLI runs --query once on each page.
+    pages=1
+    [ "$output" = text ] && pages=\${PAGES:-1}
+    i=0
+    while [ "$i" -lt "$pages" ]; do echo "\${LISTED:-1}"; i=$((i + 1)); done ;;
   "s3api head-bucket")
     log "head-bucket $bucket"
     case "\${BUCKET:-404}" in
@@ -92,6 +97,7 @@ interface Stack {
   failed?: string;
   bucket?: "200" | "403" | "404" | "500";
   deny?: boolean;
+  pages?: number;
 }
 
 interface Check {
@@ -123,6 +129,7 @@ function check(stack: Stack): Check {
       FAILED: stack.failed ?? "None",
       BUCKET: stack.bucket ?? "404",
       DENY: stack.deny === true ? "1" : "",
+      PAGES: String(stack.pages ?? 1),
     },
     timeout: 4_000,
   });
@@ -198,6 +205,13 @@ describe("a stack stuck in cleanup or rollback stops the deploy (#89)", () => {
     expect(result.output).toMatch(/delete the stack/iu);
   });
 
+  it("says to delete a stack left waiting on a change set, which never settles", () => {
+    const result = check({ status: "REVIEW_IN_PROGRESS" });
+    expect(result.status).not.toBe(0);
+    expect(result.output).toMatch(/delete the stack/iu);
+    expect(result.output).not.toMatch(/wait until/iu);
+  });
+
   it("names the stack when no resource has failed", () => {
     const result = check({ status: "UPDATE_IN_PROGRESS" });
     expect(result.status).not.toBe(0);
@@ -223,6 +237,17 @@ describe("a funding text bucket outside the stack stops the deploy (#89)", () =>
       expect(result.output).toMatch(/run this deploy again/u);
     },
   );
+
+  it("when the stack's resources run to more than one page", () => {
+    const result = check({
+      status: "UPDATE_COMPLETE",
+      listed: "0",
+      bucket: "403",
+      pages: 2,
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain("TextBucket");
+  });
 
   it("when there is no stack but the bucket is there, as after a failed first create", () => {
     const result = check({ bucket: "403" });

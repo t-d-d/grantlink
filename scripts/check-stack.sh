@@ -62,6 +62,8 @@ case "$status" in
         next="In the CloudFormation console, continue the rollback, skipping $resource if it cannot roll back, then run this deploy again." ;;
       ROLLBACK_COMPLETE | ROLLBACK_FAILED | CREATE_FAILED)
         next="The stack's first create failed. Delete the stack in the CloudFormation console, then run this deploy again. ResultsTable and TextBucket are retained; if TextBucket is left behind, this check will say so." ;;
+      REVIEW_IN_PROGRESS)
+        next="The stack holds a change set that never ran, and CloudFormation does not settle that by itself. Delete the stack in the CloudFormation console, then run this deploy again." ;;
       *_IN_PROGRESS)
         next="Wait until CloudFormation settles the stack, then run this deploy again. If it keeps failing on $resource, read the stack's events in the CloudFormation console. Do not empty TextBucket or ResultsTable to let it through: they hold the data." ;;
       *)
@@ -72,12 +74,13 @@ case "$status" in
     ;;
 esac
 
-# Whether the stack lists the funding text bucket.
+# Whether the stack lists the funding text bucket. JSON, because with text
+# output the CLI runs the query once on each page of resources.
 listed=0
 if [ -n "$status" ]; then
   listed="$(aws cloudformation list-stack-resources --stack-name "$stack" \
     --query "length(StackResourceSummaries[?LogicalResourceId=='TextBucket'])" \
-    --output text 2>"$work/err")" || fail_with "$work/err"
+    --output json 2>"$work/err")" || fail_with "$work/err"
 fi
 if [ "$listed" != "0" ]; then
   exit 0
