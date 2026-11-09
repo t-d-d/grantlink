@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { comment, gate, noLive, readLive } from "./check.ts";
+import { ZodError } from "zod";
+import { comment, commentFrom, gate, noLive, readLive } from "./check.ts";
 import { FLOORS } from "./floors.ts";
 import type { Report } from "./report.ts";
 
@@ -213,5 +214,83 @@ describe("the pull request's comment", () => {
     expect(lines.join("\n")).toContain("at runUrl");
     expect(lines.join("\n")).toContain("not JSON");
     expect(lines.join("\n")).not.toContain("a value");
+  });
+});
+
+// #154: the command line decides which report must parse. CI's own report,
+// the first path, must, or the eval check would post a comment for an
+// invalid report of its own. The live one is only compared with, so it may
+// fail.
+describe("the comment command", () => {
+  const good = JSON.stringify(report({ "recall-a": 0.96, spend: 0 }));
+  const older = JSON.stringify(report({ "recall-a": 0.9, spend: 0 }));
+  const bad = [
+    ["is not JSON", "{", SyntaxError],
+    ["is not a report", JSON.stringify({ rows: [] }), ZodError],
+  ] as const;
+  const quiet = () => undefined;
+  const run = (args: string[], files: Record<string, string>) =>
+    commentFrom(
+      args,
+      (path) => {
+        const raw = files[path];
+        if (raw === undefined) throw new Error(`no file ${path}`);
+        return raw;
+      },
+      quiet,
+    );
+
+  it.each(bad)(
+    "fails when CI's report %s, even beside a good live one",
+    (_, raw, error) => {
+      expect(() =>
+        run(["ci.json", "live.json"], { "ci.json": raw, "live.json": older }),
+      ).toThrow(error);
+    },
+  );
+
+  it.each(bad)(
+    "fails when CI's report %s and there is no live one",
+    (_, raw, error) => {
+      expect(() =>
+        run(["ci.json", "--no-live", "no-deploy"], { "ci.json": raw }),
+      ).toThrow(error);
+    },
+  );
+
+  it.each(bad)("prints a comment when only the live report %s", (_, raw) => {
+    const text = run(["ci.json", "live.json"], {
+      "ci.json": good,
+      "live.json": raw,
+    });
+    expect(text).toContain("<!-- grantlink:eval -->");
+    expect(text).toContain(
+      "| Recall | Gold set A | 95% or more | 96.0% | - | go |",
+    );
+  });
+
+  it("puts CI's report first and the live one second", () => {
+    const text = run(["ci.json", "live.json"], {
+      "ci.json": good,
+      "live.json": older,
+    });
+    expect(text).toContain(
+      "| Recall | Gold set A | 95% or more | 96.0% | 90.0% | go |",
+    );
+  });
+
+  it("says why there is no live report", () => {
+    const text = run(["ci.json", "--no-live", "no-deploy"], {
+      "ci.json": good,
+    });
+    expect(text).toContain("No deploy of main has run yet");
+  });
+
+  it.each([
+    ["an unknown reason", ["ci.json", "--no-live", "gone"], ZodError],
+    ["no reason", ["ci.json", "--no-live"], ZodError],
+    ["no second argument", ["ci.json"], /usage/u],
+  ] as const)("refuses %s", (_, args, error) => {
+    expect(() => run([...args], { "ci.json": good })).toThrow(error);
   });
 });
