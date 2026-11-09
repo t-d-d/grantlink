@@ -133,43 +133,36 @@ export function comment(
   ].join("\n");
 }
 
-// The comment command on file contents (#154). CI's own report must parse,
-// so a bad one throws and fails the eval check. The live one is only
-// compared with, so a bad one shows CI's scores alone.
+// The comment command's arguments after "comment" (#154). The first names
+// CI's own report, which must parse, so a bad one throws and fails the eval
+// check. The second names the live one, which is only compared with, so a
+// bad one shows CI's scores alone. read takes a path and gives its contents.
 export function commentFrom(
-  ciRaw: string,
-  live: { live: string } | { noLive: string | undefined },
+  [path, extra, reason]: readonly (string | undefined)[],
+  read: (path: string) => string,
   warn?: (line: string) => void,
 ): string {
-  const ci = report.parse(JSON.parse(ciRaw));
+  if (path === undefined || extra === undefined) throw new Error(USAGE);
+  const ci = report.parse(JSON.parse(read(path)));
   return comment(
     ci,
-    "live" in live ? readLive(live.live, warn) : noLive.parse(live.noLive),
+    extra === "--no-live" ? noLive.parse(reason) : readLive(read(extra), warn),
   );
 }
 
+const USAGE =
+  "usage: node evals/check.ts gate <report.json> <fingerprint> | comment <report.json> <live.json> | comment <report.json> --no-live <reason>";
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [command, path, extra, reason] = process.argv.slice(2);
+  const [command, ...args] = process.argv.slice(2);
+  const [path, extra] = args;
   if (command === "gate" && path !== undefined && extra !== undefined) {
     const result = gate(readFileSync(path, "utf8"), extra);
     for (const line of result.lines) console.log(line);
     if (!result.pass) process.exitCode = 1;
-  } else if (
-    command === "comment" &&
-    path !== undefined &&
-    extra !== undefined
-  ) {
-    console.log(
-      commentFrom(
-        readFileSync(path, "utf8"),
-        extra === "--no-live"
-          ? { noLive: reason }
-          : { live: readFileSync(extra, "utf8") },
-      ),
-    );
+  } else if (command === "comment") {
+    console.log(commentFrom(args, (file) => readFileSync(file, "utf8")));
   } else {
-    throw new Error(
-      "usage: node evals/check.ts gate <report.json> <fingerprint> | comment <report.json> <live.json> | comment <report.json> --no-live <reason>",
-    );
+    throw new Error(USAGE);
   }
 }
