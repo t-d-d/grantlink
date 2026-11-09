@@ -127,23 +127,31 @@ const grantsReply = z.object({
 });
 
 // Every search is the caller's selection, in brackets, and the open-access
-// terms (public-data.md). A selection could step out of its brackets only
-// through an unmatched bracket, an open quote or an escape, so any of those
-// is refused.
+// terms (public-data.md). Europe PMC reads a bracket inside quotes or a
+// range ([a TO b] or {a TO b}) as text, so this does too. A selection could
+// still step out of its brackets through an unmatched bracket, an open
+// quote or range, an escape, or a regular expression (/…/), whose brackets
+// are also text, so any of those is refused.
 function openAccessOnly(selection: string): string {
-  let depth = 0;
-  let quoted = false;
-  for (const char of selection) {
-    if (char === "\\") depth = -1;
-    else if (char === '"') quoted = !quoted;
-    else if (!quoted && char === "(") depth += 1;
-    else if (!quoted && char === ")") depth -= 1;
-    if (depth < 0) break;
-  }
-  if (depth !== 0 || quoted || selection.trim() === "") {
-    throw new Error(
+  const refuse = () =>
+    new Error(
       "a search asks only for open-access papers in Europe PMC, and its selection must stay in its brackets",
     );
+  let depth = 0;
+  let inQuotes = false;
+  let inRange = false;
+  for (const char of selection) {
+    if (char === "\\") throw refuse();
+    if (inQuotes) inQuotes = char !== '"';
+    else if (char === '"') inQuotes = true;
+    else if (inRange) inRange = char !== "]" && char !== "}";
+    else if (char === "[" || char === "{") inRange = true;
+    else if ("]}/".includes(char)) throw refuse();
+    else if (char === "(") depth += 1;
+    else if (char === ")" && --depth < 0) throw refuse();
+  }
+  if (depth !== 0 || inQuotes || inRange || selection.trim() === "") {
+    throw refuse();
   }
   return `(${selection}) AND OPEN_ACCESS:y AND IN_EPMC:y`;
 }

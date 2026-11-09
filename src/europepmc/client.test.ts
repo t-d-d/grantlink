@@ -183,6 +183,9 @@ describe("fitness: only Europe PMC's public web services (public-data.md)", () =
     ["leaves a bracket open", "(X OR Y"],
     ["leaves a quote open", 'ACK_FUND:"X) OR (Y'],
     ["escapes a character", "X \\) OR \\(Y"],
+    ["hides a bracket in a range", "A:[x TO y(]) OR (B:[p TO q)]"],
+    ["hides a bracket in a regular expression", "A:/(/) OR (B:/)/"],
+    ["leaves a range open", "A:[x TO y) OR (B"],
   ])("refuses a query that %s", async (_, part) => {
     // The open-access terms are there, so only the brackets can refuse it.
     const selection = `${part} AND OPEN_ACCESS:y AND IN_EPMC:y`;
@@ -191,17 +194,26 @@ describe("fitness: only Europe PMC's public web services (public-data.md)", () =
     expect(requests).toHaveLength(0);
   });
 
-  it("counts a bracket inside quotes as text", async () => {
+  it("refuses an empty selection", async () => {
+    const { client, requests } = harness(() => ok());
+    await expect(client.search("*", " ")).rejects.toThrow(/open-access/u);
+    expect(requests).toHaveLength(0);
+  });
+
+  it.each([
+    ["quotes", 'TITLE:"a (b"'],
+    ["a range", "FIRST_PDATE:[a( TO b]"],
+  ])("counts a bracket inside %s as text", async (_, selection) => {
     const { client, requests } = harness(() =>
       Response.json({ hitCount: 0, resultList: { result: [] } }),
     );
-    await client.search("*", 'TITLE:"a (b"');
+    await client.search("*", selection);
     expect(requests).toHaveLength(1);
   });
 });
 
 describe("searching Europe PMC", () => {
-  it("asks for open-access papers since 2020 that name the funder and are linked to none of its grants", () => {
+  it("asks for papers since 2020 that name the funder and are linked to none of its grants", () => {
     const query = searchQuery();
     expect(query).toContain('ACK_FUND:"Cancer Research UK"');
     expect(query).toContain('ACK_FUND:"CRUK"');

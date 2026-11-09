@@ -10,7 +10,7 @@ import {
   it,
   vi,
 } from "vitest";
-import { fakeDeps, reply } from "../../test/fakes.ts";
+import { fakeDeps, isGoldSearch, reply } from "../../test/fakes.ts";
 import { NAMES } from "../../test/fixtures.ts";
 import { EuropePmcError } from "../europepmc/client.ts";
 import { makeRun, type RunSummary } from "./run.ts";
@@ -219,6 +219,7 @@ describe("the eval snapshot (evals.md)", () => {
     const { status, result } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
     expect(result?.snapshot).toMatchObject({ taken: true, papers: 2 });
+    expect(fake.requests.some(isGoldSearch)).toBe(true);
 
     const manifest = manifestOf(fake);
     expect(manifest.id).toBe("s1");
@@ -250,11 +251,7 @@ describe("the eval snapshot (evals.md)", () => {
       reason: "already taken",
     });
     expect(fake.text.get("eval/s1/manifest.json")).toBe(first);
-    expect(
-      fake.requests.some((url) =>
-        (url.searchParams.get("query") ?? "").startsWith("GRANT_AGENCY:"),
-      ),
-    ).toBe(false);
+    expect(fake.requests.some(isGoldSearch)).toBe(false);
   });
 
   it("publishes the page even when the snapshot fails, and leaves it for the next run", async () => {
