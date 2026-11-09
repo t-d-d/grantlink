@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { fundingSections } from "../src/europepmc/jats.ts";
 import { strayParts } from "./fixture-parts.ts";
 
 // A full text cut as the recorded fixtures are: its ids, its licence and its
@@ -36,7 +37,29 @@ describe("strayParts", () => {
     ).toEqual([]);
   });
 
+  it("passes body sections the cutter finds by their type or their title", () => {
+    expect(
+      strayParts(
+        paper({
+          body:
+            '<body><sec sec-type="ack"><p>Thanks.</p></sec>' +
+            "<sec><title>Funding</title><p>Funded.</p></sec>" +
+            "<sec><label>5.</label><title>Acknowledgments</title><p>Thanks.</p></sec>" +
+            "<sec><title>Support</title><p>Funded.</p></sec></body>",
+          back: "<sec><title>Grant support</title><p>Funded.</p></sec>",
+        }),
+      ),
+    ).toEqual([]);
+  });
+
   it.each([
+    [
+      "a body section whose title only starts with Support",
+      {
+        body: "<body><sec><title>Support vector machines</title><p>M</p></sec></body>",
+      },
+      "article/body/sec",
+    ],
     [
       "the author list",
       {
@@ -115,6 +138,31 @@ describe("strayParts", () => {
     ],
   ])("names %s", (_what, parts, stray) => {
     expect(strayParts(paper(parts))).toEqual([stray]);
+  });
+
+  // #159: a part passes the check exactly when the cutter reads it as funding
+  // text, so a correct recording is never refused and the check keeps nothing
+  // the cutter would not read.
+  it.each([
+    '<fn fn-type="financial-disclosure"><p>Funded.</p></fn>',
+    '<fn fn-type="funding"><p>Funded.</p></fn>',
+    '<fn fn-type="supported-by"><p>Funded.</p></fn>',
+    '<fn fn-type="conflict"><p>Funded.</p></fn>',
+    '<fn-group><fn fn-type="supported-by"><p>Funded.</p></fn></fn-group>',
+    '<fn-group><fn fn-type="other"><p>Funded.</p></fn></fn-group>',
+    '<sec sec-type="funding"><p>Funded.</p></sec>',
+    '<sec sec-type="acknowledgements"><p>Funded.</p></sec>',
+    '<sec sec-type="data-availability"><p>Funded.</p></sec>',
+    "<sec><title>Financial support</title><p>Funded.</p></sec>",
+    "<sec><title>Support.</title><p>Funded.</p></sec>",
+    "<sec><title>Supporting data</title><p>Funded.</p></sec>",
+    "<sec><title>Methods</title><p>Funded.</p></sec>",
+  ])("agrees with the cutter on %s in the back", (part) => {
+    const xml =
+      `<article><front><article-meta>${META}</article-meta></front>` +
+      `<back>${part}</back></article>`;
+    const read = fundingSections(xml).text.length > 0;
+    expect(strayParts(xml).length === 0).toBe(read);
   });
 
   it("names a root that is not an article", () => {
