@@ -7,7 +7,11 @@ import {
 } from "@aws-sdk/client-s3";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { BucketPolicy, grantsInPolicy } from "./bucket-policy.ts";
+import {
+  BucketPolicy,
+  grantsInPolicy,
+  refusesPlainHttp,
+} from "./bucket-policy.ts";
 
 // Reads the deployed funding text bucket, since a setting changed in the
 // console does not show in the template (storage.md). TEXT_BUCKET is the
@@ -58,6 +62,15 @@ describe("fitness: the bucket stays private (storage.md)", () => {
   // CloudFormation shows in no other test (#67).
   it("has a policy that only denies, so it grants no one its objects", async () => {
     expect(grantsInPolicy(await readPolicy())).toEqual([]);
+  });
+
+  // The template's HttpsOnly statement. A Deny removed or narrowed outside
+  // CloudFormation would let the bucket take plain HTTP again, and the
+  // check above, which looks only for grants, would still pass (#135).
+  it("refuses plain HTTP on the bucket and its objects", async () => {
+    expect(
+      refusesPlainHttp(await readPolicy(), `arn:aws:s3:::${TEXT_BUCKET}`),
+    ).toBe(true);
   });
 
   // With ACLs off, no grant can hand an object to another account (#94).
