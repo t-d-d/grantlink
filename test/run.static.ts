@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { serverless, site } from "./app.ts";
+import { appStack, DATA_TEMPLATE, serverless, site } from "./app.ts";
 import {
   list,
   readTemplate,
@@ -18,7 +18,6 @@ import { readRepoFile } from "./repo.ts";
 // funding text bucket from infra/data.cfn.yml, and the function and its
 // first run from serverless.yml.
 
-export const DATA_TEMPLATE = "infra/data.cfn.yml";
 const data = readTemplate(DATA_TEMPLATE);
 
 type Resources = Record<
@@ -31,11 +30,6 @@ const inline = (serverless.resources as unknown[]).flatMap((entry) =>
     : [],
 );
 const inlineResources: Resources = Object.assign({}, ...inline) as Resources;
-const appStack: Resources = {
-  ...site.Resources,
-  ...data.Resources,
-  ...inlineResources,
-};
 
 const run = serverless.functions?.run as {
   handler: string;
@@ -112,7 +106,7 @@ describe("fitness: the bucket stays private (storage.md)", () => {
   // The deploy role may put any policy on this bucket (#59), so the
   // template is where a policy granting funding text would show.
   it("has a policy that only denies, so it grants no one its objects", () => {
-    const onTextBucket = Object.entries(appStack).filter(
+    const onTextBucket = Object.entries(appStack.Resources).filter(
       ([, r]) =>
         r.Type === "AWS::S3::BucketPolicy" &&
         /TextBucket|grantlink-text/u.test(JSON.stringify(r.Properties.Bucket)),
@@ -299,7 +293,7 @@ describe("every role in the app stack carries the boundary", () => {
   const roles = readTemplate("infra/github-oidc.cfn.yml");
   const name = roles.Resources.AppRoleBoundary?.Properties.ManagedPolicyName as
     string | undefined;
-  const declared = Object.entries(appStack).filter(
+  const declared = Object.entries(appStack.Resources).filter(
     ([, r]) => r.Type === "AWS::IAM::Role",
   );
 
@@ -480,7 +474,9 @@ describe("fitness: only the run's own role reaches the private bucket's objects 
   // osls makes the run's role from provider.iam.role, which this does not
   // read. Every other role and policy in the stack is here.
   it("finds no other role or policy that may read or write them", () => {
-    expect(readersOfPrivateObjects(appStack)).toEqual([]);
+    expect(readersOfPrivateObjects(appStack.Resources as Resources)).toEqual(
+      [],
+    );
   });
 
   const role = (statement: Statement): Resources => ({
@@ -681,7 +677,9 @@ function accessPointsOnPrivateBucket(resources: Resources): string[] {
 
 describe("fitness: no access point opens the private bucket (storage.md)", () => {
   it("finds none in the app stack", () => {
-    expect(accessPointsOnPrivateBucket(appStack)).toEqual([]);
+    expect(
+      accessPointsOnPrivateBucket(appStack.Resources as Resources),
+    ).toEqual([]);
   });
 
   const withBucket = (extra: Resources): Resources => ({
