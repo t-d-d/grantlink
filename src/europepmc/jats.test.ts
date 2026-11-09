@@ -131,6 +131,30 @@ describe("cutting a paper to its funding sections", () => {
     ).toEqual({ text: [], awards: [] });
   });
 
+  describe("matches a section, label or title tag only by its whole name (#216)", () => {
+    it.each([
+      [
+        "<sec-meta><title>Funding</title><p>Grant A1.</p></sec-meta><sec><title>Results</title><p>Body text.</p></sec>",
+      ],
+      ["<sec><title-group>Funding</title-group><p>Grant A1.</p></sec>"],
+      [
+        "<sec><label-group>5.</label><title>Funding</title><p>Grant A1.</p></sec>",
+      ],
+    ])("finds no funding section in %s", (body) => {
+      expect(
+        fundingSections(`<article><body>${body}</body></article>`).text,
+      ).toEqual([]);
+    });
+
+    it("strips only a title, not a tag whose name begins with title", () => {
+      expect(
+        fundingSections(
+          `<article><back><ack><title-group>Funded by grant A1.</title-group><title>Thanks</title></ack></back></article>`,
+        ).text,
+      ).toEqual(["Funded by grant A1."]);
+    });
+  });
+
   it("finds nothing in a paper with no funding sections", () => {
     expect(fundingSections("<article><body><p>x</p></body></article>")).toEqual(
       { text: [], awards: [] },
