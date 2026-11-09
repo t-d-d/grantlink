@@ -68,11 +68,25 @@ const NO_LIVE: Record<NoLive | OlderFormat, string> = {
     "The live release has no report filed, so there is nothing to compare with.",
 };
 
-// A live report this code cannot read, most likely because it was filed by
-// older code before a row or a field was added (#138). The comparison is
-// advice, so this is a reason to show CI's scores alone, not a failure. It
-// comes from check.ts, not from eval.yml, so it is not in noLive.
+// A live report this code cannot read even leniently (#138). The comparison
+// is advice, so this is a reason to show CI's scores alone, not a failure.
+// It comes from check.ts, not from eval.yml, so it is not in noLive.
 export type OlderFormat = "older-format";
+
+// What the comparison reads from the live report: its run and each row's
+// score. Older code may have filed it before a row or a field was added, so
+// unknown keys are dropped and rows are matched by id, not position (#153).
+// CI's own report and the gate keep the strict schema in report.ts.
+const liveReport = z.object({
+  // The link goes into the comment, so it must still be an Actions run.
+  runUrl: z
+    .url({ protocol: /^https$/u })
+    .regex(/^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+/u),
+  rows: z.array(
+    z.object({ id: z.string(), score: z.number().nonnegative().nullable() }),
+  ),
+});
+export type LiveReport = z.infer<typeof liveReport>;
 
 // Why it could not be read goes to the job's log, as paths and codes and
 // never values, so a broken report can still be told from an old one.
@@ -82,7 +96,7 @@ export function readLive(
   warn: (line: string) => void = (line) => {
     console.error(line);
   },
-): Report | OlderFormat {
+): LiveReport | OlderFormat {
   let json: unknown;
   try {
     json = JSON.parse(raw);
@@ -90,7 +104,7 @@ export function readLive(
     warn("::warning::The live release's report is not JSON.");
     return "older-format";
   }
-  const parsed = report.safeParse(json);
+  const parsed = liveReport.safeParse(json);
   if (parsed.success) return parsed.data;
   const why = parsed.error.issues.map(
     (issue) =>
@@ -104,13 +118,19 @@ export function readLive(
 
 export function comment(
   ci: Report,
-  live: Report | NoLive | OlderFormat,
+  live: LiveReport | NoLive | OlderFormat,
 ): string {
   const mine = verdict(ci);
-  const theirs = typeof live === "string" ? null : verdict(live);
-  const rows = mine.rows.map((row, i) => {
-    const before = theirs?.rows[i];
-    const liveScore = before === undefined ? "-" : shown(before, before.score);
+  // The first row with an id stands, as verdict reads a report in order.
+  const theirs = new Map<string, number | null>();
+  if (typeof live !== "string") {
+    for (const row of live.rows) {
+      if (!theirs.has(row.id)) theirs.set(row.id, row.score);
+    }
+  }
+  const rows = mine.rows.map((row) => {
+    const before = theirs.get(row.id);
+    const liveScore = before === undefined ? "-" : shown(row, before);
     return `| ${row.measure} | ${row.on} | ${row.goIf} | ${shown(row, row.score)} | ${liveScore} | ${row.result} |`;
   });
   const liveLine =
