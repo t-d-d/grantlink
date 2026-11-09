@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { serverless } from "./app.ts";
-import { readTemplate, resource, rightsOf, subText, trustOf } from "./cfn.ts";
+import { serverless, site } from "./app.ts";
+import {
+  list,
+  readTemplate,
+  resource,
+  rightsOf,
+  subText,
+  trustOf,
+  type PolicyDocument,
+  type Statement,
+} from "./cfn.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The run's resources in the app stack (#19): the results table and the
@@ -72,6 +81,29 @@ describe("fitness: the bucket stays private (storage.md)", () => {
         Condition: { Bool: { "aws:SecureTransport": "false" } },
       }),
     );
+  });
+
+  // The deploy role may put any policy on this bucket (#59), so the
+  // template is where a policy granting funding text would show.
+  it("has a policy that only denies, so it grants no one its objects", () => {
+    const appStack: Resources = {
+      ...site.Resources,
+      ...data.Resources,
+      ...inlineResources,
+    };
+    const onTextBucket = Object.entries(appStack).filter(
+      ([, r]) =>
+        r.Type === "AWS::S3::BucketPolicy" &&
+        /TextBucket|grantlink-text/u.test(JSON.stringify(r.Properties.Bucket)),
+    );
+    expect(onTextBucket.map(([name]) => name)).toEqual(["TextBucketPolicy"]);
+    for (const [name, policy] of onTextBucket) {
+      const document = policy.Properties.PolicyDocument as PolicyDocument;
+      // CloudFormation takes a lone statement as well as a list.
+      for (const statement of list<Statement>(document.Statement)) {
+        expect(statement.Effect, `${name} ${statement.Sid ?? ""}`).toBe("Deny");
+      }
+    }
   });
 });
 
