@@ -107,15 +107,70 @@ describe("the pull request's comment", () => {
     expect(() => noLive.parse("gone")).toThrow();
   });
 
-  // #138: a pull request that adds a row or a field reads a live report
-  // filed by older code. The comparison is advice, so the comment shows
-  // CI's scores alone rather than failing the eval check.
+  // #138, #153: a pull request that adds a row or a field reads a live
+  // report filed by older code. The comparison is advice, so the comment
+  // keeps the live scores for the rows both reports share.
+  it("keeps the live scores for the rows an older live report has", () => {
+    const older = report({ "recall-a": 0.9, spend: 0 });
+    const live = readLive(
+      JSON.stringify({ ...older, rows: older.rows.slice(0, -1) }),
+      () => undefined,
+    );
+    expect(live).not.toBe("older-format");
+    if (live === "older-format") return;
+    const text = comment(report({ "recall-a": 0.96, spend: 0.5 }), live);
+    expect(text).toContain(
+      "| Recall | Gold set A | 95% or more | 96.0% | 90.0% | go |",
+    );
+    const last = FLOORS[FLOORS.length - 1];
+    if (last === undefined) throw new Error("no floors");
+    expect(text).toMatch(
+      new RegExp(
+        `\\| ${last.measure} \\| ${last.on} \\|[^\\n]*\\| - \\| [^|]+ \\|$`,
+        "mu",
+      ),
+    );
+    expect(text).toContain("actions/runs/123");
+  });
+
+  it("matches the live rows by id, ignoring ones it does not know and keys it does not read", () => {
+    const older = report({ "recall-a": 0.9, spend: 0 });
+    const live = readLive(
+      JSON.stringify({
+        ...older,
+        retired: true,
+        rows: [
+          { id: "gone", score: 0.1, n: 3 },
+          ...[...older.rows].reverse().map((row) => ({ ...row, extra: 1 })),
+        ],
+      }),
+      () => undefined,
+    );
+    expect(live).not.toBe("older-format");
+    if (live === "older-format") return;
+    const text = comment(report({ "recall-a": 0.96, spend: 0 }), live);
+    expect(text).toContain(
+      "| Recall | Gold set A | 95% or more | 96.0% | 90.0% | go |",
+    );
+    // The unknown row's score would show if rows were read by position.
+    expect(text).not.toContain("10.0%");
+  });
+
   it.each([
+    ["without rows", (live: Report) => ({ ...live, rows: "none" })],
+    ["with no rows", (live: Report) => ({ ...live, rows: [] })],
     [
-      "one row short",
-      (live: Report) => ({ ...live, rows: live.rows.slice(0, -1) }),
+      "with no row this code knows",
+      (live: Report) => ({ ...live, rows: [{ id: "gone", score: 0.1, n: 3 }] }),
     ],
-    ["with an extra key", (live: Report) => ({ ...live, retired: true })],
+    ["without a run", (live: Report) => ({ ...live, runUrl: undefined })],
+    [
+      "with a row that has no score",
+      (live: Report) => ({
+        ...live,
+        rows: live.rows.map(({ id, n }) => ({ id, n })),
+      }),
+    ],
   ])("shows CI's scores alone when the live report is %s", (_, change) => {
     const live = readLive(
       JSON.stringify(change(report({ "recall-a": 0.9, spend: 0 }))),
@@ -131,9 +186,12 @@ describe("the pull request's comment", () => {
     );
   });
 
-  it("reads a live report this code can read", () => {
+  it("reads the run and the scores from a live report this code can read", () => {
     const live = report({ spend: 0 });
-    expect(readLive(JSON.stringify(live))).toEqual(live);
+    expect(readLive(JSON.stringify(live))).toEqual({
+      runUrl: live.runUrl,
+      rows: live.rows.map(({ id, score }) => ({ id, score })),
+    });
   });
 
   it("treats a live report that is not JSON as one it cannot read", () => {
@@ -146,13 +204,13 @@ describe("the pull request's comment", () => {
   it("logs why it cannot read a live report, without its values", () => {
     const lines: string[] = [];
     const live = report({ spend: 0 });
-    readLive(JSON.stringify({ ...live, retired: "a value" }), (line) => {
+    readLive(JSON.stringify({ ...live, runUrl: "a value" }), (line) => {
       lines.push(line);
     });
     readLive("{", (line) => {
       lines.push(line);
     });
-    expect(lines.join("\n")).toContain("unrecognized_keys");
+    expect(lines.join("\n")).toContain("at runUrl");
     expect(lines.join("\n")).toContain("not JSON");
     expect(lines.join("\n")).not.toContain("a value");
   });

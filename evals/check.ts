@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { shownScore } from "./floors.ts";
+import { FLOORS, shownScore } from "./floors.ts";
 import { report, verdict, type Judged, type Report } from "./report.ts";
 
 // What CI does with a report (docs/constraints/deploy-gates.md). Run
@@ -68,11 +68,30 @@ const NO_LIVE: Record<NoLive | OlderFormat, string> = {
     "The live release has no report filed, so there is nothing to compare with.",
 };
 
-// A live report this code cannot read, most likely because it was filed by
-// older code before a row or a field was added (#138). The comparison is
-// advice, so this is a reason to show CI's scores alone, not a failure. It
-// comes from check.ts, not from eval.yml, so it is not in noLive.
+// A live report this code cannot read even leniently (#138). The comparison
+// is advice, so this is a reason to show CI's scores alone, not a failure.
+// It comes from check.ts, not from eval.yml, so it is not in noLive.
 export type OlderFormat = "older-format";
+
+// What the comparison reads from the live report: its run and each row's
+// score. Older code may have filed it before a row or a field was added, so
+// unknown keys are dropped and rows are matched by id, not position (#153).
+// CI's own report and the gate keep the strict schema in report.ts.
+// A report that shares no row with this code has nothing to compare, so it
+// reads as one this code cannot read.
+const known = new Set<string>(FLOORS.map((floor) => floor.id));
+const liveReport = z.object({
+  // The link goes into the comment, so it must still be an Actions run.
+  runUrl: report.shape.runUrl,
+  rows: z
+    .array(
+      z.object({ id: z.string(), score: z.number().nonnegative().nullable() }),
+    )
+    .refine((list) => list.some((row) => known.has(row.id)), {
+      message: "a live report shares a row with this code",
+    }),
+});
+export type LiveReport = z.infer<typeof liveReport>;
 
 // Why it could not be read goes to the job's log, as paths and codes and
 // never values, so a broken report can still be told from an old one.
@@ -82,7 +101,7 @@ export function readLive(
   warn: (line: string) => void = (line) => {
     console.error(line);
   },
-): Report | OlderFormat {
+): LiveReport | OlderFormat {
   let json: unknown;
   try {
     json = JSON.parse(raw);
@@ -90,11 +109,11 @@ export function readLive(
     warn("::warning::The live release's report is not JSON.");
     return "older-format";
   }
-  const parsed = report.safeParse(json);
+  const parsed = liveReport.safeParse(json);
   if (parsed.success) return parsed.data;
   const why = parsed.error.issues.map(
     (issue) =>
-      `${issue.code} at ${issue.path.map(String).join(".") || "(root)"}${"keys" in issue ? ` (${issue.keys.join(", ")})` : ""}`,
+      `${issue.code} at ${issue.path.map(String).join(".") || "(root)"}`,
   );
   warn(
     `::warning::The live release's report does not parse: ${why.join("; ")}.`,
@@ -104,13 +123,19 @@ export function readLive(
 
 export function comment(
   ci: Report,
-  live: Report | NoLive | OlderFormat,
+  live: LiveReport | NoLive | OlderFormat,
 ): string {
   const mine = verdict(ci);
-  const theirs = typeof live === "string" ? null : verdict(live);
-  const rows = mine.rows.map((row, i) => {
-    const before = theirs?.rows[i];
-    const liveScore = before === undefined ? "-" : shown(before, before.score);
+  // The lenient schema lets an id repeat. The first row with it stands.
+  const theirs = new Map<string, number | null>();
+  if (typeof live !== "string") {
+    for (const row of live.rows) {
+      if (!theirs.has(row.id)) theirs.set(row.id, row.score);
+    }
+  }
+  const rows = mine.rows.map((row) => {
+    const before = theirs.get(row.id);
+    const liveScore = before === undefined ? "-" : shown(row, before);
     return `| ${row.measure} | ${row.on} | ${row.goIf} | ${shown(row, row.score)} | ${liveScore} | ${row.result} |`;
   });
   const liveLine =
