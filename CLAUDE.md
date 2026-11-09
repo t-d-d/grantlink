@@ -40,8 +40,9 @@ grantlink finds research papers that say Cancer Research UK funded them but that
 - Run the `pre-push` skill before every push. It ends by raising the pull request.
 - The pull request body follows the `pr-description` skill.
 - Nothing deploys except a green merge to main. Never deploy by hand.
-- The owner merges. Do not merge your own pull request.
-- Governor reviews pull requests against `.claude/skills/pr-review/SKILL.md`, with merge off. When the review fails, fix your pull request description.
+- Governor reviews pull requests against `.claude/skills/pr-review/SKILL.md` and merges one that passes. Do not merge your own pull request.
+- A pull request waits for the owner when it changes `infra/`, `.github/`, `docs/constraints/`, `CLAUDE.md` or `.claude/`, when it adds, removes or renames a file under `src/`, `evals/`, `test/` or `scripts/`, or when the review finds it adds complexity its tickets do not need.
+- When the review fails on the description, fix the description. When it says no edit to the description can make it pass, leave it for the owner.
 
 ## Issues
 
