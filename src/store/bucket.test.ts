@@ -62,6 +62,29 @@ describe("the page's bucket", () => {
       ["index.html", "text/html; charset=utf-8", "public, max-age=300"],
     ]);
   });
+
+  // The README says what a run whose page write fails leaves on the site
+  // (#79): its found.json stays, and the next deploy builds the page from it.
+  it("leaves the new found.json in place when the page write fails", async () => {
+    const written: string[] = [];
+    const client = {
+      send: (command: { input: object }) => {
+        const { Key } = command.input as { Key: string };
+        if (Key === "index.html") {
+          return Promise.reject(new Error("SlowDown"));
+        }
+        written.push(Key);
+        return Promise.resolve({});
+      },
+    };
+    await expect(
+      siteBucket("site", client).publish({
+        "index.html": "<!doctype html>",
+        "found.json": "{}",
+      }),
+    ).rejects.toThrow("SlowDown");
+    expect(written).toEqual(["found.json"]);
+  });
 });
 
 describe("the live release record in the page's bucket", () => {
