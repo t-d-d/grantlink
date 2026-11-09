@@ -50,7 +50,7 @@ describe("grantsInPolicy", () => {
 });
 
 describe("refusesPlainHttp", () => {
-  const bucket = "arn:aws:s3:::grantlink-text-000000000000";
+  const bucket = "arn:aws:s3:::grantlink-text-example";
   const httpsOnly = {
     Sid: "HttpsOnly",
     Effect: "Deny",
@@ -91,7 +91,7 @@ describe("refusesPlainHttp", () => {
     ["it allows rather than denies", { Effect: "Allow" }],
     [
       "it denies only some callers",
-      { Principal: { AWS: "arn:aws:iam::000000000000:root" } },
+      { Principal: { Service: "cloudfront.amazonaws.com" } },
     ],
     ["it denies only some actions", { Action: "s3:GetObject" }],
     ["it leaves out the objects", { Resource: bucket }],
