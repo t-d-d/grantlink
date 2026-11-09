@@ -65,6 +65,7 @@ function refusingPapers(error: Error) {
   fake.deps.europePmc = {
     search: fake.deps.europePmc.search.bind(fake.deps.europePmc),
     fullText: () => Promise.reject(error),
+    grants: fake.deps.europePmc.grants.bind(fake.deps.europePmc),
   };
   return fake;
 }
