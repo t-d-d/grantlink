@@ -66,9 +66,9 @@ describe("the pull request's comment", () => {
     expect(text).toContain("<!-- grantlink:eval -->");
   });
 
-  it("says when there is no live release to compare with", () => {
+  it("says when no deploy of main was found to compare with", () => {
     expect(comment(report({ spend: 0 }), "no-deploy")).toContain(
-      "No release is live yet",
+      "No deploy of main was found",
     );
   });
 
@@ -85,7 +85,9 @@ describe("the pull request's comment", () => {
     (reason, words) => {
       const text = comment(report({ spend: 0 }), reason);
       expect(text).toContain(words);
-      expect(text).not.toContain("No release is live");
+      expect(text).not.toMatch(
+        /no live release|no release is live|no deploy/iu,
+      );
     },
   );
 

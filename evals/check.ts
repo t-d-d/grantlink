@@ -51,7 +51,8 @@ export const noLive = z.enum([
 export type NoLive = z.infer<typeof noLive>;
 
 const NO_LIVE: Record<NoLive, string> = {
-  "no-deploy": "No release is live yet, so there is nothing to compare with.",
+  "no-deploy":
+    "No deploy of main was found, so there is no live release to compare with.",
   "history-unread":
     "GitHub's deploy history could not be read, so the live release is not known and there is nothing to compare with.",
   "unknown-commit":

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { INPUTS } from "../evals/fingerprint.ts";
-import type { Step, Workflow } from "./app.ts";
+import { deploy, type Step, type Workflow } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The eval workflow (#9, #20): the report is a cache keyed by the
@@ -110,7 +110,7 @@ describe("the gate and the comment", () => {
         /echo "reason=([\w-]+)" >> "\$GITHUB_OUTPUT"/gu,
       ),
     ].map((match) => match[1]);
-    expect(reasons.sort()).toEqual(
+    expect([...new Set(reasons)].sort()).toEqual(
       [
         "history-unread",
         "no-report",
@@ -122,6 +122,31 @@ describe("the gate and the comment", () => {
     const comment = named("Comment with CI's scores beside the live release's");
     expect(JSON.stringify(comment?.env)).toContain("steps.live.outputs.reason");
     expect(comment?.run).toContain('--no-live "$NO_LIVE"');
+  });
+
+  // A deploy.yml run whose deploy job was skipped, because the prod role
+  // is not set, still concludes success, but deployed nothing (#71).
+  it("takes as the live release only a run whose deploy job succeeded", () => {
+    const live = named("Read the live release's report");
+    expect(live?.env?.DEPLOY_JOB).toBe(deploy.jobs.deploy?.name);
+    const run = live?.run ?? "";
+    expect(run).toMatch(/actions\/runs\/\$\w+\/jobs/u);
+    expect(run).toContain(
+      'any(.jobs[]; .name == env.DEPLOY_JOB and .conclusion == "success")',
+    );
+    // Only a positive answer counts: an empty or odd reply is no deploy.
+    expect(run).toContain('if [ "$deployed" = "true" ]');
+    expect(run).not.toContain(".workflow_runs[0].head_sha");
+  });
+
+  // The comparison is advice for the comment. A failed read of GitHub's
+  // runs leaves nothing to compare with; it does not fail the eval job.
+  it("treats a failed read of the deploy runs as nothing to compare with", () => {
+    const run = named("Read the live release's report")?.run ?? "";
+    const calls = run.match(/gh api/gu) ?? [];
+    const guarded = run.match(/if ! \w+="\$\(gh api/gu) ?? [];
+    expect(calls.length).toBeGreaterThan(0);
+    expect(guarded).toHaveLength(calls.length);
   });
 
   it("masks the account id before any line that could print it", () => {
