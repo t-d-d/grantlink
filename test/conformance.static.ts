@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { z } from "zod";
-import { readRepoFile, repoFiles } from "./repo.ts";
+import { readRepoFile } from "./repo.ts";
 
 // The scheduled conformance run (#56). The conformance files read setup
 // outside the repo, such as GitHub's record of the repository, the prod
@@ -12,6 +12,7 @@ const WORKFLOW = ".github/workflows/conformance.yml";
 
 const Step = z.object({
   name: z.string().optional(),
+  if: z.string().optional(),
   run: z.string().optional(),
   env: z.record(z.string(), z.string()).optional(),
 });
@@ -51,13 +52,18 @@ describe("the scheduled conformance run", () => {
     ]);
   });
 
-  // The funding text bucket's check included (#50).
+  // With no file list, the conformance tier runs every file, the funding
+  // text bucket's check included (#50).
   it("runs every conformance file", () => {
     expect(conformance).toHaveLength(1);
     expect(conformance[0]?.run).toBe("npm run conformance");
-    expect(
-      repoFiles().filter((path) => path.endsWith(".conformance.ts")),
-    ).toContain("test/text-bucket.conformance.ts");
+  });
+
+  // A rename or a transfer changes the OIDC subject, so STS refuses the
+  // conformance role. The checks that need only GitHub's token must still
+  // run then, since test/github-oidc.conformance.ts is the one that says why.
+  it("runs the checks even when the role could not be assumed", () => {
+    expect(conformance[0]?.if).toBe("${{ !cancelled() }}");
   });
 
   it("maps the workflow's own token into the step", () => {

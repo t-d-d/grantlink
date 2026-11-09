@@ -79,6 +79,10 @@ jobs:
             echo "TEXT_BUCKET=grantlink-text-$account"
           } >> "$GITHUB_ENV"
 
+      # Runs after a failed assume too. A rename or a transfer changes the
+      # OIDC subject, so STS refuses the role, and
+      # test/github-oidc.conformance.ts is the check that says why.
       - run: npm run conformance
+        if: ${{ !cancelled() }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
