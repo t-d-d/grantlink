@@ -39,7 +39,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-      actions: read
       pull-requests: write
 
   # A workflow can read an environment's secret only in a job that names

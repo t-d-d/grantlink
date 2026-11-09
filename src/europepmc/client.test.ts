@@ -302,6 +302,37 @@ describe("searching Europe PMC", () => {
     expect(page.skipped).toBe(1);
   });
 
+  it("fails a page whose every PMCID is malformed, rather than find nothing", async () => {
+    const { client } = harness(() =>
+      Response.json({
+        hitCount: 3,
+        nextCursorMark: "AoE",
+        resultList: {
+          result: [
+            { pmcid: "PMC 11", title: "Malformed" },
+            { id: "38000000", title: "No PMCID, so no full text" },
+            { pmcid: "pmc12", title: "Malformed too" },
+          ],
+        },
+      }),
+    );
+    await expect(client.search("*")).rejects.toThrow(
+      "all 2 PMCIDs on a page of 3 results were malformed",
+    );
+  });
+
+  it("returns a page of results with no PMCID as an empty page", async () => {
+    const { client } = harness(() =>
+      Response.json({
+        hitCount: 1,
+        resultList: { result: [{ id: "38000000", title: "No PMCID" }] },
+      }),
+    );
+    const page = await client.search("*");
+    expect(page.papers).toEqual([]);
+    expect(page.skipped).toBe(0);
+  });
+
   it("keeps a paper whose first publication date is malformed, without a date", async () => {
     const { client } = harness(() =>
       Response.json({

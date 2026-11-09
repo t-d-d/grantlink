@@ -35,8 +35,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-      # The live release's report: which commit main last deployed.
-      actions: read
       # The pull request's comment with CI's scores.
       pull-requests: write
     outputs:
@@ -176,45 +174,25 @@ jobs:
           json="$(jq -ce . report.json)"
           echo "json=$json" >> "$GITHUB_OUTPUT"
 
-      # The live release is the commit main last deployed. Its report is
-      # the one filed under that commit's fingerprint. A deploy.yml run
-      # whose deploy job was skipped, because the prod role is not set,
-      # still concludes success, so the run counts only if its deploy job
-      # itself succeeded (#71). The newest twenty runs are read; with no
-      # deploy among them, or if GitHub cannot be read, there is nothing
-      # to compare with, and the comment shows CI's scores alone. Without a
-      # report, the step hands the comment its reason (#88).
+      # A release is live once its page is published (#85). The deploy
+      # writes the release record and publishes it beside the page, so the
+      # commit in the record on the live page is the live release, even
+      # when a later step of that deploy failed. Its report is the one filed
+      # under that commit's fingerprint. If the record cannot be read, or
+      # holds no full commit hash, there is nothing to compare with, and the
+      # comment shows CI's scores alone. Without a report, the step hands
+      # the comment its reason (#88).
       - id: live
         name: Read the live release's report
         if: github.event_name == 'pull_request' && steps.cached.outputs.bucket != 'missing'
         env:
-          GH_TOKEN: ${{ github.token }}
-          DEPLOY_JOB: "deploy · deployed: grantlink"
+          RELEASE_URL: https://grantlink.uk/release.json
         run: |
           set -euo pipefail
-          live=""
-          if ! runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=20" \
-            --jq '.workflow_runs[] | "\(.id) \(.head_sha)"')"; then
-            echo "::warning::Could not read deploy.yml's runs, so there is nothing to compare with."
-            echo "reason=history-unread" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          while read -r id sha; do
-            [ -n "$id" ] || continue
-            if ! deployed="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" \
-              --jq 'any(.jobs[]; .name == env.DEPLOY_JOB and .conclusion == "success")')"; then
-              echo "::warning::Could not read the jobs of deploy.yml run $id, so there is nothing to compare with."
-              echo "reason=history-unread" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            if [ "$deployed" = "true" ]; then
-              live="$sha"
-              break
-            fi
-          done <<< "$runs"
-          if [ -z "$live" ]; then
-            echo "No deploy of main was found."
-            echo "reason=no-deploy" >> "$GITHUB_OUTPUT"
+          if ! live="$(curl -sSf --retry 2 --max-time 30 "$RELEASE_URL" | jq -r .commit)" \
+            || ! [[ "$live" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::warning::Could not read the commit in the live page's release record, so there is nothing to compare with."
+            echo "reason=page-unread" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if ! git cat-file -e "$live^{commit}" 2>/dev/null; then
