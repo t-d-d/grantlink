@@ -67,6 +67,30 @@ describe("the eval workflow", () => {
   });
 });
 
+// #92: a command substitution inside echo's arguments loses its exit code,
+// even under `set -e`, so a failing fingerprint.ts would hand on an empty
+// fingerprint. A plain assignment on its own line keeps it.
+describe("computing the fingerprint", () => {
+  it("fails the job when fingerprint.ts fails", () => {
+    const run = named("Compute the fingerprint")?.run ?? "";
+    const lines = run.split("\n").map((line) => line.trim());
+    expect(lines[0]).toBe("set -euo pipefail");
+    const assigned = lines
+      .map(
+        (line) =>
+          /^(\w+)="\$\(node evals\/fingerprint\.ts\)"$/u.exec(line)?.[1],
+      )
+      .find((name) => name !== undefined);
+    expect(assigned).toBeDefined();
+    // The output is the variable the script's value went into, so the
+    // fingerprint handed on is the one whose exit code was checked.
+    expect(lines).toContain(
+      `echo "value=$${assigned ?? ""}" >> "$GITHUB_OUTPUT"`,
+    );
+    expect(run).not.toMatch(/\becho\b[^\n]*\$\(node evals\/fingerprint\.ts/u);
+  });
+});
+
 describe("fitness: the same inputs are evaluated once (evals.md)", () => {
   it("looks for the report under its fingerprint before it runs anything", () => {
     const look = at(/eval-reports\/\$FINGERPRINT\.json/u);
