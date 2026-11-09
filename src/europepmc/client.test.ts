@@ -34,7 +34,7 @@ function harness(
     now += takes(call);
     return answer(url, call);
   };
-  return { client: europePmc({ fetch, clock }), requests };
+  return { client: europePmc({ fetch, clock }), requests, clock };
 }
 
 const ok = (body = "<article/>") => new Response(body, { status: 200 });
@@ -105,6 +105,28 @@ describe("fitness: requests back off (europe-pmc.md)", () => {
       waitSeconds: 3600,
     });
     expect(requests).toHaveLength(1);
+  });
+
+  it("keeps to a long Retry-After for its next request, and refuses it rather than sleep", async () => {
+    const { client, requests, clock } = harness((_, call) =>
+      call === 0
+        ? new Response("", { status: 429, headers: { "Retry-After": "7200" } })
+        : ok(),
+    );
+    await expect(client.fullText("PMC1")).rejects.toThrow(/7200s/u);
+    // The next paper, a minute later, is not asked about. The client says
+    // how much longer Europe PMC asked it to wait.
+    await clock.sleep(60_000);
+    const error = await client.fullText("PMC2").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(EuropePmcError);
+    expect(error).toMatchObject({ waitSeconds: 7140 });
+    expect((error as Error).message).not.toMatch(/answered 4(?!29)\d\d/u);
+    expect(requests).toHaveLength(1);
+    // Once the wait has passed, it asks again.
+    await clock.sleep(7_140_000);
+    await expect(client.fullText("PMC2")).resolves.toBe("<article/>");
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.at).toBeGreaterThanOrEqual(7_200_000);
   });
 
   it("gives up after a few refusals, so the paper waits for the next run", async () => {

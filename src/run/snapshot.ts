@@ -8,7 +8,9 @@ import {
   snapshotTaken,
   writeManifest,
   type Entry,
+  type Taken,
 } from "../pipeline/snapshot.ts";
+import { readOrRefused, type Read } from "../pipeline/refused.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 
 // Takes the eval snapshot named in evals/snapshot.json, once
@@ -34,15 +36,30 @@ async function takeBatch(
   const entries: Entry[] = [];
   let failed = 0;
   for (const pmcid of pmcids) {
+    let outcome: Read<Taken> | undefined;
     try {
-      const taken = await ctx.step(
+      outcome = await ctx.step(
         `gold-${set}-${pmcid}`,
-        async () => snapshotPaper(deps, pmcid, set),
+        async ({ attempt }) =>
+          readOrRefused(attempt, paperRetry, async () =>
+            snapshotPaper(deps, pmcid, set),
+          ),
         { retryStrategy: paperRetry },
       );
-      if (taken.kept) entries.push(taken.entry);
     } catch {
-      failed += 1;
+      outcome = undefined;
+    }
+    if (outcome !== undefined && "read" in outcome) {
+      if (outcome.read.kept) entries.push(outcome.read.entry);
+      continue;
+    }
+    failed += 1;
+    // As in a run's batch: nothing more goes to Europe PMC until the wait
+    // it asked for has passed.
+    if (outcome !== undefined && outcome.waitSeconds > 0) {
+      await ctx.wait(`gold-${set}-${pmcid}-wait`, {
+        seconds: outcome.waitSeconds,
+      });
     }
   }
   return { entries, failed };

@@ -9,6 +9,7 @@ import {
   type Published,
 } from "../pipeline/steps.ts";
 import { batches } from "../shared/batches.ts";
+import { readOrRefused, type Read } from "../pipeline/refused.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 
@@ -51,18 +52,31 @@ async function readBatch(
   let read = 0;
   let failed = 0;
   for (const pmcid of pmcids) {
+    let outcome: Read<{ references: number }> | undefined;
     try {
-      await ctx.step(
+      outcome = await ctx.step(
         `paper-${pmcid}`,
-        async () => readPaper(deps, pmcid, runId),
+        async ({ attempt }) =>
+          readOrRefused(attempt, paperRetry, async () =>
+            readPaper(deps, pmcid, runId),
+          ),
         { retryStrategy: paperRetry },
       );
-      read += 1;
     } catch {
-      failed += 1;
-      await ctx.step(`failed-${pmcid}`, async () => markFailed(deps, pmcid), {
-        retryStrategy: storeRetry,
-      });
+      outcome = undefined;
+    }
+    if (outcome !== undefined && "read" in outcome) {
+      read += 1;
+      continue;
+    }
+    failed += 1;
+    await ctx.step(`failed-${pmcid}`, async () => markFailed(deps, pmcid), {
+      retryStrategy: storeRetry,
+    });
+    // Europe PMC asked the run to wait before it asks again, so the next
+    // paper waits too (docs/constraints/europe-pmc.md).
+    if (outcome !== undefined && outcome.waitSeconds > 0) {
+      await ctx.wait(`wait-${pmcid}`, { seconds: outcome.waitSeconds });
     }
   }
   return { read, failed };
