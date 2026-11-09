@@ -120,8 +120,8 @@ export function textBucket(
 }
 
 // What a run publishes: the page, and the data it was built from, which the
-// deploy reads to build the page again. A run that leaves the page to a
-// newer deploy publishes only the data.
+// deploy reads to build the page again. A run that leaves the page to
+// another release publishes only the data.
 export interface PageFiles {
   "index.html"?: string;
   "found.json": string;

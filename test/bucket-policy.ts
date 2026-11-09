@@ -41,6 +41,12 @@ const OnlySecureTransport = z.strictObject({
   Bool: z.strictObject({ "aws:SecureTransport": z.unknown() }),
 });
 
+// S3 returns condition values as strings, but YAML reads an unquoted
+// false in the template as a boolean, and CloudFormation deploys the two
+// alike (#157).
+const isFalse = (value: unknown): boolean =>
+  value === "false" || value === false;
+
 // Whether the policy holds a Deny, for everyone and every S3 action, on
 // both the bucket and its objects, when a request comes over plain HTTP.
 // That is the template's HttpsOnly statement. It is looked for by what it
@@ -61,7 +67,7 @@ export function refusesPlainHttp(
       resources.includes(bucketArn) &&
       resources.includes(`${bucketArn}/*`) &&
       condition.success &&
-      list(condition.data.Bool["aws:SecureTransport"]).includes("false")
+      list(condition.data.Bool["aws:SecureTransport"]).some(isFalse)
     );
   });
 }
