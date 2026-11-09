@@ -55,7 +55,9 @@ function markup(xml: string): string {
 // runs to the closing tag that balances its opening tag, and the elements
 // inside it are read as part of it. One whose closing tag is missing runs
 // only to the next closing tag of its name, and one with none after it is
-// dropped, so a broken element never takes in the rest of the paper.
+// dropped, so a broken element never takes in the rest of the paper. A
+// self-closing element is empty, and does not run on to the next closing tag
+// of its name (#195).
 function elements(xml: string, name: string, attributes = ""): string[] {
   const tags = new RegExp(`<(/?)${name}(?=[\\s/>])([^>]*)>`, "gu");
   const wanted = new RegExp(attributes, "u");
@@ -64,7 +66,10 @@ function elements(xml: string, name: string, attributes = ""): string[] {
   let start = 0;
   for (const tag of xml.matchAll(tags)) {
     const [whole, closing, rest = ""] = tag;
-    if (rest.endsWith("/")) continue;
+    if (rest.endsWith("/")) {
+      if (depth === 0 && wanted.test(rest)) found.push("");
+      continue;
+    }
     if (closing) {
       if (depth === 0) continue;
       depth -= 1;
@@ -90,21 +95,44 @@ function elements(xml: string, name: string, attributes = ""): string[] {
 }
 
 // The paragraphs of a section, or its whole text less its title if it has
-// none.
+// none. A self-closing paragraph is empty, so it does not count.
 function paragraphs(section: string): string[] {
-  const found = elements(section, "p").map(plain);
+  const found = elements(section, "p")
+    .map(plain)
+    .filter((paragraph) => paragraph !== "");
   if (found.length > 0) return found;
   return [plain(section.replace(/<title\b[^>]*>[\s\S]*?<\/title>/gu, ""))];
 }
 
-// A funding or acknowledgements section in the body, found by its type or by
+// What counts as a funding part, read here by the cutter and by the check on
+// recorded fixtures (test/fixture-parts.ts), so the two agree (#159).
+
+// The attribute that marks a footnote as funding text.
+export const FUNDING_FOOTNOTE = String.raw`\bfn-type="(?:financial-disclosure|funding|supported-by)"`;
+
+// The start of a funding or acknowledgements section, found by its type or by
 // its title. Europe PMC often marks acknowledgements up as a section rather
 // than an <ack>, and one journal titles its funding section Support. Support
 // must be the whole title, so a body section such as Support vector machines
-// is not kept. The match starts at the section's own opening tag, so one
-// nested in another section is found too.
-const FUNDING_SECTION =
-  /<sec\b(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>|[^>]*>\s*(?:<label\b[^>]*>[\s\S]*?<\/label>\s*)?<title\b[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))([\s\S]*?)<\/sec>/giu;
+// is not kept. A label ends at its own closing tag, so a labelled section
+// is not taken for the labelled funding section after it.
+const FUNDING_SECTION_START = String.raw`<sec\b(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>|[^>]*>\s*(?:<label\b[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>\s*)?<title\b[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
+
+const FUNDING_SECTION_AT = new RegExp(FUNDING_SECTION_START, "iuy");
+
+// Whether the section that opens at this index of the XML is a funding
+// section.
+export function isFundingSectionAt(xml: string, index: number): boolean {
+  FUNDING_SECTION_AT.lastIndex = index;
+  return FUNDING_SECTION_AT.test(xml);
+}
+
+// Every funding section, wherever it is. The match starts at the section's
+// own opening tag, so one nested in another section is found too.
+const FUNDING_SECTION = new RegExp(
+  String.raw`${FUNDING_SECTION_START}([\s\S]*?)<\/sec>`,
+  "giu",
+);
 
 function fundingBodySections(xml: string): string[] {
   // A match found by its title starts part way through the title, so the
@@ -120,22 +148,23 @@ export function fundingSections(paper: string): FundingSections {
   const statements = groups.flatMap((group) =>
     elements(group, "funding-statement").map(plain),
   );
-  const awards = groups.flatMap((group) =>
-    elements(group, "award-group").map((award) => ({
-      source: elements(award, "funding-source").map(plain).join("; "),
-      ids: elements(award, "award-id").map(plain),
-    })),
-  );
+  const awards = groups
+    .flatMap((group) =>
+      elements(group, "award-group").map((award) => ({
+        source: elements(award, "funding-source").map(plain).join("; "),
+        ids: elements(award, "award-id")
+          .map(plain)
+          .filter((id) => id !== ""),
+      })),
+    )
+    // An empty award group, such as a self-closing one, names nothing.
+    .filter(({ source, ids }) => source !== "" || ids.length > 0);
   const sections = fundingBodySections(xml);
   const text = [
     ...statements,
     ...sections.flatMap(paragraphs),
     ...elements(xml, "ack").flatMap(paragraphs),
-    ...elements(
-      xml,
-      "fn",
-      `fn-type="(?:financial-disclosure|funding|supported-by)"`,
-    ).flatMap(paragraphs),
+    ...elements(xml, "fn", FUNDING_FOOTNOTE).flatMap(paragraphs),
   ].filter((paragraph) => paragraph !== "");
   return { text: [...new Set(text)], awards };
 }
