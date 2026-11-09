@@ -62,15 +62,16 @@ jobs:
 
       # Assumes the eval role through GitHub's OIDC token, as the deploy
       # assumes its own. The account id, the token and the credentials are
-      # masked before anything else runs.
+      # masked before anything else runs. The private bucket is
+      # grantlink-text-<account id>, as the app stack names it, so the role
+      # is the only value GitHub holds for the eval (#43).
       - name: Assume the eval role
         env:
           ROLE: ${{ secrets.AWS_EVAL_ROLE_ARN }}
-          BUCKET: ${{ secrets.PRIVATE_BUCKET_NAME }}
         run: |
           set -euo pipefail
-          if [ -z "$ROLE" ] || [ -z "$BUCKET" ]; then
-            echo "::error::AWS_EVAL_ROLE_ARN or PRIVATE_BUCKET_NAME is not set in the eval environment. The README says how to set them."
+          if [ -z "$ROLE" ]; then
+            echo "::error::AWS_EVAL_ROLE_ARN is not set in the eval environment. The README says how to set it."
             exit 1
           fi
           token="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
@@ -94,6 +95,7 @@ jobs:
             echo "AWS_ACCESS_KEY_ID=$key"
             echo "AWS_SECRET_ACCESS_KEY=$secret"
             echo "AWS_SESSION_TOKEN=$session"
+            echo "BUCKET=grantlink-text-$account"
           } >> "$GITHUB_ENV"
 
       # The report is a cache keyed by the fingerprint (#9). Listing with
@@ -107,7 +109,6 @@ jobs:
       - id: cached
         name: Look for the report filed for this fingerprint
         env:
-          BUCKET: ${{ secrets.PRIVATE_BUCKET_NAME }}
           FINGERPRINT: ${{ steps.fingerprint.outputs.value }}
         run: |
           set -euo pipefail
@@ -133,8 +134,6 @@ jobs:
 
       - name: Download the snapshot
         if: steps.cached.outputs.hit != 'true'
-        env:
-          PRIVATE_BUCKET_NAME: ${{ secrets.PRIVATE_BUCKET_NAME }}
         run: scripts/eval-snapshot.sh .eval
 
       - name: Run the eval
@@ -151,7 +150,6 @@ jobs:
       - name: File the report
         if: steps.cached.outputs.hit != 'true' && steps.cached.outputs.bucket != 'missing'
         env:
-          BUCKET: ${{ secrets.PRIVATE_BUCKET_NAME }}
           FINGERPRINT: ${{ steps.fingerprint.outputs.value }}
         run: |
           set -euo pipefail
@@ -183,7 +181,6 @@ jobs:
         name: Read the live release's report
         if: github.event_name == 'pull_request' && steps.cached.outputs.bucket != 'missing'
         env:
-          BUCKET: ${{ secrets.PRIVATE_BUCKET_NAME }}
           GH_TOKEN: ${{ github.token }}
           DEPLOY_JOB: "deploy · deployed: grantlink"
         run: |

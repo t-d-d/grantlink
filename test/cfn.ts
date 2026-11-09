@@ -73,6 +73,7 @@ export interface Resource {
 
 export interface Template {
   Parameters?: Record<string, Record<string, unknown>>;
+  Conditions?: Record<string, unknown>;
   Resources: Record<string, Resource>;
   Outputs?: Record<string, { Value: unknown }>;
 }

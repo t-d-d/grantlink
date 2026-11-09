@@ -43,9 +43,10 @@ jobs:
       pull-requests: write
 
   # A workflow can read an environment's secret only in a job that names
-  # the environment, so this job reads whether both deploy roles are set.
-  # Until the owner runs the bootstrap, a merge runs the gate and deploys
-  # nothing.
+  # the environment, so this job reads whether the deploy role is set. It is
+  # the only value GitHub holds for the deploy: once the job has assumed the
+  # role, it finds or builds every other (#43). Until the owner runs the
+  # bootstrap, a merge runs the gate and deploys nothing.
   role:
     name: deploy role
     runs-on: ubuntu-24.04
@@ -56,13 +57,12 @@ jobs:
       - id: read
         env:
           ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          EXECUTION_ROLE: ${{ secrets.AWS_DEPLOY_EXECUTION_ROLE_ARN }}
         run: |
-          if [ -n "$ROLE" ] && [ -n "$EXECUTION_ROLE" ]; then
+          if [ -n "$ROLE" ]; then
             echo "set=true" >> "$GITHUB_OUTPUT"
           else
             echo "set=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::AWS_DEPLOY_ROLE_ARN or AWS_DEPLOY_EXECUTION_ROLE_ARN is not set in prod, so nothing deploys. The README says how to set them."
+            echo "::notice::AWS_DEPLOY_ROLE_ARN is not set in prod, so nothing deploys. The README says how to set it."
           fi
 
   deploy:
@@ -163,13 +163,11 @@ jobs:
           echo "at=$at" >> "$GITHUB_OUTPUT"
 
       # The stack is grantlink-prod in eu-west-2, as serverless.yml names it.
-      # CloudFront serves at grantlink.uk once the certificate and the zone
-      # are set in prod, and at its own address until then.
+      # serverless.yml reads the certificate from the DNS stack and builds
+      # the execution role's ARN from this account, and CloudFront serves
+      # the page at grantlink.uk (#44).
       - name: Deploy the app stack
         env:
-          AWS_DEPLOY_EXECUTION_ROLE_ARN: ${{ secrets.AWS_DEPLOY_EXECUTION_ROLE_ARN }}
-          CERTIFICATE_ARN: ${{ secrets.CERTIFICATE_ARN }}
-          HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
           FIRST_RUN_AT: ${{ steps.first.outputs.at }}
         run: npx sls deploy
 

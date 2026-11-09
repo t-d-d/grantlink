@@ -16,7 +16,9 @@ provider:
   architecture: arm64
   logRetentionInDays: 30
   iam:
-    deploymentRole: ${env:AWS_DEPLOY_EXECUTION_ROLE_ARN}
+    # The roles stack names the execution role, so its ARN is built from
+    # the account the deploy runs in and is not copied into GitHub (#43).
+    deploymentRole: arn:aws:iam::${aws:accountId}:role/grantlink-deploy-execution
     # What the run may do, and nothing more: read and write the results
     # table, write funding text under cache/, take the eval snapshot under
     # eval/ once, and publish the page. It never reaches the eval reports,
@@ -103,16 +105,17 @@ functions:
 resources:
   - ${file(./infra/site.cfn.yml)}
   - ${file(./infra/data.cfn.yml)}
-  # The DNS stack's values, from the prod environment. Until both are set
-  # the page is served at CloudFront's own address. They are set as the
-  # parameters' defaults, not passed as stack parameters, because osls
-  # passes stack parameters to the stack's first create too, whose template
-  # holds only the deployment bucket, and CloudFormation refuses them.
+  # The certificate's ARN and the zone's id, read from the DNS stack in
+  # us-east-1 at deploy time (#43). A deploy before that stack exists fails
+  # (#44). They are set as the parameters' defaults, not passed as stack
+  # parameters, because osls passes stack parameters to the stack's first
+  # create too, whose template holds only the deployment bucket, and
+  # CloudFormation refuses them.
   - Parameters:
       CertificateArn:
-        Default: ${env:CERTIFICATE_ARN, ''}
+        Default: ${cf(us-east-1):dns.CertificateArn}
       HostedZoneId:
-        Default: ${env:HOSTED_ZONE_ID, ''}
+        Default: ${cf(us-east-1):dns.HostedZoneId}
   # The first run over the back catalogue, once, with no person starting
   # it. The deploy keeps FIRST_RUN_AT from the stack's FirstRunAt output
   # once it is set, so a later deploy starts no second run. The schedule is

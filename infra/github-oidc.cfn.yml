@@ -33,7 +33,8 @@ Resources:
   # Deploys from a green merge to main, in the prod environment only (#8).
   # It may change only the app stack, in London, through CloudFormation and
   # the execution role, then publish the page's files and invalidate the
-  # cache. It can never read or write the private bucket.
+  # cache. In us-east-1 it may only read the DNS stack, whose certificate the
+  # app stack uses (#43). It can never read or write the private bucket.
   DeployRole:
     Type: AWS::IAM::Role
     Properties:
@@ -75,6 +76,10 @@ Resources:
                   - cloudformation:ListStackResources
                   - cloudformation:UpdateStack
                 Resource: !Sub arn:${AWS::Partition}:cloudformation:eu-west-2:${AWS::AccountId}:stack/grantlink-prod/*
+              - Sid: ReadDnsStack
+                Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:us-east-1:${AWS::AccountId}:stack/dns/*
               - Sid: PassExecutionRole
                 Effect: Allow
                 Action: iam:PassRole
@@ -309,7 +314,7 @@ Outputs:
     Description: Store as the AWS_DEPLOY_ROLE_ARN secret on the prod environment.
     Value: !GetAtt DeployRole.Arn
   DeployExecutionRoleArn:
-    Description: Store as the AWS_DEPLOY_EXECUTION_ROLE_ARN secret on the prod environment.
+    Description: For reference. The deploy builds it from its own account and the role's name, so nothing needs copying.
     Value: !GetAtt DeployExecutionRole.Arn
   CiEvalRoleArn:
     Description: Store as the AWS_EVAL_ROLE_ARN secret on the eval environment.

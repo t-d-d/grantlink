@@ -1,7 +1,7 @@
 # The page: files in a private S3 bucket, served by CloudFront over HTTPS
-# only (#4). serverless.yml takes its resources from here, so this is part
-# of the app stack, grantlink-prod, in eu-west-2. It stands alone too, so
-# cfn-lint checks it in the gate.
+# only (#4), always at grantlink.uk (#44). serverless.yml takes its
+# resources from here, so this is part of the app stack, grantlink-prod, in
+# eu-west-2. It stands alone too, so cfn-lint checks it in the gate.
 #
 # CloudFront keeps no access logs and the page sets no cookie
 # (docs/constraints/no-tracking.md).
@@ -12,20 +12,13 @@ Parameters:
   DomainName:
     Type: String
     Default: grantlink.uk
-    Description: The domain the page is served at, once the certificate and the zone are given.
+    Description: The domain the page is served at. The DNS stack holds its zone and certificate.
   CertificateArn:
     Type: String
-    Default: ""
-    Description: The DNS stack's CertificateArn output. Empty serves the page at CloudFront's own address.
+    Description: The DNS stack's CertificateArn output, which serverless.yml reads from the stack at deploy time.
   HostedZoneId:
     Type: String
-    Default: ""
-    Description: The DNS stack's HostedZoneId output. Empty serves the page at CloudFront's own address.
-
-Conditions:
-  HasDomain: !And
-    - !Not [!Equals [!Ref CertificateArn, ""]]
-    - !Not [!Equals [!Ref HostedZoneId, ""]]
+    Description: The DNS stack's HostedZoneId output, which serverless.yml reads from the stack at deploy time.
 
 Resources:
   # Private: only the distribution reads it, through origin access control.
@@ -117,13 +110,12 @@ Resources:
         IPV6Enabled: true
         PriceClass: PriceClass_100
         DefaultRootObject: index.html
-        Aliases: !If [HasDomain, [!Ref DomainName], !Ref AWS::NoValue]
-        ViewerCertificate: !If
-          - HasDomain
-          - AcmCertificateArn: !Ref CertificateArn
-            SslSupportMethod: sni-only
-            MinimumProtocolVersion: TLSv1.2_2021
-          - CloudFrontDefaultCertificate: true
+        Aliases:
+          - !Ref DomainName
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
         Origins:
           - Id: site
             DomainName: !GetAtt SiteBucket.RegionalDomainName
@@ -140,10 +132,11 @@ Resources:
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
           ResponseHeadersPolicyId: !Ref ResponseHeaders
 
-  # CloudFront's own hosted zone id, the same for every distribution.
+  # The zone is the DNS stack's, read by id, since a zone kept from an
+  # earlier DNS stack has the same name. The alias target's zone id is
+  # CloudFront's own, the same for every distribution.
   AliasIpv4:
     Type: AWS::Route53::RecordSet
-    Condition: HasDomain
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: !Ref DomainName
@@ -154,7 +147,6 @@ Resources:
 
   AliasIpv6:
     Type: AWS::Route53::RecordSet
-    Condition: HasDomain
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: !Ref DomainName
@@ -172,7 +164,4 @@ Outputs:
     Value: !Ref Distribution
   PageUrl:
     Description: Where the page is served, which the live tier reads.
-    Value: !If
-      - HasDomain
-      - !Sub https://${DomainName}/
-      - !Sub https://${Distribution.DomainName}/
+    Value: !Sub https://${DomainName}/

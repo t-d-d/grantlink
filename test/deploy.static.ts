@@ -27,13 +27,22 @@ describe("the deploy workflow", () => {
     expect(jobs.gate?.uses).toBe("./.github/workflows/gate.yml");
   });
 
-  it("reads whether both deploy roles' secrets are set, in prod", () => {
+  it("reads whether the deploy role's secret is set, in prod", () => {
     const role = jobs.role;
     expect(role?.environment).toBe("prod");
     expect(role?.outputs?.set).toBeDefined();
     const read = JSON.stringify(role?.steps);
     expect(read).toContain("secrets.AWS_DEPLOY_ROLE_ARN");
-    expect(read).toContain("secrets.AWS_DEPLOY_EXECUTION_ROLE_ARN");
+  });
+
+  // A job finds or builds every other value once it has assumed the role,
+  // so no copy of one can go stale in GitHub (#43).
+  it("reads nothing from GitHub but the deploy role's ARN", () => {
+    const text = readRepoFile(".github/workflows/deploy.yml");
+    const names = [...text.matchAll(/\b(secrets|vars)\.(\w+)/gu)].map(
+      ([, kind, name]) => `${kind ?? ""}.${name ?? ""}`,
+    );
+    expect([...new Set(names)]).toEqual(["secrets.AWS_DEPLOY_ROLE_ARN"]);
   });
 
   it("deploys only after the gate and the eval, and only once the role's secret is set", () => {
