@@ -57,8 +57,9 @@ export interface SearchPage {
 }
 
 export interface EuropePmc {
-  // The run's search by default, or gold set A's sampling query.
-  search(cursor: string, query?: string): Promise<SearchPage>;
+  // The run's selection by default, or gold set A's sampling query. The
+  // client keeps either to open-access papers in Europe PMC.
+  search(cursor: string, selection?: string): Promise<SearchPage>;
   fullText(pmcid: string): Promise<string>;
   // The funder's grant ids Europe PMC links to a paper.
   grants(pmcid: string): Promise<string[]>;
@@ -78,15 +79,13 @@ export class EuropePmcError extends Error {
 const quoted = (field: string, value: string) =>
   `${field}:"${value.replace(/"/gu, "")}"`;
 
-// Open-access papers with full text in Europe PMC, published since the
-// funder's start date, whose acknowledgement or funding text names the
-// funder, and which Europe PMC links to none of its grants.
+// Papers published since the funder's start date, whose acknowledgement or
+// funding text names the funder, and which Europe PMC links to none of its
+// grants. The client keeps every search to open-access papers itself.
 export function searchQuery(): string {
   const names = funder.names.map((name) => quoted("ACK_FUND", name));
   return [
     `(${names.join(" OR ")})`,
-    "OPEN_ACCESS:y",
-    "IN_EPMC:y",
     `NOT ${quoted("GRANT_AGENCY", funder.europePmcAgency)}`,
     `FIRST_PDATE:[${funder.since} TO 3000-12-31]`,
   ].join(" AND ");
@@ -127,8 +126,27 @@ const grantsReply = z.object({
   }),
 });
 
-const OPEN_ACCESS = /\bOPEN_ACCESS:y\b/u;
-const IN_EPMC = /\bIN_EPMC:y\b/u;
+// Every search is the caller's selection, in brackets, and the open-access
+// terms (public-data.md). A selection could step out of its brackets only
+// through an unmatched bracket, an open quote or an escape, so any of those
+// is refused.
+function openAccessOnly(selection: string): string {
+  let depth = 0;
+  let quoted = false;
+  for (const char of selection) {
+    if (char === "\\") depth = -1;
+    else if (char === '"') quoted = !quoted;
+    else if (!quoted && char === "(") depth += 1;
+    else if (!quoted && char === ")") depth -= 1;
+    if (depth < 0) break;
+  }
+  if (depth !== 0 || quoted || selection.trim() === "") {
+    throw new Error(
+      "a search asks only for open-access papers in Europe PMC, and its selection must stay in its brackets",
+    );
+  }
+  return `(${selection}) AND OPEN_ACCESS:y AND IN_EPMC:y`;
+}
 
 // A title as plain text: Europe PMC's titles may carry inline markup.
 export function plainTitle(title: string): string {
@@ -219,12 +237,8 @@ export function europePmc(
   }
 
   return {
-    async search(cursor, query = searchQuery()) {
-      if (!OPEN_ACCESS.test(query) || !IN_EPMC.test(query)) {
-        throw new Error(
-          "a search asks only for open-access papers in Europe PMC",
-        );
-      }
+    async search(cursor, selection = searchQuery()) {
+      const query = openAccessOnly(selection);
       const url = new URL("search", BASE);
       url.searchParams.set("query", query);
       url.searchParams.set("resultType", "lite");

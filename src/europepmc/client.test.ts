@@ -155,8 +155,53 @@ describe("fitness: only Europe PMC's public web services (public-data.md)", () =
     }
   });
 
-  it("reads only open-access papers", () => {
-    expect(searchQuery()).toContain("OPEN_ACCESS:y");
+  it("reads only open-access papers", async () => {
+    const { client, requests } = harness(() =>
+      Response.json({ hitCount: 0, resultList: { result: [] } }),
+    );
+    await client.search("*");
+    expect(requests[0]?.url.searchParams.get("query")).toBe(
+      `(${searchQuery()}) AND OPEN_ACCESS:y AND IN_EPMC:y`,
+    );
+  });
+
+  it.each([
+    ["negates the open-access terms", "NOT OPEN_ACCESS:y AND IN_EPMC:y"],
+    ["ORs around them", "X OR (OPEN_ACCESS:y AND IN_EPMC:y)"],
+  ])(
+    "keeps a query that %s to open-access papers",
+    async (_, selection) => {
+      const { client, requests } = harness(() =>
+        Response.json({ hitCount: 0, resultList: { result: [] } }),
+      );
+      await client.search("*", selection);
+      expect(requests[0]?.url.searchParams.get("query")).toBe(
+        `(${selection}) AND OPEN_ACCESS:y AND IN_EPMC:y`,
+      );
+    },
+  );
+
+  it.each([
+    ["closes the brackets early", "X) OR (Y"],
+    ["leaves a bracket open", "(X OR Y"],
+    ["leaves a quote open", 'ACK_FUND:"X) OR (Y'],
+    ["escapes a character", "X \\) OR \\(Y"],
+  ])("refuses a query that %s", async (_, part) => {
+    // The open-access terms are there, so only the brackets can refuse it.
+    const selection = `${part} AND OPEN_ACCESS:y AND IN_EPMC:y`;
+    const { client, requests } = harness(() => ok());
+    await expect(client.search("*", selection)).rejects.toThrow(
+      /open-access/u,
+    );
+    expect(requests).toHaveLength(0);
+  });
+
+  it("counts a bracket inside quotes as text", async () => {
+    const { client, requests } = harness(() =>
+      Response.json({ hitCount: 0, resultList: { result: [] } }),
+    );
+    await client.search("*", 'TITLE:"a (b"');
+    expect(requests).toHaveLength(1);
   });
 });
 
@@ -225,20 +270,14 @@ describe("sampling gold set A", () => {
   const gold =
     'GRANT_AGENCY:"Cancer Research UK" AND OPEN_ACCESS:y AND IN_EPMC:y AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]';
 
-  it("searches with the query it is given", async () => {
+  it("searches with the query it is given, kept to open-access papers", async () => {
     const { client, requests } = harness(() =>
       Response.json({ hitCount: 0, resultList: { result: [] } }),
     );
     await client.search("*", gold);
-    expect(requests[0]?.url.searchParams.get("query")).toBe(gold);
-  });
-
-  it("refuses a query that could reach a paper that is not open access", async () => {
-    const { client, requests } = harness(() => ok());
-    await expect(
-      client.search("*", 'GRANT_AGENCY:"Cancer Research UK"'),
-    ).rejects.toThrow(/open-access/u);
-    expect(requests).toHaveLength(0);
+    expect(requests[0]?.url.searchParams.get("query")).toBe(
+      `(${gold}) AND OPEN_ACCESS:y AND IN_EPMC:y`,
+    );
   });
 
   it("reads the funder's grant ids Europe PMC links to a paper, and nothing about the people who hold them", async () => {
