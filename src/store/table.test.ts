@@ -1,3 +1,4 @@
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import { describe, expect, it } from "vitest";
 import { dynamoTable, paperRow, readRow } from "./table.ts";
 
@@ -109,6 +110,8 @@ describe("the table module", () => {
       Key: { pmcid: "PMC11" },
       UpdateExpression:
         "SET #status = if_not_exists(#status, :status), title = if_not_exists(title, :title), foundAt = if_not_exists(foundAt, :foundAt), firstPublished = if_not_exists(firstPublished, :firstPublished), foundByRun = :foundByRun",
+      ConditionExpression:
+        "attribute_not_exists(foundByRun) OR foundByRun <= :foundByRun",
       ExpressionAttributeNames: { "#status": "status" },
       ExpressionAttributeValues: {
         ":status": "pending",
@@ -118,6 +121,103 @@ describe("the table module", () => {
         ":foundByRun": "run-2",
       },
     });
+  });
+
+  it("keeps the mark of a run that started later, and the rest of what it holds", async () => {
+    const failed = new ConditionalCheckFailedException({
+      message: "The conditional request failed",
+      $metadata: {},
+    });
+    const { client, sent } = recorder((command) => {
+      if ("ConditionExpression" in (command as { input: object }).input) {
+        throw failed;
+      }
+      return {};
+    });
+    await dynamoTable("results", client).addFound(
+      [{ pmcid: "PMC11", title: "A title" }],
+      "2026-11-09T10:00:00.000Z",
+      "run-2026-11-09T09:00:00.000Z",
+    );
+    expect(sent).toHaveLength(2);
+    expect(sent[1]?.input).toEqual({
+      TableName: "results",
+      Key: { pmcid: "PMC11" },
+      UpdateExpression:
+        "SET #status = if_not_exists(#status, :status), title = if_not_exists(title, :title), foundAt = if_not_exists(foundAt, :foundAt)",
+      ExpressionAttributeNames: { "#status": "status" },
+      ExpressionAttributeValues: {
+        ":status": "pending",
+        ":title": "A title",
+        ":foundAt": "2026-11-09T10:00:00.000Z",
+      },
+    });
+  });
+
+  it("fails on any other error when it records a paper", async () => {
+    const { client } = recorder(() => {
+      throw new Error("throttled");
+    });
+    await expect(
+      dynamoTable("results", client).addFound(
+        [{ pmcid: "PMC11", title: "A title" }],
+        "2026-11-09T10:00:00.000Z",
+        "run-2",
+      ),
+    ).rejects.toThrow("throttled");
+  });
+
+  it("records a run's search as the latest complete one, unless a later run's is", async () => {
+    const { client, sent } = recorder();
+    await dynamoTable("results", client).recordSearch(
+      "run-2026-11-09T09:00:00.000Z",
+    );
+    expect(sent).toEqual([
+      {
+        name: "UpdateCommand",
+        input: {
+          TableName: "results",
+          Key: { pmcid: "latest-search" },
+          UpdateExpression: "SET runId = :runId",
+          ConditionExpression: "attribute_not_exists(runId) OR runId <= :runId",
+          ExpressionAttributeValues: {
+            ":runId": "run-2026-11-09T09:00:00.000Z",
+          },
+        },
+      },
+    ]);
+  });
+
+  it("leaves a later run's search recorded, without failing", async () => {
+    const { client } = recorder(() => {
+      throw new ConditionalCheckFailedException({
+        message: "The conditional request failed",
+        $metadata: {},
+      });
+    });
+    await expect(
+      dynamoTable("results", client).recordSearch("run-1"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("reads the latest complete search as last written", async () => {
+    const { client, sent } = recorder(() => ({
+      Item: { pmcid: "latest-search", runId: "run-2" },
+    }));
+    expect(await dynamoTable("results", client).latestSearch()).toBe("run-2");
+    expect(sent[0]).toEqual({
+      name: "GetCommand",
+      input: {
+        TableName: "results",
+        Key: { pmcid: "latest-search" },
+        ConsistentRead: true,
+      },
+    });
+  });
+
+  it("reads no latest complete search before one is recorded", async () => {
+    const { client } = recorder(() => ({}));
+    expect(await dynamoTable("results", client).latestSearch()).toBeNull();
   });
 
   it("leaves a paper with no date of first publication without one", async () => {
@@ -248,6 +348,14 @@ describe("the table module", () => {
     const rows = await dynamoTable("results", client).all();
     expect(rows.map((row) => row.pmcid)).toEqual(["PMC11", "PMC12"]);
     expect(sent).toHaveLength(2);
+  });
+
+  it("reads no record of the latest search as a paper", async () => {
+    const { client } = recorder(() => ({
+      Items: [processed, { pmcid: "latest-search", runId: "run-2" }],
+    }));
+    const rows = await dynamoTable("results", client).all();
+    expect(rows.map((row) => row.pmcid)).toEqual(["PMC11"]);
   });
 
   it("reads every row as last written, so the page sees this run's own writes", async () => {

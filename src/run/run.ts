@@ -5,6 +5,7 @@ import {
   publish,
   readPaper,
   recordPage,
+  recordSearch,
   searchPage,
   type Deps,
   type Published,
@@ -22,9 +23,10 @@ import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 // that fails publishes nothing, with one exception: a run that fails while it
 // publishes can leave its found.json on the site, because each try writes
 // found.json before the page (siteBucket.publish in src/store/bucket.ts, and
-// the README). Otherwise a run publishes if any paper its own search returned
-// has been read, by this run or an earlier one (publish in
-// src/pipeline/steps.ts).
+// the README). Otherwise a run publishes if any paper the latest complete
+// search returned has been read, by this run or an earlier one (publish in
+// src/pipeline/steps.ts). Runs may overlap: the latest complete search is the
+// one that started latest, whichever run finishes last (#125).
 
 // Papers per child context. Each batch ends with a short wait, so each
 // Lambda invocation does a bounded amount of work, and a replay skips each
@@ -140,12 +142,21 @@ export function makeRun(deps: Deps) {
     }
     checkWholeSearch(found, skipped);
 
-    const published: Published =
-      found === 0
-        ? { published: false, reason: "the search found nothing" }
-        : await ctx.step("publish", async () => publish(deps, runId), {
-            retryStrategy: storeRetry,
-          });
+    // The search has ended, so the run records it once as the latest
+    // complete one, and the page lists the papers the latest complete search
+    // returned, whichever run publishes it (#125). A search that found
+    // nothing is not recorded, so it never empties the page.
+    let published: Published;
+    if (found === 0) {
+      published = { published: false, reason: "the search found nothing" };
+    } else {
+      await ctx.step("searched", async () => recordSearch(deps, runId), {
+        retryStrategy: storeRetry,
+      });
+      published = await ctx.step("publish", async () => publish(deps, runId), {
+        retryStrategy: storeRetry,
+      });
+    }
 
     // The eval snapshot, once, after the page is published, so the page
     // never waits on it, not even for a wait a refusal left owed: the

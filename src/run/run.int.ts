@@ -139,6 +139,13 @@ describe("a run over the back catalogue", () => {
     expect(page).toContain("https://europepmc.org/article/PMC/PMC0000002");
   });
 
+  it("records its search as the latest complete one once the search ends (#125)", async () => {
+    const fake = fakeDeps();
+    const { result } = await runWith(fake);
+    expect(result?.runId).toBe("run-2026-11-09T12:00:00.000Z");
+    expect(fake.table.search.latest).toBe(result?.runId);
+  });
+
   it("reads the papers recorded from Europe PMC, and finds their references", async () => {
     const fake = fakeDeps();
     await runWith(fake);
@@ -345,6 +352,7 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
       reason: "the search found nothing",
     });
     expect(fake.site.files).toBeUndefined();
+    expect(fake.table.search.latest).toBeNull();
   });
 
   it("asks again for a paper Europe PMC kept refusing, but not for one it has no full text for, nor after a fault of its own", async () => {
