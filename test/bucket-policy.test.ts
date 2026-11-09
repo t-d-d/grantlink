@@ -104,6 +104,14 @@ describe("refusesPlainHttp", () => {
       "it denies HTTPS instead",
       { Condition: { Bool: { "aws:SecureTransport": "true" } } },
     ],
+    [
+      "it writes false in capitals, which AWS does not say Bool reads",
+      { Condition: { Bool: { "aws:SecureTransport": "FALSE" } } },
+    ],
+    [
+      "it writes False, which AWS does not say Bool reads",
+      { Condition: { Bool: { "aws:SecureTransport": "False" } } },
+    ],
     ["it has no condition", { Condition: undefined }],
     [
       "another condition narrows it",
