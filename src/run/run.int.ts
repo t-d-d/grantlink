@@ -319,6 +319,70 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
   });
 });
 
+describe("a failure to write or read the table is retried apart from Europe PMC's search", () => {
+  // The run's own searches of Europe PMC, not the snapshot's or a paper's.
+  const runSearches = (fake: ReturnType<typeof fakeDeps>) =>
+    fake.requests.filter(
+      (url) =>
+        url.searchParams.get("resultType") === "lite" && !isGoldSearch(url),
+    ).length;
+
+  // A table whose `method` fails `times` times, then works as before.
+  function failingTable(method: "addFound" | "processed", times: number) {
+    const fake = fakeDeps();
+    const real = fake.table[method].bind(fake.table) as (
+      ...args: never[]
+    ) => Promise<unknown>;
+    let failures = 0;
+    const flaky = (...args: never[]) => {
+      if (failures < times) {
+        failures += 1;
+        return Promise.reject(new Error("DynamoDB read none of the keys"));
+      }
+      return real(...args);
+    };
+    Object.assign(fake.deps.table, { [method]: flaky });
+    return fake;
+  }
+
+  it("asks Europe PMC for 150 results a page, which fits in a checkpoint", async () => {
+    const fake = fakeDeps();
+    await runWith(fake);
+    const sizes = fake.requests
+      .filter(
+        (url) =>
+          url.searchParams.get("resultType") === "lite" && !isGoldSearch(url),
+      )
+      .map((url) => url.searchParams.get("pageSize"));
+    expect(sizes.length).toBeGreaterThan(0);
+    for (const size of sizes) expect(size).toBe("150");
+  });
+
+  for (const method of ["addFound", "processed"] as const) {
+    it(`does not call Europe PMC again or use up its retries when ${method} keeps failing`, async () => {
+      const fake = failingTable(method, Infinity);
+      const { status, retryDelays } = await runWith(fake);
+      expect(status).toBe("FAILED");
+      expect(runSearches(fake)).toBe(1);
+      expect(retryDelays("search-0")).toEqual([]);
+    });
+
+    it(`retries ${method} under the store's strategy, and carries on`, async () => {
+      const fake = failingTable(method, 2);
+      const { status, result, retryDelays } = await runWith(fake);
+      expect(status).toBe("SUCCEEDED");
+      expect(result).toMatchObject({ found: 8, read: 7 });
+      // Two pages, each searched once.
+      expect(runSearches(fake)).toBe(2);
+      expect(retryDelays("search-0")).toEqual([]);
+      // storeRetry starts at five seconds; Europe PMC's at thirty.
+      const delays = retryDelays("record-0");
+      expect(delays).toHaveLength(2);
+      for (const delay of delays) expect(delay).toBeLessThan(30);
+    });
+  }
+});
+
 describe("the eval snapshot (evals.md)", () => {
   const manifestOf = (fake: ReturnType<typeof fakeDeps>) =>
     JSON.parse(String(fake.text.get("eval/s1/manifest.json"))) as {

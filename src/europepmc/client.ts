@@ -16,6 +16,15 @@ export const USER_AGENT =
 
 // The least time between the starts of two requests.
 export const INTERVAL_MS = 500;
+
+// Results per page of a search. The run keeps a page of results as one
+// step's result, which the durable SDK checkpoints in at most 256 KB. A
+// page this size fits even when every title is 500 characters of three
+// bytes each, the most plainTitle leaves (src/pipeline/steps.test.ts).
+export const SEARCH_PAGE_SIZE = 150;
+// The most results Europe PMC gives in one page, for a search whose step
+// keeps only the PMCIDs.
+export const LARGEST_PAGE_SIZE = 1000;
 // A request slower than this counts as Europe PMC slowing down.
 const SLOW_MS = 5_000;
 const MAX_INTERVAL_MS = 16_000;
@@ -61,7 +70,11 @@ export interface SearchPage {
 export interface EuropePmc {
   // The run's selection by default, or gold set A's sampling query. The
   // client keeps either to open-access papers in Europe PMC.
-  search(cursor: string, selection?: string): Promise<SearchPage>;
+  search(
+    cursor: string,
+    selection?: string,
+    pageSize?: number,
+  ): Promise<SearchPage>;
   fullText(pmcid: string): Promise<string>;
   // The funder's grant ids Europe PMC links to a paper.
   grants(pmcid: string): Promise<string[]>;
@@ -170,7 +183,9 @@ function openAccessOnly(selection: string): string {
   return `(${selection}) AND OPEN_ACCESS:y AND IN_EPMC:y`;
 }
 
-// A title as plain text: Europe PMC's titles may carry inline markup.
+// A title as plain text: Europe PMC's titles may carry inline markup. A
+// control character or half a surrogate pair goes too, as JSON would spell
+// each in six bytes, and a page of titles must fit in one checkpoint.
 export function plainTitle(title: string): string {
   return title
     .replace(/<[^>]*>/gu, "")
@@ -179,9 +194,11 @@ export function plainTitle(title: string): string {
     .replace(/&quot;/gu, '"')
     .replace(/&#39;|&apos;/gu, "'")
     .replace(/&amp;/gu, "&")
+    .replace(/[\p{Cc}\p{Cs}]/gu, " ")
     .replace(/\s+/gu, " ")
     .trim()
-    .slice(0, 500);
+    .slice(0, 500)
+    .replace(/\p{Cs}$/u, "");
 }
 
 function retryAfter(response: Response, clock: Clock): number | undefined {
@@ -265,13 +282,17 @@ export function europePmc(
   }
 
   return {
-    async search(cursor, selection = searchQuery()) {
+    async search(
+      cursor,
+      selection = searchQuery(),
+      pageSize = SEARCH_PAGE_SIZE,
+    ) {
       const query = openAccessOnly(selection);
       const url = new URL("search", BASE);
       url.searchParams.set("query", query);
       url.searchParams.set("resultType", "lite");
       url.searchParams.set("format", "json");
-      url.searchParams.set("pageSize", "1000");
+      url.searchParams.set("pageSize", String(pageSize));
       url.searchParams.set("cursorMark", cursor);
       const reply = searchReply.parse(await (await request(url)).json());
       const results = reply.resultList.result;

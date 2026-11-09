@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { LARGEST_PAGE_SIZE } from "../europepmc/client.ts";
 import { fundingSections } from "../europepmc/jats.ts";
 import {
   GRANT,
@@ -53,7 +54,11 @@ export async function searchGoldA(
   deps: Deps,
   cursor: string,
 ): Promise<{ pmcids: string[]; nextCursor: string | null }> {
-  const page = await deps.europePmc.search(cursor, goldA.query);
+  const page = await deps.europePmc.search(
+    cursor,
+    goldA.query,
+    LARGEST_PAGE_SIZE,
+  );
   logger.info("snapshot-search", {
     hitCount: page.hitCount,
     found: page.papers.length,
