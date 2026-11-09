@@ -1,7 +1,15 @@
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { fakeDeps, fakeRelease, reply } from "../../test/fakes.ts";
 import { SEARCH_PAGE_SIZE } from "../europepmc/client.ts";
-import { checkWholeSearch, publish, recordPage, searchPage } from "./steps.ts";
+import { found } from "../page/found.ts";
+import {
+  checkWholeSearch,
+  publish,
+  readPaper,
+  recordPage,
+  recordSearch,
+  searchPage,
+} from "./steps.ts";
 
 const logs: string[] = [];
 const spy = vi
@@ -222,4 +230,46 @@ describe("publishing the page", () => {
     expect(await publish(fake.deps, "run-1")).toMatchObject({ page: "left" });
     expect(fake.site.files?.["found.json"]).toBeDefined();
   });
+});
+
+describe("two runs that overlap", () => {
+  // Run A starts first and is still searching when run B starts. Each
+  // search returns PMC0000001, and only A's also returns PMC0000002, which
+  // Europe PMC has since linked to a grant. The page that ends up published
+  // must list every paper the latest complete search returned (#125).
+  const A = "run-2026-11-09T10:00:00.000Z";
+  const B = "run-2026-11-09T11:00:00.000Z";
+  const one = { pmcid: "PMC0000001", title: "One" };
+  const two = { pmcid: "PMC0000002", title: "Two" };
+
+  async function overlap(order: "B finishes first" | "A finishes first") {
+    const fake = fakeDeps();
+    await recordPage(fake.deps, [two], A);
+    await readPaper(fake.deps, "PMC0000002", A);
+    await recordPage(fake.deps, [one], B);
+    await readPaper(fake.deps, "PMC0000001", B);
+    // A's later page returns PMC0000001 again, after B marked it.
+    await recordPage(fake.deps, [one], A);
+    const finish = async (runId: string) => {
+      await recordSearch(fake.deps, runId);
+      await publish(fake.deps, runId);
+    };
+    if (order === "B finishes first") {
+      await finish(B);
+      await finish(A);
+    } else {
+      await finish(A);
+      await finish(B);
+    }
+    return found.parse(JSON.parse(fake.site.files?.["found.json"] ?? "{}"));
+  }
+
+  it.each(["B finishes first", "A finishes first"] as const)(
+    "publishes every paper the latest search returned when %s",
+    async (order) => {
+      const page = await overlap(order);
+      expect(page.papers.map((paper) => paper.pmcid)).toEqual(["PMC0000001"]);
+      expect(page.counts.papers).toBe(1);
+    },
+  );
 });

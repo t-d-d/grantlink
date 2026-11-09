@@ -109,6 +109,28 @@ describe("a paper the run's search no longer returns", () => {
   });
 });
 
+describe("the search the page lists", () => {
+  // Rows keep the mark of the latest-started run that returned them, so a
+  // paper the latest complete search returned may carry a later run's mark.
+  const marked = [
+    done("PMC1", [ca]),
+    { ...done("PMC2", [an]), foundByRun: "run-2" },
+    row("PMC3", { foundByRun: "run-0" }),
+  ];
+
+  it("is the latest complete search, whichever run publishes", () => {
+    const found = summarise(marked, run, "run-2");
+    expect(found.runId).toBe("run-1");
+    expect(found.papers.map((paper) => paper.pmcid)).toEqual(["PMC2"]);
+  });
+
+  it("takes in the papers a run that started after it has returned", () => {
+    const found = summarise(marked, run, "run-1");
+    expect(found.papers.map((paper) => paper.pmcid)).toEqual(["PMC1", "PMC2"]);
+    expect(found.counts.papers).toBe(2);
+  });
+});
+
 describe("fitness: the page shows only titles, links and references (no-republished-text.md)", () => {
   const found = summarise(rows, run);
 
