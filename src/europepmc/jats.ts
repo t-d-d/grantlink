@@ -37,6 +37,11 @@ function plain(xml: string): string {
     .trim();
 }
 
+// What ends a tag's name: whitespace, a slash or the tag's close. \b would
+// let "fn" match <fn-group> and "title" match <title-group>, since a hyphen
+// ends a word (#210, #216).
+const NAME_END = String.raw`(?=[\s/>])`;
+
 // Drops comments and turns each CDATA section into escaped text, so that a
 // tag written inside either is not read as markup.
 function markup(xml: string): string {
@@ -57,15 +62,13 @@ function markup(xml: string): string {
 // only to the next closing tag of its name, and one with none after it is
 // dropped, so a broken element never takes in the rest of the paper. A
 // self-closing element is empty, and does not run on to the next closing tag
-// of its name (#195). The name must end at whitespace, a slash or the tag's
-// close: \b would let "fn" match <fn-group>, since a hyphen ends a word.
-// Each comes with the attributes in its opening tag.
+// of its name (#195). Each comes with the attributes in its opening tag.
 function tagged(
   xml: string,
   name: string,
   attributes = "",
 ): { tag: string; inner: string }[] {
-  const tags = new RegExp(`<(/?)${name}(?=[\\s/>])([^>]*)>`, "gu");
+  const tags = new RegExp(`<(/?)${name}${NAME_END}([^>]*)>`, "gu");
   const wanted = new RegExp(attributes, "u");
   const found: { tag: string; inner: string }[] = [];
   let opening = "";
@@ -157,6 +160,12 @@ function awardsOf(group: string): FundingSections["awards"] {
     : awards;
 }
 
+// A section's title.
+const TITLE = new RegExp(
+  String.raw`<title${NAME_END}[^>]*>[\s\S]*?<\/title>`,
+  "gu",
+);
+
 // The paragraphs of a section, or its whole text less its title if it has
 // none. A self-closing paragraph is empty, so it does not count.
 function paragraphs(section: string): string[] {
@@ -164,7 +173,7 @@ function paragraphs(section: string): string[] {
     .map(plain)
     .filter((paragraph) => paragraph !== "");
   if (found.length > 0) return found;
-  return [plain(section.replace(/<title\b[^>]*>[\s\S]*?<\/title>/gu, ""))];
+  return [plain(section.replace(TITLE, ""))];
 }
 
 // What counts as a funding part, read here by the cutter and by the check on
@@ -177,9 +186,10 @@ export const FUNDING_FOOTNOTE = String.raw`\bfn-type="(?:financial-disclosure|fu
 // its title. Europe PMC often marks acknowledgements up as a section rather
 // than an <ack>, and one journal titles its funding section Support. Support
 // must be the whole title, so a body section such as Support vector machines
-// is not kept. A label ends at its own closing tag, so a labelled section
+// is not kept. A tag matches only by its whole name, so <sec-meta> is not a
+// section and <title-group> is not a title (#216). A label ends at its own closing tag, so a labelled section
 // is not taken for the labelled funding section after it.
-const FUNDING_SECTION_START = String.raw`<sec\b(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>|[^>]*>\s*(?:<label\b[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>\s*)?<title\b[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
+const FUNDING_SECTION_START = String.raw`<sec${NAME_END}(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*>|[^>]*>\s*(?:<label${NAME_END}[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>\s*)?<title${NAME_END}[^>]*>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
 
 const FUNDING_SECTION_AT = new RegExp(FUNDING_SECTION_START, "iuy");
 
