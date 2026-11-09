@@ -41,6 +41,22 @@
       {
         "glob": ".claude/**",
         "reason": "It holds the sessions' skills and the review's own checklist."
+      },
+      {
+        "glob": "serverless.yml",
+        "reason": "A merge to main deploys the app stack and its roles."
+      },
+      {
+        "glob": "evals/**",
+        "reason": "The gold sets and the gating floors decide what may deploy."
+      },
+      {
+        "glob": "package.json",
+        "reason": "It holds the dependencies."
+      },
+      {
+        "glob": "package-lock.json",
+        "reason": "It holds the dependencies."
       }
     ],
     "requireChecks": ["gate", "eval"],
