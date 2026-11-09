@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { mergeOver, unreadResources } from "./serverless.ts";
+import { mergeOver, strayVariablesIn, unreadResources } from "./serverless.ts";
 
 const TEMPLATES = ["infra/site.cfn.yml", "infra/data.cfn.yml"];
 const known = TEMPLATES.map((path) => `\${file(./${path})}`);
+const stack = { declared: ["SiteBucket", "Distribution"], functions: ["run"] };
+const unread = (resources: unknown): string[] =>
+  unreadResources(resources, TEMPLATES, stack);
 
 describe("merging serverless.yml's resources as osls does (#142)", () => {
   it("merges objects key by key, so an inline entry changes one property of a template's resource", () => {
@@ -63,14 +66,11 @@ describe("merging serverless.yml's resources as osls does (#142)", () => {
 describe("what serverless.yml's resources hold that the static checks do not read (#142)", () => {
   it("finds nothing in the two templates, a parameters entry and inline resources", () => {
     expect(
-      unreadResources(
-        [
-          ...known,
-          { Parameters: { A: { Default: "x" } } },
-          { Resources: { R: { Type: "T" } }, Outputs: { O: { Value: 1 } } },
-        ],
-        TEMPLATES,
-      ),
+      unread([
+        ...known,
+        { Parameters: { A: { Default: "x" } } },
+        { Resources: { R: { Type: "T" } }, Outputs: { O: { Value: 1 } } },
+      ]),
     ).toEqual([]);
   });
 
@@ -84,22 +84,20 @@ describe("what serverless.yml's resources hold that the static checks do not rea
         },
       },
     };
-    expect(unreadResources([...known, extension], TEMPLATES)).toEqual([
+    expect(unread([...known, extension])).toEqual(["entry 3 has extensions"]);
+    expect(unread([...known, { Resources: {}, ...extension }])).toEqual([
       "entry 3 has extensions",
     ]);
-    expect(
-      unreadResources([...known, { Resources: {}, ...extension }], TEMPLATES),
-    ).toEqual(["entry 3 has extensions"]);
   });
 
   it("finds a third template", () => {
-    expect(
-      unreadResources([...known, "${file(./infra/more.cfn.yml)}"], TEMPLATES),
-    ).toEqual(["entry 3 is ${file(./infra/more.cfn.yml)}"]);
+    expect(unread([...known, "${file(./infra/more.cfn.yml)}"])).toEqual([
+      "entry 3 is ${file(./infra/more.cfn.yml)}",
+    ]);
   });
 
   it("finds a known template listed twice", () => {
-    expect(unreadResources([...known, known[0]], TEMPLATES)).toEqual([
+    expect(unread([...known, known[0]])).toEqual([
       "entry 3 is ${file(./infra/site.cfn.yml)} again",
     ]);
   });
@@ -107,9 +105,7 @@ describe("what serverless.yml's resources hold that the static checks do not rea
   // osls merges the list in order, so an inline entry listed before a
   // template would sit under it, while test/app.ts merges it over it.
   it("finds an inline entry listed before the templates", () => {
-    expect(
-      unreadResources([{ Resources: {} }, known[0], known[1]], TEMPLATES),
-    ).toEqual([
+    expect(unread([{ Resources: {} }, known[0], known[1]])).toEqual([
       "entry 1 is not ${file(./infra/site.cfn.yml)}",
       "entry 2 is not ${file(./infra/data.cfn.yml)}",
       "entry 3 is ${file(./infra/data.cfn.yml)} again",
@@ -117,27 +113,193 @@ describe("what serverless.yml's resources hold that the static checks do not rea
   });
 
   it("finds the templates out of order or missing", () => {
-    expect(unreadResources([known[1], known[0]], TEMPLATES)).toEqual([
+    expect(unread([known[1], known[0]])).toEqual([
       "entry 1 is not ${file(./infra/site.cfn.yml)}",
       "entry 2 is not ${file(./infra/data.cfn.yml)}",
     ]);
-    expect(unreadResources([known[0]], TEMPLATES)).toEqual([
+    expect(unread([known[0]])).toEqual([
       "entry 2 is not ${file(./infra/data.cfn.yml)}",
     ]);
   });
 
   it("finds any other key, such as Conditions or Transform", () => {
     expect(
-      unreadResources(
-        [...known, { Conditions: {} }, { Transform: "AWS::Serverless" }],
-        TEMPLATES,
-      ),
+      unread([...known, { Conditions: {} }, { Transform: "AWS::Serverless" }]),
     ).toEqual(["entry 3 has Conditions", "entry 4 has Transform"]);
   });
 
   it("finds resources that are not a list, which osls reads as one entry", () => {
-    expect(unreadResources({ Resources: {} }, TEMPLATES)).toEqual([
-      "resources is not a list",
+    expect(unread({ Resources: {} })).toEqual(["resources is not a list"]);
+  });
+});
+
+describe("inline resources that change what a template or osls declares (#166)", () => {
+  it("finds an inline entry that changes a template's resource", () => {
+    expect(
+      unread([
+        ...known,
+        {
+          Resources: {
+            Distribution: {
+              Properties: {
+                DistributionConfig: {
+                  DefaultCacheBehavior: { ViewerProtocolPolicy: "allow-all" },
+                },
+              },
+            },
+          },
+        },
+      ]),
+    ).toEqual(["entry 3 changes Distribution, which a template declares"]);
+  });
+
+  it.each([
+    "IamRoleLambdaExecution",
+    "RunLambdaFunction",
+    "RunLogGroup",
+    "RunDurableLambdaAlias",
+    "RunLambdaVersionAbc123",
+    "ServerlessDeploymentBucket",
+    "ServerlessDeploymentBucketPolicy",
+    "ApiGatewayRestApi",
+    "runSchedule",
+    "Base123LambdaLayerPermission",
+    "OrdersStreamConsumer",
+    "AuthApiGatewayAuthorizer",
+    "AuthLambdaAuthorizerPermissionHttpApi",
+  ])("finds an inline entry that changes %s, which osls generates", (id) => {
+    expect(
+      unread([...known, { Resources: { [id]: { Properties: {} } } }]),
+    ).toEqual([`entry 3 changes ${id}, which osls generates`]);
+  });
+
+  it.each(["ServerlessDeploymentBucketName", "RunLambdaFunctionQualifiedArn"])(
+    "finds an inline entry that changes the output %s, which osls generates",
+    (id) => {
+      expect(unread([...known, { Outputs: { [id]: { Value: 1 } } }])).toEqual([
+        `entry 3 changes the output ${id}, which osls generates`,
+      ]);
+    },
+  );
+
+  it.each(["Parameters", "Resources", "Outputs"])(
+    "finds %s that is not a map, which osls would merge over the whole section",
+    (key) => {
+      expect(unread([...known, { [key]: null }, { [key]: [] }])).toEqual([
+        `entry 3 has ${key} that is not a map`,
+        `entry 4 has ${key} that is not a map`,
+      ]);
+    },
+  );
+
+  it("passes a resource of its own, such as FirstRunRole", () => {
+    expect(
+      unread([...known, { Resources: { FirstRunRole: { Type: "T" } } }]),
+    ).toEqual([]);
+  });
+});
+
+describe("variables inside inline entries (#166)", () => {
+  it("passes the cf and env variables in use, and CloudFormation's own Sub variables", () => {
+    expect(
+      unread([
+        ...known,
+        {
+          Parameters: {
+            A: { Default: "${cf(us-east-1):dns.CertificateArn}" },
+          },
+          Resources: {
+            R: {
+              Type: "T",
+              Properties: {
+                At: "at(${env:FIRST_RUN_AT})",
+                Fallback: "${env:X, 'local'}",
+                Arn: {
+                  "Fn::Sub":
+                    "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/p",
+                },
+                Bucket: { "Fn::Sub": "${SiteBucket.Arn}/*" },
+              },
+            },
+          },
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("finds a file variable inside an inline resource", () => {
+    expect(
+      unread([
+        ...known,
+        {
+          Resources: {
+            R: { Type: "T", Properties: { Policies: "${file(./p.yml)}" } },
+          },
+        },
+      ]),
+    ).toEqual([
+      "entry 3 has a variable from file at Resources.R.Properties.Policies",
     ]);
+  });
+
+  it("finds a variable in a fallback, a parameter or an address", () => {
+    expect(
+      unread([
+        ...known,
+        {
+          Outputs: {
+            A: { Value: "${env:X, file(./a.yml)}" },
+            B: { Value: "${cf(${self:region}):dns.Zone}" },
+            C: { Value: "${env:${opt:name}}" },
+          },
+        },
+      ]),
+    ).toEqual([
+      "entry 3 has a variable from file at Outputs.A.Value",
+      "entry 3 has a variable from self at Outputs.B.Value",
+      "entry 3 has a variable from opt at Outputs.C.Value",
+    ]);
+  });
+
+  it("finds a variable in a list item or a key", () => {
+    expect(
+      unread([
+        ...known,
+        {
+          Resources: { R: { Type: "T", Properties: { L: ["${sls:stage}"] } } },
+        },
+        { Outputs: { "${self:custom.name}": { Value: 1 } } },
+      ]),
+    ).toEqual([
+      "entry 3 has a variable from sls at Resources.R.Properties.L.0",
+      "entry 4 has a variable from self at Outputs",
+    ]);
+  });
+
+  it("finds a variable osls cannot parse", () => {
+    expect(
+      unread([
+        ...known,
+        { Outputs: { A: { Value: "${env:X, ${file(./a)}}" } } },
+      ]),
+    ).toEqual(["entry 3 has a variable osls cannot parse at Outputs.A.Value"]);
+  });
+});
+
+// osls resolves the variables in a file it reads too, so a template may
+// hold none but the cf and env ones (#166).
+describe("variables inside a template (#166)", () => {
+  it("passes CloudFormation's own Sub variables", () => {
+    expect(
+      strayVariablesIn({
+        Resources: { R: { Properties: { A: { "Fn::Sub": "${R.Arn}/*" } } } },
+      }),
+    ).toEqual([]);
+  });
+
+  it("finds a self variable, with where it sits", () => {
+    expect(
+      strayVariablesIn({ Outputs: { O: { Value: "${self:custom.x}" } } }),
+    ).toEqual(["a variable from self at Outputs.O.Value"]);
   });
 });
