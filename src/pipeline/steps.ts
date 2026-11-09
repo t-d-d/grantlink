@@ -50,6 +50,7 @@ export async function searchPage(
   logger.info("search-page", {
     hitCount: page.hitCount,
     found: ids.length,
+    skipped: page.skipped,
     todo: todo.length,
   });
   return { found: ids.length, todo, nextCursor: page.nextCursor };
