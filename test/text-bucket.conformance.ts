@@ -17,11 +17,13 @@ const { TEXT_BUCKET } = z
   .parse(process.env);
 const s3 = new S3Client({ region: "eu-west-2" });
 
-async function readPolicy(): Promise<string> {
+async function readPolicy(): Promise<unknown> {
   const reply = await s3.send(
     new GetBucketPolicyCommand({ Bucket: TEXT_BUCKET }),
   );
-  return reply.Policy ?? "{}";
+  // An empty reply would read as a policy that grants nothing, so it fails.
+  if (reply.Policy === undefined) throw new Error("S3 returned no policy");
+  return JSON.parse(reply.Policy) as unknown;
 }
 
 describe("fitness: the bucket stays private (storage.md)", () => {
@@ -60,7 +62,7 @@ describe("fitness: the bucket stays private (storage.md)", () => {
 
 describe("fitness: cache entries never change (evals.md)", () => {
   it("refuses any write under eval/ or eval-reports/ that could replace an object", async () => {
-    const policy = BucketPolicy.parse(JSON.parse(await readPolicy()));
+    const policy = BucketPolicy.parse(await readPolicy());
     const writeOnce = policy.Statement.find(
       (statement) => statement.Sid === "WriteOnceUnderEval",
     );

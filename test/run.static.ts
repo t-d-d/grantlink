@@ -11,6 +11,7 @@ import {
   type PolicyDocument,
   type Statement,
 } from "./cfn.ts";
+import { grantsInPolicy } from "./bucket-policy.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The run's resources in the app stack (#19): the results table and the
@@ -118,11 +119,11 @@ describe("fitness: the bucket stays private (storage.md)", () => {
     );
     expect(onTextBucket.map(([name]) => name)).toEqual(["TextBucketPolicy"]);
     for (const [name, policy] of onTextBucket) {
-      const document = policy.Properties.PolicyDocument as PolicyDocument;
-      // CloudFormation takes a lone statement as well as a list.
-      for (const statement of list<Statement>(document.Statement)) {
-        expect(statement.Effect, `${name} ${statement.Sid ?? ""}`).toBe("Deny");
-      }
+      // The same check test/text-bucket.conformance.ts makes of the
+      // deployed policy (#67).
+      expect(grantsInPolicy(policy.Properties.PolicyDocument), name).toEqual(
+        [],
+      );
     }
   });
 });
