@@ -137,25 +137,44 @@ describe("fitness: HTTPS only (hosting.md)", () => {
   });
 });
 
-describe("the page's address", () => {
-  it("serves at grantlink.uk only once the certificate and the zone are given", () => {
+describe("the page's address (#44)", () => {
+  const records = Object.values(site.Resources).filter(
+    (r) => r.Type === "AWS::Route53::RecordSet",
+  );
+
+  it("always serves at grantlink.uk, with no fallback to CloudFront's own address", () => {
     expect(site.Parameters?.DomainName?.Default).toBe("grantlink.uk");
-    expect(site.Parameters?.CertificateArn?.Default).toBe("");
-    expect(site.Parameters?.HostedZoneId?.Default).toBe("");
-    const records = Object.values(site.Resources).filter(
-      (r) => r.Type === "AWS::Route53::RecordSet",
-    );
-    expect(records.length).toBeGreaterThan(0);
+    expect(site.Conditions).toBeUndefined();
+    const config = resource(site, "Distribution").Properties
+      .DistributionConfig as Record<string, unknown>;
+    expect(config.Aliases).toEqual([{ Ref: "DomainName" }]);
+    expect(config.ViewerCertificate).toEqual({
+      AcmCertificateArn: { Ref: "CertificateArn" },
+      SslSupportMethod: "sni-only",
+      MinimumProtocolVersion: "TLSv1.2_2021",
+    });
+    expect(site.Outputs?.PageUrl?.Value).toEqual({
+      "Fn::Sub": "https://${DomainName}/",
+    });
+  });
+
+  it("names the zone grantlink.uk. in its alias records, not by id", () => {
+    expect(site.Parameters?.HostedZoneId).toBeUndefined();
+    expect(records.map((r) => r.Properties.Type).sort()).toEqual(["A", "AAAA"]);
     for (const record of records) {
-      expect((record as { Condition?: string }).Condition).toBe("HasDomain");
+      expect((record as { Condition?: string }).Condition).toBeUndefined();
+      expect(record.Properties.HostedZoneId).toBeUndefined();
+      expect(record.Properties.HostedZoneName).toEqual({
+        "Fn::Sub": "${DomainName}.",
+      });
     }
   });
 
-  it("takes the certificate and the zone from the deploy's environment", () => {
+  it("reads the certificate from the dns stack in us-east-1 at deploy time", () => {
+    expect(site.Parameters?.CertificateArn?.Default).toBeUndefined();
     expect(serverless.resources).toContainEqual({
       Parameters: {
-        CertificateArn: { Default: "${env:CERTIFICATE_ARN, ''}" },
-        HostedZoneId: { Default: "${env:HOSTED_ZONE_ID, ''}" },
+        CertificateArn: { Default: "${cf(us-east-1):dns.CertificateArn}" },
       },
     });
   });
@@ -167,9 +186,22 @@ describe("the page's address", () => {
     expect(serverless.provider.stackParameters).toBeUndefined();
   });
 
-  it("builds the stack through the execution role", () => {
+  it("builds the stack through the execution role, named in the deploy's own account", () => {
     expect(serverless.provider.iam?.deploymentRole).toBe(
-      "${env:AWS_DEPLOY_EXECUTION_ROLE_ARN}",
+      "arn:aws:iam::${aws:accountId}:role/grantlink-deploy-execution",
     );
+    expect(
+      resource(readTemplate("infra/github-oidc.cfn.yml"), "DeployExecutionRole")
+        .Properties.RoleName,
+    ).toBe("grantlink-deploy-execution");
+  });
+
+  // Only the role a job assumes lives in GitHub (#43). The commit and the
+  // first run's time come from the workflow itself.
+  it("reads nothing from the deploy's environment but the commit and the first run's time", () => {
+    const names = [
+      ...readRepoFile("serverless.yml").matchAll(/\$\{env:(\w+)/gu),
+    ].map(([, name]) => name);
+    expect([...new Set(names)].sort()).toEqual(["FIRST_RUN_AT", "GITHUB_SHA"]);
   });
 });

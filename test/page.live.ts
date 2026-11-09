@@ -11,8 +11,7 @@ import {
 } from "./page.ts";
 
 // Reads the deployed page after each deploy (#17). PAGE_URL is the app
-// stack's PageUrl output: https://grantlink.uk once the domain is set, and
-// CloudFront's own address until then.
+// stack's PageUrl output, https://grantlink.uk/ (#44).
 const { PAGE_URL } = z
   .object({ PAGE_URL: z.url({ protocol: /^https$/u }) })
   .parse(process.env);

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Applies the two stacks the owner applies by hand, and gives GitHub every
-# value the deploy and the eval read. Run it from the repo root on your own
+# Applies the two stacks the owner applies by hand, and gives GitHub the
+# role each job assumes: the deploy's in prod and the eval's in eval. A job
+# finds or builds every other value once it has assumed its role (#43). Run it from the repo root on your own
 # machine, with:
 #
 #   - AWS credentials for grantlink's account, as an administrator, however
@@ -126,30 +127,38 @@ aws cloudformation deploy --region "$REGION" --no-fail-on-empty-changeset \
 # given any, so a session that runs out here, or an output that is
 # missing, stops the script before GitHub changes.
 deploy_role=$(output "$ROLES_STACK" DeployRoleArn)
-execution_role=$(output "$ROLES_STACK" DeployExecutionRoleArn)
 eval_role=$(output "$ROLES_STACK" CiEvalRoleArn)
-certificate=$(output "$DNS_STACK" CertificateArn)
-zone_id=$(output "$DNS_STACK" HostedZoneId)
-for name in deploy_role execution_role eval_role certificate zone_id; do
+for name in deploy_role eval_role; do
   case ${!name} in
     "" | None) echo "The stacks gave no value for $name, so GitHub was not changed."; exit 1 ;;
   esac
 done
-bucket="grantlink-text-${account}"
 
-# Gives GitHub one value. ARNs and the bucket's name carry the account id,
-# so they are secrets, and each value goes to gh on its standard input,
-# never on a command line.
+# Gives GitHub one value. ARNs carry the account id, so they are secrets,
+# and each value goes to gh on its standard input, never on a command line.
 give() {
   printf '%s' "$4" | gh "$1" set "$2" --repo "$REPO" --env "$3"
 }
 
+# Removes a value earlier runs gave GitHub and the jobs no longer read. One
+# that is already gone counts as removed, so the script can run again.
+drop() {
+  local err
+  if ! err=$(gh "$1" delete "$2" --repo "$REPO" --env "$3" 2>&1 >/dev/null); then
+    case $err in
+      *"HTTP 404"*) ;;
+      *) echo "$err" >&2; exit 1 ;;
+    esac
+  fi
+}
+
 give secret AWS_DEPLOY_ROLE_ARN prod "$deploy_role"
-give secret AWS_DEPLOY_EXECUTION_ROLE_ARN prod "$execution_role"
-give secret CERTIFICATE_ARN prod "$certificate"
-give variable HOSTED_ZONE_ID prod "$zone_id"
-give secret PRIVATE_BUCKET_NAME prod "$bucket"
-give secret PRIVATE_BUCKET_NAME eval "$bucket"
 give secret AWS_EVAL_ROLE_ARN eval "$eval_role"
 
-echo "Done. Both stacks are applied, and GitHub has every value it reads."
+drop secret AWS_DEPLOY_EXECUTION_ROLE_ARN prod
+drop secret CERTIFICATE_ARN prod
+drop variable HOSTED_ZONE_ID prod
+drop secret PRIVATE_BUCKET_NAME prod
+drop secret PRIVATE_BUCKET_NAME eval
+
+echo "Done. Both stacks are applied, and GitHub holds the role each job assumes."

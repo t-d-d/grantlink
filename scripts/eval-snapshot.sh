@@ -5,9 +5,8 @@
 #
 #   scripts/eval-snapshot.sh <dir>
 #
-# The bucket is $PRIVATE_BUCKET_NAME, as CI sets it, or else
-# grantlink-text-<account> for the account the AWS credentials are in. A
-# session runs it with AWS_PROFILE=grantlink-eval, which may read eval/ and
+# The bucket is grantlink-text-<account> for the account the AWS
+# credentials are in, as the app stack names it. A session runs it with AWS_PROFILE=grantlink-eval, which may read eval/ and
 # nothing else, so it reads only the keys the manifest names.
 #
 # The files hold funding text and names. Keep them in the directory given,
@@ -24,10 +23,7 @@ if [ "$pin" = "null" ]; then
   exit 0
 fi
 
-bucket="${PRIVATE_BUCKET_NAME:-}"
-if [ -z "$bucket" ]; then
-  bucket="grantlink-text-$(aws sts get-caller-identity --query Account --output text)"
-fi
+bucket="grantlink-text-$(aws sts get-caller-identity --query Account --output text)"
 
 manifest="$dir/eval/$id/manifest.json"
 aws s3api get-object --bucket "$bucket" --key "eval/$id/manifest.json" "$manifest" >/dev/null

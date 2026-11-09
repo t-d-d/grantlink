@@ -83,12 +83,33 @@ describe("the deploy role", () => {
       )
       .filter((statement) =>
         actions(statement).some(
-          (action) => action !== "cloudformation:ValidateTemplate",
+          (action) =>
+            action !== "cloudformation:ValidateTemplate" &&
+            action !== "cloudformation:DescribeStacks",
         ),
       )
       .flatMap(resources);
     expect(stacks).toEqual([
       "arn:${AWS::Partition}:cloudformation:eu-west-2:${AWS::AccountId}:stack/grantlink-prod/*",
+    ]);
+  });
+
+  // The app stack reads the certificate's ARN from the dns stack at deploy
+  // time (#43). That read is the role's only right in us-east-1.
+  it("reads the dns stack in us-east-1, and does nothing else there", () => {
+    const east = allows(rightsOf(deploy)).filter((statement) =>
+      resources(statement).some((resource) => resource.includes("us-east-1")),
+    );
+    expect(east).toEqual([
+      {
+        Sid: "ReadDnsStack",
+        Effect: "Allow",
+        Action: "cloudformation:DescribeStacks",
+        Resource: {
+          "Fn::Sub":
+            "arn:${AWS::Partition}:cloudformation:us-east-1:${AWS::AccountId}:stack/dns/*",
+        },
+      },
     ]);
   });
 
