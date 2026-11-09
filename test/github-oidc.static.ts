@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { serverless, site } from "./app.ts";
+import { appStack, serverless } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
 import {
   list,
@@ -455,9 +455,12 @@ describe("the app roles' boundary", () => {
     expect(serverless.provider.stage).toBe("prod");
     expect(Object.keys(serverless.functions ?? {})).toEqual(["run"]);
     expect(serverless.functions?.run?.name).toBeUndefined();
-    const data = readTemplate("infra/data.cfn.yml");
-    expect(resource(data, "ResultsTable").Properties.TableName).toBeUndefined();
-    expect(resource(site, "SiteBucket").Properties.BucketName).toBeUndefined();
+    expect(
+      resource(appStack, "ResultsTable").Properties.TableName,
+    ).toBeUndefined();
+    expect(
+      resource(appStack, "SiteBucket").Properties.BucketName,
+    ).toBeUndefined();
   });
 
   // Every action the run's role is given in serverless.yml, so the
