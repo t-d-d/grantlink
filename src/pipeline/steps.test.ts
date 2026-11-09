@@ -54,32 +54,43 @@ describe("reading a page of the search", () => {
 
   // The SDK checkpoints a step's result, and a checkpoint holds at most
   // 256 KB (CHECKPOINT_SIZE_LIMIT_BYTES in @aws/durable-execution-sdk-js),
-  // less a kilobyte it keeps for its own envelope.
-  it("returns a result that fits in a checkpoint, however long the titles", async () => {
-    const longest = "€".repeat(500); // three bytes each in UTF-8
-    const { deps } = fakeDeps({
-      search: () =>
-        reply(
-          JSON.stringify({
-            hitCount: 1_000_000,
-            nextCursorMark: "A".repeat(200),
-            resultList: {
-              result: Array.from({ length: SEARCH_PAGE_SIZE }, (_, index) => ({
-                pmcid: `PMC${String(9_000_000_000 + index)}`,
-                title: longest,
-                firstPublicationDate: "2021-02-03",
-              })),
-            },
-          }),
-        ),
-    });
-    const result = await searchPage(deps, "*");
-    expect(result.papers).toHaveLength(SEARCH_PAGE_SIZE);
-    expect(result.papers[0]?.title).toBe(longest);
-    expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(
-      256 * 1024 - 1024,
-    );
-  });
+  // less a kilobyte it keeps for its own envelope. The SDK writes the result
+  // with JSON.stringify, which spells a control character or half a
+  // surrogate pair in six bytes.
+  it.each([
+    ["three bytes each in UTF-8", "€".repeat(500)],
+    ["control characters", "\u0001".repeat(600)],
+    ["halves of surrogate pairs", "\ud83d".repeat(600)],
+    ["a pair cut at the 500th character", `${"€".repeat(499)}😀`],
+  ])(
+    "returns a result that fits in a checkpoint, with titles of %s",
+    async (_, title) => {
+      const { deps } = fakeDeps({
+        search: () =>
+          reply(
+            JSON.stringify({
+              hitCount: 1_000_000,
+              nextCursorMark: "A".repeat(200),
+              resultList: {
+                result: Array.from(
+                  { length: SEARCH_PAGE_SIZE },
+                  (_, index) => ({
+                    pmcid: `PMC${String(9_000_000_000 + index)}`,
+                    title,
+                    firstPublicationDate: "2021-02-03",
+                  }),
+                ),
+              },
+            }),
+          ),
+      });
+      const result = await searchPage(deps, "*");
+      expect(result.papers).toHaveLength(SEARCH_PAGE_SIZE);
+      expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(
+        256 * 1024 - 1024,
+      );
+    },
+  );
 });
 
 describe("recording a page of the search", () => {

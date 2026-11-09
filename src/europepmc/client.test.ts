@@ -4,6 +4,8 @@ import {
   EuropePmcError,
   HOSTS,
   INTERVAL_MS,
+  LARGEST_PAGE_SIZE,
+  plainTitle,
   SEARCH_PAGE_SIZE,
   searchQuery,
   USER_AGENT,
@@ -274,6 +276,14 @@ describe("searching Europe PMC", () => {
     });
   });
 
+  it("asks for a larger page when told to", async () => {
+    const { client, requests } = harness(() =>
+      Response.json({ hitCount: 0, resultList: { result: [] } }),
+    );
+    await client.search("*", "TITLE:x", LARGEST_PAGE_SIZE);
+    expect(requests[0]?.url.searchParams.get("pageSize")).toBe("1000");
+  });
+
   it("skips a result with a malformed PMCID and keeps the rest of the page", async () => {
     const { client } = harness(() =>
       Response.json({
@@ -415,5 +425,21 @@ describe("sampling gold set A", () => {
       }),
     );
     expect(await client.grants("PMC11")).toEqual([]);
+  });
+});
+
+describe("a title as plain text", () => {
+  it("keeps a title of 500 characters whole", () => {
+    const title = "€".repeat(500);
+    expect(plainTitle(title)).toBe(title);
+  });
+
+  it("drops control characters, which JSON spells in six bytes", () => {
+    expect(plainTitle("One\u0001 two\u001f")).toBe("One two");
+  });
+
+  it("drops half a surrogate pair, including one cut at the 500th character", () => {
+    expect(plainTitle("One \ud83d")).toBe("One");
+    expect(plainTitle(`${"€".repeat(499)}😀`)).toBe("€".repeat(499));
   });
 });

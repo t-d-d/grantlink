@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { sample, snapshotPaper } from "./snapshot.ts";
+import { fakeDeps, isGoldSearch } from "../../test/fakes.ts";
+import { searchGoldA, sample, snapshotPaper } from "./snapshot.ts";
 import type { Deps } from "./steps.ts";
 
 const ids = Array.from({ length: 50 }, (_, i) => `PMC${String(i + 1)}`);
@@ -53,6 +54,17 @@ function paperDeps(grants: string[]) {
   } as unknown as Deps;
   return { deps, calls, stored };
 }
+
+describe("searching for gold set A", () => {
+  // Its step keeps only the PMCIDs, so a page as large as Europe PMC gives
+  // fits in a checkpoint, and the search asks Europe PMC fewer times.
+  it("asks for pages as large as Europe PMC gives", async () => {
+    const fake = fakeDeps();
+    await searchGoldA(fake.deps, "*");
+    const search = fake.requests.find((url) => isGoldSearch(url));
+    expect(search?.searchParams.get("pageSize")).toBe("1000");
+  });
+});
 
 describe("taking one gold paper", () => {
   it("passes over a gold set A paper Europe PMC links to no grant, without reading its text", async () => {
