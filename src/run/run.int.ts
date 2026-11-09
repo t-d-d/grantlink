@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
 import { LocalDurableTestRunner } from "@aws/durable-execution-sdk-js-testing";
 import {
@@ -169,7 +170,10 @@ describe("a run that fails or finds nothing leaves the page as it was", () => {
           calls.set(pmcid, (calls.get(pmcid) ?? 0) + 1);
           return Promise.reject(error);
         },
+        grants: fake.deps.europePmc.grants.bind(fake.deps.europePmc),
       };
+      // Count only the run's own reads, not the snapshot's.
+      fake.deps.text.hasSnapshot = () => Promise.resolve(true);
       await runWith(fake);
       return calls.get("PMC0000001");
     };
@@ -197,6 +201,7 @@ describe("a run that fails or finds nothing leaves the page as it was", () => {
       search: fake.deps.europePmc.search.bind(fake.deps.europePmc),
       fullText: () =>
         Promise.reject(new Error("Europe PMC answered 503, after 5 tries")),
+      grants: fake.deps.europePmc.grants.bind(fake.deps.europePmc),
     };
     const { status, result } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
@@ -205,5 +210,73 @@ describe("a run that fails or finds nothing leaves the page as it was", () => {
       reason: "nothing read",
     });
     expect(fake.site.files).toBeUndefined();
+  });
+});
+
+describe("the eval snapshot (evals.md)", () => {
+  const manifestOf = (fake: ReturnType<typeof fakeDeps>) =>
+    JSON.parse(String(fake.text.get("eval/s1/manifest.json"))) as {
+      id: string;
+      goldA: { seed: number };
+      papers: {
+        pmcid: string;
+        set: string;
+        sha256: string;
+        grants: string[];
+      }[];
+    };
+
+  it("samples gold set A once, keeps each paper's text under eval/, and writes a manifest of ids, hashes and grant ids", async () => {
+    const fake = fakeDeps();
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toMatchObject({ taken: true, papers: 2 });
+
+    const manifest = manifestOf(fake);
+    expect(manifest.id).toBe("s1");
+    expect(manifest.papers.map((paper) => paper.pmcid).sort()).toEqual([
+      "PMC0000001",
+      "PMC0000002",
+    ]);
+    const one = manifest.papers.find((paper) => paper.pmcid === "PMC0000001");
+    expect(one).toMatchObject({ set: "A", grants: ["A56789"] });
+    const text = String(fake.text.get("eval/papers/PMC0000001.json"));
+    expect(createHash("sha256").update(text).digest("hex")).toBe(one?.sha256);
+    expect(text).toContain("Quillfeather");
+    // The gold papers' text goes to cache/ too.
+    expect(fake.text.has("cache/PMC0000002.json")).toBe(true);
+    // The manifest holds no text and no name.
+    for (const name of NAMES) {
+      expect(JSON.stringify(manifest)).not.toContain(name);
+    }
+  });
+
+  it("takes no second snapshot, and never rewrites the first", async () => {
+    const fake = fakeDeps();
+    await runWith(fake);
+    const first = fake.text.get("eval/s1/manifest.json");
+    fake.requests.length = 0;
+    const again = await runWith(fake);
+    expect(again.result?.snapshot).toEqual({
+      taken: false,
+      reason: "already taken",
+    });
+    expect(fake.text.get("eval/s1/manifest.json")).toBe(first);
+    expect(
+      fake.requests.some((url) =>
+        (url.searchParams.get("query") ?? "").startsWith("GRANT_AGENCY:"),
+      ),
+    ).toBe(false);
+  });
+
+  it("publishes the page even when the snapshot fails, and leaves it for the next run", async () => {
+    const fake = fakeDeps();
+    fake.deps.text.hasSnapshot = () =>
+      Promise.reject(new Error("S3 answered 503"));
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.published).toMatchObject({ published: true });
+    expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
+    expect(fake.text.has("eval/s1/manifest.json")).toBe(false);
   });
 });

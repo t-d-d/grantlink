@@ -1,0 +1,7 @@
+{
+  "about": "Gold set A: papers Europe PMC already links to a Cancer Research UK grant. A run samples them once, with this query and seed, and the snapshot holds their funding text. The papers and their grant ids are copied here from the snapshot's manifest when it is pinned. Ids and grant ids only, never text.",
+  "query": "GRANT_AGENCY:\"Cancer Research UK\" AND OPEN_ACCESS:y AND IN_EPMC:y AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]",
+  "seed": 20261109,
+  "size": 300,
+  "papers": []
+}

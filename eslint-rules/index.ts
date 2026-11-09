@@ -1,3 +1,4 @@
+import { importsWithin } from "./imports-within.ts";
 import { modelCallInModelModule } from "./model-call-in-model-module.ts";
 import { noAwaitOutsideStep } from "./no-await-outside-step.ts";
 import { noBannedLogFields } from "./no-banned-log-fields.ts";
@@ -9,6 +10,7 @@ import { requireStepRetryStrategy } from "./require-step-retry-strategy.ts";
 
 // grantlink's own lint rules, registered in eslint.config.js as `grantlink/`.
 export const rules = {
+  "imports-within": importsWithin,
   "model-call-in-model-module": modelCallInModelModule,
   "no-await-outside-step": noAwaitOutsideStep,
   "no-banned-log-fields": noBannedLogFields,

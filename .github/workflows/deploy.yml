@@ -1,6 +1,8 @@
 # Deploys the app stack and the page on every push to main, and only then.
-# Nobody deploys by hand (#8). The eval gate joins this workflow in #20;
-# until then a merge to main deploys once the gate is green.
+# Nobody deploys by hand (#8). It deploys only once the gate is green and
+# the eval has a report for main's own fingerprint at or above every gating
+# floor, and it records which report covers the release
+# (docs/constraints/deploy-gates.md).
 #
 # There is no rollback. A failed deploy is fixed forward, and CloudFormation
 # rolls a failed stack update back by itself.
@@ -25,6 +27,17 @@ env:
 jobs:
   gate:
     uses: ./.github/workflows/gate.yml
+
+  # The eval for main's own commit. Two pull requests that each passed
+  # against an older main are scored again together if their combination
+  # is new; otherwise the report already filed is reused.
+  eval:
+    uses: ./.github/workflows/eval.yml
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+      pull-requests: write
 
   # A workflow can read an environment's secret only in a job that names
   # the environment, so this job reads whether both deploy roles are set.
@@ -51,7 +64,7 @@ jobs:
 
   deploy:
     name: "deploy · deployed: grantlink"
-    needs: [gate, role]
+    needs: [gate, role, eval]
     if: needs.role.outputs.set == 'true'
     runs-on: ubuntu-24.04
     environment: prod
@@ -68,6 +81,26 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci --ignore-scripts
+
+      # The release record ships with the function and the page. It is
+      # refused unless the eval's report is for this commit's own
+      # fingerprint and clears every gating floor.
+      - name: Record the release
+        env:
+          REPORT: ${{ needs.eval.outputs.report }}
+          FINGERPRINT: ${{ needs.eval.outputs.fingerprint }}
+          COMMIT: ${{ github.sha }}
+          DEPLOY_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          own="$(node evals/fingerprint.ts)"
+          if [ "$own" != "$FINGERPRINT" ]; then
+            echo "::error::The eval scored fingerprint $FINGERPRINT, but this commit's is $own."
+            exit 1
+          fi
+          printf '%s' "$REPORT" > report.json
+          node evals/check.ts gate report.json "$own"
+          node src/page/release.ts report.json site/release.json
 
       # Assumes the deploy role through GitHub's OIDC token, with the AWS
       # CLI the runner ships, so no outside action holds the credentials.
