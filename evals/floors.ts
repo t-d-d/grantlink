@@ -1,6 +1,7 @@
 // The go/no-go table from the PRD (#1), set before the build. A release
 // ships only when every row that gates scores at or above its floor. A row
-// with no data yet, such as gold set B before its labels, does not block.
+// with no data yet, such as gold set B before its snapshot is pinned, shows
+// what it waits for and does not block.
 
 export type RowId =
   | "precision-b"
@@ -10,8 +11,7 @@ export type RowId =
   | "model-adds"
   | "spend";
 
-export type Result =
-  "go" | "no-go" | "awaiting labels" | "awaiting snapshot" | "not measured yet";
+export type Result = "go" | "no-go" | "awaiting snapshot" | "not measured yet";
 
 export interface Floor {
   id: RowId;
@@ -35,7 +35,7 @@ export const FLOORS: readonly Floor[] = [
     goIf: "95% or more",
     gates: "yes",
     clears: (score) => score >= 0.95,
-    missing: "awaiting labels",
+    missing: "awaiting snapshot",
   },
   {
     id: "recall-b",
@@ -44,7 +44,7 @@ export const FLOORS: readonly Floor[] = [
     goIf: "80% or more",
     gates: "yes",
     clears: (score) => score >= 0.8,
-    missing: "awaiting labels",
+    missing: "awaiting snapshot",
   },
   {
     id: "review-share",
@@ -73,7 +73,7 @@ export const FLOORS: readonly Floor[] = [
     // A hair under ten points still counts, so 0.1 computed as 0.0999...
     // is not refused.
     clears: (score) => score >= 0.1 - 1e-9,
-    missing: "awaiting labels",
+    missing: "not measured yet",
   },
   {
     id: "spend",

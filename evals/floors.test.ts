@@ -37,8 +37,11 @@ describe("the go/no-go floors", () => {
   });
 
   it("calls a row with no data yet by what it waits for, not a failure", () => {
-    expect(judge("recall-b", null)).toBe("awaiting labels");
-    expect(judge("model-adds", null)).toBe("awaiting labels");
+    // Gold set B is labelled (#23), so its rows wait for the snapshot, and
+    // what the model adds waits for the model (#24).
+    expect(judge("precision-b", null)).toBe("awaiting snapshot");
+    expect(judge("recall-b", null)).toBe("awaiting snapshot");
+    expect(judge("model-adds", null)).toBe("not measured yet");
     expect(judge("recall-a", null)).toBe("awaiting snapshot");
     expect(judge("review-share", null)).toBe("not measured yet");
   });

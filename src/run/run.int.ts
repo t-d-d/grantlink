@@ -10,6 +10,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { goldB, pinned, snapshotKeys } from "../../evals/gold.ts";
 import {
   fakeDeps,
   fakeRelease,
@@ -678,8 +679,9 @@ describe("a failure to write or read the table is retried apart from Europe PMC'
 });
 
 describe("the eval snapshot (evals.md)", () => {
+  const MANIFEST = snapshotKeys.manifest(pinned.id);
   const manifestOf = (fake: ReturnType<typeof fakeDeps>) =>
-    JSON.parse(String(fake.text.get("eval/s1/manifest.json"))) as {
+    JSON.parse(String(fake.text.get(MANIFEST))) as {
       id: string;
       goldA: { seed: number };
       papers: {
@@ -690,19 +692,25 @@ describe("the eval snapshot (evals.md)", () => {
       }[];
     };
 
-  it("samples gold set A once, keeps each paper's text under eval/, and writes a manifest of ids, hashes and grant ids", async () => {
+  it("samples gold set A once, reads every labelled gold set B paper, keeps each paper's text under eval/, and writes a manifest of ids, hashes and grant ids", async () => {
     const fake = fakeDeps();
     const { status, result } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
-    expect(result?.snapshot).toMatchObject({ taken: true, papers: 2 });
+    expect(result?.snapshot).toMatchObject({
+      taken: true,
+      papers: 2 + goldB.papers.length,
+    });
     expect(fake.requests.some(isGoldSearch)).toBe(true);
 
     const manifest = manifestOf(fake);
-    expect(manifest.id).toBe("s1");
-    expect(manifest.papers.map((paper) => paper.pmcid).sort()).toEqual([
-      "PMC0000001",
-      "PMC0000002",
-    ]);
+    expect(manifest.id).toBe(pinned.id);
+    const inSet = (set: string) =>
+      manifest.papers
+        .filter((paper) => paper.set === set)
+        .map((paper) => paper.pmcid)
+        .sort();
+    expect(inSet("A")).toEqual(["PMC0000001", "PMC0000002"]);
+    expect(inSet("B")).toEqual(goldB.papers.map((paper) => paper.pmcid).sort());
     const one = manifest.papers.find((paper) => paper.pmcid === "PMC0000001");
     expect(one).toMatchObject({ set: "A", grants: ["A56789"] });
     const text = String(fake.text.get("eval/papers/PMC0000001.json"));
@@ -719,14 +727,14 @@ describe("the eval snapshot (evals.md)", () => {
   it("takes no second snapshot, and never rewrites the first", async () => {
     const fake = fakeDeps();
     await runWith(fake);
-    const first = fake.text.get("eval/s1/manifest.json");
+    const first = fake.text.get(MANIFEST);
     fake.requests.length = 0;
     const again = await runWith(fake);
     expect(again.result?.snapshot).toEqual({
       taken: false,
       reason: "already taken",
     });
-    expect(fake.text.get("eval/s1/manifest.json")).toBe(first);
+    expect(fake.text.get(MANIFEST)).toBe(first);
     expect(fake.requests.some(isGoldSearch)).toBe(false);
   });
 
@@ -735,7 +743,7 @@ describe("the eval snapshot (evals.md)", () => {
     const { status, result } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
     expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
-    expect(fake.text.has("eval/s1/manifest.json")).toBe(false);
+    expect(fake.text.has(MANIFEST)).toBe(false);
   });
 
   it("takes the snapshot when a small last page of gold set A's search holds one malformed PMCID alone", async () => {
@@ -749,7 +757,7 @@ describe("the eval snapshot (evals.md)", () => {
     const { status, result } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
     expect(result?.snapshot).toMatchObject({ taken: true });
-    expect(fake.text.has("eval/s1/manifest.json")).toBe(true);
+    expect(fake.text.has(MANIFEST)).toBe(true);
   });
 
   it("publishes the page even when the snapshot fails, and leaves it for the next run", async () => {
@@ -760,6 +768,6 @@ describe("the eval snapshot (evals.md)", () => {
     expect(status).toBe("SUCCEEDED");
     expect(result?.published).toMatchObject({ published: true });
     expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
-    expect(fake.text.has("eval/s1/manifest.json")).toBe(false);
+    expect(fake.text.has(MANIFEST)).toBe(false);
   });
 });

@@ -35,15 +35,18 @@ export const goldA = sampling
   .strict()
   .parse(goldAFile);
 
-export const goldB = z
+// evals/gold-b.json: each paper's id and its normalised references, and
+// nothing else, so no note, no funded column and no text fits.
+export const goldBLabels = z
   .object({
     about: z.string(),
     papers: z.array(
       z.object({ pmcid: PMCID, references: z.array(GRANT) }).strict(),
     ),
   })
-  .strict()
-  .parse(goldBFile);
+  .strict();
+
+export const goldB = goldBLabels.parse(goldBFile);
 
 export const pinned = z
   .object({
