@@ -129,6 +129,10 @@ describe("refusesPlainHttp", () => {
       { Condition: { Bool: { "aws:SecureTransport": "False" } } },
     ],
     [
+      "it writes false in capitals in a list",
+      { Condition: { Bool: { "aws:SecureTransport": ["FALSE"] } } },
+    ],
+    [
       "it denies an unquoted true instead",
       { Condition: { Bool: { "aws:SecureTransport": true } } },
     ],
