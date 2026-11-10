@@ -1,5 +1,4 @@
 import type { DurableContext } from "@aws/durable-execution-sdk-js";
-import { goldA, goldB } from "../../evals/gold.ts";
 import { checkWholeSearch, type Deps } from "../pipeline/steps.ts";
 import {
   sample,
@@ -14,11 +13,11 @@ import { readOrRefused, type Read } from "../pipeline/refused.ts";
 import { owedAfter, type Owed } from "./owed.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 
-// Takes the eval snapshot named in evals/snapshot.json, once
+// Takes the eval snapshot named in the deps' gold, once
 // (docs/constraints/evals.md). A run calls this after it publishes, so the
-// page never waits on it. Gold set A comes from the papers the repo lists,
-// or before there are any, from a sample drawn with the recorded query and
-// seed. Gold set B's papers come from its labels.
+// page never waits on it. Gold set A comes from the papers the gold lists,
+// or before there are any, from a sample drawn with its query and seed.
+// Gold set B's papers come from its labels.
 
 export type SnapshotSummary =
   | { taken: true; papers: number; manifestSha256: string }
@@ -89,6 +88,7 @@ export async function takeSnapshot(
   if (done)
     return { snapshot: { taken: false, reason: "already taken" }, owed };
   let due = owed;
+  const { goldA, goldB } = deps.gold;
 
   // The order gold set A is drawn in.
   let candidates: string[] = goldA.papers.map((paper) => paper.pmcid);

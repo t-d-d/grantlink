@@ -1,25 +1,27 @@
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
 import { LocalDurableTestRunner } from "@aws/durable-execution-sdk-js-testing";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { snapshotKeys } from "../../evals/gold.ts";
 import { fakeDeps } from "../../test/fakes.ts";
 import { EuropePmcError } from "../europepmc/client.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
-// The snapshot with a gold set B to read. The repo's own gold set B is
-// empty until its labels land, so this file gives it three papers from the
-// fixtures, none of them in gold set A's sample.
+// The snapshot with a gold set B of its own, passed in through the run's
+// deps, so these tests never read the repo's labels. Its three papers are
+// recorded fixtures the run reads first in its own search, as a labelled
+// paper may be, and none is in gold set A's sample.
 
-const { LABELLED } = vi.hoisted(() => ({
-  LABELLED: ["PMC13628515", "PMC13642255", "PMC13664392"],
-}));
+const LABELLED = ["PMC13628515", "PMC13642255", "PMC13664392"];
 
-vi.mock(import("../../evals/gold.ts"), async (original) => ({
-  ...(await original()),
-  goldB: {
-    about: "three papers from the fixtures",
-    papers: LABELLED.map((pmcid) => ({ pmcid, references: [] })),
-  },
-}));
+const goldB = (pmcids: string[]) => ({
+  about: "a test's own gold set B",
+  papers: pmcids.map((pmcid) => ({ pmcid, references: [] })),
+});
+
+const labelledDeps = () => fakeDeps({ gold: { goldB: goldB(LABELLED) } });
+
+const manifestKey = (fake: ReturnType<typeof fakeDeps>) =>
+  snapshotKeys.manifest(fake.deps.gold.snapshotId);
 
 beforeAll(() =>
   LocalDurableTestRunner.setupTestEnvironment({ skipTime: true }),
@@ -45,7 +47,7 @@ async function runWith(fake: ReturnType<typeof fakeDeps>) {
 // snapshot asks about. The run reads the same papers first, as it finds
 // them in its own search.
 function failingFirstLabelled(first: () => Promise<string>) {
-  const fake = fakeDeps();
+  const fake = labelledDeps();
   const real = fake.deps.europePmc;
   let snapshot = false;
   const hasSnapshot = fake.deps.text.hasSnapshot.bind(fake.deps.text);
@@ -69,13 +71,29 @@ function failingFirstLabelled(first: () => Promise<string>) {
 
 describe("gold set B in the eval snapshot (evals.md)", () => {
   it("keeps every labelled paper when each can be read", async () => {
-    const fake = fakeDeps();
+    const fake = labelledDeps();
     const { status, result } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
     expect(result?.snapshot).toMatchObject({
       taken: true,
       papers: 2 + LABELLED.length,
     });
+    expect(fake.text.has(manifestKey(fake))).toBe(true);
+  });
+
+  it("leaves the snapshot for the next run when a labelled paper cannot be read", async () => {
+    // PMC0000009 has no fixture, so the fake Europe PMC answers 503.
+    const fake = fakeDeps({
+      gold: { goldB: goldB([...LABELLED.slice(0, 1), "PMC0000009"]) },
+    });
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.published).toMatchObject({ published: true });
+    expect(result?.snapshot).toEqual({
+      taken: false,
+      reason: "a gold set B paper could not be read",
+    });
+    expect(fake.text.has(manifestKey(fake))).toBe(false);
   });
 
   it.each([
@@ -96,7 +114,7 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
         reason: "a gold set B paper could not be read",
       });
       expect(asked).toEqual([LABELLED[0]]);
-      expect(fake.text.has("eval/s1/manifest.json")).toBe(false);
+      expect(fake.text.has(manifestKey(fake))).toBe(false);
     },
   );
 
@@ -129,6 +147,6 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
       reason: "a gold set B paper could not be read",
     });
     expect(asked).toEqual([LABELLED[0]]);
-    expect(fake.text.has("eval/s1/manifest.json")).toBe(false);
+    expect(fake.text.has(manifestKey(fake))).toBe(false);
   });
 });
