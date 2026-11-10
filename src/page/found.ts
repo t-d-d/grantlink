@@ -60,12 +60,12 @@ const byPmcid = (a: { pmcid: string }, b: { pmcid: string }) =>
 
 // Lists and counts only the papers the latest complete search returned,
 // `search` being the run whose search that was, whichever run publishes.
-// The search asks for papers linked to none of the funder's grants, so a
-// paper it left out has since been linked, or dropped, and is no longer one
-// the page is about. The table keeps its row. A row keeps the mark of the
-// latest-started run that returned it, and run ids sort as their runs
-// started, so a paper that search returned may carry the mark of a run that
-// started after it. Such a run's search is newer, so its papers count too
+// The search asks for papers linked to none of the funder's grants and not
+// marked as retracted, so a paper it left out has since been linked,
+// retracted or dropped, and is no longer one the page is about. The table
+// keeps its row. A row keeps the mark of the latest-started run that
+// returned it, and run ids sort as their runs started, so a paper that
+// search returned may carry the mark of a run that started after it. Such a run's search is newer, so its papers count too
 // (#125).
 export function summarise(
   all: PaperRow[],

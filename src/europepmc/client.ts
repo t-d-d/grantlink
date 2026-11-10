@@ -121,7 +121,8 @@ const quoted = (field: string, value: string) =>
 
 // Papers published since the funder's start date, whose acknowledgement or
 // funding text names the funder, which Europe PMC links to none of its
-// grants, and which it does not mark as retracted. The client keeps every search to open-access papers itself.
+// grants, and which it does not mark as retracted. The client keeps every
+// search to open-access papers itself.
 export function searchQuery(): string {
   const names = funder.names.map((name) => quoted("ACK_FUND", name));
   return [

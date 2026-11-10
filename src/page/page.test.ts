@@ -241,6 +241,20 @@ describe("fitness: links are labelled as proposed by software, with no warranty 
     expect(labels).toEqual(Array(3).fill("Proposed by software"));
   });
 
+  // found.json allows a paper with no references, and the deploy builds the
+  // page from it. Such a paper has no link, so it gets no row without a status.
+  it("lists no paper that has no reference", () => {
+    const found = summarise(rows, run);
+    const empty = {
+      ...found,
+      papers: [
+        ...found.papers,
+        { pmcid: "PMC9", title: "Title of PMC9", references: [] },
+      ],
+    };
+    expect(renderFound(foundSchema.parse(empty))).not.toContain("PMC9");
+  });
+
   it("says the links are proposed by software and come with no warranty", () => {
     expect(html).toMatch(/proposed by software/u);
     expect(html).toMatch(/no warranty/u);

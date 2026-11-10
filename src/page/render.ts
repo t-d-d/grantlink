@@ -21,6 +21,8 @@ const escape = (text: string) =>
     .replace(/"/gu, "&quot;")
     .replace(/'/gu, "&#39;");
 
+type Reference = Found["papers"][number]["references"][number];
+
 const number = (n: number) => n.toLocaleString("en-GB");
 
 const paperLink = (paper: { pmcid: string; title: string }) =>
@@ -49,16 +51,19 @@ export function renderFound(found: Found): string {
   ];
   // One row per paper, so a paper with two references is listed once
   // (#587). Each cell holds one line per reference, in the same order, and
-  // each reference keeps its own status (accuracy.md).
-  const rows = found.papers.map(({ references, ...paper }) => {
-    const lines = (text: (reference: (typeof references)[number]) => string) =>
-      references.map(text).join("<br>");
-    return `<tr><td class="paper">${paperLink(paper)}</td><td class="ref">${lines(
-      (reference) => escape(reference.asWritten),
-    )}</td><td class="ref">${lines((reference) =>
-      escape(reference.normalised),
-    )}</td><td class="status">${lines(() => "Proposed by software")}</td></tr>`;
-  });
+  // each reference keeps its own status (accuracy.md). A paper with no
+  // reference has no link to show, so it gets no row.
+  const rows = found.papers
+    .filter((paper) => paper.references.length > 0)
+    .map((paper) => {
+      const lines = (text: (reference: Reference) => string) =>
+        paper.references.map(text).join("<br>");
+      return `<tr><td class="paper">${paperLink(paper)}</td><td class="ref">${lines(
+        (reference) => escape(reference.asWritten),
+      )}</td><td class="ref">${lines((reference) =>
+        escape(reference.normalised),
+      )}</td><td class="status">${lines(() => "Proposed by software")}</td></tr>`;
+    });
   const formats = found.formats.map(
     (format) =>
       `<tr><td class="ref">${escape(format.format)}</td><td class="count">${number(

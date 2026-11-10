@@ -383,14 +383,14 @@ describe("searching Europe PMC", () => {
     expect(query).toContain("FIRST_PDATE:[2020-01-01 TO 3000-12-31]");
   });
 
-  // Two common tokens would widen the search too far, so only the rules
-  // read this name (#510).
   // A retracted paper is no finding to show (#587). Europe PMC marks one
   // in its publication types.
   it("leaves out papers Europe PMC marks as retracted", () => {
     expect(searchQuery()).toContain('NOT PUB_TYPE:"retracted publication"');
   });
 
+  // Two common tokens would widen the search too far, so only the rules
+  // read this name (#510).
   it("leaves CR UK with a space out of the search", () => {
     expect(searchQuery()).not.toContain('"CR UK"');
   });
