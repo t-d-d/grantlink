@@ -187,6 +187,40 @@ describe("cutting a paper to its funding sections", () => {
     ])("nor a body section whose title goes on past Support, %s", (section) => {
       expect(fundingSections(paper(section)).text).toEqual([]);
     });
+
+    // A section's body runs to the closing tag that balances its opening
+    // tag, not to the first closing tag of a subsection (#189).
+    it.each([
+      [
+        '<sec sec-type="ack"><title>Acknowledgements</title><sec><title>Author contributions</title><p>Made-up text.</p></sec><p>Grant A1.</p></sec>',
+      ],
+      [
+        "<sec><title>Funding</title><sec><title>First</title><p>Made-up text.</p></sec><sec/><p>Grant A1.</p></sec>",
+      ],
+      [
+        '<sec sec-type="funding"><sec><sec><p>Made-up text.</p></sec></sec><p>Grant A1.</p></sec>',
+      ],
+    ])("keeps the paragraphs after a subsection in %s", (section) => {
+      const sections = fundingSections(
+        paper(
+          `${section}<sec><title>Discussion</title><p>Body text.</p></sec>`,
+        ),
+      );
+      expect(sections.text).toEqual(["Made-up text.", "Grant A1."]);
+      const kept = JSON.stringify(sections);
+      expect(kept).not.toContain("abstract");
+      expect(kept).not.toContain("Body text");
+      expect(kept).not.toContain("Authorname");
+    });
+
+    it("runs a section with an unclosed subsection only to the next closing tag", () => {
+      const sections = fundingSections(
+        paper(
+          '<sec sec-type="funding"><sec><p>Grant A1.</p></sec><sec><title>Discussion</title><p>Body text.</p></sec>',
+        ),
+      );
+      expect(sections.text).toEqual(["Grant A1."]);
+    });
   });
 
   it("reads a paragraph that holds a list of paragraphs whole", () => {

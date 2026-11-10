@@ -210,17 +210,34 @@ export function isFundingSectionAt(xml: string, index: number): boolean {
 
 // Every funding section, wherever it is. The match starts at the section's
 // own opening tag, so one nested in another section is found too.
-const FUNDING_SECTION = new RegExp(
-  String.raw`${FUNDING_SECTION_START}([\s\S]*?)<\/sec>`,
-  "giu",
-);
+const FUNDING_SECTION = new RegExp(FUNDING_SECTION_START, "giu");
+
+// Where the element whose content starts at this index ends: at the closing
+// tag that balances its opening tag, so a subsection's closing tag does not
+// end it (#189). One that is never balanced ends at the next closing tag of
+// its name, as in tagged, and one with none after it is dropped.
+function closeOf(xml: string, name: string, from: number): number {
+  const tags = new RegExp(`<(/?)${name}${NAME_END}([^>]*)>`, "gu");
+  tags.lastIndex = from;
+  let depth = 1;
+  for (let tag = tags.exec(xml); tag !== null; tag = tags.exec(xml)) {
+    const [, closing, rest = ""] = tag;
+    if (rest.endsWith("/")) continue;
+    depth += closing ? -1 : 1;
+    if (depth === 0) return tag.index;
+  }
+  return xml.indexOf(`</${name}>`, from);
+}
 
 function fundingBodySections(xml: string): string[] {
-  // A match found by its title starts part way through the title, so the
-  // rest of the title is dropped.
-  return [...xml.matchAll(FUNDING_SECTION)].map((match) =>
-    (match[1] ?? "").replace(/^[^<]*<\/title>/u, ""),
-  );
+  return [...xml.matchAll(FUNDING_SECTION)].flatMap((match) => {
+    const start = match.index + match[0].length;
+    const close = closeOf(xml, "sec", start);
+    if (close === -1) return [];
+    // A match found by its title starts part way through the title, so the
+    // rest of the title is dropped.
+    return [xml.slice(start, close).replace(/^[^<]*<\/title>/u, "")];
+  });
 }
 
 export function fundingSections(paper: string): FundingSections {
