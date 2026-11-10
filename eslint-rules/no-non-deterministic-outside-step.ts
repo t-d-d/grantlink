@@ -175,7 +175,8 @@ function opOf(path: readonly string[] | null): string | undefined {
 
 // True when the identifier is read as a value, rather than declared, used
 // as a property's name, named in a type, `x: Date` or `typeof randomUUID`,
-// or passed on by an export, `export { randomUUID }`.
+// or passed on by an export, `export { randomUUID }`, which
+// exportsUnfollowed checks.
 function isRead(identifier: TSESTree.Identifier, resolver: Resolver): boolean {
   if (
     identifier.parent.type === AST_NODE_TYPES.TSTypeQuery ||
@@ -232,6 +233,40 @@ function exported(
     variable.references.some(
       (ref) => ref.identifier.parent.type === AST_NODE_TYPES.ExportSpecifier,
     )
+  );
+}
+
+// True when the identifier hands an import or a destructured name to another
+// module: the binding in an exported pattern, `export const { now } = Date`,
+// or the local of an export, `export { random }`. The rule does not follow
+// a relative import, so the caller there goes unchecked. A plain alias,
+// `export const D = Date`, is left to its initial value, which reports.
+function exportsUnfollowed(
+  identifier: TSESTree.Identifier,
+  resolver: Resolver,
+): boolean {
+  const parent = identifier.parent;
+  if (parent.type === AST_NODE_TYPES.ExportSpecifier) {
+    if (parent.local !== identifier) return false;
+    const variable = lookup(
+      identifier.name,
+      resolver.sourceCode.getScope(identifier),
+    );
+    if (variable === null) return false;
+    const alias = aliasDeclarator(variable);
+    return alias === null || alias.declarator.id !== alias.name;
+  }
+  const variable = lookup(
+    identifier.name,
+    resolver.sourceCode.getScope(identifier),
+  );
+  const alias = variable === null ? null : aliasDeclarator(variable);
+  return (
+    alias !== null &&
+    alias.name === identifier &&
+    alias.declarator.id.type === AST_NODE_TYPES.ObjectPattern &&
+    alias.declarator.parent.parent.type ===
+      AST_NODE_TYPES.ExportNamedDeclaration
   );
 }
 
@@ -334,10 +369,16 @@ export const noNonDeterministicOutsideStep = createRule({
         checkDate(node, path);
       },
       // A named import, or an alias of a member, read on its own, such as
-      // `randomUUID()` after `import { randomUUID } from "node:crypto"`.
+      // `randomUUID()` after `import { randomUUID } from "node:crypto"`, or one
+      // exported for another module to read.
       Identifier(node) {
         const path = pathOf(node, context, new Set());
-        if (opOf(path) === undefined && !namesDate(path)) return;
+        const op = opOf(path) ?? (namesDate(path) ? "Date" : undefined);
+        if (op === undefined) return;
+        if (exportsUnfollowed(node, context)) {
+          report(node, op);
+          return;
+        }
         if (!isRead(node, context)) return;
         check(node, path);
         checkDate(node, path);
