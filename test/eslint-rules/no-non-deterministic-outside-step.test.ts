@@ -38,6 +38,14 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `async function run(ctx: any) { const { Date: { UTC } } = globalThis; const t = UTC(2020, 0, 1); }`,
         },
         {
+          name: "destructures from Date a member that does not call it, given as a nested pattern's default",
+          code: `async function run(ctx: any) { const { foo: { UTC: u } = Date } = globalThis; u(2020, 0); }`,
+        },
+        {
+          name: "destructures the name of Date.now, which a step reads",
+          code: `async function run(ctx: any) { await ctx.step("n", async () => { const { now: { name } } = Date; return name; }, { retryStrategy: r }); }`,
+        },
+        {
           name: "passes Date as a value inside a step",
           code: `async function run(ctx: any) {
             await ctx.step("at", async () => ids.map(Date), { retryStrategy: r });
@@ -1053,6 +1061,83 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           name: "draws random from a named import of webcrypto",
           code: `import { webcrypto } from "node:crypto"; async function run(ctx: any) { const b = webcrypto.getRandomValues(new Uint8Array(4)); }`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "reads Date.now in a pattern that destructures call from it",
+          code: `async function run(ctx: any) { const { now: { call: c } } = Date; c(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now" },
+              column: 40,
+            },
+          ],
+        },
+        {
+          name: "reads Date.now in a nested pattern that destructures bind from it",
+          code: `async function run(ctx: any) { const { Date: { now: { bind: b } } } = globalThis; b(null)(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now" },
+              column: 48,
+            },
+          ],
+        },
+        {
+          name: "destructures bind from Date and calls what it returns",
+          code: `async function run(ctx: any) { const { bind: b } = Date; b(null)(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 52,
+            },
+          ],
+        },
+        {
+          name: "destructures bind from Date in a nested pattern",
+          code: `async function run(ctx: any) { const { Date: { bind: b } } = globalThis; b(null)(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 40,
+            },
+          ],
+        },
+        {
+          name: "destructures call from Date given as a nested pattern's default",
+          code: `async function run(ctx: any) { const { foo: { call: c } = Date } = globalThis; c(null); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 59,
+            },
+          ],
+        },
+        {
+          name: "draws random from Math given as a nested pattern's default",
+          code: `async function run(ctx: any) { const { foo: { random: r } = Math } = globalThis; r(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+              column: 82,
+            },
+          ],
+        },
+        {
+          name: "reads the clock from Date given as a default deeper in a pattern",
+          code: `async function run(ctx: any) { const { a: { b: { now } = Date } } = globalThis; now(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+              column: 81,
+            },
+          ],
         },
         {
           name: "draws random through crypto.webcrypto",
