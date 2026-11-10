@@ -12,8 +12,9 @@ import { EuropePmcError } from "../europepmc/client.ts";
 // There is no jitter, so no step retry comes sooner than Europe PMC asked
 // (docs/constraints/europe-pmc.md). A step asked to wait more than an hour
 // does not ask again in this run: its paper waits for the next run, the
-// run's search fails the run, which publishes nothing, and gold set A's
-// search leaves the snapshot for the next run. Either way the run asks
+// run's search fails the run once that wait has passed, so the run
+// publishes nothing, and gold set A's search leaves the snapshot for the
+// next run. Either way the run asks
 // Europe PMC nothing more until the wait has passed
 // (readOrRefused in src/pipeline/refused.ts).
 const STEP_TRIES = 3;
