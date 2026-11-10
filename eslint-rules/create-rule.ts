@@ -444,7 +444,7 @@ function aliasOf(
   ) {
     return null;
   }
-  const key = destructuredKey(id, name, "with-default");
+  const key = destructuredKey(id, name);
   if (key === null) return null;
   const member = memberOf(importOf(init, resolver, seen, true), key);
   // A name with a default may hold the default instead, so it binds the
@@ -454,51 +454,48 @@ function aliasOf(
 }
 
 // The constant key an object pattern destructures `name` from, at its top
-// level: `{ now }` or `{ now: at }`. A name with a default, `{ now = f }`,
-// may not hold what it reads, so only `with-default` counts it, for a rule
-// that only refuses. Null for a computed key that is not a constant, or for
-// a name the pattern destructures from a nested pattern, which
-// destructuredPath follows.
-export function destructuredKey(
+// level: `{ now }`, `{ now: at }` or `{ now = f }`. A name with a default
+// may not hold what it reads, so aliasOf marks it inexact. Null for a
+// computed key that is not a constant, or for a name the pattern
+// destructures from a nested pattern, which destructuredPath follows.
+function destructuredKey(
   pattern: TSESTree.ObjectPattern,
   name: TSESTree.Identifier,
-  defaults: "exact" | "with-default",
 ): string | null {
-  const path = destructuredPath(pattern, name, defaults);
+  const path = destructuredPath(pattern, name);
   return path?.length === 1 ? (path[0] ?? null) : null;
 }
 
 // The constant keys an object pattern destructures `name` through, from its
 // top level down any nested object patterns: `{ now }` gives `now`, and
 // `{ Date: { now: at } }` gives `Date`, `now`. A default, on the name or on
-// a nested pattern, `{ Date: { now } = D }`, counts only under
-// `with-default`, as destructuredKey says. Null when the name is not in the
-// pattern, or sits under a key that is not a constant.
+// a nested pattern, `{ Date: { now } = D }`, is read through. Null when the
+// name is not in the pattern, or sits under a key that is not a constant.
 function destructuredPath(
   pattern: TSESTree.ObjectPattern,
   name: TSESTree.Identifier,
-  defaults: "exact" | "with-default",
 ): readonly string[] | null {
   for (const property of pattern.properties) {
     if (property.type !== AST_NODE_TYPES.Property) continue;
-    let value = property.value;
-    if (
-      defaults === "with-default" &&
-      value.type === AST_NODE_TYPES.AssignmentPattern
-    ) {
-      value = value.left;
-    }
+    const value = withoutDefault(property.value);
     const rest =
       value === name
         ? []
         : value.type === AST_NODE_TYPES.ObjectPattern
-          ? destructuredPath(value, name, defaults)
+          ? destructuredPath(value, name)
           : null;
     if (rest === null) continue;
     const key = keyName(property.key, property.computed);
     return key === null ? null : [key, ...rest];
   }
   return null;
+}
+
+// A pattern's target without the default it may give, `{ now = f }`.
+export function withoutDefault(
+  value: TSESTree.Property["value"],
+): TSESTree.Node {
+  return value.type === AST_NODE_TYPES.AssignmentPattern ? value.left : value;
 }
 
 // The named import a member of a namespace import gives.
