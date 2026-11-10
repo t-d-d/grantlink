@@ -1,6 +1,14 @@
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
 import { LocalDurableTestRunner } from "@aws/durable-execution-sdk-js-testing";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { snapshotKeys } from "../../evals/gold.ts";
 import { fakeDeps } from "../../test/fakes.ts";
 import { EuropePmcError } from "../europepmc/client.ts";
@@ -13,9 +21,17 @@ import { makeRun, type RunSummary } from "./run.ts";
 
 const LABELLED = ["PMC13628515", "PMC13642255", "PMC13664392"];
 
-const goldB = (pmcids: string[]) => ({
+// Each paper labelled with no references, unless `references` gives it
+// some.
+const goldB = (
+  pmcids: string[],
+  references: Record<string, string[]> = {},
+) => ({
   about: "a test's own gold set B",
-  papers: pmcids.map((pmcid) => ({ pmcid, references: [] })),
+  papers: pmcids.map((pmcid) => ({
+    pmcid,
+    references: references[pmcid] ?? [],
+  })),
 });
 
 const labelledDeps = () => fakeDeps({ gold: { goldB: goldB(LABELLED) } });
@@ -27,6 +43,26 @@ beforeAll(() =>
   LocalDurableTestRunner.setupTestEnvironment({ skipTime: true }),
 );
 afterAll(() => LocalDurableTestRunner.teardownTestEnvironment());
+
+// Every line logged, kept out of the test's output.
+const logs: string[] = [];
+const spy = vi.spyOn(console, "log").mockImplementation((...args) => {
+  logs.push(args.map(String).join(" "));
+});
+afterEach(() => {
+  logs.length = 0;
+});
+afterAll(() => {
+  spy.mockRestore();
+});
+
+// The log lines with event `event`, each parsed.
+function logged(event: string): Record<string, unknown>[] {
+  return logs
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((line) => line.event === event);
+}
 
 async function runWith(fake: ReturnType<typeof fakeDeps>) {
   const runner = new LocalDurableTestRunner<RunSummary>({
@@ -46,8 +82,10 @@ async function runWith(fake: ReturnType<typeof fakeDeps>) {
 // once the snapshot starts, and recording every gold set B paper the
 // snapshot asks about. The run reads the same papers first, as it finds
 // them in its own search.
-function failingFirstLabelled(first: () => Promise<string>) {
-  const fake = labelledDeps();
+function failingFirstLabelled(
+  first: () => Promise<string>,
+  fake = labelledDeps(),
+) {
   const real = fake.deps.europePmc;
   let snapshot = false;
   const hasSnapshot = fake.deps.text.hasSnapshot.bind(fake.deps.text);
@@ -157,5 +195,49 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
     expect(
       JSON.parse(String(fake.text.get(snapshotKeys.paper(LABELLED[0] ?? "")))),
     ).toEqual({ pmcid: LABELLED[0], text: [], awards: [] });
+  });
+
+  it("keeps a labelled paper with empty sections whose label lists references, and logs once how many there were (#405)", async () => {
+    const { fake } = failingFirstLabelled(
+      () => Promise.resolve("<article></article>"),
+      fakeDeps({
+        gold: {
+          goldB: goldB(LABELLED, { [LABELLED[0] ?? ""]: ["A56789"] }),
+        },
+      }),
+    );
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toMatchObject({
+      taken: true,
+      papers: 2 + LABELLED.length,
+    });
+    const manifest = JSON.parse(String(fake.text.get(manifestKey(fake)))) as {
+      papers: { pmcid: string; set: string }[];
+    };
+    expect(manifest.papers).toContainEqual(
+      expect.objectContaining({ pmcid: LABELLED[0], set: "B" }),
+    );
+    expect(logged("snapshot-b-empty")).toEqual([
+      {
+        level: "info",
+        event: "snapshot-b-empty",
+        runId: result?.runId,
+        snapshotId: fake.deps.gold.snapshotId,
+        count: 1,
+        pmcids: LABELLED[0],
+      },
+    ]);
+  });
+
+  it("does not count a labelled paper with empty sections whose label lists no references (#405)", async () => {
+    const { fake } = failingFirstLabelled(() =>
+      Promise.resolve("<article></article>"),
+    );
+    const { result } = await runWith(fake);
+    expect(result?.snapshot).toMatchObject({ taken: true });
+    expect(logged("snapshot-b-empty")).toEqual([
+      expect.objectContaining({ count: 0, pmcids: "" }),
+    ]);
   });
 });

@@ -4,6 +4,7 @@ import {
 } from "@aws/durable-execution-sdk-js";
 import {
   checkWholeSearch,
+  logGoldBEmpty,
   logGoldPaperFailed,
   logGoldSearchEnded,
   logSnapshotFailed,
@@ -57,7 +58,8 @@ const BATCH = 50;
 // its first paper that fails, since the snapshot is lost then and asking
 // Europe PMC about the rest would be wasted, and names that paper in
 // `stopped`. A gold set B paper is always kept once read (#399), so one
-// that is not kept is a fault, and stops the batch the same way.
+// that is not kept is a fault, and stops the batch the same way. `empty`
+// names each paper kept with no funding text or awards.
 async function takeBatch(
   ctx: DurableContext,
   deps: Deps,
@@ -66,11 +68,13 @@ async function takeBatch(
   owed: Owed,
 ): Promise<{
   entries: Entry[];
+  empty: string[];
   failed: number;
   owed: Owed;
   stopped: string | null;
 }> {
   const entries: Entry[] = [];
+  const empty: string[] = [];
   let failed = 0;
   let stopped: string | null = null;
   let due = owed;
@@ -96,8 +100,10 @@ async function takeBatch(
       asked = { failed: { why: "code" }, owed: null };
     }
     if ("read" in asked) {
-      if (asked.read.kept) entries.push(asked.read.entry);
-      else if (set === "B") {
+      if (asked.read.kept) {
+        entries.push(asked.read.entry);
+        if (asked.read.empty === true) empty.push(pmcid);
+      } else if (set === "B") {
         stopped = pmcid;
         break;
       }
@@ -116,7 +122,7 @@ async function takeBatch(
       break;
     }
   }
-  return { entries, failed, owed: due, stopped };
+  return { entries, empty, failed, owed: due, stopped };
 }
 
 // `owed` is a wait the run's last refusal left, which the snapshot waits
@@ -251,6 +257,7 @@ export async function takeSnapshot(
   // nothing, so one that cannot be read leaves the snapshot for next time,
   // and the snapshot asks Europe PMC nothing more.
   const labelled = goldB.papers.map((paper) => paper.pmcid);
+  const empty: string[] = [];
   for (let i = 0; i * BATCH < labelled.length; i += 1) {
     const batch = labelled.slice(i * BATCH, (i + 1) * BATCH);
     const outcome = await ctx.runInChildContext(
@@ -276,7 +283,20 @@ export async function takeSnapshot(
       };
     }
     entries.push(...outcome.entries);
+    empty.push(...outcome.empty);
   }
+
+  // The gold set B papers kept with empty sections although their label
+  // lists references, logged once whether there are any or not (#405).
+  const referenced = new Set(
+    goldB.papers
+      .filter((paper) => paper.references.length > 0)
+      .map((paper) => paper.pmcid),
+  );
+  const missed = empty.filter((pmcid) => referenced.has(pmcid));
+  await logOnly(ctx, "snapshot-b-empty", () => {
+    logGoldBEmpty(runId, deps.gold.snapshotId, missed);
+  });
 
   // A wait can still be owed here when gold set B lists no papers, since
   // nothing then has asked Europe PMC since gold set A's last refusal. If

@@ -107,6 +107,7 @@ describe("taking one gold paper", () => {
         sha256: expect.any(String) as string,
         grants: [],
       },
+      empty: true,
     });
     expect(JSON.parse(stored.get("PMC11") ?? "null")).toEqual({
       pmcid: "PMC11",
