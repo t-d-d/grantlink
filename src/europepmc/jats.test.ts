@@ -1055,8 +1055,8 @@ describe("keeping funding notes and footnotes (#505)", () => {
     },
   );
 
-  // A note or footnote at any depth in a funding section or an <ack> is read,
-  // or left out, on its own, as in a funding note (#584).
+  // A note or footnote with a type or title, at any depth in a funding
+  // section or an <ack>, is read, or left out, on its own (#584).
   it.each([
     [
       "a funding section in the body",
@@ -1078,6 +1078,31 @@ describe("keeping funding notes and footnotes (#505)", () => {
       expect(sections.text).toContain("a");
       expect(JSON.stringify(sections)).not.toContain("Authorname");
     }
+  });
+
+  // A note or footnote with no type or title does not say it is about
+  // something else, so it stays part of the funding section or <ack> it
+  // stands in, as an untitled section does (#584).
+  it.each([
+    [
+      "a footnote in a paragraph of a funding section",
+      "<article><body><sec><title>Funding</title>" +
+        "<p>Supported by grant<fn><p>A1</p></fn></p></sec></body></article>",
+      ["Supported by grant A1"],
+    ],
+    [
+      "a footnote group in a funding section",
+      "<article><body><sec><title>Funding</title><p>a</p>" +
+        "<fn-group><fn><p>A1</p></fn></fn-group></sec></body></article>",
+      ["a", "A1"],
+    ],
+    [
+      "a note in an <ack>",
+      "<article><back><ack><p>a</p><notes><p>A1</p></notes></ack></back></article>",
+      ["a", "A1"],
+    ],
+  ])("keeps %s with no type or title", (_what, xml, kept) => {
+    expect(fundingSections(xml).text).toEqual(kept);
   });
 
   it("reads a funding note inside a funding section on its own", () => {
