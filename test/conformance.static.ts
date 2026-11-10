@@ -147,6 +147,7 @@ describe("one GitHub fetch for the conformance files", () => {
     expect(repoFiles()).toContain("test/github.ts");
     expect(files).toContain("test/github-oidc.conformance.ts");
     expect(files).toContain("test/environments.conformance.ts");
+    expect(files).toContain("test/governor.conformance.ts");
   });
 
   it.each(files)(
