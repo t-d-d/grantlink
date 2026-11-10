@@ -23,8 +23,10 @@ export const funder = z
     name: z.string().min(1),
     // The names the search, the prompt and the rules all read.
     names: z.array(z.string().min(1)).min(1),
-    // Names only the rules read: too common as words to widen the search
-    // with, but plain enough in a paragraph that names a grant (#510).
+    // Names the search and the prompt leave out: too common as words to
+    // widen the search with, but plain enough in a paragraph that names a
+    // grant (#510). Whatever reads namesFunder reads them too, such as the
+    // JATS check for a funding footnote and gold set B's draw.
     rulesOnlyNames: z.array(z.string().min(1)),
     europePmcAgency: z.string().min(1),
     since: z.iso.date(),
