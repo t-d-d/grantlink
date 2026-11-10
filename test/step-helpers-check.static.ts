@@ -102,6 +102,13 @@ describe("callbackMismatches", () => {
     expect(callbackMismatches(source, "help", [1])).toEqual([problem]);
   });
 
+  it("reports a rest parameter of functions in the context's place", () => {
+    const source = `export function help(...fns: Array<() => void>) {}`;
+    expect(callbackMismatches(source, "help", [])).toEqual([
+      "help's parameter 0 (fns) is a rest parameter of functions, which the table cannot list",
+    ]);
+  });
+
   it("passes a rest parameter that holds no function", () => {
     const source = `export function help(ctx: unknown, ...steps: string[]) {}`;
     expect(callbackMismatches(source, "help", [])).toEqual([]);

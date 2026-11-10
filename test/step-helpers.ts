@@ -8,10 +8,11 @@ import { root } from "./repo.ts";
 // member of its union, a call signature, so an alias such as
 // `type Log = () => void` counts. A parameter whose type does not resolve is
 // reported, since the check cannot tell what it is. A rest parameter whose
-// element type is a function is reported whether or not it is listed, since
-// the table lists single positions and cannot describe it (#480). The source is checked as
-// if it sat at `path` in the repo, under the repo's tsconfig.json, so its
-// relative and package imports resolve as they do for the real module.
+// element type is a function is reported wherever it sits and whether or not
+// it is listed, since the table lists single positions and cannot describe it
+// (#480). The source is checked as if it sat at `path` in the repo, under the
+// repo's tsconfig.json, so its relative and package imports resolve as they
+// do for the real module.
 export function callbackMismatches(
   source: string,
   name: string,
@@ -51,14 +52,15 @@ export function callbackMismatches(
     .map((position) => `${name} has no parameter ${String(position)}`);
   fn.parameters.forEach((parameter, position) => {
     const listed = callbacks.includes(position);
-    if (position === 0 && !listed) return;
+    const rest = parameter.dotDotDotToken !== undefined;
+    if (position === 0 && !listed && !rest) return;
     const label = `${name}'s parameter ${String(position)} (${parameter.name.getText()})`;
     const type = checker.getTypeAtLocation(parameter);
-    const element = parameter.dotDotDotToken
+    const element = rest
       ? checker.getIndexTypeOfType(type, ts.IndexKind.Number)
       : type;
     const kind = element ? kindOf(element) : "unread";
-    if (parameter.dotDotDotToken && kind === "function")
+    if (rest && kind === "function")
       problems.push(
         `${label} is a rest parameter of functions, which the table cannot list`,
       );
