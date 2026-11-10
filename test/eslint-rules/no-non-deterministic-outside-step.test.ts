@@ -11,6 +11,13 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
     {
       valid: [
         {
+          name: "reads the clock inside a step's callback asserted with as",
+          code: `async function run(ctx: any) {
+            await ctx.step("start", (async () => Date.now()) as any, { retryStrategy: r });
+          }`,
+        },
+
+        {
           name: "reads the clock inside a step",
           code: `async function run(ctx: any) {
             const startedAt = await ctx.step("start", async () => new Date().toISOString());

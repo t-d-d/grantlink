@@ -103,10 +103,11 @@ export const STEP_HELPERS: readonly StepHelper[] = [
 // allowances. A rule that refuses what a call may run, such as
 // no-nested-durable-operations, passes `walk: "any"` to take an inexact
 // walk too. It looks through type assertions, non-null assertions, type
-// arguments and optional chaining (unwrapped), on the call, the callee and
-// the namespace alike. A local function, an import from another module or a
-// computed key that is not a constant string is not one. A re-export would
-// hide the helper's module, so no-step-helper-re-export refuses one.
+// arguments, optional chaining and the comma operator (unwrapped), on the
+// call, the callee and the namespace alike. A local function, an import
+// from another module or a computed key that is not a constant string is
+// not one. A re-export would hide the helper's module, so
+// no-step-helper-re-export refuses one.
 export function stepHelperOf(
   node: TSESTree.Node,
   resolver: Resolver,
@@ -140,10 +141,11 @@ export function bindingOf(
   return memberOf(importOf(object, resolver, seen), name);
 }
 
-// The expression a TypeScript wrapper or an optional chain holds, with
-// every such layer taken off: `x as T`, `<T>x`, `x satisfies T`, `x!`,
-// `x<T>` and the chain around `a?.b` or `a?.()`. None of them changes which
-// function a name holds, so the rules read through them.
+// The expression a TypeScript wrapper, an optional chain or the comma
+// operator holds, with every such layer taken off: `x as T`, `<T>x`,
+// `x satisfies T`, `x!`, `x<T>`, the chain around `a?.b` or `a?.()`, and
+// the last expression of `(a, x)`. None of them changes which function a
+// name holds, so the rules read through them.
 export function unwrapped(node: TSESTree.Node): TSESTree.Node {
   let current = node;
   for (;;) {
@@ -156,6 +158,12 @@ export function unwrapped(node: TSESTree.Node): TSESTree.Node {
       case AST_NODE_TYPES.ChainExpression:
         current = current.expression;
         break;
+      case AST_NODE_TYPES.SequenceExpression: {
+        const last = current.expressions.at(-1);
+        if (last === undefined) return current;
+        current = last;
+        break;
+      }
       default:
         return current;
     }
@@ -400,7 +408,8 @@ export function withoutExtension(path: string): string {
   return path.replace(/\.[cm]?[jt]s$/, "");
 }
 
-// True when `fn` is an argument a step helper runs inside its step.
+// True when `fn` is an argument a step helper runs inside its step, read
+// through the wrappers unwrapped takes off, as in `(async () => {...}) as F`.
 export function isStepHelperCallback(
   call: TSESTree.Node,
   fn: TSESTree.Node,
@@ -408,7 +417,13 @@ export function isStepHelperCallback(
 ): boolean {
   if (call.type !== AST_NODE_TYPES.CallExpression) return false;
   const helper = stepHelperOf(call, resolver);
-  return helper?.callbacks.some((at) => call.arguments[at] === fn) ?? false;
+  const callback = unwrapped(fn);
+  return (
+    helper?.callbacks.some((at) => {
+      const argument = call.arguments[at];
+      return argument !== undefined && unwrapped(argument) === callback;
+    }) ?? false
+  );
 }
 
 // True when the node sits inside a function passed to an operation that
@@ -421,16 +436,42 @@ export function insideCheckpointedCallback(
 ): boolean {
   const ancestors = resolver.sourceCode.getAncestors(node);
   return ancestors.some((fn, i) => {
-    const call = ancestors[i - 1];
+    if (
+      fn.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+      fn.type !== AST_NODE_TYPES.FunctionExpression
+    ) {
+      return false;
+    }
+    const at = outermostWrapper(ancestors, i);
+    const argument = ancestors[at];
+    const call = ancestors[at - 1];
     return (
-      (fn.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-        fn.type === AST_NODE_TYPES.FunctionExpression) &&
+      argument !== undefined &&
       call?.type === AST_NODE_TYPES.CallExpression &&
       ((methodCallIn(call, CHECKPOINTS_CALLBACK) !== null &&
-        call.arguments.includes(fn)) ||
-        isStepHelperCallback(call, fn, resolver))
+        call.arguments.some((arg) => arg === argument)) ||
+        isStepHelperCallback(call, argument, resolver))
     );
   });
+}
+
+// The index of the outermost ancestor that only wraps ancestors[at] in the
+// layers unwrapped takes off, such as `(async () => {...}) as F`, or `at`
+// itself when nothing wraps it. The ancestors run from the root down.
+export function outermostWrapper(
+  ancestors: readonly TSESTree.Node[],
+  at: number,
+): number {
+  const inner = ancestors[at];
+  let outer = at;
+  for (
+    let parent = ancestors[outer - 1];
+    parent !== undefined && unwrapped(parent) === inner;
+    parent = ancestors[outer - 1]
+  ) {
+    outer -= 1;
+  }
+  return outer;
 }
 
 // Resolve a name from a scope outward. Null means an implicit global or a
