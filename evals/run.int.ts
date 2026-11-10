@@ -25,11 +25,10 @@ function snapshotDir(
   setB: readonly string[] = [],
 ) {
   const dir = mkdtempSync(join(tmpdir(), "grantlink-eval-"));
-  mkdirSync(join(dir, "eval/papers"), { recursive: true });
-  mkdirSync(join(dir, "eval/s1"), { recursive: true });
+  mkdirSync(join(dir, "eval/s1/papers"), { recursive: true });
   const entries = Object.entries(papers).map(([pmcid, text]) => {
     const body = JSON.stringify({ pmcid, text, awards: [] });
-    writeFileSync(join(dir, `eval/papers/${pmcid}.json`), body);
+    writeFileSync(join(dir, `eval/s1/papers/${pmcid}.json`), body);
     return setB.includes(pmcid)
       ? { pmcid, set: "B", sha256: sha(body), grants: [] }
       : { pmcid, set: "A", sha256: sha(body), grants: ["A11111"] };
@@ -67,7 +66,7 @@ describe("the eval runner", () => {
   it("refuses a paper whose text does not match the manifest", () => {
     const { dir, manifestSha256 } = snapshotDir(papers);
     writeFileSync(
-      join(dir, "eval/papers/PMC2.json"),
+      join(dir, "eval/s1/papers/PMC2.json"),
       JSON.stringify({ pmcid: "PMC2", text: ["changed"], awards: [] }),
     );
     expect(() => loadSnapshot(dir, { id: "s1", manifestSha256 })).toThrow(

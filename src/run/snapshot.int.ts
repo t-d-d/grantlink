@@ -194,7 +194,13 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
       expect.objectContaining({ pmcid: LABELLED[0], set: "B" }),
     );
     expect(
-      JSON.parse(String(fake.text.get(snapshotKeys.paper(LABELLED[0] ?? "")))),
+      JSON.parse(
+        String(
+          fake.text.get(
+            snapshotKeys.paper(fake.deps.gold.snapshotId, LABELLED[0] ?? ""),
+          ),
+        ),
+      ),
     ).toEqual({ pmcid: LABELLED[0], text: [], awards: [] });
   });
 

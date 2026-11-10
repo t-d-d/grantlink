@@ -997,7 +997,9 @@ describe("the eval snapshot (evals.md)", () => {
     );
     const one = manifest.papers.find((paper) => paper.pmcid === "PMC0000001");
     expect(one).toMatchObject({ set: "A", grants: ["A56789"] });
-    const text = String(fake.text.get("eval/papers/PMC0000001.json"));
+    const text = String(
+      fake.text.get(snapshotKeys.paper(FAKE_GOLD.snapshotId, "PMC0000001")),
+    );
     expect(createHash("sha256").update(text).digest("hex")).toBe(one?.sha256);
     expect(text).toContain("Quillfeather");
     // The gold papers' text goes to cache/ too.

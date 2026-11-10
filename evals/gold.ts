@@ -79,8 +79,8 @@ export const manifest = z
 
 export type Manifest = z.infer<typeof manifest>;
 
-// eval/papers/<pmcid>.json: a paper's funding sections, as the run read
-// them. It holds names, so it stays in the bucket and in the runner's
+// eval/<id>/papers/<pmcid>.json: a paper's funding sections, as the run
+// that took snapshot <id> read them. It holds names, so it stays in the bucket and in the runner's
 // working directory, and is never printed.
 export const paperFile = z
   .object({
@@ -106,5 +106,5 @@ export const paperFile = z
 
 export const snapshotKeys = {
   manifest: (id: string) => `eval/${id}/manifest.json`,
-  paper: (pmcid: string) => `eval/papers/${pmcid}.json`,
+  paper: (id: string, pmcid: string) => `eval/${id}/papers/${pmcid}.json`,
 };

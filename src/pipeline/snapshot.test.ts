@@ -35,6 +35,7 @@ function paperDeps(
   const calls: string[] = [];
   const stored = new Map<string, string>();
   const deps = {
+    gold: { snapshotId: "s9" },
     europePmc: {
       fullText: (pmcid: string) => {
         calls.push(`fullText ${pmcid}`);
@@ -47,7 +48,7 @@ function paperDeps(
     },
     text: {
       putFundingText: () => Promise.resolve(),
-      putSnapshotPaper: (pmcid: string, body: string) => {
+      putSnapshotPaper: (_id: string, pmcid: string, body: string) => {
         stored.set(pmcid, body);
         return Promise.resolve(body);
       },
@@ -88,6 +89,56 @@ describe("taking one gold paper", () => {
   it("passes over a gold set A paper whose grant ids the manifest cannot hold", async () => {
     const { deps } = paperDeps(["Programme grant 2021"]);
     expect(await snapshotPaper(deps, "PMC11", "A")).toEqual({ kept: false });
+  });
+
+  // Gold set A's answers are the linked grants a paper prints (#502).
+  it("passes over a gold set A paper whose full text prints none of its linked grants", async () => {
+    const { deps, stored } = paperDeps(["A11111", "C2/A22222"]);
+    expect(await snapshotPaper(deps, "PMC11", "A")).toEqual({ kept: false });
+    expect(stored.size).toBe(0);
+  });
+
+  it("keeps only the linked grants a gold set A paper prints as its answers", async () => {
+    const { deps } = paperDeps(["A11111", "C1234/A56789", "A22222"]);
+    const taken = await snapshotPaper(deps, "PMC11", "A");
+    expect(taken.kept && taken.entry.grants).toEqual(["C1234/A56789"]);
+  });
+
+  it("judges printed against the whole article, not the funding sections it keeps", async () => {
+    const { deps, stored } = paperDeps(
+      ["A56789", "A11111"],
+      "<article><funding-group><funding-statement>Funded by grant A56789.</funding-statement></funding-group><body><p>Supported by A11111.</p></body></article>",
+    );
+    const taken = await snapshotPaper(deps, "PMC11", "A");
+    expect(taken.kept && taken.entry.grants).toEqual(["A56789", "A11111"]);
+    expect(stored.get("PMC11")).not.toContain("A11111");
+  });
+
+  it("never takes Cancer Research UK's funder registry id as an answer, even where the paper prints it", async () => {
+    const { deps } = paperDeps(
+      ["501100000289", "A56789"],
+      "<funding-group><award-group><funding-source><institution-id>501100000289</institution-id></funding-source><award-id>A56789</award-id></award-group></funding-group>",
+    );
+    const taken = await snapshotPaper(deps, "PMC11", "A");
+    expect(taken.kept && taken.entry.grants).toEqual(["A56789"]);
+  });
+
+  it("passes over a gold set A paper linked only to the funder registry id, without reading its text", async () => {
+    const { deps, calls } = paperDeps(["501100000289"]);
+    expect(await snapshotPaper(deps, "PMC11", "A")).toEqual({ kept: false });
+    expect(calls).toEqual(["grants PMC11"]);
+  });
+
+  it("writes the paper's file under the snapshot's own id", async () => {
+    const written: string[] = [];
+    const { deps } = paperDeps(["A56789"]);
+    deps.gold = { ...deps.gold, snapshotId: "s3" };
+    deps.text.putSnapshotPaper = (id, pmcid, body) => {
+      written.push(`${id} ${pmcid}`);
+      return Promise.resolve(body);
+    };
+    await snapshotPaper(deps, "PMC11", "A");
+    expect(written).toEqual(["s3 PMC11"]);
   });
 
   it("passes over a gold set A paper with no funding text or awards, since its sample walks on", async () => {

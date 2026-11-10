@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FundingSections } from "../src/extract/rules.ts";
-import { sameGrant, score } from "./score.ts";
+import { printedGrants, sameGrant, score } from "./score.ts";
 
 const paper = (text: string[], awards: FundingSections["awards"] = []) => ({
   text,
@@ -25,6 +25,44 @@ describe("matching a reference to Europe PMC's grant id", () => {
     ["CTRQQR-2021/100010", "100010"],
   ])("%s does not match %s", (found, expected) => {
     expect(sameGrant(found, expected)).toBe(false);
+  });
+});
+
+// What a paper prints decides gold set A's answers (#502): a linked grant
+// counts only if one of the forms sameGrant accepts stands alone in the
+// whole article, ignoring case and spaces.
+describe("finding which linked grants a paper prints", () => {
+  it.each([
+    ["C1234/A56789", "<p>Funded by CRUK (C1234/A56789).</p>"],
+    ["C1234/A56789", "<p>Funded by grant A56789.</p>"],
+    ["C1234/A56789", "<p>Funded by grant 56789.</p>"],
+    ["A56789", "<p>Funded by C1234/A56789.</p>"],
+    ["A56789", "<p>grant a 56789</p>"],
+    ["C1234/A56789", "<p>c1234 \\ a56789</p>"],
+    ["CTRQQR-2021/100010", "<p>ctrqqr-2021 / 100010</p>"],
+    ["A56789", "<award-id>A56789</award-id>"],
+    ["A56789", "<p>grant A<italic>56789</italic></p>"],
+  ])("finds %s printed in %s", (grant, article) => {
+    expect(printedGrants([grant], article)).toEqual([grant]);
+  });
+
+  it.each([
+    ["A56789", "<p>No grant here.</p>"],
+    ["A56789", "<p>Order 1567890 arrived.</p>"],
+    ["A56789", "<p>Grant B56789.</p>"],
+    ["A56789", "<p>Grant A567890.</p>"],
+    ["C1234/A56789", "<p>Programme C1234.</p>"],
+  ])("does not find %s printed in %s", (grant, article) => {
+    expect(printedGrants([grant], article)).toEqual([]);
+  });
+
+  it("keeps only the linked grants the paper prints, in their order", () => {
+    expect(
+      printedGrants(
+        ["A11111", "A22222", "C3/A33333"],
+        "<p>Grants 33333 and A11111.</p>",
+      ),
+    ).toEqual(["A11111", "C3/A33333"]);
   });
 });
 

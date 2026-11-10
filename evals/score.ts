@@ -6,7 +6,7 @@ import type { RowId } from "./floors.ts";
 // everything that can change a score (docs/constraints/evals.md).
 
 // Gold set A: papers Europe PMC already links to the funder's grants. Its
-// links are the answers.
+// answers are the linked grants each paper prints (#502).
 export interface GoldA {
   pmcid: string;
   grants: string[];
@@ -62,6 +62,35 @@ function forms(id: string): Set<string> {
 export function sameGrant(found: string, expected: string): boolean {
   const a = forms(found);
   return [...forms(expected)].some((form) => a.has(form));
+}
+
+// A form as a pattern that ignores case and spaces, with a slash written
+// any way canonical reads one, and nothing alphanumeric either side of it.
+function standingAlone(form: string): RegExp {
+  // A form holds only ASCII, as canonical leaves GRANT's characters.
+  const chars = Array.from(form, (char) =>
+    char === "/" ? "[/\\\\∖]" : char === "." ? "\\." : char,
+  );
+  return new RegExp(
+    `(?<![A-Za-z0-9])${chars.join("\\s*")}(?![A-Za-z0-9])`,
+    "iu",
+  );
+}
+
+// The linked grants a paper prints, in the order given: those with a form
+// sameGrant accepts standing alone in the whole article, ignoring case and
+// spaces (#502). Each markup tag reads as a space, so a tag inside a grant
+// does not hide it.
+export function printedGrants(
+  grants: readonly string[],
+  article: string,
+): string[] {
+  const text = article.replace(/<[^>]*>/gu, " ");
+  return grants.filter((grant) =>
+    [...forms(grant)].some(
+      (form) => form !== "" && standingAlone(form).test(text),
+    ),
+  );
 }
 
 // What a model added after the rules: the normalised references it found

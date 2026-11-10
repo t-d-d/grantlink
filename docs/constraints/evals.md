@@ -11,11 +11,15 @@ text, so it must not get broad AWS access or see the key.
 ## Rules
 
 - The snapshot lives under `eval/` in the private bucket. A run writes it
-  once: each gold paper's funding sections at `eval/papers/<pmcid>.json`,
-  and a manifest at `eval/<id>/manifest.json` listing each paper, its set,
-  its text's SHA-256 and, for gold set A, Europe PMC's grant ids.
+  once: each gold paper's funding sections at
+  `eval/<id>/papers/<pmcid>.json`, under its own snapshot id, and a
+  manifest at `eval/<id>/manifest.json` listing each paper, its set, its
+  text's SHA-256 and, for gold set A, its answers.
 - Gold set A is sampled once, with the query, seed and size recorded in
-  `evals/gold-a.json`. Once the snapshot exists, `node evals/pin.ts` pins
+  `evals/gold-a.json`. A candidate joins it only if its full text prints
+  at least one of the CRUK grants Europe PMC links it to. Its answers are
+  the linked grants it prints. A funder registry id is never an answer.
+  Once the snapshot exists, `node evals/pin.ts` pins
   the manifest's hash in `evals/snapshot.json` and copies gold set A's ids
   and grant ids into `evals/gold-a.json`. Gold set B's labels live in
   `evals/gold-b.json`. A new gold paper needs a new snapshot id, which
@@ -73,4 +77,4 @@ review. Whether a new input that can change a score sits inside the
 fingerprinted paths is for review: the lint rule sees imports, not files
 read at run time.
 
-History: #9
+History: #9, #502
