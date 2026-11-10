@@ -327,7 +327,7 @@ describe("fitness: no invented references (model-calls.md)", () => {
     // A combining mark belongs to the letter before it, so a mark joined to
     // a reference makes it part of a longer word (#339, #369). The text is
     // made up.
-    const mark = "́";
+    const mark = "\u0301";
     const { fetch } = fakeOpenRouter(
       answer([
         { asWritten: "A12345", confidence: 0.9 },
