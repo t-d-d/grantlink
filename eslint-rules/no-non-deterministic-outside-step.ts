@@ -774,7 +774,9 @@ export const noNonDeterministicOutsideStep = createRule({
             } else if (keys.some(namesDate) && callsThrough(inner)) {
               report(property.key, "Date", false);
             } else if (copiesRest(inner)) {
-              const holder = keys.map(holderOf).find((found) => found);
+              const holder = keys
+                .map(holderOf)
+                .find((found) => found !== undefined);
               if (holder !== undefined) report(property.key, holder, false);
             }
             return false;
