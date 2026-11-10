@@ -86,6 +86,21 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         export { ask };`,
       },
       {
+        name: "exports a local alias of askEuropePmc asserted with as under the helper's own name from its own module",
+        filename: "src/run/owed.ts",
+        code: `async function askEuropePmc() {}
+        const impl = askEuropePmc as typeof askEuropePmc;
+        export { impl as askEuropePmc };`,
+      },
+      {
+        name: "exports a local alias of another function asserted as askEuropePmc's type in the helper's module",
+        filename: "src/run/owed.ts",
+        code: `async function askEuropePmc() {}
+        async function somethingElse() {}
+        const ask = somethingElse as typeof askEuropePmc;
+        export { ask };`,
+      },
+      {
         name: "exports a local function that shares askEuropePmc's name as the default",
         filename: "src/run/run.ts",
         code: `function askEuropePmc() {}

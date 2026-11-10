@@ -25,8 +25,9 @@ import {
 // as a constant or as the default, and `export { askEuropePmc as ask }`,
 // `export const ask = askEuropePmc` or `export default askEuropePmc` in
 // owed.ts itself, directly or through a chain of local aliases such as
-// `const ask = askEuropePmc; export { ask }`. A type-only export carries no
-// function, so it passes.
+// `const ask = askEuropePmc; export { ask }`, read through any wrapper that
+// unwrapped takes off, such as `const ask = askEuropePmc as typeof
+// askEuropePmc`. A type-only export carries no function, so it passes.
 export const noStepHelperReExport = createRule({
   name: "no-step-helper-re-export",
   meta: {
