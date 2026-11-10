@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { z } from "zod";
 import { deploy, type Step, type Workflow } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
 
@@ -124,6 +125,34 @@ describe("governor's CI workflow", () => {
   it("names a workflow that runs on pull requests", () => {
     const workflow = parse(readRepoFile(ci)) as Workflow;
     expect(Object.keys(workflow.on)).toContain("pull_request");
+  });
+});
+
+// Nothing in the gate reads history past HEAD: the fingerprint reads
+// HEAD's trees, and its tests build their own repositories (#185).
+describe("the gate's checkout", () => {
+  const GateWorkflow = z.object({
+    jobs: z.object({
+      gate: z.object({
+        steps: z.array(
+          z.object({
+            uses: z.string().optional(),
+            with: z.record(z.string(), z.unknown()).optional(),
+          }),
+        ),
+      }),
+    }),
+  });
+
+  it("checks out only HEAD in CI", () => {
+    const gate = GateWorkflow.parse(
+      parse(readRepoFile(".github/workflows/gate.yml")),
+    );
+    const checkout = gate.jobs.gate.steps.find((step) =>
+      step.uses?.startsWith("actions/checkout@"),
+    );
+    expect(checkout).toBeDefined();
+    expect(checkout?.with ?? {}).not.toHaveProperty("fetch-depth");
   });
 });
 
