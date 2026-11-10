@@ -23,16 +23,38 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
       },
       {
         name: "awaits askEuropePmc, whose only await is its step",
-        code: `async function run(ctx: any) {
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
           const asked = await askEuropePmc(ctx, "paper", "wait", r, async () => readPaper());
         }`,
       },
       {
         name: "awaits I/O inside askEuropePmc's read, which runs as its step",
-        code: `async function run(ctx: any) {
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
           await askEuropePmc(ctx, "paper", "wait", r, async () => {
             return await readPaper();
           });
+        }`,
+      },
+      {
+        name: "awaits askEuropePmc imported under another name",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc as ask } from "./owed.ts";
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
+        name: "awaits askEuropePmc imported from a folder below src/run",
+        filename: "src/run/papers/run.ts",
+        code: `import { askEuropePmc } from "../owed.ts";
+        async function run(ctx: any) {
+          await askEuropePmc(ctx, "paper", "wait", r, async () => readPaper());
         }`,
       },
     ],
@@ -60,8 +82,33 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
       },
       {
         name: "awaits I/O in askEuropePmc's step name, which the body evaluates",
-        code: `async function run(ctx: any) {
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
           await askEuropePmc(ctx, await nameFor(), "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits a local function that shares askEuropePmc's name",
+        filename: "src/run/run.ts",
+        code: `async function askEuropePmc(...args: unknown[]) { return fetchPaper(); }
+        async function run(ctx: any) {
+          await askEuropePmc(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+        errors: [
+          { messageId: "awaitOutsideStep" },
+          { messageId: "awaitOutsideStep" },
+        ],
+      },
+      {
+        name: "awaits a function of the same name from another module",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./other.ts";
+        async function run(ctx: any) {
+          await askEuropePmc(ctx, "paper", "wait", r, async () => 1);
         }`,
         errors: [{ messageId: "awaitOutsideStep" }],
       },

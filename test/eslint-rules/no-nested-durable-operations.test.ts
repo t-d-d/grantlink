@@ -17,7 +17,9 @@ describe("fitness: no durable operation inside its own context's operation (dura
       },
       {
         name: "asks Europe PMC on a child context",
-        code: `async function run(ctx: any) {
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
           await ctx.runInChildContext("paper", async (child: any) => {
             await askEuropePmc(child, "fetch", "wait", r, async () => 1);
           });
@@ -25,6 +27,17 @@ describe("fitness: no durable operation inside its own context's operation (dura
       },
     ],
     invalid: [
+      {
+        name: "asks Europe PMC through a renamed import on the same context inside a step",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc as ask } from "./owed.ts";
+        async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await ask(ctx, "paper", "wait", r, async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
       {
         name: "calls a step on the same context inside a step",
         code: `async function run(ctx: any) {
@@ -36,7 +49,9 @@ describe("fitness: no durable operation inside its own context's operation (dura
       },
       {
         name: "calls a step on the same context inside askEuropePmc's read",
-        code: `async function run(ctx: any) {
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
           await askEuropePmc(ctx, "paper", "wait", r, async () => {
             await ctx.step("inner", async () => 1);
           });
@@ -45,7 +60,9 @@ describe("fitness: no durable operation inside its own context's operation (dura
       },
       {
         name: "asks Europe PMC on the same context inside a step",
-        code: `async function run(ctx: any) {
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
           await ctx.step("outer", async () => {
             await askEuropePmc(ctx, "paper", "wait", r, async () => 1);
           });

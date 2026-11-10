@@ -134,7 +134,8 @@ export const noClosureInDurableOperations = createRule({
         const fn = ancestors[i];
         if (fn === undefined || !isCallback(fn)) continue;
         const call = ancestors[i - 1];
-        if (call !== undefined && isStepHelperCallback(call, fn)) return fn;
+        if (call !== undefined && isStepHelperCallback(call, fn, context))
+          return fn;
         let j = i - 1;
         let parent = ancestors[j];
         while (parent !== undefined && isLiteralWrapper(parent)) {
