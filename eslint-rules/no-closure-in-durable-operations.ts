@@ -136,6 +136,8 @@ export const noClosureInDurableOperations = createRule({
     // literal argument, as parallel's branches are, or an argument a step
     // helper such as askEuropePmc runs inside its step. A wrapper such as
     // `(async () => {...}) as F` around the function does not hide it.
+    // Knowing a helper here only adds reports, so an alias written again
+    // still counts (an inexact walk, #518).
     const innermostCallback = (node: TSESTree.Node): Callback | undefined => {
       const ancestors = sourceCode.getAncestors(node);
       for (let i = ancestors.length - 1; i >= 0; i--) {
@@ -147,7 +149,7 @@ export const noClosureInDurableOperations = createRule({
         if (
           argument !== undefined &&
           call !== undefined &&
-          isStepHelperCallback(call, argument, context)
+          isStepHelperCallback(call, argument, context, "any")
         )
           return fn;
         let j = at - 1;
