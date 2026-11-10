@@ -258,6 +258,28 @@ describe("the eval's comment", () => {
     );
     expect(status).not.toBe(0);
   });
+
+  // #257: the step took the first marker comment's id through `head -n 1`
+  // under pipefail. When head stopped reading while gh still wrote, gh died
+  // of SIGPIPE and the step failed. The stub prints far more ids than a
+  // pipe holds, only for a paginated read, and records the PATCH it is sent.
+  it("succeeds and updates the first of many earlier comments", () => {
+    const gh = [
+      'if [ "$2" = -X ]; then echo "$*" >> "$RUNNER_TEMP/gh-args"; exit 0; fi',
+      '[ "$2" = --paginate ] || exit 9',
+      'for ((i = 101; i < 30101; i++)); do echo "$i"; done',
+    ].join("\n");
+    const { status, stderr, temp } = runStep(
+      run,
+      { ...stubs, gh },
+      { PR: "1", GITHUB_REPOSITORY: "o/r", NO_LIVE: "no-deploy" },
+    );
+    expect(stderr).toBe("");
+    expect(status).toBe(0);
+    expect(readFileSync(join(temp, "gh-args"), "utf8")).toBe(
+      "api -X PATCH repos/o/r/issues/comments/101 -F body=@comment.md\n",
+    );
+  });
 });
 
 describe("the deploy's stack outputs", () => {

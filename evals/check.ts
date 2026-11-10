@@ -44,8 +44,8 @@ export function gate(
 export const noLive = z.enum(["no-deploy", "page-unread"]);
 export type NoLive = z.infer<typeof noLive>;
 
-const NO_LIVE: Record<NoLive | OlderFormat, string> = {
-  "older-format":
+const NO_LIVE: Record<NoLive | Unreadable, string> = {
+  unreadable:
     "The live release's report is in a format this pull request's code cannot read, so there is nothing to compare with. The eval job's log says why.",
   "no-deploy":
     "No deploy of main has run yet, so there is nothing to compare with.",
@@ -56,7 +56,7 @@ const NO_LIVE: Record<NoLive | OlderFormat, string> = {
 // A live report this code cannot read even leniently (#138). The comparison
 // is advice, so this is a reason to show CI's scores alone, not a failure.
 // It comes from check.ts, not from eval.yml, so it is not in noLive.
-export type OlderFormat = "older-format";
+export type Unreadable = "unreadable";
 
 // What the comparison reads from the live report: its run, its snapshot's
 // id and each row's score. Older code may have filed it before a row or a
@@ -121,13 +121,13 @@ export function readLive(
   warn: (line: string) => void = (line) => {
     console.error(line);
   },
-): LiveReport | OlderFormat {
+): LiveReport | Unreadable {
   let json: unknown;
   try {
     json = JSON.parse(raw);
   } catch {
     warn("::warning::The live release's report is not JSON.");
-    return "older-format";
+    return "unreadable";
   }
   const parsed = liveReport.safeParse(json);
   if (parsed.success) return parsed.data;
@@ -138,12 +138,12 @@ export function readLive(
   warn(
     `::warning::The live release's report does not parse: ${why.join("; ")}.`,
   );
-  return "older-format";
+  return "unreadable";
 }
 
 export function comment(
   ci: Report,
-  live: LiveReport | NoLive | OlderFormat,
+  live: LiveReport | NoLive | Unreadable,
 ): string {
   const mine = verdict(ci);
   // The lenient schema lets an id repeat. The first row with it stands.
