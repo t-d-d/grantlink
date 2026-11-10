@@ -383,7 +383,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export const { crypto: { webcrypto: w } } = globalThis;`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "crypto" },
               line: 1,
             },
