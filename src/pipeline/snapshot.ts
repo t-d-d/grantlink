@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { LARGEST_PAGE_SIZE } from "../europepmc/client.ts";
 import { fundingSections } from "../europepmc/jats.ts";
 import { GRANT, manifest, type Manifest } from "../../evals/gold.ts";
-import { crukReference, printedGrants } from "../../evals/score.ts";
+import { crukReference, printedGrants, sameGrant } from "../../evals/score.ts";
 import { logger } from "../log.ts";
 import type { Deps } from "./steps.ts";
 
@@ -69,6 +69,21 @@ export async function searchGoldA(
 const sha256 = (text: string) =>
   createHash("sha256").update(text).digest("hex");
 
+// Each grant once. Europe PMC often links one paper to the same grant in two
+// forms, such as a C/A pair and its award number alone, and recall would
+// count it twice (#508). Where two ids are the same grant by sameGrant, the
+// longer stays, at the place of the first: a C/A pair over its award number,
+// and an award number with its A over one without.
+export function oncePerGrant(grants: readonly string[]): string[] {
+  const kept: string[] = [];
+  for (const grant of grants) {
+    const i = kept.findIndex((other) => sameGrant(other, grant));
+    if (i === -1) kept.push(grant);
+    else if (grant.length > (kept[i] ?? "").length) kept[i] = grant;
+  }
+  return kept;
+}
+
 // `empty` says the funding-section cutter found no funding text or awards
 // in a kept paper, which only a gold set B paper can be (#405).
 export type Taken =
@@ -81,8 +96,8 @@ export type Taken =
 // over, and its sample walks on to the next. A kept gold set A paper's
 // answers are the linked grants its whole article prints, less its
 // reference list, not only its funding sections, so a cutter that dropped
-// text cannot shrink the answers with it (#502, #503). A funder registry id
-// is never an answer. A gold set B paper is always kept, even with empty
+// text cannot shrink the answers with it (#502, #503), each grant once
+// (#508). A funder registry id is never an answer. A gold set B paper is always kept, even with empty
 // sections, since its label is scored against what the rules find in it,
 // which may be nothing (#399). A gold set A paper's grants are read first,
 // so a paper with none costs no full text. A grant id the manifest cannot
@@ -109,7 +124,8 @@ export async function snapshotPaper(
   const sections = fundingSections(article);
   await deps.text.putFundingText(pmcid, sections);
   const empty = sections.text.length === 0 && sections.awards.length === 0;
-  const answers = set === "A" ? printedGrants(grants, article) : [];
+  const answers =
+    set === "A" ? oncePerGrant(printedGrants(grants, article)) : [];
   if (set === "A" && (empty || answers.length === 0)) {
     logger.info("snapshot-passed-over", { pmcid });
     return { kept: false };

@@ -108,6 +108,25 @@ describe("taking one gold paper", () => {
     expect(taken.kept && taken.entry.grants).toEqual(["C1234/A56789"]);
   });
 
+  // Europe PMC often links one grant twice, in two forms (#508).
+  it("records a grant Europe PMC links in two forms once, in its fuller form", async () => {
+    const { deps } = paperDeps(
+      ["56789", "C1234/A56789"],
+      "<funding-group><funding-statement>Funded by C1234/A56789.</funding-statement></funding-group>",
+    );
+    const taken = await snapshotPaper(deps, "PMC11", "A");
+    expect(taken.kept && taken.entry.grants).toEqual(["C1234/A56789"]);
+  });
+
+  it("keeps an award number with its A over the same number without", async () => {
+    const { deps } = paperDeps(
+      ["A11111", "56789", "A56789"],
+      "<funding-group><funding-statement>Funded by A11111 and A56789.</funding-statement></funding-group>",
+    );
+    const taken = await snapshotPaper(deps, "PMC11", "A");
+    expect(taken.kept && taken.entry.grants).toEqual(["A11111", "A56789"]);
+  });
+
   it("judges printed against the whole article, not the funding sections it keeps", async () => {
     const { deps, stored } = paperDeps(
       ["A56789", "A11111"],
