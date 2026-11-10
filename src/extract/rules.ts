@@ -234,12 +234,14 @@ const CRUK_DIGIT_PART = String.raw`${CRUK_SEP}(?=[A-Z]*\d)(?!${A_YEAR}(?![A-Z0-9
 const CRUK_LETTER_PART = String.raw`${CRUK_SEP}[A-Z]{1,2}(?![A-Z0-9])`;
 const CRUK_PART = `(?:${CRUK_DIGIT_PART}|${CRUK_LETTER_PART})`;
 // No part of any kind follows, so a read is the whole form, not its front.
-// Besides a hyphen or a slash, a part may follow a backslash, the set minus
-// sign, or a slash with a space on one side of it (#598). A slash with a
+// A part is any run of capitals or digits, however long, so a name of nine
+// or more capitals does not leave the front to be read (#579). Besides a
+// hyphen or a slash, a part may follow a backslash, the set minus sign, or
+// a slash with a space on one side of it (#598). A slash with a
 // space on each side parts a list of references, as in
 // "CRUK-A12345 / CRUK-A23456", so it ends the form.
 const NEXT_PART_SEP = String.raw`(?:${DASH}|[/\\∖]\s?|\s[/\\∖](?!\s))`;
-const NO_MORE_PARTS = String.raw`(?!${NEXT_PART_SEP}[A-Z0-9]{1,8}(?![A-Z0-9]))`;
+const NO_MORE_PARTS = String.raw`(?!${NEXT_PART_SEP}[A-Z0-9])`;
 // One to four parts, read whole. A form that runs on past four parts reads
 // its first four, as the model pass keeps them (#561), unless the fourth
 // has no digit and another part follows it.

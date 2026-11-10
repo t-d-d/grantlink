@@ -724,6 +724,27 @@ describe("fitness: no invented references (model-calls.md)", () => {
     },
   );
 
+  // The text is made up.
+  it.each([
+    "Funded by CRUK (CRUK/12/MCALLISTER).",
+    "Funded by CRUK (CRUK/12/ABCDEFGHI).",
+    "Funded by CRUK (CRUK/12/123456789).",
+  ])(
+    "rejects the front of a CRUK- form whose next part is nine or more capitals or digits (#579): %j",
+    async (text) => {
+      const { fetch } = fakeOpenRouter(
+        answer([{ asWritten: "CRUK/12", confidence: 0.9 }]),
+      );
+      const result = await proposeReferences([text], {
+        model: haiku,
+        key: "k",
+        fetch,
+      });
+      expect(result.status === "read" && result.references).toEqual([]);
+      expect(result.status === "read" && result.rejected).toBe(1);
+    },
+  );
+
   it("keeps each CRUK- form in a list parted by a slash spaced on both sides (#598)", async () => {
     // The text is made up.
     const written = ["CRUK-A12345", "CRUK-A23456"];
@@ -776,22 +797,16 @@ describe("fitness: no invented references (model-calls.md)", () => {
   });
 
   it("keeps a CRUK- form just where the rules read it, at their limits too (#561)", async () => {
-    // What follows is no part the rules read: a part in lower case, a part
-    // too long, or a fifth part. The text is made up.
-    const written = [
-      "CRUK/12/034",
-      "CRUK-12",
-      "CRUK/34",
-      "CRUK/56",
-      "CRUK/1/2/3/4",
-    ];
+    // What follows is no part the rules read: a part in lower case, or a
+    // fifth part. The text is made up.
+    const written = ["CRUK/12/034", "CRUK-12", "CRUK/34", "CRUK/1/2/3/4"];
     const { fetch } = fakeOpenRouter(
       answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
     );
     const result = await proposeReferences(
       [
         "Funded by CRUK (CRUK/12/034; CRUK-12, CRUK/34/abc).",
-        "Funded by CRUK (CRUK/56/ABCDEFGHIJ, CRUK/1/2/3/4/5).",
+        "Funded by CRUK (CRUK/1/2/3/4/5).",
       ],
       { model: haiku, key: "k", fetch },
     );

@@ -226,6 +226,12 @@ describe("the rules", () => {
     "Funded by CRUK (CRUK/12 /2019).",
     "Funded by CRUK (CRUK/12/ 2019).",
     String.raw`Funded by CRUK (CRUK/12\SMITH).`,
+    // A next part of nine or more capitals or digits is still a part, so
+    // the read does not fall back to the front of the form (#579).
+    "Funded by CRUK (CRUK/12/MCALLISTER).",
+    "Funded by CRUK (CRUK/12/ABCDEFGHI).",
+    "Funded by CRUK (CRUK/12/123456789).",
+    "Funded by CRUK (CRUK/12/34/MCALLISTER).",
   ])(
     "leaves a CRUK- form with a part of no digit, or a part that is a year: %j",
     (text) => {
