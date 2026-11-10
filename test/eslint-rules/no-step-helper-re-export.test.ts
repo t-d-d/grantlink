@@ -122,6 +122,21 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         code: `function askEuropePmc() {}
         export default askEuropePmc;`,
       },
+      {
+        name: "exports a default function declaration that shares askEuropePmc's name from another module",
+        filename: "src/run/run.ts",
+        code: `export default async function askEuropePmc() {}`,
+      },
+      {
+        name: "exports another function as a default function declaration from the helper's module",
+        filename: "src/run/owed.ts",
+        code: `export default async function somethingElse() {}`,
+      },
+      {
+        name: "exports an anonymous default function declaration from the helper's module",
+        filename: "src/run/owed.ts",
+        code: `export default async function () {}`,
+      },
     ],
     invalid: [
       ...WRAPPED_STEP_HELPERS.filter(
@@ -217,6 +232,18 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         filename: "src/run/owed.ts",
         code: `async function askEuropePmc() {}
         export default askEuropePmc;`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports askEuropePmc as a default function declaration from its own module",
+        filename: "src/run/owed.ts",
+        code: `export default async function askEuropePmc() {}`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports logOnly as a default function declaration from its own module",
+        filename: "src/run/log-only.ts",
+        code: `export default function logOnly() {}`,
         errors: [{ messageId: "reExport" }],
       },
       {
