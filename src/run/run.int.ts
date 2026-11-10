@@ -34,11 +34,10 @@ beforeAll(() =>
 afterAll(() => LocalDurableTestRunner.teardownTestEnvironment());
 
 const logs: string[] = [];
-const spy = vi
-  .spyOn(console, "log")
-  .mockImplementation((...args: unknown[]) => {
-    logs.push(args.map(String).join(" "));
-  });
+function keepLine(...args: unknown[]): void {
+  logs.push(args.map(String).join(" "));
+}
+const spy = vi.spyOn(console, "log").mockImplementation(keepLine);
 afterEach(() => {
   logs.length = 0;
 });
@@ -961,9 +960,7 @@ describe("the eval snapshot (evals.md)", () => {
   // charge of how the snapshot ends, not its error (#370).
   describe("when the snapshot-search-ended step fails", () => {
     afterEach(() => {
-      spy.mockImplementation((...args: unknown[]) => {
-        logs.push(args.map(String).join(" "));
-      });
+      spy.mockImplementation(keepLine);
     });
 
     function failSearchEndedLine(): void {
@@ -979,8 +976,9 @@ describe("the eval snapshot (evals.md)", () => {
     it("logs malformed-search, not unknown, for a malformed search", async () => {
       failSearchEndedLine();
       const fake = fakeDeps({ goldSearch: malformedPage });
-      const { status, result } = await runWith(fake);
+      const { status, result, retryDelays } = await runWith(fake);
       expect(status).toBe("SUCCEEDED");
+      expect(retryDelays("snapshot-search-ended")).not.toEqual([]);
       expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
       expect(snapshotFailedFields()).toEqual({ reason: "malformed-search" });
     });
@@ -990,13 +988,22 @@ describe("the eval snapshot (evals.md)", () => {
       const fake = fakeDeps({
         goldSearch: () => reply("", 429, { "Retry-After": "300" }),
       });
-      const { status, result } = await runWith(fake);
+      const started = Date.now();
+      const { status, result, ended, retryDelays } = await runWith(fake);
       expect(status).toBe("SUCCEEDED");
+      expect(retryDelays("snapshot-search-ended")).not.toEqual([]);
       expect(result?.snapshot).toEqual({
         taken: false,
         reason: "Europe PMC refused gold set A's search",
       });
       expect(logged("snapshot-failed")).toEqual([]);
+      // The wait the refusal asked for is still owed, and waited out
+      // before the run ends (#236).
+      const retried = retryDelays("snapshot-search-0").reduce(
+        (sum, delay) => sum + delay,
+        0,
+      );
+      expect(ended - started).toBeGreaterThanOrEqual((retried + 300) * 1000);
     });
 
     it("still takes the snapshot when the search is whole", async () => {
@@ -1008,8 +1015,9 @@ describe("the eval snapshot (evals.md)", () => {
           "PMC0000003",
         ]),
       });
-      const { status, result } = await runWith(fake);
+      const { status, result, retryDelays } = await runWith(fake);
       expect(status).toBe("SUCCEEDED");
+      expect(retryDelays("snapshot-search-ended")).not.toEqual([]);
       expect(result?.snapshot).toMatchObject({ taken: true });
     });
   });
