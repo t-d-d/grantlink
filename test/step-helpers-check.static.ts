@@ -3,7 +3,8 @@ import { callbackMismatches } from "./step-helpers.ts";
 
 // The check behind the step helpers' fitness function, on modules held in
 // memory: it finds the exported function and compares its function-typed
-// parameters after the context with the positions the table lists (#411).
+// parameters after the context with the positions the table lists (#411). It sits in the static tier because
+// the compiler reads lib files and package types from the repo.
 const helper = `
 type Ctx = { step: () => void };
 type Log = () => void;
@@ -65,5 +66,31 @@ describe("callbackMismatches", () => {
   it("finds an exported const arrow function", () => {
     const source = `export const help = (ctx: unknown, log: () => void) => log;`;
     expect(callbackMismatches(source, "help", [1])).toEqual([]);
+  });
+
+  it("reads an overloaded function's implementation", () => {
+    const source = [
+      "export function help(ctx: unknown): void;",
+      "export function help(ctx: unknown, log: () => void): void;",
+      "export function help(ctx: unknown, log?: () => void): void {}",
+    ].join("\n");
+    expect(callbackMismatches(source, "help", [1])).toEqual([]);
+  });
+
+  it("counts a parameter that may be a function as one", () => {
+    const source = `export function help(ctx: unknown, log: string | (() => void)) {}`;
+    expect(callbackMismatches(source, "help", [])).toEqual([
+      "help's parameter 1 (log) is a function the table does not list",
+    ]);
+  });
+
+  it("reports a parameter whose type does not resolve", () => {
+    const source = [
+      `import type { Log } from "./no-such-module.ts";`,
+      "export function help(ctx: unknown, log: Log) {}",
+    ].join("\n");
+    expect(callbackMismatches(source, "help", [])).toEqual([
+      "help's parameter 1 (log) has a type the check cannot read",
+    ]);
   });
 });
