@@ -100,6 +100,10 @@ describe("telling a CRUK reference from another linked id", () => {
     // A year alone after CRUK, which the rules refuse since #514 (#575).
     "CRUK/2019",
     "CRUK-2019/12345",
+    // CRUK later in the letters, which the rules do not read (#620).
+    "XCRUK/2019",
+    "ABCRUK/12",
+    "XCRUK-2019/12",
   ])("refuses %s", (id) => {
     expect(crukReference(id)).toBe(false);
   });
