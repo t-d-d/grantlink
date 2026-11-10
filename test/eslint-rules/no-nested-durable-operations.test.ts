@@ -75,20 +75,34 @@ describe("fitness: no durable operation inside its own context's operation (dura
         }`,
         errors: [{ messageId: "sameContextUsage" }],
       },
+      // Brackets leave no node in the tree, so the bracket case passes with
+      // or without unwrapping. It stays because #440 lists brackets.
       ...[
         ["asserted with as", "(ctx as Context)"],
         ["checked with satisfies", "(ctx satisfies Context)"],
+        ["asserted with angle brackets", "(<Context>ctx)"],
         ["behind a non-null assertion", "ctx!"],
         ["in brackets", "(ctx)"],
-      ].map(([what, receiver]) => ({
-        name: `calls a step on the same context ${String(what)} inside a step`,
-        code: `async function run(ctx: any) {
+      ].flatMap(([what, receiver]) => [
+        {
+          name: `calls a step on the same context ${String(what)} inside a step`,
+          code: `async function run(ctx: any) {
           await ctx.step("outer", async () => {
             await ${String(receiver)}.step("inner", async () => 1);
           });
         }`,
-        errors: [{ messageId: "sameContextUsage" as const }],
-      })),
+          errors: [{ messageId: "sameContextUsage" as const }],
+        },
+        {
+          name: `waits on the same context inside a step called on it ${String(what)}`,
+          code: `async function run(ctx: any) {
+          await ${String(receiver)}.step("outer", async () => {
+            await ctx.wait("pause", { seconds: 1 });
+          });
+        }`,
+          errors: [{ messageId: "sameContextUsage" as const }],
+        },
+      ]),
 
       ...WRAPPED_DURABLE_CALLS.map((shape) => ({
         name: `uses the same context inside a step written as ${shape.name}`,
