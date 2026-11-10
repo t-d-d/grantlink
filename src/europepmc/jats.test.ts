@@ -367,6 +367,22 @@ describe("cutting a paper to its funding sections", () => {
     expect(JSON.stringify(sections)).not.toContain("Authorname");
   });
 
+  it("keeps no text after a sec-meta that is never closed (#229)", () => {
+    const sections = fundingSections(
+      `<article><back><ack><p>Grant A1.</p><sec-meta><contrib-group><contrib><bio><p>Authorname.</p></bio></contrib></contrib-group><p>Grant B2.</p></ack></back></article>`,
+    );
+    expect(sections.text).toEqual(["Grant A1."]);
+    expect(JSON.stringify(sections)).not.toContain("Authorname");
+  });
+
+  it("keeps the words either side of a dropped sec-meta apart (#229)", () => {
+    expect(
+      fundingSections(
+        `<article><back><ack>Grant C1234<sec-meta/>A5678.</ack></back></article>`,
+      ).text,
+    ).toEqual(["Grant C1234 A5678."]);
+  });
+
   describe("matches a section, label or title tag only by its whole name (#216)", () => {
     it.each([
       [

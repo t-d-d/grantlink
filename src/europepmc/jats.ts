@@ -169,18 +169,20 @@ const TITLE = new RegExp(
 // A <sec-meta>, whole. It can name people, such as in a contributor's <bio>,
 // so none of its text is kept, wherever it stands in a part: in an <ack>, in
 // a section inside one, or in a subsection of a funding section (#229). A
-// self-closing one is only itself.
+// self-closing one is only itself. One that is never closed runs to the end
+// of the part, since where its names end cannot be told.
 const SEC_META_WHOLE = new RegExp(
-  String.raw`<sec-meta${NAME_END}(?:[^>]*\/>|[^>]*>[\s\S]*?<\/sec-meta\s*>)`,
+  String.raw`<sec-meta${NAME_END}(?:[^>]*\/>|[^>]*>[\s\S]*?(?:<\/sec-meta\s*>|$))`,
   "giu",
 );
 
 // The paragraphs of a section, or its whole text less its title if it has
 // none. A self-closing paragraph is empty, so it does not count. A
 // self-closing title strips only itself (#221). Any <sec-meta> is dropped
-// first (#229).
+// first, and leaves a space, so the words either side of it stay apart
+// (#229).
 function paragraphs(part: string): string[] {
-  const section = part.replace(SEC_META_WHOLE, "");
+  const section = part.replace(SEC_META_WHOLE, " ");
   const found = elements(section, "p")
     .map(plain)
     .filter((paragraph) => paragraph !== "");

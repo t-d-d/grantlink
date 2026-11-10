@@ -90,9 +90,10 @@ function parse(xml: string): Element {
 // reads: a recording keeps the funding text as paragraphs. Text beside the
 // paragraphs is named too, since the cutter reads only the paragraphs. A
 // funding section's <sec-meta>, which the cutter skips and which can name
-// people (#222), is named with the rest (#215), and so is one in the
-// acknowledgements or in a section inside them, though the cutter now drops
-// every <sec-meta> it reads (#229).
+// people (#222), is named with the rest (#215). So is one in the
+// acknowledgements, and a section inside them is named whole, with any
+// <sec-meta> it holds, though the cutter now drops every <sec-meta> it reads
+// (#229).
 const PART_CHILDREN = ["p", "title", "label"];
 
 const hasText = (element: Element): boolean =>

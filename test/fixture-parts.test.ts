@@ -79,7 +79,7 @@ describe("strayParts", () => {
       "article/body/sec/sec-meta",
     ],
     [
-      "a section inside the acknowledgements that opens with a sec-meta (#229)",
+      "a section inside the acknowledgements, which takes in any sec-meta it opens with (#229)",
       {
         back:
           "<ack><sec><sec-meta><contrib-group><contrib><bio><p>B</p></bio></contrib></contrib-group></sec-meta>" +
