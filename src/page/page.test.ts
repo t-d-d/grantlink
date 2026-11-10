@@ -228,31 +228,6 @@ describe("fitness: the page shows only titles, links and references (no-republis
     expect(first).toContain("Title of PMC1");
     expect(first).toContain(">C1234/A56789<br>A28707</td>");
   });
-
-  // The page shows each reference in its normal form, as gold set B stores
-  // it. found.json and the table keep the text the paper printed (#606).
-  it("shows each reference in its normal form, not as the paper spaced it (#606)", () => {
-    const spaced = [
-      { asWritten: "C18281 /A19169", normalised: "C18281/A19169" },
-      { asWritten: "C1287/A 10710", normalised: "C1287/A10710" },
-      { asWritten: "C45074 / A26553", normalised: "C45074/A26553" },
-      { asWritten: "CTRQQR-2021\\100012", normalised: "CTRQQR-2021/100012" },
-      { asWritten: "PPRPGM-Nov20∖100002", normalised: "PPRPGM-NOV20/100002" },
-      { asWritten: "C1234\u2212A5", normalised: "C1234-A5" },
-    ].map((reference) => ({ ...reference, format: "Cn/An" }));
-    const published = summarise([done("PMC9", spaced)], run);
-    expect(published.papers[0]?.references.map((r) => r.asWritten)).toEqual(
-      spaced.map((r) => r.asWritten),
-    );
-    const html = renderFound(published);
-    expect(html).toContain(
-      `>${spaced.map((r) => r.normalised).join("<br>")}</td>`,
-    );
-    for (const { asWritten } of spaced) {
-      expect(html).not.toContain(asWritten);
-    }
-    expect(html).not.toContain("as written");
-  });
 });
 
 describe("fitness: links are labelled as proposed by software, with no warranty (accuracy.md)", () => {
@@ -314,6 +289,31 @@ describe("rendering the page", () => {
     );
   });
 
+  // The page shows each reference in its normal form, as gold set B stores
+  // it. found.json and the table keep the text the paper printed (#606).
+  it("shows each reference in its normal form, not as the paper spaced it (#606)", () => {
+    const spaced = [
+      { asWritten: "C18281 /A19169", normalised: "C18281/A19169" },
+      { asWritten: "C1287/A 10710", normalised: "C1287/A10710" },
+      { asWritten: "C45074 / A26553", normalised: "C45074/A26553" },
+      { asWritten: "CTRQQR-2021\\100012", normalised: "CTRQQR-2021/100012" },
+      { asWritten: "PPRPGM-Nov20∖100002", normalised: "PPRPGM-NOV20/100002" },
+      { asWritten: "C1234\u2212A5", normalised: "C1234-A5" },
+    ].map((reference) => ({ ...reference, format: "Cn/An" }));
+    const published = summarise([done("PMC9", spaced)], run);
+    expect(published.papers[0]?.references.map((r) => r.asWritten)).toEqual(
+      spaced.map((r) => r.asWritten),
+    );
+    const html = renderFound(published);
+    expect(html).toContain(
+      `>${spaced.map((r) => r.normalised).join("<br>")}</td>`,
+    );
+    for (const { asWritten } of spaced) {
+      expect(html).not.toContain(asWritten);
+    }
+    expect(html).not.toContain("as written");
+  });
+
   describe("a title with inline markup (#606)", () => {
     const shown = (title: string) =>
       /<a href="[^"]*">([\s\S]*?)<\/a>/u.exec(
@@ -338,6 +338,11 @@ describe("rendering the page", () => {
 
     it("drops a closing tag with nothing open, rather than show it", () => {
       expect(shown("a</sup> b")).toBe("a b");
+    });
+
+    it("links by the pmcid when the markup leaves no text to show", () => {
+      expect(shown("<i></i>")).toBe("PMC9");
+      expect(shown("</sup> ")).toBe("PMC9");
     });
 
     it("escapes any other markup, and a tag that carries attributes", () => {

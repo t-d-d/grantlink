@@ -63,10 +63,15 @@ const titleHtml = (title: string) => {
 
 const number = (n: number) => n.toLocaleString("en-GB");
 
-const paperLink = (paper: { pmcid: string; title: string }) =>
-  `<a href="https://europepmc.org/article/PMC/${escape(paper.pmcid)}">${
-    paper.title === "" ? escape(paper.pmcid) : titleHtml(paper.title)
-  }</a>`;
+// A title whose markup leaves no text would give a link with no name, so it
+// is linked by its pmcid, as an empty title is. Its escaped text holds no
+// "<", so only the tags titleHtml writes are taken out.
+const paperLink = (paper: { pmcid: string; title: string }) => {
+  const title = titleHtml(paper.title);
+  const shown =
+    title.replace(/<[^>]*>/gu, "").trim() === "" ? escape(paper.pmcid) : title;
+  return `<a href="https://europepmc.org/article/PMC/${escape(paper.pmcid)}">${shown}</a>`;
+};
 
 const DATE = new Intl.DateTimeFormat("en-GB", {
   day: "numeric",
