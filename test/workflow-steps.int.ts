@@ -257,6 +257,35 @@ describe("the eval's comment", () => {
   });
 });
 
+// #257: the step took the first marker comment's id through `head -n 1`
+// under pipefail. When head stopped reading while gh still wrote, gh died
+// of SIGPIPE and the step failed. The stub prints far more ids than a pipe
+// holds, and records the PATCH it is sent.
+describe("the eval's comment, when gh finds more than one earlier comment", () => {
+  const run = script(
+    evalWorkflow,
+    "eval",
+    "Comment with CI's scores beside the live release's",
+  );
+  const gh = [
+    'if [ "$2" = -X ]; then echo "$*" >> "$RUNNER_TEMP/gh-args"; exit 0; fi',
+    "for ((i = 101; i < 30101; i++)); do echo \"$i\"; done",
+  ].join("\n");
+
+  it("succeeds and updates the first one", () => {
+    const { status, stderr, temp } = runStep(
+      run,
+      { node: ":", gh },
+      { PR: "1", GITHUB_REPOSITORY: "o/r", NO_LIVE: "no-deploy" },
+    );
+    expect(stderr).toBe("");
+    expect(status).toBe(0);
+    expect(readFileSync(join(temp, "gh-args"), "utf8")).toBe(
+      "api -X PATCH repos/o/r/issues/comments/101 -F body=@comment.md\n",
+    );
+  });
+});
+
 describe("the deploy's stack outputs", () => {
   const run = script(deploy, "deploy", "stack");
   const outputs = (keys: string[]) =>
