@@ -107,8 +107,9 @@ export type Taken =
 // registry id is never an answer. A gold set B paper is always kept, even
 // with empty sections, since its label is scored against what the rules
 // find in it, which may be nothing (#399). A gold set A paper's grants are
-// read first, so a paper with none costs no full text. A grant id the manifest cannot hold, such as one with a space, is left out,
-// or the manifest would refuse the whole snapshot.
+// read first, so a paper with none costs no full text. A grant id the
+// manifest cannot hold, such as one with a space, is left out, or the
+// manifest would refuse the whole snapshot.
 export async function snapshotPaper(
   deps: Deps,
   pmcid: string,
