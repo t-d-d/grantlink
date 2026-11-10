@@ -235,7 +235,8 @@ export function mergeKeysIn(value: unknown): string[] {
 // the deploy reads the stack's outputs (#243), or change a resource or an
 // output an earlier inline entry declares, which osls would merge over it
 // (#261), or a parameter an earlier inline entry declares (#297), or hold a
-// section that is not a map, which osls would merge over the whole section. It may use no variable but the cf and env ones.
+// section that is not a map, which osls would merge over the whole section.
+// It may use no variable but the cf and env ones.
 // Entries count from 1.
 export function unreadResources(
   resources: unknown,
@@ -273,18 +274,17 @@ export function unreadResources(
       });
       // Each id in `section` that a template, osls or an earlier inline
       // entry declares. The rest are this entry's, for later entries.
-      // osls generates resources and outputs, not parameters.
       const changes = (
         section: unknown,
         declared: readonly string[],
         inline: Map<string, string>,
         what: string,
-        byOsls = true,
+        generated: (id: string) => boolean,
       ): string[] =>
         Object.keys(isPlain(section) ? section : {}).flatMap((id): string[] => {
           if (declared.includes(id))
             return [`${at} changes ${what}${id}, which a template declares`];
-          if (byOsls && oslsGenerates(id, elsewhere.functions))
+          if (generated(id))
             return [`${at} changes ${what}${id}, which osls generates`];
           const earlier = inline.get(id);
           if (earlier !== undefined)
@@ -292,6 +292,9 @@ export function unreadResources(
           inline.set(id, at);
           return [];
         });
+      // osls generates resources and outputs, not parameters.
+      const byOsls = (id: string): boolean =>
+        oslsGenerates(id, elsewhere.functions);
       // An inline parameter may set a template's parameter, as serverless.yml
       // sets the dns stack's values as defaults, so only an earlier inline
       // entry's parameter counts.
@@ -300,19 +303,21 @@ export function unreadResources(
         [],
         inlineParameters,
         "the parameter ",
-        false,
+        () => false,
       );
       const changed = changes(
         entry.Resources,
         elsewhere.declared,
         inlineResources,
         "",
+        byOsls,
       );
       const changedOutputs = changes(
         entry.Outputs,
         elsewhere.outputs,
         inlineOutputs,
         "the output ",
+        byOsls,
       );
       const variables = variablesIn(entry, []).map(
         (found) => `${at} has ${found}`,
