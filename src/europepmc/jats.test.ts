@@ -786,3 +786,49 @@ describe("reading JATS through an XML parser (#343)", () => {
     expect(kept).not.toContain("grantlink");
   });
 });
+
+// Markup that is not well-formed XML, which the regular expressions read one
+// way and the XML parser another (#354). Europe PMC's XML is well-formed, so
+// none has been seen there.
+describe("reading markup that is not well-formed XML (#354)", () => {
+  it.each([
+    ["<SEC><title>Funding</title><p>Grant A1.</p></sec>"],
+    ["<sec><title>Funding</title><p>Grant A1.</p></SEC>"],
+    ["<Sec><Title>Funding</Title><P>Grant A1.</P></sEC>"],
+  ])(
+    "closes a section whose tags differ only in case, in %s, as before #343",
+    (section) => {
+      expect(
+        fundingSections(`<article><body>${section}</body></article>`).text,
+      ).toEqual(["Grant A1."]);
+    },
+  );
+
+  it.each([
+    ['<fn fn-type="other" fn-type="funding">'],
+    ['<fn fn-type="funding" fn-type="other">'],
+  ])(
+    "reads a footnote as funding when any of its repeated types is funding, in %s, as before #343",
+    (tag) => {
+      expect(
+        fundingSections(
+          `<article><back><fn-group>${tag}<p>Grant A1.</p></fn></fn-group></back></article>`,
+        ).text,
+      ).toEqual(["Grant A1."]);
+    },
+  );
+
+  it.each([
+    ['<sec sec-type="other" sec-type="funding">'],
+    ['<sec sec-type="funding" sec-type="other">'],
+  ])(
+    "reads a section as funding when any of its repeated types is funding, in %s, as before #343",
+    (tag) => {
+      expect(
+        fundingSections(
+          `<article><body>${tag}<p>Grant A1.</p></sec></body></article>`,
+        ).text,
+      ).toEqual(["Grant A1."]);
+    },
+  );
+});

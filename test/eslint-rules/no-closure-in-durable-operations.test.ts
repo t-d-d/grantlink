@@ -66,6 +66,18 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
         errors: [{ messageId: "closureVariableUsage" }],
       },
       {
+        name: "counts into an outer variable from logOnly's log, which runs as its step",
+        filename: "src/run/run.ts",
+        code: `import { logOnly } from "./log-only.ts";
+        async function run(ctx: any) {
+          let lines = 0;
+          await logOnly(ctx, "search-ended", () => {
+            lines += 1;
+          });
+        }`,
+        errors: [{ messageId: "closureVariableUsage" }],
+      },
+      {
         name: "collects into an outer array from a map item",
         code: `async function run(ctx: any) {
           const found: string[] = [];

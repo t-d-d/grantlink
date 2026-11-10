@@ -59,6 +59,17 @@ describe("fitness: no durable operation inside its own context's operation (dura
         errors: [{ messageId: "sameContextUsage" }],
       },
       {
+        name: "calls a step on the same context inside logOnly's log",
+        filename: "src/run/run.ts",
+        code: `import { logOnly } from "./log-only.ts";
+        async function run(ctx: any) {
+          await logOnly(ctx, "search-ended", () => {
+            void ctx.step("inner", async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
         name: "asks Europe PMC on the same context inside a step",
         filename: "src/run/run.ts",
         code: `import { askEuropePmc } from "./owed.ts";
