@@ -23,8 +23,9 @@ import {
 // `export * as owed from "./owed.ts"`, exporting an imported helper, a
 // namespace import of its module or a helper read from one, whether by name,
 // as a constant or as the default, and `export { askEuropePmc as ask }`,
-// `export const ask = askEuropePmc` or `export default askEuropePmc` in
-// owed.ts itself, directly or through a chain of local aliases such as
+// `export const ask = askEuropePmc`, `export default askEuropePmc` or
+// `export default async function askEuropePmc() {}` in owed.ts itself,
+// directly or through a chain of local aliases such as
 // `const ask = askEuropePmc; export { ask }`. A type-only export carries no
 // function, so it passes.
 export const noStepHelperReExport = createRule({
@@ -138,7 +139,19 @@ export const noStepHelperReExport = createRule({
         }
       },
       ExportDefaultDeclaration(node) {
-        checkValue(node, node.declaration);
+        // `export default async function askEuropePmc() {}` in owed.ts
+        // defines the helper and exports it only as the default, which
+        // callers import under a name of their own, so it is refused like
+        // `export default askEuropePmc`.
+        const declared = node.declaration;
+        if (
+          declared.type === AST_NODE_TYPES.FunctionDeclaration &&
+          declared.id !== null
+        ) {
+          if (helperNamed(here, declared.id.name) !== null) report(node, here);
+          return;
+        }
+        checkValue(node, declared);
       },
     };
   },
