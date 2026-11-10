@@ -399,13 +399,12 @@ const NOTES_WITHIN = new Set(["notes", "fn-group", "fn"]);
 // or typed as something other than funding (#541, #563). A footnote keeps
 // the notes it holds.
 const noteContent = (note: XmlElement): XmlNode[] =>
-  note.name === "notes"
-    ? pruned(
-        note.children,
-        (element) =>
-          !NOTES_WITHIN.has(element.name) && keptInFundingPart(element),
-      )
-    : pruned(note.children, keptInFundingPart);
+  pruned(
+    note.children,
+    (element) =>
+      keptInFundingPart(element) &&
+      !(note.name === "notes" && NOTES_WITHIN.has(element.name)),
+  );
 
 // A note's own content: what it holds that is read with it, less the
 // sections it holds directly (#526). A section deeper in, wrapped in
