@@ -1,4 +1,7 @@
-import type { DurableContext } from "@aws/durable-execution-sdk-js";
+import {
+  DurableOperationError,
+  type DurableContext,
+} from "@aws/durable-execution-sdk-js";
 import {
   checkWholeSearch,
   logSearchEnded,
@@ -110,27 +113,35 @@ export function makeRun(deps: Deps) {
     let read = 0;
     let failed = 0;
     let owed: Owed = null;
+    // How the search stopped early, if it did: a refused page leaves the
+    // wait Europe PMC asked for, and a page that failed after its retries
+    // leaves what it threw.
+    let stopped: { refused: Owed } | { failed: DurableOperationError } | null =
+      null;
     while (cursor !== null) {
       const from: string = cursor;
       if (owed !== null) await ctx.wait(owed.name, { seconds: owed.seconds });
       owed = null;
       const searchStep = `search-${String(page)}`;
-      const searched = await askEuropePmc(
-        ctx,
-        searchStep,
-        `${searchStep}-wait`,
-        europePmcRetry,
-        async () => searchPage(deps, from),
-      );
-      // A refused search fails the run, which publishes nothing, but only
-      // once the wait Europe PMC asked for has passed, so a run started
-      // after this one never asks it too soon (#264).
-      if ("owed" in searched) {
-        const wait = searched.owed;
-        if (wait !== null) await ctx.wait(wait.name, { seconds: wait.seconds });
-        throw new Error(
-          `Europe PMC refused the run's search, asked to wait ${String(wait?.seconds ?? 0)}s`,
+      let searched: Asked<Awaited<ReturnType<typeof searchPage>>>;
+      try {
+        searched = await askEuropePmc(
+          ctx,
+          searchStep,
+          `${searchStep}-wait`,
+          europePmcRetry,
+          async () => searchPage(deps, from),
         );
+      } catch (error) {
+        // An error the SDK raises for itself is not a failed page, so it
+        // is thrown as it is, before any other durable operation.
+        if (!(error instanceof DurableOperationError)) throw error;
+        stopped = { failed: error };
+        break;
+      }
+      if ("owed" in searched) {
+        stopped = { refused: searched.owed };
+        break;
       }
       const result = searched.read;
       // The table's own step, so a failure to write or read it is retried
@@ -158,15 +169,35 @@ export function makeRun(deps: Deps) {
       page += 1;
     }
     // Logged before the check, so a search that fails it still says how
-    // many results it skipped.
+    // many results it skipped, and before a refusal or a failed page ends
+    // the run, so the totals of the pages it read still show in one line
+    // (#348).
+    const ended = stopped;
     await ctx.step(
       "search-ended",
       async () => {
-        logSearchEnded(runId, found, skipped);
+        logSearchEnded(
+          runId,
+          found,
+          skipped,
+          ended !== null && "refused" in ended,
+          ended !== null && "failed" in ended,
+        );
         return Promise.resolve();
       },
       { retryStrategy: storeRetry },
     );
+    if (ended !== null && "failed" in ended) throw ended.failed;
+    // A refused search fails the run, which publishes nothing, but only
+    // once the wait Europe PMC asked for has passed, so a run started
+    // after this one never asks it too soon (#264).
+    if (ended !== null) {
+      const wait = ended.refused;
+      if (wait !== null) await ctx.wait(wait.name, { seconds: wait.seconds });
+      throw new Error(
+        `Europe PMC refused the run's search, asked to wait ${String(wait?.seconds ?? 0)}s`,
+      );
+    }
     checkWholeSearch(found, skipped);
 
     // The search has ended, so the run records it once as the latest
