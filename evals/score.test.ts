@@ -195,12 +195,37 @@ describe("finding which linked grants a paper prints", () => {
       "A2021",
       "<article><front><article-meta><funding-group><award-group><funding-source>Cancer Research UK</funding-source><award-id>2021</award-id></award-group></funding-group></article-meta></front><body><p>No grant here.</p></body></article>",
     ],
+    [
+      "A12345",
+      "<article><body><p>No grant here.</p></body><sub-article><front-stub><funding-group><award-group><award-id>A12345</award-id></award-group></funding-group></front-stub></sub-article></article>",
+    ],
   ])(
     "finds %s printed in the front matter's funding group",
     (grant, article) => {
       expect(printedGrants([grant], article)).toEqual([grant]);
     },
   );
+
+  // The cutter keeps a funding footnote in the author notes, so the
+  // answers read it too.
+  it("finds a grant printed in a funding footnote in the front matter's author notes", () => {
+    expect(
+      printedGrants(
+        ["A12345"],
+        '<article><front><article-meta><author-notes><fn fn-type="financial-disclosure"><p>Funded by grant A12345.</p></fn></author-notes></article-meta></front><body><p>No grant here.</p></body></article>',
+      ),
+    ).toEqual(["A12345"]);
+  });
+
+  // An empty funding group does not keep the metadata after it.
+  it("does not read past an empty funding group in the front matter", () => {
+    expect(
+      printedGrants(
+        ["A12345"],
+        '<article><front><article-meta><funding-group /><article-id pub-id-type="doi">10.7554/eLife.12345</article-id><funding-group><funding-statement>None.</funding-statement></funding-group></article-meta></front><body><p>No grant here.</p></body></article>',
+      ),
+    ).toEqual([]);
+  });
 
   it("keeps only the linked grants the paper prints, in their order", () => {
     expect(
