@@ -82,3 +82,33 @@ export function refusesPlainHttp(
     );
   });
 }
+
+// A condition that tests the If-None-Match header for "*" and nothing
+// else. Any other operator, or another key under StringNotEquals, is ANDed
+// with it and narrows the Deny to fewer writes, so the strict objects
+// refuse them (#244).
+const OnlyIfNoneMatch = z.strictObject({
+  StringNotEquals: z.strictObject({
+    "s3:if-none-match": z.union([z.literal("*"), z.tuple([z.literal("*")])]),
+  }),
+});
+
+// Whether a statement denies everyone any PutObject that does not ask S3
+// to refuse it when the key exists. That is the template's
+// WriteOnceUnderEval statement, less its Resource, which each caller
+// checks in its own form. A narrowed principal or an extra condition
+// would let some callers replace an eval report, so either fails (#244).
+export function deniesReplacingWrites(statement: unknown): boolean {
+  const parsed = Statement.safeParse(statement);
+  if (!parsed.success) return false;
+  const { Effect, Principal, Action, Condition } = parsed.data;
+  const actions = list(Action);
+  return (
+    Effect === "Deny" &&
+    isWildcardPrincipal(Principal) &&
+    (actions.includes("s3:PutObject") ||
+      actions.includes("s3:*") ||
+      actions.includes("*")) &&
+    OnlyIfNoneMatch.safeParse(Condition).success
+  );
+}

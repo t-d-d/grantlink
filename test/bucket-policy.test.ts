@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { grantsInPolicy, refusesPlainHttp } from "./bucket-policy.ts";
+import {
+  deniesReplacingWrites,
+  grantsInPolicy,
+  refusesPlainHttp,
+} from "./bucket-policy.ts";
 
 describe("grantsInPolicy", () => {
   it("passes a policy whose statements all deny", () => {
@@ -161,5 +165,99 @@ describe("refusesPlainHttp", () => {
     expect(
       refusesPlainHttp({ Statement: [{ ...httpsOnly, ...change }] }, bucket),
     ).toBe(false);
+  });
+});
+
+describe("deniesReplacingWrites", () => {
+  const writeOnce = {
+    Sid: "WriteOnceUnderEval",
+    Effect: "Deny",
+    Principal: "*",
+    Action: "s3:PutObject",
+    Resource: ["arn:aws:s3:::example/eval/*"],
+    Condition: { StringNotEquals: { "s3:if-none-match": "*" } },
+  };
+
+  it("passes a Deny, for everyone, of any write that does not ask S3 to refuse it when the key exists", () => {
+    expect(deniesReplacingWrites(writeOnce)).toBe(true);
+  });
+
+  it("reads the principal, the action and the condition value in lists", () => {
+    expect(
+      deniesReplacingWrites({
+        ...writeOnce,
+        Principal: { AWS: ["*"] },
+        Action: ["s3:PutObject"],
+        Condition: { StringNotEquals: { "s3:if-none-match": ["*"] } },
+      }),
+    ).toBe(true);
+  });
+
+  it("passes a Deny of every S3 action under the same condition", () => {
+    expect(deniesReplacingWrites({ ...writeOnce, Action: "s3:*" })).toBe(true);
+  });
+
+  it.each([
+    ["it is missing", undefined],
+    ["it is not an object", "WriteOnceUnderEval"],
+  ])("fails when the statement %s", (_, statement) => {
+    expect(deniesReplacingWrites(statement)).toBe(false);
+  });
+
+  it.each([
+    ["it allows rather than denies", { Effect: "Allow" }],
+    [
+      "it denies only one role",
+      { Principal: { AWS: "arn:aws:iam::123456789012:role/example" } },
+    ],
+    [
+      "it denies only a service",
+      { Principal: { Service: "lambda.amazonaws.com" } },
+    ],
+    ["it has no principal", { Principal: undefined }],
+    ["it denies another action", { Action: "s3:GetObject" }],
+    ["it has no condition", { Condition: undefined }],
+    [
+      "another condition operator narrows it",
+      {
+        Condition: {
+          StringNotEquals: { "s3:if-none-match": "*" },
+          StringEquals: { "aws:PrincipalTag/x": "y" },
+        },
+      },
+    ],
+    [
+      "another key in its StringNotEquals narrows it",
+      {
+        Condition: {
+          StringNotEquals: {
+            "s3:if-none-match": "*",
+            "aws:PrincipalAccount": "123456789012",
+          },
+        },
+      },
+    ],
+    [
+      "it tests another value",
+      { Condition: { StringNotEquals: { "s3:if-none-match": "etag" } } },
+    ],
+    [
+      "it tests another value as well",
+      { Condition: { StringNotEquals: { "s3:if-none-match": ["*", "etag"] } } },
+    ],
+    [
+      "it uses the IfExists form",
+      {
+        Condition: {
+          StringNotEqualsIfExists: { "s3:if-none-match": "*" },
+        },
+      },
+    ],
+    [
+      "it denies the writes that do ask instead",
+      { Condition: { StringEquals: { "s3:if-none-match": "*" } } },
+    ],
+  ])("fails when %s", (_, change) => {
+    expect(deniesReplacingWrites({ ...writeOnce, ...change })).toBe(false);
   });
 });

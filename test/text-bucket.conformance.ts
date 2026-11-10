@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   BucketPolicy,
+  deniesReplacingWrites,
   grantsInPolicy,
   refusesPlainHttp,
 } from "./bucket-policy.ts";
@@ -90,11 +91,10 @@ describe("fitness: cache entries never change (evals.md)", () => {
     const writeOnce = policy.Statement.find(
       (statement) => statement.Sid === "WriteOnceUnderEval",
     );
-    expect(writeOnce).toMatchObject({
-      Effect: "Deny",
-      Action: "s3:PutObject",
-      Condition: { StringNotEquals: { "s3:if-none-match": "*" } },
-    });
+    // A strict check of Effect, Principal, Action and Condition: a Deny
+    // narrowed outside CloudFormation to fewer callers would let them
+    // replace a report, and a subset match passes it (#244).
+    expect(deniesReplacingWrites(writeOnce)).toBe(true);
     expect(writeOnce?.Resource).toEqual([
       `arn:aws:s3:::${TEXT_BUCKET}/eval/*`,
       `arn:aws:s3:::${TEXT_BUCKET}/eval-reports/*`,
