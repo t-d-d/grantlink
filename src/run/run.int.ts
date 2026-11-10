@@ -47,6 +47,7 @@ afterAll(() => {
 // The log lines with event `event`, each parsed.
 function logged(event: string): Record<string, unknown>[] {
   return logs
+    .filter((line) => line.startsWith("{"))
     .map((line) => JSON.parse(line) as Record<string, unknown>)
     .filter((line) => line.event === event);
 }

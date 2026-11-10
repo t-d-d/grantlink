@@ -185,7 +185,14 @@ export function makeRun(deps: Deps) {
       ));
     } catch (error) {
       snapshot = { taken: false, reason: "failed" };
-      const why = error instanceof Error ? error.message : String(error);
+      // What reaches here is a message this code wrote or a store's or
+      // Europe PMC's client's, made of ids, counts and statuses: a gold
+      // paper's own failure is caught in its batch, so no paper's text is
+      // in it (docs/constraints/personal-data.md). A reply that fails its
+      // schema can list an issue per result, so the message is cut short.
+      const why = (
+        error instanceof Error ? error.message : String(error)
+      ).slice(0, 500);
       await ctx.step(
         "snapshot-failed",
         async () => {

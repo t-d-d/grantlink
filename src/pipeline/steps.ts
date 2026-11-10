@@ -68,9 +68,8 @@ export function logSearchEnded(
   logger.info("search-ended", { runId, found, skipped });
 }
 
-// Logs why the snapshot failed. The error's message is one this code wrote
-// or a store's, made of ids, counts and statuses: no step the snapshot runs
-// puts a paper's text in an error (#198).
+// Logs why the snapshot failed. The caller passes only a message made of
+// ids, counts and statuses, never a paper's text (#198).
 export function logSnapshotFailed(runId: string, error: string): void {
   logger.warn("snapshot-failed", { runId, error });
 }
