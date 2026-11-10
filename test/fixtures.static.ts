@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { FUNDING_METADATA, isFundingSectionAt } from "../src/europepmc/jats.ts";
+import {
+  FUNDING_FOOTNOTE_TYPES,
+  FUNDING_METADATA,
+  FUNDING_SECTION_TYPE,
+  isFundingSectionAt,
+} from "../src/europepmc/jats.ts";
 import { strayParts } from "./fixture-parts.ts";
 import { FIXTURES, RECORDED, fixture, sources } from "./fixtures.ts";
 import { readRepoFile, repoFiles } from "./repo.ts";
@@ -73,6 +78,24 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
       expect(cutter.split(name)).toHaveLength(2);
       expect(cutter).toContain(`FUNDING_METADATA.${key}`);
       expect(check).not.toContain(name);
+    },
+  );
+
+  // The check expects the sec-type and fn-type values the cutter matches a
+  // funding part by, so when the cutter reads another type the check
+  // follows. The cutter matches through the values it exports, and the
+  // check copies none of them (#417).
+  it("the cutter matches sec-type by the pattern it exports, and the check does not copy it", () => {
+    expect(cutter).toContain("FUNDING_SECTION_TYPE.test(");
+    expect(check).toContain("FUNDING_SECTION_TYPE");
+    expect(check).not.toContain(FUNDING_SECTION_TYPE.source);
+  });
+  it.each(FUNDING_FOOTNOTE_TYPES)(
+    "the cutter matches fn-type %s through the list it exports, and the check does not copy it",
+    (type) => {
+      expect(cutter).toContain("FUNDING_FOOTNOTE_TYPES.includes(");
+      expect(check).toContain("FUNDING_FOOTNOTE_TYPES");
+      expect(check).not.toContain(`"${type}"`);
     },
   );
 

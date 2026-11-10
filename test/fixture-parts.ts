@@ -31,7 +31,9 @@
 
 import {
   FUNDING_FOOTNOTE,
+  FUNDING_FOOTNOTE_TYPES,
   FUNDING_METADATA,
+  FUNDING_SECTION_TYPE,
   isFundingSection as isFundingSectionElement,
 } from "../src/europepmc/jats.ts";
 import { parseXml, type XmlElement } from "../src/europepmc/xml.ts";
@@ -231,9 +233,9 @@ const ATTRIBUTES = new Map<string, (value: string) => boolean>(
     "institution-id-type": oneOf("DOI", "FundRef", "ROR", "Ringgold", "ISNI"),
     id: (value) => ID.test(value),
     rid: (value) => value.split(/\s+/u).every((id) => ID.test(id)),
-    // As the cutter reads them, in src/europepmc/jats.ts.
-    "sec-type": (value) => /^(?:funding|ack|acknowledge?ments?)$/iu.test(value),
-    "fn-type": oneOf("financial-disclosure", "funding", "supported-by"),
+    // As the cutter reads them, taken from src/europepmc/jats.ts (#417).
+    "sec-type": (value) => FUNDING_SECTION_TYPE.test(value),
+    "fn-type": oneOf(...FUNDING_FOOTNOTE_TYPES),
   }),
 );
 
