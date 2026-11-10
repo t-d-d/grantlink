@@ -224,7 +224,7 @@ describe("the pull request's comment", () => {
     );
     // Newer code can file a report this code cannot read too, so the
     // reason does not guess which it is (#186).
-    expect(text).not.toMatch(/older/i);
+    expect(text).not.toMatch(/\bolder\b/i);
   });
 
   it("reads the run and the scores from a live report this code can read", () => {
@@ -240,8 +240,8 @@ describe("the pull request's comment", () => {
   });
 
   // The comment shows only that the live report could not be read. The
-  // job's log keeps why, as paths and codes and never values, so a report
-  // that is broken rather than old can still be told apart.
+  // job's log keeps why, as paths and codes and never values, so a broken
+  // report, an older one and a newer one can still be told apart.
   it("logs why it cannot read a live report, without its values", () => {
     const lines: string[] = [];
     const live = report({ spend: 0 });

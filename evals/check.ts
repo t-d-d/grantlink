@@ -106,7 +106,7 @@ const liveReport = z.object({
 export type LiveReport = z.infer<typeof liveReport>;
 
 // Why it could not be read goes to the job's log, as paths and codes and
-// never values, so a broken report can still be told from an old one.
+// never values, so the comment need not guess the cause (#186).
 // stdout is the comment, so the default writes to stderr.
 export function readLive(
   raw: string,
