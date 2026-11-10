@@ -69,8 +69,12 @@ const NAMES = funder.names.map((name) => namePattern(escape(name))).join("|");
 const ANY_CASE_NAMES = funder.names
   .map((name) => namePattern(anyCase(escape(name))))
   .join("|");
-// Any letter, not only A to Z, makes a name part of a longer word (#320).
-const funderName = new RegExp(`(?:^|\\P{L})(?:${NAMES})(?!\\p{L})`, "iu");
+// Any letter, not only A to Z, makes a name part of a longer word (#320),
+// and so does a combining mark, which belongs to the letter before it. A
+// lookbehind, not a negated class, keeps the case-insensitive match from
+// folding a letter onto a mark that is not one.
+const EDGE = String.raw`[\p{L}\p{M}]`;
+const funderName = new RegExp(`(?<!${EDGE})(?:${NAMES})(?!${EDGE})`, "iu");
 
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
@@ -119,7 +123,7 @@ const PATTERNS: Pattern[] = [
     // name, as in "Cancer Research UK (G123/45)".
     format: "Gn/n",
     pattern: new RegExp(
-      String.raw`(?<=(?:^|\P{L})(?:${ANY_CASE_NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}\b`,
+      String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}\b`,
       "gu",
     ),
     sentenceOnly: false,

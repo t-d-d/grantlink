@@ -134,6 +134,25 @@ describe("the rules", () => {
     },
   );
 
+  // A letter written as a base letter and a combining accent is still a
+  // letter, and so is one the case-insensitive match folds onto a mark.
+  it.each([
+    ["an A number", "Funded by E\u0301CRUK (A12345)."],
+    ["a G number", "Funded by E\u0301CRUK (G123/45)."],
+    ["an A number after a Greek letter", "Funded by \u03b9CRUK (A12345)."],
+  ])(
+    "leaves %s when a letter with a combining accent or a folded case touches the name",
+    (_, text) => {
+      expect(findReferences(sections(text))).toEqual([]);
+    },
+  );
+
+  it("reads an A number when a non-ASCII mark that is not a letter touches the name", () => {
+    expect(
+      findReferences(sections("Funded by \u00abCRUK\u00bb (A12345).")),
+    ).toEqual([{ asWritten: "A12345", normalised: "A12345", format: "An" }]);
+  });
+
   it("leaves a lowercase g number", () => {
     expect(findReferences(sections("Cancer Research UK (g123/45)."))).toEqual(
       [],
