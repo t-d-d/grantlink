@@ -11,7 +11,10 @@ import { latest, type Version } from "./versions.ts";
 // changes, so every stored result says which rules made it. To bump, add a
 // line naming your issue at the end of RULES_VERSIONS below (see
 // versions.ts, #414).
-export const RULES_VERSIONS: readonly Version[] = [{ number: 10, issue: 368 }];
+export const RULES_VERSIONS: readonly Version[] = [
+  { number: 10, issue: 368 },
+  { number: 11, issue: 506 },
+];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
 export const funder = z
@@ -142,14 +145,34 @@ interface Pattern {
   sentenceOnly: boolean;
 }
 
+// The words that tie a bare number to the funder's name before it, such as
+// "grant", "award no." or "reference number", ending in the space or mark
+// before the number (#506). Not part of a longer word.
+const TIE_WORD = String.raw`(?<!\p{L})(?:[Gg]rant|[Aa]ward|[Pp]roject|[Rr]ef(?:erence)?|[Nn]umber|[Nn]o)s?\.?(?:\s?(?:[Nn]o|[Nn]umber|[Rr]ef)\.?)?\s?[:#]?\s?`;
+
 // The model pass reads a month in a code with this too (#467).
 export const MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
 
 const PATTERNS: Pattern[] = [
   {
+    // Either letter may be written in lower case (#506).
     format: "Cn/An",
     pattern: new RegExp(
-      String.raw`${START}C\s?\d{1,6}${SEP}A\s?\d{4,6}${END}`,
+      String.raw`${START}[Cc]\s?\d{1,6}${SEP}[Aa]\s?\d{4,6}${END}`,
+      "gu",
+    ),
+    sentenceOnly: false,
+  },
+  {
+    // A reference that carries the funder's short name as its own part, as
+    // in CRUK/12/034, CRUKDF-0123-AB or ABC-CRUK-ABCD12-AB (#506). The
+    // guide keeps the CRUK in its normalised form. It must hold a digit
+    // after the CRUK, within what it matches, so a word such as CRUK-funded
+    // or a run of names such as CRUK/MRC/EPSRC is not one. It comes after
+    // the C/A pattern, so a C/A pair after CRUK/ is read as the pair alone.
+    format: "CRUK-X",
+    pattern: new RegExp(
+      String.raw`${START}(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:(?:${DASH}|/)[A-Z0-9]{1,8}){1,4}(?<=CRUK[A-Z0-9/${DASHES}-]*\d[A-Z0-9/${DASHES}-]*)${END}`,
       "gu",
     ),
     sentenceOnly: false,
@@ -188,9 +211,10 @@ const PATTERNS: Pattern[] = [
     sentenceOnly: false,
   },
   {
-    // A Francis Crick Institute core funding number, old style.
+    // A Francis Crick Institute core funding number, old style. One printed
+    // with a digit or two too many is kept as printed (#175 rule 6, #506).
     format: "FCn",
-    pattern: new RegExp(String.raw`${START}FC\s?\d{6}${END}`, "gu"),
+    pattern: new RegExp(String.raw`${START}FC\s?\d{6,8}${END}`, "gu"),
     sentenceOnly: true,
   },
   {
@@ -206,8 +230,27 @@ const PATTERNS: Pattern[] = [
     sentenceOnly: true,
   },
   {
+    // Four digits only when written straight onto the A (#506). A
+    // four-digit A before another A number, as in A1234/A56789, is the C
+    // part of a misprinted C/A pair, which is left to the model (#177).
     format: "An",
-    pattern: new RegExp(String.raw`${START}A\s?\d{5}${END}`, "gu"),
+    pattern: new RegExp(
+      String.raw`${START}A(?:\s?\d{5}${END}|\d{4}${END}(?!${SEP}A\s?\d))`,
+      "gu",
+    ),
+    sentenceOnly: true,
+  },
+  {
+    // A bare award number, which the text ties to the funder: in brackets
+    // straight after its name, or after a word such as "grant" or "award
+    // no." that follows its name in the same clause, with no comma,
+    // semicolon or full stop between (#506). A year is not one, and nor is
+    // the start of a longer number, as in 12345/2, 12345-67 or 1234.5.
+    format: "n",
+    pattern: new RegExp(
+      String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})(?!${EDGE})(?:\s?\(\s?|[^;,.]{0,100}?${TIE_WORD}))(?!(?:19|20)\d{2}(?!\d))\d{4,6}${END}(?!${SEP}|${DASH}\d|\.\d)`,
+      "gu",
+    ),
     sentenceOnly: true,
   },
 ];
@@ -227,8 +270,11 @@ export function normalise(written: string): string {
 // Splits a paragraph into sentences. Gold set B's draw reads sentences with
 // this split too, so its checks scan what the rules scan (#360).
 export function sentences(paragraph: string): string[] {
-  // A full stop after a single capital, as in U.K., does not end one.
-  return paragraph.split(/(?<=(?<!\b[A-Z])[.;!?])\s+(?=[A-Z(])/u);
+  // A full stop after a single capital, as in U.K., does not end one, nor
+  // does the one in "no." before a reference, as in "(no. FC001234)" (#506).
+  return paragraph.split(
+    /(?<=(?<!\b[A-Z])[.;!?])(?<!\b[Nn]os?\.)\s+(?=[A-Z(])/u,
+  );
 }
 
 // Finds the references in one piece of text. `long` keeps only the patterns
@@ -272,11 +318,12 @@ function confirmedNumber(id: string, text: readonly string[]): boolean {
 }
 
 // Whether another reference gives this number, after a letter such as its A
-// or FC, or as the last part of a longer reference, so the number alone
-// would list it twice. It is asked once every reference is found, so the
-// order of the award groups does not matter (#241).
+// or FC, or as the last part of a longer reference after a slash or a
+// hyphen, as in CRUK-12345, so the number alone would list it twice. It is
+// asked once every reference is found, so the order of the award groups
+// does not matter (#241).
 function alreadyFound(id: string, found: readonly Reference[]): boolean {
-  const ending = new RegExp(`[A-Z/]${id}$`, "u");
+  const ending = new RegExp(`[A-Z/-]${id}$`, "u");
   return found.some(({ normalised }) => ending.test(normalised));
 }
 
@@ -288,7 +335,11 @@ export function findReferences(sections: FundingSections): Reference[] {
     found.push(...scan(paragraph, "long"));
     for (const sentence of sentences(paragraph)) {
       if (!funderName.test(sentence)) continue;
-      found.push(...scan(sentence, "short"));
+      // A bare number the text gives waits, as one from the metadata does,
+      // so an A number or a longer reference that ends in it lists it once.
+      for (const reference of scan(sentence, "short")) {
+        (reference.format === "n" ? bare : found).push(reference);
+      }
     }
   }
   for (const award of sections.awards) {
