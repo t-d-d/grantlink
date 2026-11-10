@@ -1,11 +1,11 @@
 // What a full text recorded from a paper may keep (#140,
 // docs/constraints/personal-data.md). The cut keeps the paper's ids, its
 // licence, its funding metadata, its acknowledgements and its funding
-// sections and footnotes. Anything else, such as the author list, the
+// sections, notes and footnotes. Anything else, such as the author list, the
 // affiliations, the title, the abstract, the reference list or the body, can
 // carry real names, and is named here.
 //
-// Whether a section or footnote is a funding part is decided by the
+// Whether a section, note or footnote is a funding part is decided by the
 // definitions the cutter in src/europepmc/jats.ts exports, so the two agree
 // (#159). Inside a part it allows, the check names anything the cutter does
 // not read but one title and one label, each holding only its own text
@@ -30,10 +30,10 @@
 // it does not expect (#304). It names the attribute, never its value.
 
 import {
-  FUNDING_FOOTNOTE,
-  FUNDING_FOOTNOTE_TYPES,
   FUNDING_METADATA,
+  FUNDING_NOTE_TYPES,
   FUNDING_SECTION_TYPE,
+  isFundingNote as isFundingNoteElement,
   isFundingSection as isFundingSectionElement,
   isSecMetaName,
 } from "../src/europepmc/jats.ts";
@@ -55,7 +55,8 @@ interface Element {
   // Whether it holds a comment or a processing instruction with text, which
   // the cutter drops unread.
   unread: boolean;
-  // Whether the cutter reads the element as a funding section or footnote.
+  // Whether the cutter reads the element as a funding section, note or
+  // footnote.
   funding: boolean;
 }
 
@@ -68,6 +69,8 @@ const isFundingSection = (element: Element): boolean =>
   element.name === "sec" && element.funding;
 const isFundingFootnote = (element: Element): boolean =>
   element.name === "fn" && element.funding;
+const isFundingNote = (element: Element): boolean =>
+  element.name === "notes" && element.funding;
 
 // For each element whose children are checked, which children it may hold.
 // The children of an element allowed here, but not listed, are not checked,
@@ -86,6 +89,7 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
     child.name === "ack" ||
     child.name === "fn-group" ||
     isFundingSection(child) ||
+    isFundingNote(child) ||
     isFundingFootnote(child),
   "article/back/fn-group": isFundingFootnote,
 };
@@ -101,7 +105,7 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
 // before the root, and what one holds that never ends with ?>, which the
 // parser reads as text (#303).
 function parse(xml: string): Element {
-  const convert = (node: XmlElement, root: boolean): Element => {
+  const convert = (node: XmlElement, root: boolean, parent = ""): Element => {
     const element: Element = {
       name: node.name,
       attributes: node.attributes,
@@ -111,12 +115,12 @@ function parse(xml: string): Element {
       unread: false,
       funding:
         (node.name === "sec" && isFundingSectionElement(node)) ||
-        (node.name === "fn" && FUNDING_FOOTNOTE(node)),
+        isFundingNoteElement(node, parent),
     };
     for (const child of node.children) {
       switch (child.kind) {
         case "element":
-          element.children.push(convert(child, false));
+          element.children.push(convert(child, false, node.name));
           break;
         case "instruction": {
           const declaration =
@@ -167,10 +171,11 @@ const hasUnread = (element: Element): boolean =>
   element.unread || element.children.some(hasUnread);
 
 // Whether the cutter reads the element as a funding part: a funding section,
-// a funding footnote or the acknowledgements. Where each may stand is for
-// ALLOWED to say.
+// a funding note or footnote, or the acknowledgements. Where each may stand
+// is for ALLOWED to say.
 const isPart = (element: Element): boolean =>
   isFundingSection(element) ||
+  isFundingNote(element) ||
   isFundingFootnote(element) ||
   element.name === "ack";
 
@@ -237,7 +242,8 @@ const ATTRIBUTES = new Map<string, (value: string) => boolean>(
     rid: (value) => value.split(/\s+/u).every((id) => ID.test(id)),
     // As the cutter reads them, taken from src/europepmc/jats.ts (#417).
     "sec-type": (value) => FUNDING_SECTION_TYPE.test(value),
-    "fn-type": oneOf(...FUNDING_FOOTNOTE_TYPES),
+    "fn-type": oneOf(...FUNDING_NOTE_TYPES),
+    "notes-type": oneOf(...FUNDING_NOTE_TYPES),
   }),
 );
 

@@ -46,11 +46,19 @@ const canonical = (id: string): string =>
 // The ways one reference can be written: whole, each part of a C/A pair,
 // and an award number with or without its A.
 function forms(id: string): Set<string> {
-  const whole = canonical(id);
-  const parts = whole.split("/");
-  const out = new Set([whole]);
-  if (parts.length === 2 && /^C\d+$/u.test(parts[0] ?? "")) {
-    out.add(parts[1] ?? "");
+  const out = new Set([canonical(id)]);
+  // A reference whose own form starts with CRUK- or CRUK/ keeps it when
+  // normalised, as the guide has it. Where the rest is a C/A pair or an
+  // award number, the rest names the same grant (#506).
+  for (const form of [...out]) {
+    const rest = /^CRUK[-/](C\d+\/A?\d{4,6}|A?\d{4,6})$/u.exec(form)?.[1];
+    if (rest !== undefined) out.add(rest);
+  }
+  for (const form of [...out]) {
+    const parts = form.split("/");
+    if (parts.length === 2 && /^C\d+$/u.test(parts[0] ?? "")) {
+      out.add(parts[1] ?? "");
+    }
   }
   for (const form of [...out]) {
     const award = /^A?(\d{4,6})$/u.exec(form);

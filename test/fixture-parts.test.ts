@@ -265,6 +265,15 @@ describe("strayParts", () => {
     "<sec><title>Support.</title><p>Funded.</p></sec>",
     "<sec><title>Supporting data</title><p>Funded.</p></sec>",
     "<sec><title>Methods</title><p>Funded.</p></sec>",
+    // #505: notes and footnotes found by their type, title or the funder's
+    // name.
+    '<notes notes-type="funding-information"><title>Funding</title><p>Funded.</p></notes>',
+    "<notes><title>Funding</title><p>Funded.</p></notes>",
+    "<notes><p>Funded by Cancer Research UK.</p></notes>",
+    "<notes><title>Competing interests</title><p>Cancer Research UK.</p></notes>",
+    "<notes><p>Funded.</p></notes>",
+    "<fn-group><fn><p>Funded by CRUK.</p></fn></fn-group>",
+    "<fn-group><fn><p>Funded.</p></fn></fn-group>",
   ])("agrees with the cutter on %s in the back", (part) => {
     const xml =
       `<article><front><article-meta>${META}</article-meta></front>` +

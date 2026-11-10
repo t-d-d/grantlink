@@ -13,6 +13,12 @@ describe("matching a reference to Europe PMC's grant id", () => {
     ["C1234/A56789", "A56789"],
     ["A56789", "C1234/A56789"],
     ["A56789", "56789"],
+    // A reference whose own form starts with CRUK- or CRUK/ keeps it when
+    // normalised, and Europe PMC may hold it with or without (#506).
+    ["CRUK-A12345", "A12345"],
+    ["CRUK-A12345", "12345"],
+    ["A12345", "CRUK-A12345"],
+    ["CRUK/C1234/A56789", "C1234/A56789"],
     ["CTRQQR-2021/100010", "CTRQQR-2021\\100010"],
     ["CTRQQR-2021/100010", "ctrqqr-2021 / 100010"],
     ["A17196", "A17196/"],
@@ -26,6 +32,8 @@ describe("matching a reference to Europe PMC's grant id", () => {
     ["C1234/A56789", "A56780"],
     ["A56789", "C1234"],
     ["CTRQQR-2021/100010", "100010"],
+    ["CRUK/12/034", "12/034"],
+    ["CRUKDF-0123-AB", "DF-0123-AB"],
   ])("%s does not match %s", (found, expected) => {
     expect(sameGrant(found, expected)).toBe(false);
   });
