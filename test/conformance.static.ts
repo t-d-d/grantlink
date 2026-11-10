@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { z } from "zod";
-import { readRepoFile } from "./repo.ts";
+import { readRepoFile, repoFiles } from "./repo.ts";
 
 // The scheduled conformance run (#56). The conformance files read setup
 // outside the repo, such as GitHub's record of the repository, the prod
@@ -136,4 +136,25 @@ describe("a red scheduled run starts a governor session", () => {
       .parse(JSON.parse(readRepoFile(".github/governor.json")));
     expect(config.redScheduledRun.enabled).not.toBe(false);
   });
+});
+
+// The conformance files that read GitHub share one fetch, so a change to how
+// the token or the proxy is handled is made once (#489).
+describe("one GitHub fetch for the conformance files", () => {
+  const files = repoFiles().filter((path) => path.endsWith(".conformance.ts"));
+
+  it("finds the helper and the files that use it", () => {
+    expect(repoFiles()).toContain("test/github.ts");
+    expect(files).toContain("test/github-oidc.conformance.ts");
+    expect(files).toContain("test/environments.conformance.ts");
+  });
+
+  it.each(files)(
+    "%s reads no token and builds no request of its own",
+    (path) => {
+      const text = readRepoFile(path);
+      expect(text).not.toMatch(/GITHUB_TOKEN/u);
+      expect(text).not.toMatch(/api\.github\.com/u);
+    },
+  );
 });

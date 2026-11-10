@@ -1,29 +1,14 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { readTemplate, resource, trustOf } from "./cfn.ts";
+import { getRepo } from "./github.ts";
 
 // Checks the OIDC subject each role trusts against GitHub's own record of
 // the repository, so an id typed wrongly in both the template and
 // test/github-oidc.static.ts, or a rename or a transfer, fails here and not
 // only at a deploy (#52). GitHub answers a renamed or transferred
 // repository's old name with its new record, so the name here can go stale
-// without hiding a change.
-const repository = "t-d-d/grantlink";
-
-// Anonymous calls share a small rate limit per address, so a token is sent
-// when GITHUB_TOKEN holds one: a token a workflow maps, or in a cloud
-// session the placeholder its proxy replaces, which Node's fetch reaches
-// only with NODE_USE_ENV_PROXY=1 set. An empty token, as a workflow passes for a
-// secret that is not set, counts as none.
-const { GITHUB_TOKEN } = z
-  .object({
-    GITHUB_TOKEN: z
-      .string()
-      .optional()
-      .transform((token) => (token === "" ? undefined : token)),
-  })
-  .parse(process.env);
-
+// without hiding a change. test/github.ts names it.
 const Repository = z.object({
   id: z.number().int().positive(),
   name: z.string().min(1),
@@ -51,19 +36,7 @@ const subjectOf = (role: string): unknown =>
 let subject: string;
 
 beforeAll(async () => {
-  const response = await fetch(`https://api.github.com/repos/${repository}`, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      ...(GITHUB_TOKEN === undefined
-        ? {}
-        : { Authorization: `Bearer ${GITHUB_TOKEN}` }),
-    },
-  });
-  // GitHub's reply says why a call failed, such as a bad token or the rate
-  // limit, so a failure shows it.
-  const reply = await response.text();
-  expect(response.status, reply).toBe(200);
-  const { id, name, owner } = Repository.parse(JSON.parse(reply));
+  const { id, name, owner } = Repository.parse(await getRepo());
   subject = `repo:${owner.login}@${String(owner.id)}/${name}@${String(id)}`;
 }, 30_000);
 
