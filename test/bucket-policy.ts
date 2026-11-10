@@ -94,10 +94,12 @@ const OnlyIfNoneMatch = z.strictObject({
 });
 
 // Whether a statement denies everyone any PutObject that does not ask S3
-// to refuse it when the key exists. That is the template's
-// WriteOnceUnderEval statement, less its Resource, which each caller
-// checks in its own form. A narrowed principal or an extra condition
-// would let some callers replace an eval report, so either fails (#244).
+// to refuse it when the key exists, and denies nothing else. A GET carries
+// no If-None-Match, so the same Deny on more actions would also refuse
+// every read under eval/. That is the template's WriteOnceUnderEval
+// statement, less its Resource, which each caller checks in its own form.
+// A narrowed principal or an extra condition would let some callers
+// replace an eval report, so either fails (#244).
 export function deniesReplacingWrites(statement: unknown): boolean {
   const parsed = Statement.safeParse(statement);
   if (!parsed.success) return false;
@@ -106,9 +108,8 @@ export function deniesReplacingWrites(statement: unknown): boolean {
   return (
     Effect === "Deny" &&
     isWildcardPrincipal(Principal) &&
-    (actions.includes("s3:PutObject") ||
-      actions.includes("s3:*") ||
-      actions.includes("*")) &&
+    actions.length === 1 &&
+    actions[0] === "s3:PutObject" &&
     OnlyIfNoneMatch.safeParse(Condition).success
   );
 }

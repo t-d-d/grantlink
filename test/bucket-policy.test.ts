@@ -193,10 +193,6 @@ describe("deniesReplacingWrites", () => {
     ).toBe(true);
   });
 
-  it("passes a Deny of every S3 action under the same condition", () => {
-    expect(deniesReplacingWrites({ ...writeOnce, Action: "s3:*" })).toBe(true);
-  });
-
   it.each([
     ["it is missing", undefined],
     ["it is not an object", "WriteOnceUnderEval"],
@@ -216,6 +212,12 @@ describe("deniesReplacingWrites", () => {
     ],
     ["it has no principal", { Principal: undefined }],
     ["it denies another action", { Action: "s3:GetObject" }],
+    ["it denies every S3 action, reads included", { Action: "s3:*" }],
+    ["it denies every action", { Action: "*" }],
+    [
+      "it denies another action as well",
+      { Action: ["s3:PutObject", "s3:GetObject"] },
+    ],
     ["it has no condition", { Condition: undefined }],
     [
       "another condition operator narrows it",
