@@ -634,6 +634,16 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
         },
         {
+          name: "reads the clock through global",
+          code: `async function run(ctx: any) { const now = global.Date.now(); }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "draws random through global with a string key",
+          code: `async function run(ctx: any) { const n = global["Math"].random(); }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
           name: "makes a date through an alias",
           code: `const D = Date; async function run(ctx: any) { const today = new D(); }`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
