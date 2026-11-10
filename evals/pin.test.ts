@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { check } from "prettier";
 import { describe, expect, it } from "vitest";
-import { pin } from "./pin.ts";
+import { pin, toFile } from "./pin.ts";
 
 const manifest = JSON.stringify({
   id: "s1",
@@ -35,5 +36,14 @@ describe("pinning a snapshot", () => {
 
   it("refuses a manifest drawn with another query or seed", () => {
     expect(() => pin(manifest, snapshot, { ...goldA, seed: 2 })).toThrow();
+  });
+});
+
+describe("writing a pinned file", () => {
+  it("writes JSON the gate's format check accepts", async () => {
+    const { goldA: pinned } = pin(manifest, snapshot, goldA);
+    const text = await toFile("gold-a.json", pinned);
+    await expect(check(text, { filepath: "gold-a.json" })).resolves.toBe(true);
+    expect(JSON.parse(text)).toEqual(pinned);
   });
 });

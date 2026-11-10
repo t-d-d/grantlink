@@ -48,9 +48,9 @@ export const referenceSchema = z
   .object({
     // Only the characters a reference is made of. These include letters and
     // spaces, so this alone does not keep out a name: the rules' patterns
-    // match no name, and the model pass refuses a reply that carries a word
-    // set apart by spaces (#413), or a lower-case letter outside a month in
-    // a code (#467).
+    // match no name, and the model pass refuses a reply that is not one of
+    // their shapes in capitals, but for a month in a code, or a bare number
+    // (#467, #492).
     asWritten: z
       .string()
       .min(1)
@@ -68,8 +68,7 @@ export const referenceSchema = z
 export type Reference = z.infer<typeof referenceSchema>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-// The model pass reads a code's hyphen with this too (#413).
-export const DASH = `[-${DASHES}]`;
+const DASH = `[-${DASHES}]`;
 // A letter as a class of its upper and lower case, for a pattern whose own
 // letters must keep their case and so cannot take the `i` flag. Any letter
 // folds, not only A to Z (#301). A case that is more than one character, as
@@ -143,9 +142,17 @@ export const wholeReference = (reference: string): RegExp =>
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
 
-interface Pattern {
+interface Shape {
   format: string | ((match: RegExpMatchArray) => string);
-  pattern: RegExp;
+  // The reference alone, built from the pieces below. The rules read it
+  // between a reference's edges, after `before` where one is given, and the
+  // model pass reads a reply only if it is one of these shapes whole (#492).
+  shape: string;
+  // The shape the model pass reads instead, where it is narrower.
+  modelShape?: string;
+  // What must come before and after it in the text, beyond its edges.
+  before?: string;
+  after?: string;
   // A short number such as an A number is common, so it counts only in a
   // sentence that names the funder.
   sentenceOnly: boolean;
@@ -156,17 +163,33 @@ interface Pattern {
 // before the number (#506). Not part of a longer word.
 const TIE_WORD = String.raw`(?<!\p{L})(?:[Gg]rant|[Aa]ward|[Pp]roject|[Rr]ef(?:erence)?|[Nn]umber|[Nn]o)s?\.?(?:\s?(?:[Nn]o|[Nn]umber|[Rr]ef)\.?)?\s?[:#]?\s?`;
 
-// The model pass reads a month in a code with this too (#467).
-export const MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
+// A month as the rules read it in a code.
+const MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
 
-const PATTERNS: Pattern[] = [
+// Each pattern's pieces, stated once. A prefix of capitals may stand apart
+// from its number by one space. A code's suffix follows a hyphen, which a
+// space may follow, or else is a month in title case written straight onto
+// the code. Only a plain space may follow the hyphen, as referenceSchema
+// allows no other.
+const prefixed = (prefix: string, digits: string) =>
+  String.raw`${prefix}\s?\d{${digits}}`;
+const YEAR = String.raw`(?:\d{4}|\d{2})`;
+const MONTH_YEAR = `(?:${MONTHS})${YEAR}`;
+const coded = (suffix: string) =>
+  String.raw`[A-Z]{4,12}(?:${DASH} ?(${suffix})|(${MONTH_YEAR}))?${SEP}1\d{5}`;
+// The rules read a suffix in any case. A name has lower-case letters, so
+// the model pass reads one only in capitals and digits, or as a month in
+// title case and its year, as in "ABCDEF-Mar21/100010" (#467).
+const SUFFIX = "[A-Za-z0-9]{2,8}";
+const CAPITAL_SUFFIX = `[A-Z0-9]{2,8}|${MONTH_YEAR}`;
+
+const SHAPES: readonly Shape[] = [
   {
     // Either letter may be written in lower case (#506).
     format: "Cn/An",
-    pattern: new RegExp(
-      String.raw`${START}[Cc]\s?\d{1,6}${SEP}[Aa]\s?\d{4,6}${END}`,
-      "gu",
-    ),
+    shape: `${prefixed("[Cc]", "1,6")}${SEP}${prefixed("[Aa]", "4,6")}`,
+    // The model pass reads both letters in capitals only (#467).
+    modelShape: `${prefixed("C", "1,6")}${SEP}${prefixed("A", "4,6")}`,
     sentenceOnly: false,
   },
   {
@@ -177,10 +200,7 @@ const PATTERNS: Pattern[] = [
     // or a run of names such as CRUK/MRC/EPSRC is not one. It comes after
     // the C/A pattern, so a C/A pair after CRUK/ is read as the pair alone.
     format: "CRUK-X",
-    pattern: new RegExp(
-      String.raw`${START}(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:(?:${DASH}|/)[A-Z0-9]{1,8}){1,4}(?<=CRUK[A-Z0-9/${DASHES}-]*\d[A-Z0-9/${DASHES}-]*)${END}`,
-      "gu",
-    ),
+    shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:(?:${DASH}|/)[A-Z0-9]{1,8}){1,4}(?<=CRUK[A-Z0-9/${DASHES}-]*\d[A-Z0-9/${DASHES}-]*)`,
     sentenceOnly: false,
   },
   {
@@ -197,42 +217,35 @@ const PATTERNS: Pattern[] = [
       }
       return "CODE-X/n";
     },
-    // The suffix follows a hyphen, which a space may follow, or else is a
-    // month in title case written straight onto the code. Only a plain space
-    // may follow the hyphen, as referenceSchema allows no other.
-    pattern: new RegExp(
-      String.raw`${START}[A-Z]{4,12}(?:${DASH} ?([A-Za-z0-9]{2,8})|((?:${MONTHS})(?:\d{4}|\d{2})))?${SEP}1\d{5}${END}`,
-      "gu",
-    ),
+    shape: coded(SUFFIX),
+    modelShape: coded(CAPITAL_SUFFIX),
     sentenceOnly: false,
   },
   {
     // A G number counts only in the brackets straight after the funder's
     // name, as in "Cancer Research UK (G123/45)".
     format: "Gn/n",
-    pattern: new RegExp(
-      String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}${END}`,
-      "gu",
-    ),
+    shape: String.raw`G\d{2,4}${SEP}\d{1,4}`,
+    before: String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})\s?\(\s?)`,
     sentenceOnly: false,
   },
   {
     // A Francis Crick Institute core funding number, old style. One printed
     // with a digit or two too many is kept as printed (#175 rule 6, #506).
     format: "FCn",
-    pattern: new RegExp(String.raw`${START}FC\s?\d{6,8}${END}`, "gu"),
+    shape: prefixed("FC", "6,8"),
     sentenceOnly: true,
   },
   {
     // A Francis Crick Institute core funding number, new style.
     format: "CCn",
-    pattern: new RegExp(String.raw`${START}CC\s?\d{4}${END}`, "gu"),
+    shape: prefixed("CC", "4"),
     sentenceOnly: true,
   },
   {
     // A joint award named for the funder, such as Stand Up To Cancer's.
     format: "RTn",
-    pattern: new RegExp(String.raw`${START}RT\s?\d{4}${END}`, "gu"),
+    shape: prefixed("RT", "4"),
     sentenceOnly: true,
   },
   {
@@ -240,10 +253,7 @@ const PATTERNS: Pattern[] = [
     // four-digit A before another A number, as in A1234/A56789, is the C
     // part of a misprinted C/A pair, which is left to the model (#177).
     format: "An",
-    pattern: new RegExp(
-      String.raw`${START}A(?:\s?\d{5}${END}|\d{4}${END}(?!${SEP}A\s?\d))`,
-      "gu",
-    ),
+    shape: String.raw`A(?:\s?\d{5}|\d{4}${END}(?!${SEP}A\s?\d))`,
     sentenceOnly: true,
   },
   {
@@ -253,13 +263,38 @@ const PATTERNS: Pattern[] = [
     // semicolon or full stop between (#506). A year is not one, and nor is
     // the start of a longer number, as in 12345/2, 12345-67 or 1234.5.
     format: "n",
-    pattern: new RegExp(
-      String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})(?!${EDGE})(?:\s?\(\s?|[^;,.]{0,100}?${TIE_WORD}))(?!(?:19|20)\d{2}(?!\d))\d{4,6}${END}(?!${SEP}|${DASH}\d|\.\d)`,
-      "gu",
-    ),
+    shape: String.raw`(?!(?:19|20)\d{2}(?!\d))\d{4,6}`,
+    before: String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})(?!${EDGE})(?:\s?\(\s?|[^;,.]{0,100}?${TIE_WORD}))`,
+    after: String.raw`(?!${SEP}|${DASH}\d|\.\d)`,
     sentenceOnly: true,
   },
 ];
+
+const PATTERNS = SHAPES.map(
+  ({ format, shape, before, after, sentenceOnly }) => ({
+    format,
+    pattern: new RegExp(`${before ?? START}${shape}${END}${after ?? ""}`, "gu"),
+    sentenceOnly,
+  }),
+);
+
+// A bare number, as an award id the metadata gives, or as the model may read
+// one tied to the funder only by name, with a suffix of two digits after a
+// hyphen, as in "123456-01" (#97, #177).
+const BARE = String.raw`\d{5,7}`;
+const BARE_SUFFIX = String.raw`${DASH}\d{2}`;
+
+// Whether a reference, as written with plain spaces, is a shape the rules
+// read, in capitals but for a month in a code, or a bare number with an
+// optional suffix, and nothing more. The model
+// pass keeps only a reply of these shapes, so a name next to a number is
+// never one (#492).
+const READ_SHAPE = new RegExp(
+  `^(?:${[...SHAPES.map(({ shape, modelShape }) => modelShape ?? shape), `${BARE}(?:${BARE_SUFFIX})?`].join("|")})$`,
+  "u",
+);
+export const hasReferenceShape = (reference: string): boolean =>
+  READ_SHAPE.test(reference);
 
 const UNICODE_DASH = new RegExp(`[${DASHES}]`, "gu");
 
@@ -315,7 +350,7 @@ function scan(text: string, keep: "long" | "short" | "all"): Reference[] {
 // acknowledgement text gives the same number, standing alone (#97). A number
 // joined to a letter, any decimal digit or a separator is part of a longer
 // reference.
-const BARE_NUMBER = /^\d{5,7}$/u;
+const BARE_NUMBER = new RegExp(`^${BARE}$`, "u");
 
 function confirmedNumber(id: string, text: readonly string[]): boolean {
   if (!BARE_NUMBER.test(id)) return false;
