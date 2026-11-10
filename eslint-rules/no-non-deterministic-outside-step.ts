@@ -473,8 +473,9 @@ function exportsUnfollowed(
 // declaration that exports a name it declares, `export const now =
 // Date.now`, `const D = Date` and then `export { D }`, a copy made through
 // a rest, `export const { ...m } = Math` or `export const { foo: { ...m } =
-// Math } = x`, or a member that calls `Date`, `export const { bind } =
-// Date`. Its report stands for the export. A call is never one, since
+// Math } = x`, or an assignment of one to an exported name, `({ ...m } =
+// Math)` after `export let m`, or a member that calls `Date`, `export const
+// { bind } = Date`. Its report stands for the export. A call is never one, since
 // `export const d = new Date()` passes on the value it read and not the
 // source.
 function exportedSource(node: TSESTree.Node, resolver: Resolver): boolean {
@@ -492,9 +493,40 @@ function exportedSource(node: TSESTree.Node, resolver: Resolver): boolean {
       const declarator = followedDeclarator(parent);
       return declarator !== null && exportsName(declarator, resolver);
     }
+    case AST_NODE_TYPES.AssignmentExpression:
+      return (
+        parent.right === outer &&
+        parent.left.type === AST_NODE_TYPES.ObjectPattern &&
+        parent.left.properties.some(
+          (property) =>
+            property.type === AST_NODE_TYPES.RestElement &&
+            property.argument.type === AST_NODE_TYPES.Identifier &&
+            exportedBinding(property.argument, resolver),
+        )
+      );
     default:
       return false;
   }
+}
+
+// True when the identifier names a variable whose declaration exports it,
+// `export let m`, or that a later `export { m }` exports.
+function exportedBinding(
+  identifier: TSESTree.Identifier,
+  resolver: Resolver,
+): boolean {
+  const variable = lookup(
+    identifier.name,
+    resolver.sourceCode.getScope(identifier),
+  );
+  return (
+    variable !== null &&
+    variable.defs.some(
+      (def) =>
+        def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+        exported(def.node, variable),
+    )
+  );
 }
 
 // True when a declarator exports a name it declares, in its declaration or
