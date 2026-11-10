@@ -117,6 +117,30 @@ describe("reading a page of the search", () => {
 });
 
 describe("recording a page of the search", () => {
+  it("names the papers not yet read whose full text answered 500 when they last failed (#504)", async () => {
+    const { deps, table } = fakeDeps();
+    const papers = ["PMC31", "PMC32", "PMC33", "PMC34"].map((pmcid) => ({
+      pmcid,
+      title: "A paper",
+    }));
+    await table.addFound(papers, deps.now(), "run-1");
+    await table.markFailed("PMC31", 500);
+    await table.markFailed("PMC32", 503);
+    await table.markFailed("PMC33", "timeout");
+    await table.markFailed("PMC34", 500);
+    await table.markProcessed("PMC34", {
+      references: [],
+      versions: { rules: "r", code: "c" },
+      processedAt: deps.now(),
+      runId: "run-1",
+    });
+    const todo = await recordPage(deps, papers, "run-2");
+    expect(todo).toEqual({
+      todo: ["PMC31", "PMC32", "PMC33"],
+      once: ["PMC31"],
+    });
+  });
+
   it("adds each paper to the table and returns those not yet read", async () => {
     const { deps, table } = fakeDeps();
     await table.addFound(
@@ -138,7 +162,7 @@ describe("recording a page of the search", () => {
       ],
       "run-2",
     );
-    expect(todo).toEqual(["PMC22"]);
+    expect(todo).toEqual({ todo: ["PMC22"], once: [] });
     expect(table.rows.get("PMC22")).toMatchObject({
       status: "pending",
       foundByRun: "run-2",

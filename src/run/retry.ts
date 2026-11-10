@@ -44,6 +44,11 @@ export const paperRetry = (error: Error, attempt: number): RetryDecision =>
     ? europePmcRetry(error, attempt)
     : { shouldRetry: false };
 
+// A paper whose full text answered 500 when it last failed gets one request
+// in a run, so its step does not try again, whatever the answer. It then
+// waits for the next run (#504, docs/constraints/europe-pmc.md).
+export const onceRetry = (): RetryDecision => ({ shouldRetry: false });
+
 export const storeRetry = createRetryStrategy({
   maxAttempts: 3,
   initialDelay: { seconds: 5 },

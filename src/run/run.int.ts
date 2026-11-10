@@ -784,10 +784,10 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
   it("fails only once a refusal on its last paper has been waited out, when marking that paper failed fails after its retries (#412)", async () => {
     const { fake, seen, last } = await refusingLast();
     const markFailed = fake.deps.table.markFailed.bind(fake.deps.table);
-    fake.deps.table.markFailed = (pmcid) =>
+    fake.deps.table.markFailed = (pmcid, why) =>
       pmcid === last
         ? Promise.reject(new Error("DynamoDB answered 503"))
-        : markFailed(pmcid);
+        : markFailed(pmcid, why);
     const { status, error, ended, retryDelays } = await runWith(fake);
     expect(status).toBe("FAILED");
     expect(error).toContain("DynamoDB answered 503");
@@ -997,7 +997,9 @@ describe("the eval snapshot (evals.md)", () => {
     );
     const one = manifest.papers.find((paper) => paper.pmcid === "PMC0000001");
     expect(one).toMatchObject({ set: "A", grants: ["A56789"] });
-    const text = String(fake.text.get("eval/papers/PMC0000001.json"));
+    const text = String(
+      fake.text.get(snapshotKeys.paper(FAKE_GOLD.snapshotId, "PMC0000001")),
+    );
     expect(createHash("sha256").update(text).digest("hex")).toBe(one?.sha256);
     expect(text).toContain("Quillfeather");
     // The gold papers' text goes to cache/ too.
@@ -1413,4 +1415,90 @@ describe("a paper that fails logs why (#378)", () => {
       set: "B",
     });
   });
+});
+
+describe("fitness: a paper whose full text answered 500 last run is asked for once (europe-pmc.md)", () => {
+  const PMCID = "PMC0000099";
+  // A search that finds one paper, PMC0000099.
+  const one = () =>
+    reply(
+      JSON.stringify({
+        hitCount: 1,
+        resultList: { result: [{ pmcid: PMCID }] },
+      }),
+    );
+
+  // A run whose table holds PMC0000099 as an earlier run left it: failed,
+  // with `last` as why, or with no reason, as a row written before #504.
+  async function after(
+    last: Parameters<ReturnType<typeof fakeDeps>["table"]["markFailed"]>[1],
+    answer: () => Response,
+  ) {
+    const fake = fakeDeps({ search: one, fullText: answer });
+    fake.deps.text.hasSnapshot = () => Promise.resolve(true);
+    await fake.table.addFound(
+      [{ pmcid: PMCID, title: "A paper" }],
+      "2026-11-08T12:00:00.000Z",
+      "run-2026-11-08T12:00:00.000Z",
+    );
+    await fake.table.markFailed(PMCID, last);
+    const run = await runWith(fake);
+    const asked = fake.requests.filter((url) =>
+      url.pathname.endsWith(`/${PMCID}/fullTextXML`),
+    ).length;
+    return { fake, run, asked };
+  }
+
+  it("asks once, with no retry, and marks it failed again when that answers 500", async () => {
+    const { fake, run, asked } = await after(500, () => reply("", 500));
+    expect(run.status).toBe("SUCCEEDED");
+    expect(asked).toBe(1);
+    expect(run.result?.failed).toBe(1);
+    expect(run.retryDelays(`paper-${PMCID}`)).toEqual([]);
+    expect(fake.table.rows.get(PMCID)).toMatchObject({
+      status: "pending",
+      failures: 2,
+      lastFailure: 500,
+    });
+    expect(logged("paper-failed")).toEqual([
+      expect.objectContaining({
+        pmcid: PMCID,
+        why: "answered",
+        status: 500,
+        requestsLastTry: 1,
+        tries: 1,
+      }),
+    ]);
+  });
+
+  it("reads it as usual when the one request answers 200", async () => {
+    const { fake, run, asked } = await after(500, () =>
+      reply("<article><back><ack><p>None.</p></ack></back></article>"),
+    );
+    expect(asked).toBe(1);
+    expect(run.result?.read).toBe(1);
+    expect(fake.table.rows.get(PMCID)?.status).toBe("processed");
+  });
+
+  it("marks it failed with the new reason when the one request answers otherwise", async () => {
+    const { fake, asked } = await after(500, () => reply("", 503));
+    expect(asked).toBe(1);
+    expect(fake.table.rows.get(PMCID)).toMatchObject({ lastFailure: 503 });
+  });
+
+  it.each<[string, Parameters<typeof after>[0]]>([
+    ["a 503", 503],
+    ["a 502", 502],
+    ["a 429", 429],
+    ["a timeout", "timeout"],
+    ["no reason", undefined],
+  ])(
+    "gives the usual tries to a paper whose row records %s",
+    async (_, last) => {
+      const { fake, asked } = await after(last, () => reply("", 500));
+      // The client's five tries, in each of the step's three.
+      expect(asked).toBe(15);
+      expect(fake.table.rows.get(PMCID)).toMatchObject({ lastFailure: 500 });
+    },
+  );
 });

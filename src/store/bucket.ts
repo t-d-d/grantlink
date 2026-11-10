@@ -23,7 +23,7 @@ export interface TextBucket {
   // The eval snapshot under eval/ (docs/constraints/evals.md). Each write
   // happens once: a second write keeps the first copy and returns it.
   hasSnapshot(id: string): Promise<boolean>;
-  putSnapshotPaper(pmcid: string, body: string): Promise<string>;
+  putSnapshotPaper(id: string, pmcid: string, body: string): Promise<string>;
   putManifest(id: string, body: string): Promise<string>;
 }
 
@@ -80,9 +80,12 @@ export function textBucket(
       return (reply.Contents ?? []).some((object) => object.Key === key);
     },
 
-    async putSnapshotPaper(pmcid, body) {
+    // Under the snapshot's own id, so each snapshot cuts its own text
+    // (#502).
+    async putSnapshotPaper(id, pmcid, body) {
+      if (!SNAPSHOT_ID.test(id)) throw new Error("not a snapshot id");
       if (!isPmcid(pmcid)) throw new Error("not a PMCID");
-      return putOnce(`eval/papers/${pmcid}.json`, body);
+      return putOnce(`eval/${id}/papers/${pmcid}.json`, body);
     },
 
     async putManifest(id, body) {
