@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { NOTICE, footerOf, foreignLoads, loadsOf, textOf } from "./page.ts";
+import {
+  CONTACT,
+  NOTICE,
+  footerOf,
+  foreignLoads,
+  loadsOf,
+  textOf,
+} from "./page.ts";
 
 const page = new URL("https://grantlink.uk/");
 
@@ -92,5 +99,21 @@ describe("reading a page's footer", () => {
   it("skips an element whose name only starts with footer", () => {
     const html = `<footer-note><p>${notice}</p></footer-note><footer><p>Data from Europe PMC.</p></footer>`;
     expect(textOf(footerOf(html))).not.toMatch(NOTICE);
+  });
+
+  // The checks read the correction address from the footer alone (#593).
+  it("leaves out an address that sits outside the footer", () => {
+    const html = `<p><a href="mailto:${CONTACT}">Write</a></p><footer>Notice</footer>`;
+    expect(footerOf(html)).not.toContain(`mailto:${CONTACT}`);
+  });
+
+  it("reads the page's footer after an article's own footer", () => {
+    const html = `<main><article><p>Paper</p><footer>Card</footer></article></main><footer><a href="mailto:${CONTACT}">Write</a></footer>`;
+    expect(footerOf(html)).toContain(`mailto:${CONTACT}`);
+  });
+
+  it("reads a footer tag in capitals", () => {
+    const html = `<FOOTER><a href="mailto:${CONTACT}">Write</a></FOOTER>`;
+    expect(footerOf(html)).toContain(`mailto:${CONTACT}`);
   });
 });
