@@ -1,7 +1,8 @@
 import { posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AST_NODE_TYPES, ESLintUtils } from "@typescript-eslint/utils";
-import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
+import { TSESLint } from "@typescript-eslint/utils";
+import type { TSESTree } from "@typescript-eslint/utils";
 
 // Each rule's docs live in the constraint file that names it.
 export const createRule = ESLintUtils.RuleCreator(
@@ -77,9 +78,11 @@ export const STEP_HELPERS: readonly StepHelper[] = [
 
 // The step helper a call calls, if its callee resolves to one: a named
 // import `<name>(...)`, or a namespace import `<ns>.<name>(...)` or
-// `<ns>["<name>"](...)`. A local function, an import from another module or
-// a computed key that is not a constant string is not one. A re-export would hide the
-// helper's module, so no-step-helper-re-export refuses one.
+// `<ns>["<name>"](...)`, either one reached through a local alias that is
+// never assigned again (importOf). A local function, an import from another
+// module or a computed key that is not a constant string is not one. A
+// re-export would hide the helper's module, so no-step-helper-re-export
+// refuses one.
 export function stepHelperOf(
   node: TSESTree.Node,
   resolver: Resolver,
@@ -123,17 +126,27 @@ export function memberName(node: TSESTree.MemberExpression): string | null {
 }
 
 // What an identifier's binding imports from a relative module: a named
-// import, or the whole module (name null) for a namespace import. Null for
-// any other binding.
+// import, or the whole module (name null) for a namespace import. It
+// follows a local alias that is never assigned again, such as
+// `const ask = askEuropePmc`, `const ask = owed.askEuropePmc` or
+// `const { askEuropePmc: ask } = owed`. Null for any other binding,
+// including a destructured name with a default, which may not be the
+// import.
 export function importOf(
   identifier: TSESTree.Identifier,
   resolver: Resolver,
+  seen: ReadonlySet<TSESLint.Scope.Variable> = new Set(),
 ): { module: string; name: string | null } | null {
   const variable = lookup(
     identifier.name,
     resolver.sourceCode.getScope(identifier),
   );
-  const def = variable?.defs[0];
+  if (variable === null || seen.has(variable)) return null;
+  const def = variable.defs[0];
+  if (def?.type === TSESLint.Scope.DefinitionType.Variable) {
+    if (variable.defs.length !== 1 || reassigned(variable)) return null;
+    return aliasOf(def.node, def.name, resolver, new Set([...seen, variable]));
+  }
   if (def?.parent?.type !== AST_NODE_TYPES.ImportDeclaration) return null;
   const module = moduleOf(def.parent.source.value, resolver);
   if (module === null) return null;
@@ -142,6 +155,75 @@ export function importOf(
   }
   if (def.node.type !== AST_NODE_TYPES.ImportSpecifier) return null;
   return { module, name: exportedName(def.node.imported) };
+}
+
+// True when anything but its declaration writes to the variable.
+function reassigned(variable: TSESLint.Scope.Variable): boolean {
+  return variable.references.some((ref) => ref.isWrite() && !ref.init);
+}
+
+// What a declarator binds `name` to, when it aliases an import: the whole
+// of another identifier, a name read from a namespace import, or a name
+// destructured from one at the top of an object pattern.
+function aliasOf(
+  declarator: TSESTree.VariableDeclarator,
+  name: TSESTree.Identifier,
+  resolver: Resolver,
+  seen: ReadonlySet<TSESLint.Scope.Variable>,
+): { module: string; name: string | null } | null {
+  const { id, init } = declarator;
+  if (init === null) return null;
+  if (id === name) {
+    if (init.type === AST_NODE_TYPES.Identifier) {
+      return importOf(init, resolver, seen);
+    }
+    if (
+      init.type !== AST_NODE_TYPES.MemberExpression ||
+      init.object.type !== AST_NODE_TYPES.Identifier
+    ) {
+      return null;
+    }
+    return memberOf(importOf(init.object, resolver, seen), memberName(init));
+  }
+  if (
+    id.type !== AST_NODE_TYPES.ObjectPattern ||
+    init.type !== AST_NODE_TYPES.Identifier
+  ) {
+    return null;
+  }
+  const property = id.properties.find(
+    (p): p is TSESTree.Property =>
+      p.type === AST_NODE_TYPES.Property && p.value === name,
+  );
+  if (property === undefined) return null;
+  return memberOf(importOf(init, resolver, seen), propertyName(property));
+}
+
+// The named import a member of a namespace import gives.
+function memberOf(
+  binding: { module: string; name: string | null } | null,
+  name: string | null,
+): { module: string; name: string } | null {
+  if (binding?.name !== null || name === null) return null;
+  return { module: binding.module, name };
+}
+
+// The key an object pattern's property reads: `{ b }`, `{ b: x }`,
+// `{ "b": x }` or a computed key that is a constant string.
+function propertyName(property: TSESTree.Property): string | null {
+  const { key } = property;
+  if (!property.computed && key.type === AST_NODE_TYPES.Identifier) {
+    return key.name;
+  }
+  if (key.type === AST_NODE_TYPES.Literal) {
+    return typeof key.value === "string" ? key.value : null;
+  }
+  if (key.type === AST_NODE_TYPES.TemplateLiteral) {
+    return key.expressions.length === 0
+      ? (key.quasis[0]?.value.cooked ?? null)
+      : null;
+  }
+  return null;
 }
 
 // The name an import or export specifier gives, as an identifier or a
