@@ -91,8 +91,11 @@ const ANY_CASE_NAMES = namesPattern(funder.names, true);
 // Any letter, not only A to Z, makes a name part of a longer word (#320),
 // and so does a combining mark, which belongs to the letter before it. A
 // lookbehind, not a negated class, keeps the case-insensitive match from
-// folding a letter onto a mark that is not one.
-const EDGE = String.raw`[\p{L}\p{M}]`;
+// folding a letter onto a mark that is not one. Scripts that put no space
+// between words, such as Chinese, Japanese and Thai, write a name straight
+// against their own letters, so those letters do not join it (#337).
+const NO_WORD_SPACE = String.raw`[\p{scx=Han}\p{scx=Hira}\p{scx=Kana}\p{scx=Thai}\p{scx=Laoo}\p{scx=Khmr}\p{scx=Mymr}]`;
+const EDGE = String.raw`(?:(?!${NO_WORD_SPACE})[\p{L}\p{M}])`;
 const funderName = new RegExp(`(?<!${EDGE})(?:${NAMES})(?!${EDGE})`, "iu");
 
 // A separator may be written as a slash, a backslash or the set minus sign.

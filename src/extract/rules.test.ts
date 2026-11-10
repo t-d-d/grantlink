@@ -153,6 +153,30 @@ describe("the rules", () => {
     },
   );
 
+  // Chinese, Japanese and Thai put no space between words, so a Latin name
+  // written straight against their letters still stands alone (#337).
+  it.each([
+    ["Han", "本研究由CRUK资助 (A12345)."],
+    ["Hiragana", "この研究はCRUKの助成 (A12345)."],
+    ["Katakana", "グラントはCRUKファンド (A12345)."],
+    ["Katakana with its long vowel mark", "データーCRUKー (A12345)."],
+    ["Thai", "งานนี้ได้รับทุนจากCRUKครับ (A12345)."],
+  ])("reads an A number when %s letters touch the name", (_, text) => {
+    expect(findReferences(sections(text))).toEqual([
+      { asWritten: "A12345", normalised: "A12345", format: "An" },
+    ]);
+  });
+
+  it("reads a G number after the name when a Han letter comes before it", () => {
+    expect(findReferences(sections("本研究由CRUK (G123/45)."))).toEqual([
+      { asWritten: "G123/45", normalised: "G123/45", format: "Gn/n" },
+    ]);
+  });
+
+  it("leaves an A number when a Hangul letter touches the name", () => {
+    expect(findReferences(sections("Funded by 한CRUK (A12345)."))).toEqual([]);
+  });
+
   it("reads an A number when a non-ASCII mark that is not a letter touches the name", () => {
     expect(
       findReferences(sections("Funded by \u00abCRUK\u00bb (A12345).")),
