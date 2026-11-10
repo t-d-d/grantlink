@@ -332,7 +332,7 @@ export function insideCheckpointedCallback(
       argument !== undefined &&
       call !== undefined &&
       ((isMethodCallIn(call, CHECKPOINTS_CALLBACK) &&
-        call.arguments.includes(argument)) ||
+        call.arguments.some((arg) => arg === argument)) ||
         isStepHelperCallback(call, argument, resolver))
     );
   });
