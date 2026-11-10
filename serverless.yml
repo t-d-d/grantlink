@@ -64,7 +64,8 @@ provider:
             - Fn::Sub: ${SiteBucket.Arn}/index.html
             - Fn::Sub: ${SiteBucket.Arn}/found.json
         # Before it writes the page, a run reads the release record the last
-        # deploy put there, and leaves a newer deploy's page alone (#73).
+        # deploy put there, and writes the page only if that record names
+        # the run's own release (#73).
         - Effect: Allow
           Action: s3:GetObject
           Resource:
