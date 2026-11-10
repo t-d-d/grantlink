@@ -91,8 +91,9 @@ export function sameGrant(found: string, expected: string): boolean {
 // a number; or one that starts with CRUK, or with two to six letters and a
 // dash before the CRUK as in ABC-CRUK-ABCD12-AB (#633), and is, whole, a
 // shape the rules read, so it has a digit after the CRUK (#532). Only that
-// last form takes an id with a CRUK in it, so the scorer never takes a CRUK
-// id the rules refuse, such as CRUK/2019 (#575). A C part alone names a
+// last form takes an id that starts with CRUK or with letters and a dash
+// before it, so the scorer never takes such an id the rules refuse, such as
+// CRUK/2019 or ABC-CRUK/2019 (#575). A C part alone names a
 // programme, and another funder's reference, a word, a centre or
 // partnership name such as CRUK_Manchester or CRUK/MRC, or the bare
 // abbreviation CRUK is not a CRUK grant, so none of those is an answer.
@@ -103,7 +104,9 @@ const CRUK_FORMS = [
   /^(?!CRUK)[A-Z]+(?:-?(?:(?:19|20)\d{2}|(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}))?\/\d+$/u,
 ];
 
-const CRUK_START = /^(?:[A-Z]{2,6}-)?CRUK/u;
+// The rules' CRUK-X form may have two to six letters and a dash, any dash
+// they read, before the CRUK.
+const CRUK_START = new RegExp(`^(?:[A-Z]{2,6}[-${DASHES}])?CRUK`, "u");
 
 export function crukReference(id: string): boolean {
   const whole = canonical(id);

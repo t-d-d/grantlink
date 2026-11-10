@@ -67,6 +67,8 @@ describe("telling a CRUK reference from another linked id", () => {
     "CRUK-Nov21/100001",
     // A CRUK-X id with letters before the CRUK, which the rules read (#633).
     "ABC-CRUK-ABCD12-AB",
+    // A Unicode hyphen before the CRUK, which the rules' dash takes (#633).
+    `ABC${String.fromCodePoint(0x2010)}CRUK-ABCD12-AB`,
   ])("takes %s", (id) => {
     expect(crukReference(id)).toBe(true);
   });
@@ -106,6 +108,9 @@ describe("telling a CRUK reference from another linked id", () => {
     "ABC-CRUK",
     "ABC-CRUK-FUNDED",
     "ABC-CRUK/2019",
+    // Too few or too many letters before the CRUK for the rules (#633).
+    "A-CRUK-12345",
+    "ABCDEFG-CRUK-12345",
   ])("refuses %s", (id) => {
     expect(crukReference(id)).toBe(false);
   });
