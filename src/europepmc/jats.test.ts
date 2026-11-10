@@ -408,6 +408,11 @@ describe("reading an element by its name", () => {
       "d",
     ]);
   });
+  it("reads a name with a regular expression character as written (#217)", () => {
+    expect(elements("<aXb>x</aXb><a.b>y</a.b ><a.b>z<a.b/>", "a.b")).toEqual([
+      "y",
+    ]);
+  });
 });
 
 describe("reading an element by an attribute (#217)", () => {

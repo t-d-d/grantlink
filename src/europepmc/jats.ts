@@ -42,9 +42,14 @@ function plain(xml: string): string {
 // ends a word (#210, #216).
 const NAME_END = String.raw`(?=[\s/>])`;
 
+// A tag name as a pattern that matches only that name, so a name holding a
+// regular expression character such as a dot reads as written (#217).
+const literal = (name: string): string =>
+  name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+
 // A closing tag with this name. XML allows white space before its > (#217).
 const closingTag = (name: string, flags: string): RegExp =>
-  new RegExp(`</${name}\\s*>`, flags);
+  new RegExp(`</${literal(name)}\\s*>`, flags);
 
 // Drops comments and turns each CDATA section into escaped text, so that a
 // tag written inside either is not read as markup.
@@ -72,7 +77,7 @@ function tagged(
   name: string,
   attributes = "",
 ): { tag: string; inner: string }[] {
-  const tags = new RegExp(`<(/?)${name}${NAME_END}([^>]*)>`, "gu");
+  const tags = new RegExp(`<(/?)${literal(name)}${NAME_END}([^>]*)>`, "gu");
   const wanted = new RegExp(attributes, "u");
   const found: { tag: string; inner: string }[] = [];
   let opening = "";
@@ -234,7 +239,7 @@ const FUNDING_SECTION = new RegExp(FUNDING_SECTION_START, "giu");
 // its name, as in tagged, and one with none after it is dropped. Tags match
 // in any case, as the pattern that finds the section does.
 function closeOf(xml: string, name: string, from: number): number {
-  const tags = new RegExp(`<(/?)${name}${NAME_END}([^>]*)>`, "giu");
+  const tags = new RegExp(`<(/?)${literal(name)}${NAME_END}([^>]*)>`, "giu");
   tags.lastIndex = from;
   let depth = 1;
   for (let tag = tags.exec(xml); tag !== null; tag = tags.exec(xml)) {
