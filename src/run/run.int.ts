@@ -209,6 +209,7 @@ describe("a run over the back catalogue", () => {
     if (before?.published !== true)
       throw new Error("the first run did not publish");
     expect(before.papers).toBeGreaterThan(0);
+    expect(before.references).toBeGreaterThan(0);
     fake.site.files = undefined;
 
     const again = await runWith(fake);
