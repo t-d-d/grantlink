@@ -9,6 +9,7 @@ import {
   recordPage,
   recordSearch,
   searchPage,
+  snapshotFailure,
 } from "./steps.ts";
 
 const logs: string[] = [];
@@ -272,4 +273,24 @@ describe("two runs that overlap", () => {
       expect(page.counts.papers).toBe(1);
     },
   );
+});
+
+// personal-data.md: the snapshot-failed line logs one of a fixed set of
+// reasons, never the message the snapshot threw (#285).
+describe("the reason a failed snapshot logs", () => {
+  it.each(["store-failed", "search-failed", "malformed-search"])(
+    "is %s when the snapshot failed with that reason",
+    (reason) => {
+      expect(snapshotFailure(new Error(reason))).toBe(reason);
+    },
+  );
+
+  it.each([
+    new Error("S3 answered 503 for Quillfeather"),
+    new Error("store-failed for Quillfeather"),
+    "store-failed",
+    undefined,
+  ])("is unknown for anything else, such as %s", (error) => {
+    expect(snapshotFailure(error)).toBe("unknown");
+  });
 });
