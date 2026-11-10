@@ -89,12 +89,30 @@ describe.each([
     }
   });
 
-  // The bucket's name carries the account id, which the step masks.
+  // The steps read the outputs by name, so a misspelt one would hand them
+  // an empty value that no other test in the gate sees.
+  it("are written under the names the steps read", () => {
+    const run = assume?.run ?? "";
+    for (const name of ["key", "secret", "session"]) {
+      expect(run, name).toContain(`echo "${name}=$${name}"`);
+    }
+    expect(run).toContain('echo "bucket=grantlink-text-$account"');
+  });
+
+  // The bucket's name carries the account id, which the step masks. Any
+  // variable that reads it counts, not only the one the steps expect.
   it("hand the bucket's name only to the steps that read it", () => {
-    const named = all.filter(
-      (step) => step.env?.[bucket] === "${{ steps.assume.outputs.bucket }}",
+    const named = all.filter((step) =>
+      Object.values(step.env ?? {}).some((value) =>
+        value.includes("steps.assume.outputs.bucket"),
+      ),
     );
     expect(named.map((step) => step.name)).toEqual(bucketTo);
+    for (const step of named) {
+      expect(step.env?.[bucket], step.name).toBe(
+        "${{ steps.assume.outputs.bucket }}",
+      );
+    }
   });
 
   it("are read nowhere but in those steps' env", () => {

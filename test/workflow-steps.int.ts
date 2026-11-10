@@ -427,16 +427,14 @@ describe.each([
 ] as const)("$title", ({ run, extra }) => {
   // Each step writes the credentials to its outputs, and nothing to
   // $GITHUB_ENV, where every later step would hold them (#259, #308).
-  const written = (result: { env: string; output: string }) => result.output;
-  const other = (result: { env: string; output: string }) => result.env;
 
   // The values only: no test in the gate names the variables that hold a
   // key (code-and-tests.md), and the static tests read the names.
   it("writes the credentials STS gave it", () => {
     const result = assumeRole(run, stsReply());
     expect(result.status).toBe(0);
-    expect(other(result)).toBe("");
-    const values = written(result)
+    expect(result.env).toBe("");
+    const values = result.output
       .trimEnd()
       .split("\n")
       .map((line) => line.slice(line.indexOf("=") + 1));
@@ -451,8 +449,8 @@ describe.each([
   it.each(missingFields)("fails when the reply has no %s", (field) => {
     const result = assumeRole(run, stsReply(field));
     expect(result.status).not.toBe(0);
-    expect(written(result)).toBe("");
-    expect(other(result)).toBe("");
+    expect(result.output).toBe("");
+    expect(result.env).toBe("");
   });
 
   // #160: jq -e fails on a missing field, but says nothing on its own.
@@ -472,8 +470,8 @@ describe.each([
     (field, path) => {
       const result = assumeRole(run, stsReply(undefined, field));
       expect(result.status).not.toBe(0);
-      expect(written(result)).toBe("");
-      expect(other(result)).toBe("");
+      expect(result.output).toBe("");
+      expect(result.env).toBe("");
       expect(result.stderr).toMatch(namesPath(path));
     },
   );
@@ -490,8 +488,8 @@ describe.each([
     (_, oidc) => {
       const result = assumeRole(run, stsReply(), oidc);
       expect(result.status).not.toBe(0);
-      expect(written(result)).toBe("");
-      expect(other(result)).toBe("");
+      expect(result.output).toBe("");
+      expect(result.env).toBe("");
       expect(result.stderr).not.toContain("aws-called");
       expect(result.stderr).toMatch(/^::error::.*\.value\b/mu);
     },
