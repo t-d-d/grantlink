@@ -17,6 +17,7 @@ export const RULES_VERSIONS: readonly Version[] = [
   { number: 12, issue: 510 },
   { number: 13, issue: 525 },
   { number: 14, issue: 514 },
+  { number: 15, issue: 560 },
 ];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
@@ -214,7 +215,8 @@ const A_YEAR = String.raw`(?:19|20)\d{2}`;
 // form (#560).
 const CRUK_SEP = `(?:${DASH}|/)`;
 const CRUK_DIGIT_PART = String.raw`${CRUK_SEP}(?=[A-Z]*\d)(?!${A_YEAR}(?![A-Z0-9]))[A-Z0-9]{1,8}(?![A-Z0-9])`;
-const CRUK_PART = String.raw`(?:${CRUK_DIGIT_PART}|${CRUK_SEP}[A-Z]{1,2}(?![A-Z0-9]))`;
+const CRUK_LETTER_PART = String.raw`${CRUK_SEP}[A-Z]{1,2}(?![A-Z0-9])`;
+const CRUK_PART = `(?:${CRUK_DIGIT_PART}|${CRUK_LETTER_PART})`;
 // No part of any kind follows, so a read is the whole form, not its front.
 const NO_MORE_PARTS = String.raw`(?!${CRUK_SEP}[A-Z0-9]{1,8}(?![A-Z0-9]))`;
 // One to four parts, read whole. A form that runs on past four parts reads
@@ -223,7 +225,7 @@ const NO_MORE_PARTS = String.raw`(?!${CRUK_SEP}[A-Z0-9]{1,8}(?![A-Z0-9]))`;
 const CRUK_PARTS = [
   `${CRUK_DIGIT_PART}${NO_MORE_PARTS}`,
   `(?:${CRUK_DIGIT_PART}){1,2}${CRUK_PART}${NO_MORE_PARTS}`,
-  `(?:${CRUK_DIGIT_PART}){3}(?:${CRUK_DIGIT_PART}|${CRUK_PART}${NO_MORE_PARTS})`,
+  `(?:${CRUK_DIGIT_PART}){3}(?:${CRUK_DIGIT_PART}|${CRUK_LETTER_PART}${NO_MORE_PARTS})`,
 ].join("|");
 
 const SHAPES: readonly Shape[] = [
