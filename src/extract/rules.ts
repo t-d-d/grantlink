@@ -20,6 +20,7 @@ export const RULES_VERSIONS: readonly Version[] = [
   { number: 15, issue: 573 },
   { number: 16, issue: 560 },
   { number: 17, issue: 598 },
+  { number: 18, issue: 642 },
 ];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
@@ -146,6 +147,18 @@ const SEP = String.raw`\s?[/\\∖]\s?`;
 // What may not follow a bare number, so it is not the start of a longer
 // one, as in 12345/2, 12345-67 or 1234.5.
 const NUMBER_AFTER = String.raw`(?!${SEP}|${DASH}\d|\.\d)`;
+
+// An A number inside another funder's reference, with letters and a slash
+// before it and a slash and more after it, as in CAN/A00004/1, is part of
+// that reference, not the funder's (#642). A slash here is written straight
+// against both its neighbours, so a list spaced with slashes is not one,
+// and another A number after it makes a list too, as in grant/A12345/A23456.
+// Read at the A, before the shape.
+const TIGHT_SEP = String.raw`[/\\∖]`;
+const NOT_INSIDE_REFERENCE = String.raw`(?:(?<!\p{L}${TIGHT_SEP})|(?!A\s?\d+${TIGHT_SEP}(?!A\s?\d)${WORD}))`;
+
+// An A number, as the An shape reads it.
+const A_SHAPE = String.raw`A(?:\s?\d{5}|\d{4}${END}(?!${SEP}A\s?\d))`;
 
 interface Shape {
   format: string | ((match: RegExpMatchArray) => string);
@@ -315,7 +328,8 @@ const SHAPES: readonly Shape[] = [
     // four-digit A before another A number, as in A1234/A56789, is the C
     // part of a misprinted C/A pair, which is left to the model (#177).
     format: "An",
-    shape: String.raw`A(?:\s?\d{5}|\d{4}${END}(?!${SEP}A\s?\d))`,
+    shape: A_SHAPE,
+    before: `${START}${NOT_INSIDE_REFERENCE}`,
     sentenceOnly: true,
   },
   {
@@ -359,10 +373,12 @@ const NUMBER_BEFORE = String.raw`(?<!${SEP}|${DASH}|\d\.)`;
 // A reference as written, between the edges above. A bare number of any
 // length counts only where the text neither runs into it nor goes on past
 // it, as the rules read one (#567, #571).
+const A_REPLY = new RegExp(`^${A_SHAPE}$`, "u");
 const wholeReference = (reference: string): RegExp => {
   const bare = BARE_REPLY.test(reference);
+  const aNumber = A_REPLY.test(reference);
   return new RegExp(
-    `${bare ? NUMBER_BEFORE : ""}${START}${escape(reference)}${END}${bare ? NUMBER_AFTER : ""}`,
+    `${bare ? NUMBER_BEFORE : ""}${START}${aNumber ? NOT_INSIDE_REFERENCE : ""}${escape(reference)}${END}${bare ? NUMBER_AFTER : ""}`,
     "u",
   );
 };

@@ -336,6 +336,19 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.rejected).toBe(3);
   });
 
+  it("rejects an A number inside another funder's reference, as the rules do", async () => {
+    // The rules read no A number from CAN/A00004/1 (#642).
+    const { fetch } = fakeOpenRouter(
+      answer([{ asWritten: "A00004", confidence: 0.9 }]),
+    );
+    const result = await proposeReferences(
+      ["Funded by Cancer Research UK and the Example Network (CAN/A00004/1)."],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(1);
+  });
+
   it("rejects a reference a combining mark is joined to, as the rules do", async () => {
     // A combining mark belongs to the letter before it, so a mark joined to
     // a reference makes it part of a longer word (#339, #369). The text is

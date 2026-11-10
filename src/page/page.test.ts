@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { PaperRow } from "../store/table.ts";
-import { found as foundSchema, summarise } from "./found.ts";
-import { rebuild } from "./build.ts";
+import { found as foundSchema, leaveOut, summarise } from "./found.ts";
+import { rebuild, retracted } from "./build.ts";
 import { buildPage, renderFound } from "./render.ts";
 
 const template = readFileSync(
@@ -399,6 +399,43 @@ describe("rendering the page", () => {
 
   it("refuses a template without the place for the findings", () => {
     expect(() => buildPage("<html></html>", summarise(rows, run))).toThrow();
+  });
+});
+
+describe("a paper Europe PMC marks as retracted (#587)", () => {
+  const found = summarise(rows, run);
+
+  it("leaves the paper out of the list and the counts", () => {
+    const left = leaveOut(found, new Set(["PMC1"]));
+    expect(left.papers.map((paper) => paper.pmcid)).toEqual(["PMC2"]);
+    expect(left.counts).toEqual({
+      papers: 3,
+      processed: 2,
+      withReference: 1,
+      references: 1,
+      pending: 1,
+    });
+    expect(left.formats).toEqual([{ format: "Cn/An", count: 1 }]);
+  });
+
+  it("leaves a paper not yet read out of the list and the counts", () => {
+    const left = leaveOut(found, new Set(["PMC4"]));
+    expect(left.pending).toEqual([]);
+    expect(left.counts).toEqual({ ...found.counts, papers: 3, pending: 0 });
+  });
+
+  it("changes nothing when no paper listed is retracted", () => {
+    expect(leaveOut(found, new Set(["PMC9"]))).toEqual(found);
+  });
+
+  // The run's search leaves retracted papers out, but the deploy builds the
+  // page from the last run's found.json, which can still hold one.
+  it("leaves a retracted paper out when the deploy builds the page again", () => {
+    const [pmcid = ""] = retracted;
+    const data = summarise([...rows, done(pmcid, [an])], run);
+    const html = rebuild(template, JSON.stringify(data), null);
+    expect(html).not.toContain(pmcid);
+    expect(html).toBe(buildPage(template, summarise(rows, run)));
   });
 });
 
