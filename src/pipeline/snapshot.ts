@@ -68,7 +68,10 @@ export async function searchGoldA(
 const sha256 = (text: string) =>
   createHash("sha256").update(text).digest("hex");
 
-export type Taken = { kept: true; entry: Entry } | { kept: false };
+// `empty` says the funding-section cutter found no funding text or awards
+// in a kept paper, which only a gold set B paper can be (#405).
+export type Taken =
+  { kept: true; entry: Entry; empty: boolean } | { kept: false };
 
 // Reads one gold paper afresh into cache/, and writes its funding sections
 // under eval/ once. A gold set A paper Europe PMC links to none of the
@@ -96,11 +99,8 @@ export async function snapshotPaper(
   }
   const sections = fundingSections(await deps.europePmc.fullText(pmcid));
   await deps.text.putFundingText(pmcid, sections);
-  if (
-    set === "A" &&
-    sections.text.length === 0 &&
-    sections.awards.length === 0
-  ) {
+  const empty = sections.text.length === 0 && sections.awards.length === 0;
+  if (set === "A" && empty) {
     logger.info("snapshot-passed-over", { pmcid });
     return { kept: false };
   }
@@ -112,6 +112,7 @@ export async function snapshotPaper(
   return {
     kept: true,
     entry: { pmcid, set, sha256: sha256(stored), grants },
+    empty,
   };
 }
 
