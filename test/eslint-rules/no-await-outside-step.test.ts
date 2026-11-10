@@ -57,6 +57,22 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
           await askEuropePmc(ctx, "paper", "wait", r, async () => readPaper());
         }`,
       },
+      {
+        name: "awaits askEuropePmc imported without the .ts extension",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed";
+        async function run(ctx: any) {
+          await askEuropePmc(ctx, "paper", "wait", r, async () => readPaper());
+        }`,
+      },
+      {
+        name: "awaits askEuropePmc imported with a .js extension",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.js";
+        async function run(ctx: any) {
+          await askEuropePmc(ctx, "paper", "wait", r, async () => readPaper());
+        }`,
+      },
     ],
     invalid: [
       {

@@ -86,11 +86,9 @@ export function stepHelperOf(
   }
   const { callee } = node;
   const variable = lookup(callee.name, resolver.sourceCode.getScope(callee));
-  const [def, ...more] = variable?.defs ?? [];
+  const def = variable?.defs[0];
   if (
-    def === undefined ||
-    more.length > 0 ||
-    def.node.type !== AST_NODE_TYPES.ImportSpecifier ||
+    def?.node.type !== AST_NODE_TYPES.ImportSpecifier ||
     def.parent?.type !== AST_NODE_TYPES.ImportDeclaration
   ) {
     return null;
@@ -102,14 +100,22 @@ export function stepHelperOf(
       : imported.value;
   const source = def.parent.source.value;
   if (!source.startsWith(".")) return null;
-  const module = posix.normalize(
-    posix.join(posix.dirname(repoPath(resolver)), source),
+  const module = withoutExtension(
+    posix.normalize(posix.join(posix.dirname(repoPath(resolver)), source)),
   );
   return (
     STEP_HELPERS.find(
-      (helper) => helper.module === module && helper.name === name,
+      (helper) =>
+        withoutExtension(helper.module) === module && helper.name === name,
     ) ?? null
   );
+}
+
+// A module path without its .ts or .js extension. The bundler resolution in
+// tsconfig.base.json lets an import name owed.ts as "./owed", "./owed.js" or
+// "./owed.ts", and all three are the same module.
+function withoutExtension(path: string): string {
+  return path.replace(/\.[cm]?[jt]s$/, "");
 }
 
 // True when `fn` is an argument a step helper runs inside its step.
