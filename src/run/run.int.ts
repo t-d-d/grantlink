@@ -661,6 +661,45 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
     },
   );
 
+  it.each([300, 7200])(
+    "ends only once a refused last gold set A paper's Retry-After of %is has been waited out, when gold set B lists no papers and the manifest write fails (#284)",
+    async (seconds) => {
+      const fake = fakeDeps({
+        gold: { goldB: { ...FAKE_GOLD.goldB, papers: [] } },
+      });
+      const real = fake.deps.europePmc;
+      let snapshotting = false;
+      const hasSnapshot = fake.deps.text.hasSnapshot.bind(fake.deps.text);
+      fake.deps.text.hasSnapshot = (id) => {
+        snapshotting = true;
+        return hasSnapshot(id);
+      };
+      let notBefore = 0;
+      fake.deps.europePmc = {
+        search: real.search.bind(real),
+        grants: real.grants.bind(real),
+        fullText: (pmcid) => {
+          if (!snapshotting) return real.fullText(pmcid);
+          notBefore = Date.now() + seconds * 1_000;
+          return Promise.reject(
+            new EuropePmcError(
+              `Europe PMC answered 429, asked to wait ${String(seconds)}s`,
+              429,
+              seconds,
+            ),
+          );
+        },
+      };
+      fake.deps.text.putManifest = () =>
+        Promise.reject(new Error("S3 answered 503"));
+      const { status, result, ended } = await runWith(fake);
+      expect(status).toBe("SUCCEEDED");
+      expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
+      expect(notBefore).toBeGreaterThan(0);
+      expect(ended).toBeGreaterThanOrEqual(notBefore);
+    },
+  );
+
   it("never asks again sooner than its first wait, with no Retry-After", async () => {
     const search = await runWith(fakeDeps({ search: () => reply("", 503) }));
     const paper = await runWith(
