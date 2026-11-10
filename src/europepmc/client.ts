@@ -132,9 +132,11 @@ export function searchQuery(): string {
     // A retracted paper is no finding to show (#587).
     `NOT ${quoted("PUB_TYPE", "retracted publication")}`,
     // A correction notice repeats the funding text of the paper it
-    // corrects, so its grant is already that paper's (#660).
+    // corrects, so its grant is already that paper's (#660). Europe PMC
+    // also types many a corrected and republished article as a
+    // correction, and that is the whole paper again, so it stays.
     `NOT ${quoted("PUB_TYPE", "published erratum")}`,
-    `NOT ${quoted("PUB_TYPE", "correction")}`,
+    `NOT (${quoted("PUB_TYPE", "correction")} AND NOT ${quoted("PUB_TYPE", "corrected and republished article")})`,
     `FIRST_PDATE:[${funder.since} TO 3000-12-31]`,
   ].join(" AND ");
 }

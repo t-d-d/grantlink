@@ -79,32 +79,36 @@ export function isNotice(title: string): boolean {
   return NOTICE.test(title);
 }
 
-// The published data without any correction notice, its counts and formats
-// taken down by what goes. A notice a run read and found no reference in is
-// not in found.json, so only a run takes it out of the counts.
+// The published data without any correction notice, its counts taken down
+// by what goes and its formats counted again from the references that
+// stay. A notice a run read and found no reference in is not in found.json,
+// so only a run takes it out of the counts.
 export function withoutNotices(data: Found): Found {
-  const gone = data.papers.filter((paper) => isNotice(paper.title));
-  const goneReferences = gone.flatMap((paper) => paper.references);
-  const goneWaiting = data.pending.filter((paper) => isNotice(paper.title));
   const papers = data.papers.filter((paper) => !isNotice(paper.title));
-  const formats = new Map<string, number>(
-    data.formats.map(({ format, count }) => [format, count]),
-  );
-  for (const { format } of goneReferences) {
-    formats.set(format, (formats.get(format) ?? 0) - 1);
+  const pending = data.pending.filter((paper) => !isNotice(paper.title));
+  const gone = data.papers.filter((paper) => isNotice(paper.title));
+  const references = papers.flatMap((paper) => paper.references);
+  const formats = new Map<string, number>();
+  for (const { format } of references) {
+    formats.set(format, (formats.get(format) ?? 0) + 1);
   }
+  const goneWaiting = data.pending.length - pending.length;
   return found.parse({
     ...data,
     counts: {
-      papers: data.counts.papers - gone.length - goneWaiting.length,
+      papers: data.counts.papers - gone.length - goneWaiting,
       processed: data.counts.processed - gone.length,
-      withReference: data.counts.withReference - gone.length,
-      references: data.counts.references - goneReferences.length,
-      pending: data.counts.pending - goneWaiting.length,
+      withReference:
+        data.counts.withReference -
+        gone.filter((paper) => paper.references.length > 0).length,
+      references:
+        data.counts.references -
+        gone.flatMap((paper) => paper.references).length,
+      pending: data.counts.pending - goneWaiting,
     },
     papers,
     formats: mostCommonFirst(formats),
-    pending: data.pending.filter((paper) => !isNotice(paper.title)),
+    pending,
   });
 }
 
@@ -113,10 +117,10 @@ export function withoutNotices(data: Found): Found {
 // The search asks for papers linked to none of the funder's grants and not
 // marked as retracted or as a correction notice, so a paper it left out
 // has since been linked, retracted or dropped, and is no longer one the
-// page is about. A correction notice an older search returned is left out
-// too. The table
-// keeps its row. A row keeps the mark of the latest-started run that
-// returned it, and run ids sort as their runs started, so a paper that
+// page is about. A paper whose title marks it as a correction notice is
+// left out too, whichever search returned it. The table keeps its row. A
+// row keeps the mark of the latest-started run that returned it, and run
+// ids sort as their runs started, so a paper that
 // search returned may carry the mark of a run that started after it. Such a run's search is newer, so its papers count too
 // (#125).
 export function summarise(

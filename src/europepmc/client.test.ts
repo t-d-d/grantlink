@@ -394,7 +394,15 @@ describe("searching Europe PMC", () => {
   // publication type, or both.
   it("leaves out papers Europe PMC marks as correction notices", () => {
     expect(searchQuery()).toContain('NOT PUB_TYPE:"published erratum"');
-    expect(searchQuery()).toContain('NOT PUB_TYPE:"correction"');
+    expect(searchQuery()).toContain(
+      'NOT (PUB_TYPE:"correction" AND NOT PUB_TYPE:"corrected and republished article")',
+    );
+  });
+
+  // Europe PMC also types many a corrected and republished article as
+  // "correction". That is the whole paper again, so it stays (#660).
+  it("keeps a paper corrected and republished", () => {
+    expect(searchQuery()).not.toContain('NOT PUB_TYPE:"correction" AND');
   });
 
   // Two common tokens would widen the search too far, so only the rules

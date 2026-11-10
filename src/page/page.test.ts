@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { PaperRow } from "../store/table.ts";
-import { found as foundSchema, isNotice, summarise } from "./found.ts";
+import {
+  found as foundSchema,
+  isNotice,
+  summarise,
+  withoutNotices,
+} from "./found.ts";
 import { rebuild } from "./build.ts";
 import { buildPage, renderFound } from "./render.ts";
 
@@ -235,6 +240,25 @@ describe("a correction notice (#660)", () => {
     expect(rebuild(template, JSON.stringify(listed), null)).toBe(
       buildPage(template, summarise(rows, run)),
     );
+  });
+
+  // The schema lets found.json list a paper with no reference, so taking
+  // one off counts only what it gave.
+  it("takes a listed notice with no reference out of the papers read only", () => {
+    const data = summarise(rows, run);
+    const listed = {
+      ...data,
+      counts: {
+        ...data.counts,
+        papers: data.counts.papers + 1,
+        processed: data.counts.processed + 1,
+      },
+      papers: [
+        ...data.papers,
+        { pmcid: "PMC5", title: "Erratum: Title of PMC1", references: [] },
+      ],
+    };
+    expect(withoutNotices(listed)).toEqual(data);
   });
 });
 
