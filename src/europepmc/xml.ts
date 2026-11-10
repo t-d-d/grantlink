@@ -268,35 +268,3 @@ export function attribute(
 ): string | undefined {
   return element.attributes.find((found) => found.name === name)?.value;
 }
-
-// Nodes written back out as XML.
-export function serialize(nodes: XmlNode[]): string {
-  return nodes
-    .map((node) => {
-      switch (node.kind) {
-        case "text":
-          return node.text;
-        case "cdata":
-          return `<![CDATA[${node.text}]]>`;
-        case "comment":
-          return `<!--${node.text}-->`;
-        case "instruction":
-          return `<?${node.target}${node.data}?>`;
-        case "element": {
-          // A value holds no quote of the kind it was written in, so one
-          // that holds a double quote was in single quotes.
-          const attributes = node.attributes
-            .map(({ name, value }) =>
-              value.includes('"')
-                ? ` ${name}='${value}'`
-                : ` ${name}="${value}"`,
-            )
-            .join("");
-          return node.empty
-            ? `<${node.name}${attributes}/>`
-            : `<${node.name}${attributes}>${serialize(node.children)}</${node.name}>`;
-        }
-      }
-    })
-    .join("");
-}
