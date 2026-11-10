@@ -164,6 +164,11 @@ describe("the rules", () => {
     "Funded by CRUK (CRUK/1/2/3/SMITH/2).",
     // A later CRUK- piece takes no digit from an earlier one.
     "Funded by CRUK (CRUK/12/CRUK/AB).",
+    // A last part with no digit holds at most two capitals, so a name in
+    // capitals cannot end the form (#560).
+    "Funded by CRUK (CRUK/12/JONES).",
+    "Funded by CRUK (CRUK/12/ABC).",
+    "Funded by CRUK (CRUK/1/2/3/JONES).",
   ])(
     "leaves a CRUK- form with a part of no digit, or a part that is a year: %j",
     (text) => {

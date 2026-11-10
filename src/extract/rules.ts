@@ -209,10 +209,12 @@ const A_YEAR = String.raw`(?:19|20)\d{2}`;
 
 // A CRUK- form's parts. Each follows a hyphen or a slash and is a whole run
 // of up to eight capitals and digits, never a year alone. Every part but
-// the last holds a digit (#514).
+// the last holds a digit (#514). The last may instead be one or two
+// capitals, as in CRUKDF-0123-AB, so a name in capitals cannot end the
+// form (#560).
 const CRUK_SEP = `(?:${DASH}|/)`;
-const CRUK_PART = String.raw`${CRUK_SEP}(?!${A_YEAR}(?![A-Z0-9]))[A-Z0-9]{1,8}(?![A-Z0-9])`;
 const CRUK_DIGIT_PART = String.raw`${CRUK_SEP}(?=[A-Z]*\d)(?!${A_YEAR}(?![A-Z0-9]))[A-Z0-9]{1,8}(?![A-Z0-9])`;
+const CRUK_PART = String.raw`(?:${CRUK_DIGIT_PART}|${CRUK_SEP}[A-Z]{1,2}(?![A-Z0-9]))`;
 // No part of any kind follows, so a read is the whole form, not its front.
 const NO_MORE_PARTS = String.raw`(?!${CRUK_SEP}[A-Z0-9]{1,8}(?![A-Z0-9]))`;
 // One to four parts, read whole. A form that runs on past four parts reads
@@ -244,7 +246,8 @@ const SHAPES: readonly Shape[] = [
     // a year alone, so a name in capitals, as in CRUK/SMITH/2, or a year,
     // as in CRUK/2019, is not one. The form is read whole or not at all, so
     // CRUK/12 is not read from CRUK/12/2019, nor CRUK/AB12 from
-    // CRUK/AB12/SMITH/2 (#514).
+    // CRUK/AB12/SMITH/2 (#514). A last part with no digit holds at most
+    // two capitals, so CRUK/12/JONES is not one either (#560).
     format: "CRUK-X",
     shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:${CRUK_PARTS})`,
     readWhole: true,

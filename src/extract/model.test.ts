@@ -652,6 +652,8 @@ describe("fitness: no invented references (model-calls.md)", () => {
       // A CRUK- form with a name in capitals, or a year alone (#514).
       "CRUK/SMITH/2",
       "CRUK/2019",
+      // A last part of no digit and more than two capitals (#560).
+      "CRUK/12/JONES",
     ];
     const { fetch } = fakeOpenRouter(
       answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
