@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
-import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
+import { TSESLint } from "@typescript-eslint/utils";
+import type { TSESTree } from "@typescript-eslint/utils";
 import {
   aliasDeclarator,
   createRule,
@@ -68,13 +69,36 @@ function ambient(node: TSESTree.Node): boolean {
   for (let n: TSESTree.Node | undefined = node; n; n = n.parent) {
     if (
       (n.type === AST_NODE_TYPES.VariableDeclaration ||
-        n.type === AST_NODE_TYPES.TSModuleDeclaration) &&
-      n.declare
+        n.type === AST_NODE_TYPES.TSModuleDeclaration ||
+        n.type === AST_NODE_TYPES.ClassDeclaration ||
+        n.type === AST_NODE_TYPES.TSDeclareFunction) &&
+      n.declare === true
     ) {
       return true;
     }
   }
   return false;
+}
+
+// True when a definition declares a value in place of the global of the
+// same name. A type, an interface, an ambient declaration and a type-only
+// import declare no value, so a name with only those still reads the
+// global.
+function declaresValue(def: TSESLint.Scope.Definition): boolean {
+  switch (def.type) {
+    case TSESLint.Scope.DefinitionType.Type:
+    case TSESLint.Scope.DefinitionType.ImplicitGlobalVariable:
+      return false;
+    case TSESLint.Scope.DefinitionType.ImportBinding:
+      return !(
+        (def.parent.type === AST_NODE_TYPES.ImportDeclaration &&
+          def.parent.importKind === "type") ||
+        (def.node.type === AST_NODE_TYPES.ImportSpecifier &&
+          def.node.importKind === "type")
+      );
+    default:
+      return !ambient(def.node);
+  }
 }
 
 // The global path an expression reads, through the wrappers unwrapped takes
@@ -114,8 +138,9 @@ function identifierPath(
   }
   const end = walk.chain.at(-1);
   if (end === undefined || seen.has(end)) return null;
-  // A global the scope manager knows, such as one from a lib or a config.
-  if (end.defs.length === 0) return [end.name];
+  // A global the scope manager knows, such as one from a lib or a config,
+  // or a name the file declares only as a type or ambiently.
+  if (!end.defs.some(declaresValue)) return [end.name];
   const next = new Set([...seen, end]);
   const alias = aliasDeclarator(end);
   if (alias !== null) {
@@ -130,7 +155,6 @@ function identifierPath(
     return key === null ? null : normalised([...init, key]);
   }
   const def = end.defs[0];
-  if (def !== undefined && ambient(def.node)) return [end.name];
   if (def?.parent?.type !== AST_NODE_TYPES.ImportDeclaration) return null;
   const module = MODULES[def.parent.source.value.replace(/^node:/, "")];
   if (module === undefined) return null;
@@ -164,6 +188,20 @@ function isRead(identifier: TSESTree.Identifier, resolver: Resolver): boolean {
     .references.some((ref) => ref.identifier === identifier && ref.isRead());
 }
 
+// True when the node is the function a call calls, read through the
+// wrappers unwrapped takes off, so `Date.now!()`, `(Date.now as F)()` and
+// `(0, Date.now)()` are each a call.
+function calledThrough(node: TSESTree.Node): boolean {
+  let outer = node;
+  while (outer.parent !== undefined && unwrapped(outer.parent) === node) {
+    outer = outer.parent;
+  }
+  return (
+    outer.parent?.type === AST_NODE_TYPES.CallExpression &&
+    outer.parent.callee === outer
+  );
+}
+
 export const noNonDeterministicOutsideStep = createRule({
   name: "no-non-deterministic-outside-step",
   meta: {
@@ -193,10 +231,7 @@ export const noNonDeterministicOutsideStep = createRule({
     const check = (node: TSESTree.Node, path: readonly string[] | null) => {
       const op = opOf(path);
       if (op === undefined) return;
-      const called =
-        node.parent?.type === AST_NODE_TYPES.CallExpression &&
-        node.parent.callee === node;
-      report(node, called ? `${op}()` : op);
+      report(node, calledThrough(node) ? `${op}()` : op);
     };
     return {
       NewExpression(node) {
