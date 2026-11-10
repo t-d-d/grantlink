@@ -26,20 +26,49 @@ export const DURABLE_METHODS = new Set([
   "createCallback",
 ]);
 
-// A method call `<receiver>.<name>(...)` whose name is in the set.
-export function isMethodCallIn(
+// A method call `<receiver>.<name>(...)` whose name is in the set, read
+// through the wrappers unwrapped takes off, on the call and on its callee:
+// `ctx?.step(...)`, `ctx.step!(...)`, `(ctx.step as F)(...)` and
+// `(ctx.step(...) as Promise<T>)` are all a step. It gives the call and
+// the member its callee reads, or null for anything else.
+export function methodCallIn(
   node: TSESTree.Node,
   names: ReadonlySet<string>,
-): node is TSESTree.CallExpression & {
-  callee: TSESTree.MemberExpression;
-} {
-  return (
-    node.type === AST_NODE_TYPES.CallExpression &&
-    node.callee.type === AST_NODE_TYPES.MemberExpression &&
-    !node.callee.computed &&
-    node.callee.property.type === AST_NODE_TYPES.Identifier &&
-    names.has(node.callee.property.name)
-  );
+): { call: TSESTree.CallExpression; callee: TSESTree.MemberExpression } | null {
+  const call = unwrapped(node);
+  if (call.type !== AST_NODE_TYPES.CallExpression) return null;
+  const callee = unwrapped(call.callee);
+  if (
+    callee.type !== AST_NODE_TYPES.MemberExpression ||
+    callee.computed ||
+    callee.property.type !== AST_NODE_TYPES.Identifier ||
+    !names.has(callee.property.name)
+  ) {
+    return null;
+  }
+  return { call, callee };
+}
+
+// The expression a TypeScript wrapper or an optional chain holds, with
+// every such layer taken off: `x as T`, `<T>x`, `x satisfies T`, `x!`,
+// `x<T>` and the chain around `a?.b` or `a?.()`. None of them changes which
+// function a name holds, so the rules read through them.
+export function unwrapped(node: TSESTree.Node): TSESTree.Node {
+  let current = node;
+  for (;;) {
+    switch (current.type) {
+      case AST_NODE_TYPES.TSAsExpression:
+      case AST_NODE_TYPES.TSTypeAssertion:
+      case AST_NODE_TYPES.TSSatisfiesExpression:
+      case AST_NODE_TYPES.TSNonNullExpression:
+      case AST_NODE_TYPES.TSInstantiationExpression:
+      case AST_NODE_TYPES.ChainExpression:
+        current = current.expression;
+        break;
+      default:
+        return current;
+    }
+  }
 }
 
 // The operations that checkpoint their callback as a unit: a step, the
@@ -291,8 +320,8 @@ export function insideCheckpointedCallback(
     return (
       (fn.type === AST_NODE_TYPES.ArrowFunctionExpression ||
         fn.type === AST_NODE_TYPES.FunctionExpression) &&
-      call !== undefined &&
-      ((isMethodCallIn(call, CHECKPOINTS_CALLBACK) &&
+      call?.type === AST_NODE_TYPES.CallExpression &&
+      ((methodCallIn(call, CHECKPOINTS_CALLBACK) !== null &&
         call.arguments.includes(fn)) ||
         isStepHelperCallback(call, fn, resolver))
     );

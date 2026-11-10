@@ -1,6 +1,7 @@
 import { afterAll, describe, it } from "vitest";
 import { noNestedDurableOperations } from "../../eslint-rules/no-nested-durable-operations.ts";
 import { ruleTester } from "../rule-tester.ts";
+import { WRAPPED_DURABLE_CALLS } from "./wrapped-durable-calls.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
 
@@ -27,6 +28,13 @@ describe("fitness: no durable operation inside its own context's operation (dura
       },
     ],
     invalid: [
+      ...WRAPPED_DURABLE_CALLS.map((shape) => ({
+        name: `uses the same context inside a step written as ${shape.name}`,
+        code: `async function run(ctx: any) {
+          await ${shape.call("step", `"outer", async () => { await ctx.wait("pause", { seconds: 1 }); }`)};
+        }`,
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
       {
         name: "asks Europe PMC through a renamed import on the same context inside a step",
         filename: "src/run/run.ts",
