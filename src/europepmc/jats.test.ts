@@ -798,6 +798,77 @@ describe("keeping funding notes and footnotes (#505)", () => {
     ).toEqual(["a"]);
   });
 
+  // A note marked as funding by its type or title keeps its untitled
+  // sections and its funding sections. A section titled as something else,
+  // such as author contributions, is about that, at any depth in the note
+  // (#541).
+  it.each([
+    [
+      "a typed note",
+      '<notes notes-type="funding-information"><p>a</p>' +
+        "<sec><title>Author contributions</title><p>Authorname wrote it.</p></sec></notes>",
+    ],
+    [
+      "a titled note",
+      "<notes><title>Funding</title><p>a</p>" +
+        "<sec><title>Author contributions</title><p>Authorname wrote it.</p></sec></notes>",
+    ],
+    [
+      "a typed note, wrapped in another element",
+      '<notes notes-type="funding"><p>a</p><boxed-text>' +
+        "<sec><title>Author contributions</title><p>Authorname wrote it.</p></sec>" +
+        "</boxed-text></notes>",
+    ],
+    [
+      "a typed note, inside an untitled section",
+      '<notes notes-type="funding"><sec><p>a</p>' +
+        "<sec><label>1</label><title>Author contributions</title><p>Authorname wrote it.</p></sec>" +
+        "</sec></notes>",
+    ],
+    [
+      "a typed footnote",
+      '<fn-group><fn fn-type="funding"><p>a</p>' +
+        "<sec><title>Author contributions</title><p>Authorname wrote it.</p></sec></fn></fn-group>",
+    ],
+  ])("leaves out a section that is not about funding in %s", (_what, xml) => {
+    const sections = back(xml);
+    expect(sections.text).toEqual(["a"]);
+    expect(JSON.stringify(sections)).not.toContain("Authorname");
+  });
+
+  it("keeps the funding sections of a typed note", () => {
+    expect(
+      back(
+        '<notes notes-type="funding"><p>a</p>' +
+          "<sec><title>Grant support</title><p>b</p></sec>" +
+          '<sec sec-type="funding"><title>Our grants</title><p>c</p></sec>' +
+          "</notes>",
+      ).text,
+    ).toEqual(["b", "c", "a"]);
+  });
+
+  // A note kept for its own words drops its sections at any depth, so
+  // wrapping one in another element does not let it in (#541).
+  it("leaves out a wrapped section of a note kept for its own words", () => {
+    const sections = back(
+      "<notes><p>Supported by CRUK.</p><boxed-text>" +
+        "<sec><title>Author contributions</title><p>Authorname wrote it.</p></sec>" +
+        "</boxed-text></notes>",
+    );
+    expect(sections.text).toEqual(["Supported by CRUK."]);
+    expect(JSON.stringify(sections)).not.toContain("Authorname");
+  });
+
+  // An untitled section wrapped in another element does not say it is about
+  // something else, so it stays part of the note's own words (#541).
+  it("reads a wrapped, untitled section as a note's own words", () => {
+    expect(
+      back(
+        "<notes><boxed-text><sec><p>Supported by Cancer Research UK.</p></sec></boxed-text></notes>",
+      ).text,
+    ).toEqual(["Supported by Cancer Research UK."]);
+  });
+
   // A note kept for naming the funder in its own words is about funding
   // only in those words, so of the sections it holds the cut keeps only the
   // funding sections, which it finds as it finds every funding section, ahead
