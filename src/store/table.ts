@@ -13,6 +13,7 @@ import { z } from "zod";
 import { referenceSchema } from "../extract/rules.ts";
 import { batches } from "../shared/batches.ts";
 import { pmcid as PMCID } from "../shared/pmcid.ts";
+import { storedReference } from "./reference.ts";
 
 // The only module that reads or writes the results table
 // (docs/constraints/storage.md). Every row is checked against its schema
@@ -68,18 +69,8 @@ export type PaperRow = z.infer<typeof paperRow>;
 // this version drops (docs/constraints/durable-execution.md). So may a
 // reference or the versions within it. A reference may also hold a character
 // a later version allows and this one does not (#314), so a stored one is
-// read by the length and type of each field alone. What is written still
-// passes the whole of referenceSchema.
-const lengthOnly = (field: z.ZodString) =>
-  z
-    .string()
-    .min(field.minLength ?? 0)
-    .max(field.maxLength ?? Infinity);
-const storedReference = z.object({
-  asWritten: lengthOnly(referenceSchema.shape.asWritten),
-  normalised: lengthOnly(referenceSchema.shape.normalised),
-  format: lengthOnly(referenceSchema.shape.format),
-});
+// read by the length and type of each field alone (src/store/reference.ts).
+// What is written still passes the whole of referenceSchema.
 const tolerantRow = z.object({
   ...fields,
   references: z.array(storedReference).max(50).optional(),
