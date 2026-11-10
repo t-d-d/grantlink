@@ -38,7 +38,9 @@ const isFundingFootnote = (element: Element): boolean =>
   element.name === "fn" && element.funding;
 
 // For each element whose children are checked, which children it may hold.
-// The children of an element allowed here, but not listed, are not checked.
+// The children of an element allowed here, but not listed, are not checked,
+// but a comment or a processing instruction with text anywhere inside it is
+// named, since the cutter drops it unread (#303).
 const ALLOWED: Record<string, (child: Element) => boolean> = {
   article: (child) => ["front", "body", "back"].includes(child.name),
   "article/front": (child) => child.name === "article-meta",
@@ -59,7 +61,8 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
 // that finds a funding section, so a > inside it does not end it. CDATA and
 // comments count as text, since a comment can hold a cut part kept by
 // mistake. So does what a processing instruction holds after its target,
-// other than the XML declaration's (#303).
+// other than the XML declaration's before the root, and what one holds that
+// never ends with ?> (#303).
 function parse(xml: string): Element {
   const root: Element = {
     name: "",
@@ -75,10 +78,14 @@ function parse(xml: string): Element {
     const [whole, close, name, attributes = "", empty] = match;
     const parent = stack.at(-1) ?? root;
     if (name === undefined) {
-      const instruction = /^<\?(\S*)([\s\S]*)\?>$/u.exec(whole);
+      const instruction = /^<\?([^\s?>]*)([\s\S]*?)\??>$/u.exec(whole);
       if (instruction !== null) {
         const [, target = "", data = ""] = instruction;
-        if (target.toLowerCase() !== "xml" && data.trim() !== "") {
+        const declaration =
+          target.toLowerCase() === "xml" &&
+          parent === root &&
+          root.children.length === 0;
+        if (!declaration && data.trim() !== "") {
           parent.text = true;
           parent.unread = true;
         }
@@ -178,7 +185,8 @@ function strayInPart(part: Element, path: string): string[] {
 function stray(element: Element, path: string): string[] {
   if (isPart(element)) return strayInPart(element, path);
   const allowed = ALLOWED[path];
-  if (allowed === undefined) return [];
+  if (allowed === undefined)
+    return hasUnread(element) ? [`${path} (text)`] : [];
   return [
     ...(element.text ? [`${path} (text)`] : []),
     ...element.children.flatMap((child) => {

@@ -196,6 +196,27 @@ describe("strayParts", () => {
       { body: "<body><?x Somebody?></body>" },
       "article/body (text)",
     ],
+    [
+      "a processing instruction holding text in a funding statement, whose element the check does not otherwise read (#303)",
+      {
+        meta: "<funding-group><funding-statement>Funded.<?x Somebody?></funding-statement></funding-group>",
+      },
+      "article/front/article-meta/funding-group (text)",
+    ],
+    [
+      "a processing instruction holding text in the licence (#303)",
+      {
+        meta: "<permissions><license><p>CC BY</p><?x Somebody?></license></permissions>",
+      },
+      "article/front/article-meta/permissions/license (text)",
+    ],
+    [
+      "a comment holding text in a funding statement (#303)",
+      {
+        meta: "<funding-group><funding-statement>Funded.<!-- Somebody --></funding-statement></funding-group>",
+      },
+      "article/front/article-meta/funding-group (text)",
+    ],
   ])("names %s", (_what, parts, stray) => {
     expect(strayParts(paper(parts))).toEqual([stray]);
   });
@@ -370,6 +391,21 @@ describe("strayParts", () => {
     [
       "a processing instruction holding text in the acknowledgements (#303)",
       { back: "<ack><p>Thanks.</p><?x Somebody?></ack>" },
+      "article/back/ack (text)",
+    ],
+    [
+      "a processing instruction with the target xml holding text in a part, which is no XML declaration (#303)",
+      { back: "<ack><p>Thanks.</p><?xml Somebody?></ack>" },
+      "article/back/ack (text)",
+    ],
+    [
+      "a processing instruction holding text after a ? that ends its target (#303)",
+      { back: "<ack><p>Thanks.</p><?x?Somebody?></ack>" },
+      "article/back/ack (text)",
+    ],
+    [
+      "a processing instruction holding text that never ends with ?> (#303)",
+      { back: "<ack><p>Thanks.</p><?x Somebody</ack>" },
       "article/back/ack (text)",
     ],
     [
