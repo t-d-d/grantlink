@@ -346,6 +346,11 @@ describe("a funding text bucket outside the stack stops the deploy (#89)", () =>
     expect(advice.indexOf("copy")).toBeLessThan(
       advice.indexOf("empty and delete"),
     );
+    expect(result.output).toMatch(/copy back what you kept/iu);
+    // Funding text names people and stays in private storage in eu-west-2
+    // (personal-data.md), so the copy goes to a bucket like the one it
+    // left.
+    expect(result.output).toMatch(/to a private bucket in eu-west-2/iu);
   });
 });
 
