@@ -323,6 +323,25 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.rejected).toBe(3);
   });
 
+  it("rejects a reference a combining mark is joined to, as the rules do", async () => {
+    // A combining mark belongs to the letter before it, so a mark joined to
+    // a reference makes it part of a longer word (#339, #369). The text is
+    // made up.
+    const mark = "\u0301";
+    const { fetch } = fakeOpenRouter(
+      answer([
+        { asWritten: "A12345", confidence: 0.9 },
+        { asWritten: "A67890", confidence: 0.9 },
+      ]),
+    );
+    const result = await proposeReferences(
+      [`Funded by Cancer Research UK (e${mark}A12345 and A67890${mark}).`],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(2);
+  });
+
   it("rejects text from the paper that is not shaped as a reference, such as a name", async () => {
     const { fetch } = fakeOpenRouter(
       answer([{ asWritten: "Jo Example", confidence: 0.9 }]),
