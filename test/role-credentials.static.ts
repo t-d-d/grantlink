@@ -1,41 +1,71 @@
 import { describe, expect, it } from "vitest";
-import { conformanceWorkflow, evalWorkflow, type Step } from "./app.ts";
+import {
+  conformanceWorkflow,
+  deploy,
+  evalWorkflow,
+  type Step,
+  type Workflow,
+} from "./app.ts";
 
-// The eval and conformance roles' credentials go only to the steps that
-// call AWS, as step env, so code those steps do not run never holds them.
-// The deploy does the same, which test/deploy.static.ts holds (#259, #308).
-// The tests match the credentials by the assume step's outputs, as no test
-// in the gate names a key (code-and-tests.md).
+// The deploy, eval and conformance roles' credentials go only to the steps
+// that call AWS, as step env, so code those steps do not run never holds
+// them (#259, #308, #349). test/deploy.static.ts keeps what is particular
+// to the deploy. The tests match the credentials by the assume step's
+// outputs, as no test in the gate names a key (code-and-tests.md).
 const credential = /steps\.assume\.outputs\.(key|secret|session)\b/u;
 
-describe.each([
+interface Role {
+  title: string;
+  workflow: Workflow;
+  job: string;
+  role: string;
+  callers: string[];
+  // The variable that names the private bucket, and the steps that read
+  // it. The deploy's role writes no bucket.
+  bucket?: { name: string; to: string[] };
+}
+
+const roles: Role[] = [
+  {
+    title: "the deploy role's credentials",
+    workflow: deploy,
+    job: "deploy",
+    role: "Assume the deploy role",
+    callers: [
+      "Check the app stack",
+      "Keep the first run's time",
+      "Deploy the app stack",
+      "Read the stack's outputs",
+      "Publish the page",
+    ],
+  },
   {
     title: "the eval role's credentials",
     workflow: evalWorkflow,
     job: "eval",
     role: "Assume the eval role",
-    bucket: "BUCKET",
     callers: [
       "Look for the report filed for this fingerprint",
       "Download the snapshot",
       "File the report",
     ],
     // The script finds the bucket from the account it is in.
-    bucketTo: [
-      "Look for the report filed for this fingerprint",
-      "File the report",
-    ],
+    bucket: {
+      name: "BUCKET",
+      to: ["Look for the report filed for this fingerprint", "File the report"],
+    },
   },
   {
     title: "the conformance role's credentials",
     workflow: conformanceWorkflow,
     job: "conformance",
     role: "Assume the conformance role",
-    bucket: "TEXT_BUCKET",
     callers: ["Run the conformance tests"],
-    bucketTo: ["Run the conformance tests"],
+    bucket: { name: "TEXT_BUCKET", to: ["Run the conformance tests"] },
   },
-])("$title", ({ workflow, job, role, bucket, callers, bucketTo }) => {
+];
+
+describe.each(roles)("$title", ({ workflow, job, role, callers, bucket }) => {
   const all: Step[] = workflow.jobs[job]?.steps ?? [];
   const assume = all.find((step) => step.name === role);
   const credentials = (step: Step): string[] =>
@@ -96,7 +126,8 @@ describe.each([
     for (const name of ["key", "secret", "session"]) {
       expect(run, name).toContain(`echo "${name}=$${name}"`);
     }
-    expect(run).toContain('echo "bucket=grantlink-text-$account"');
+    if (bucket === undefined) expect(run).not.toContain("bucket=");
+    else expect(run).toContain('echo "bucket=grantlink-text-$account"');
   });
 
   // The bucket's name carries the account id, which the step masks. Any
@@ -107,9 +138,9 @@ describe.each([
         value.includes("steps.assume.outputs.bucket"),
       ),
     );
-    expect(named.map((step) => step.name)).toEqual(bucketTo);
+    expect(named.map((step) => step.name)).toEqual(bucket?.to ?? []);
     for (const step of named) {
-      expect(step.env?.[bucket], step.name).toBe(
+      expect(step.env?.[bucket?.name ?? ""], step.name).toBe(
         "${{ steps.assume.outputs.bucket }}",
       );
     }
