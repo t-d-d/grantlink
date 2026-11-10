@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { FLOORS } from "../../evals/floors.ts";
-import type { Report } from "../../evals/report.ts";
+import { RULES_ALONE, type Report } from "../../evals/report.ts";
 import { makeRelease, type Release } from "./release.ts";
 import { buildPage, renderRun } from "./render.ts";
 
@@ -23,7 +23,7 @@ const report: Report = {
   fingerprint: "f".repeat(64),
   commit: "e".repeat(40),
   runUrl: "https://github.com/t-d-d/grantlink/actions/runs/111",
-  modelId: "none: rules only",
+  modelId: RULES_ALONE,
   rulesVersion: "rules-1",
   snapshot: { id: "s1", manifestSha256: "d".repeat(64) },
   createdAt: "2026-11-09T12:00:00.000Z",
@@ -107,6 +107,66 @@ describe("how it's run, on the page", () => {
       'href="https://github.com/t-d-d/grantlink/issues/175"',
     );
     expect(section).not.toContain("two passes of a Claude model");
+  });
+
+  // The release reads with the rules alone, as #330 decided, and the eval
+  // still scores each model beside them.
+  const candidate = (modelId: string, adds: number, spend: number) => ({
+    modelId,
+    rows: rows({ ...scores, "model-adds": adds, spend }),
+    unprocessed: [],
+  });
+  const rulesAlone = renderRun(
+    makeRelease({
+      ...fields,
+      report: {
+        ...report,
+        candidates: [
+          candidate("anthropic/claude-haiku-5.5", 0.039, 0.15),
+          candidate("anthropic/claude-sonnet-5.5", 0.029, 2.61),
+        ],
+      },
+    }),
+  );
+  const modelAddsRow = (html: string) =>
+    /<tr><td>What the model adds<\/td>.*?<\/tr>/u.exec(html)?.[0] ?? "";
+
+  it("says rules ship alone beside the go/no-go table, with what each model adds", () => {
+    expect(rulesAlone).toContain("Rules ship alone");
+    expect(rulesAlone).toContain("calls no model");
+    expect(rulesAlone).not.toContain(RULES_ALONE);
+    expect(rulesAlone).toContain("anthropic/claude-haiku-5.5");
+    expect(rulesAlone).toContain("3.9 points");
+    expect(rulesAlone).toContain("$0.15 per 1,000 papers");
+    expect(rulesAlone).toContain("anthropic/claude-sonnet-5.5");
+    expect(rulesAlone).toContain("2.9 points");
+    expect(rulesAlone).toContain("$2.61 per 1,000 papers");
+    expect(rulesAlone).toContain(
+      'href="https://github.com/t-d-d/grantlink/issues/330"',
+    );
+  });
+
+  it("gives rules shipping alone as what the model adds, not as unmeasured", () => {
+    expect(modelAddsRow(rulesAlone)).toContain("Rules ship alone");
+    expect(modelAddsRow(rulesAlone)).not.toContain("not measured yet");
+  });
+
+  it("says rules ship alone when the eval scored no model", () => {
+    expect(section).toContain("Rules ship alone");
+    expect(section).toContain("calls no model");
+    expect(section).not.toContain("claude");
+  });
+
+  it("names the model when the release calls one", () => {
+    const withModel = renderRun(
+      makeRelease({
+        ...fields,
+        report: { ...report, modelId: "anthropic/claude-haiku-5.5" },
+      }),
+    );
+    expect(withModel).toContain("with model anthropic/claude-haiku-5.5");
+    expect(withModel).not.toContain("Rules ship alone");
+    expect(modelAddsRow(withModel)).toContain("not measured yet");
   });
 
   it("says when no snapshot is pinned yet", () => {

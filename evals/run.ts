@@ -20,7 +20,7 @@ import {
   pinned,
   snapshotKeys,
 } from "./gold.ts";
-import { makeReport, verdict, type Report } from "./report.ts";
+import { makeReport, RULES_ALONE, verdict, type Report } from "./report.ts";
 import {
   score,
   type GoldA,
@@ -45,9 +45,6 @@ import {
 // CI that is the eval environment's secret. In a session the proxy puts the
 // key in, so any value will do, and NODE_USE_ENV_PROXY=1 sends the calls
 // through it.
-
-// The release is the rules alone until a run calls the model (#332).
-export const MODEL_ID = "none: rules only";
 
 // How many papers each model reads at once.
 const AT_ONCE = 8;
@@ -176,8 +173,8 @@ export async function evaluate(input: {
   candidates: Candidate[];
   missedA: string[];
 }> {
-  // The release is the rules alone until a run calls the model, so the
-  // baseline is the same run.
+  // Rules ship alone (#330), so the release and the baseline are the same
+  // run.
   const release = score(input);
   const baseline = asRows(release);
   const pmcids = goldIds(input.goldA, input.goldB);
@@ -281,7 +278,7 @@ async function main(dir: string, out: string | undefined): Promise<void> {
     commit: meta?.COMMIT ?? "0".repeat(40),
     runUrl:
       meta?.RUN_URL ?? "https://github.com/t-d-d/grantlink/actions/runs/0",
-    modelId: MODEL_ID,
+    modelId: RULES_ALONE,
     rulesVersion: RULES_VERSION,
     snapshot:
       pinned.manifestSha256 === null

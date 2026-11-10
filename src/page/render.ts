@@ -1,5 +1,5 @@
 import { shownScore } from "../../evals/floors.ts";
-import { verdict } from "../../evals/report.ts";
+import { RULES_ALONE, verdict, type Report } from "../../evals/report.ts";
 import type { Found } from "./found.ts";
 import type { Release } from "./release.ts";
 import { paired, titleParts } from "../title.ts";
@@ -157,11 +157,41 @@ const GOLD_B_LABELS = [
   '<a href="https://github.com/t-d-d/grantlink/issues/175">The decision record</a> says why.',
 ].join(" ");
 
+const SHIPS_ALONE = "Rules ship alone";
+
+// Rules ship alone (#330), so the release calls no model. Beside the table,
+// the page gives what each model the eval scored would add, and its spend,
+// or nothing when the eval scored none.
+function rulesAloneNote(report: Report): string {
+  const scoreOf = (rows: Report["rows"], id: string) =>
+    rows.find((row) => row.id === id)?.score ?? null;
+  const models = (report.candidates ?? []).flatMap((candidate) => {
+    const adds = scoreOf(candidate.rows, "model-adds");
+    if (adds === null) return [];
+    const spend = scoreOf(candidate.rows, "spend");
+    const cost =
+      spend === null
+        ? ""
+        : `, for ${shownScore("spend", spend)} per 1,000 papers`;
+    return [
+      `<code class="ref">${escape(candidate.modelId)}</code> adds ${shownScore("model-adds", adds)} of recall on gold set B${cost}.`,
+    ];
+  });
+  if (models.length === 0) return "";
+  return `\n        <p class="note">${[
+    `${SHIPS_ALONE}. The eval still scores each model after the rules, on the same papers.`,
+    ...models,
+    "A model ships only if it adds at least 10 points.",
+    '<a href="https://github.com/t-d-d/grantlink/issues/330">The decision</a> says why.',
+  ].join(" ")}</p>`;
+}
+
 // How it's run: the go/no-go table for the live release beside the rules
 // alone, the runs that deployed and scored it, and the snapshot it was
 // scored on (docs/constraints/deploy-gates.md).
 export function renderRun(release: Release): string {
   const { report } = release;
+  const alone = report.modelId === RULES_ALONE;
   const cell = (text: string, cls = "") =>
     `<td${cls === "" ? "" : ` class="${cls}"`}>${escape(text)}</td>`;
   const judged = verdict(report).rows;
@@ -174,9 +204,15 @@ export function renderRun(release: Release): string {
         cell(GATES[row.gates] ?? row.gates),
         cell(shownScore(row.id, row.score), "count"),
         cell(shownScore(row.id, row.baseline), "count"),
-        cell(row.result, "status"),
+        cell(
+          alone && row.id === "model-adds" ? SHIPS_ALONE : row.result,
+          "status",
+        ),
       ].join("")}</tr>`,
   );
+  const model = alone
+    ? ". This release reads references with the rules alone and calls no model"
+    : `, with model ${escape(report.modelId)}`;
   const snapshot =
     report.snapshot === null
       ? "No eval snapshot is pinned yet, so the gold sets are not scored, and each row that needs them waits without blocking."
@@ -198,14 +234,14 @@ export function renderRun(release: Release): string {
           <code class="ref">${escape(release.commit.slice(0, 7))}</code>,
           deployed by <a href="${escape(release.deployRunUrl)}">this run</a>.
           Its scores come from <a href="${escape(report.runUrl)}">the run that
-          filed its eval report</a>, with model ${escape(report.modelId)}.
+          filed its eval report</a>${model}.
         </p>
         <div class="table-scroll">
           <table class="go-no-go">
             <tr><th scope="col">Measure</th><th scope="col">On</th><th scope="col">Go if</th><th scope="col">Gates a release</th><th scope="col">This release</th><th scope="col">Rules alone</th><th scope="col">Result</th></tr>
             ${rows.join("\n            ")}
           </table>
-        </div>
+        </div>${alone ? rulesAloneNote(report) : ""}
         <p class="note">${snapshot}</p>${goldB}
       </section>`;
 }

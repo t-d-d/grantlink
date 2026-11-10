@@ -13,6 +13,11 @@ import {
 // private bucket for each fingerprint, written once. It holds scores and
 // paper ids, never text, so it may be printed and published.
 
+// The model id a report names when the release calls no model. Rules ship
+// alone: neither model the eval scores adds the 10 points of recall on gold
+// set B that the go/no-go asks for (#330).
+export const RULES_ALONE = "none: rules only";
+
 const ids = FLOORS.map((floor) => floor.id);
 export const HEX = (length: number) =>
   z.string().regex(new RegExp(`^[0-9a-f]{${String(length)}}$`, "u"));
