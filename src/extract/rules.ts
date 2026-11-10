@@ -15,6 +15,7 @@ export const RULES_VERSIONS: readonly Version[] = [
   { number: 10, issue: 368 },
   { number: 11, issue: 506 },
   { number: 12, issue: 510 },
+  { number: 13, issue: 525 },
 ];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
@@ -135,14 +136,12 @@ const WORD = String.raw`[\p{L}\p{M}\p{Nd}_]`;
 const START = `(?<!${WORD})`;
 const END = `(?!${WORD})`;
 
-// A reference as written, between the edges above. The model pass checks
-// its references with this, so the two passes cannot draw a reference's
-// edges differently (#384).
-export const wholeReference = (reference: string): RegExp =>
-  new RegExp(`${START}${escape(reference)}${END}`, "u");
-
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
+
+// What may not follow a bare number, so it is not the start of a longer
+// one, as in 12345/2, 12345-67 or 1234.5.
+const NUMBER_AFTER = String.raw`(?!${SEP}|${DASH}\d|\.\d)`;
 
 interface Shape {
   format: string | ((match: RegExpMatchArray) => string);
@@ -164,6 +163,20 @@ interface Shape {
 // "grant", "award no." or "reference number", ending in the space or mark
 // before the number (#506). Not part of a longer word.
 const TIE_WORD = String.raw`(?<!\p{L})(?:[Gg]rant|[Aa]ward|[Pp]roject|[Rr]ef(?:erence)?|[Nn]umber|[Nn]o)s?\.?(?:\s?(?:[Nn]o|[Nn]umber|[Rr]ef)\.?)?\s?[:#]?\s?`;
+
+// Where another funder is named: "and", "with", "as well as" or "&", with
+// "by" or "from" after it if the text gives one, then a name in capitals,
+// with "the" before it if the text gives one (#525). A number after that
+// name is the other funder's. A word such as "Grant" or "Award No." before
+// the number is not a name, as in "with Grant 12345". Between two words in
+// capitals other than the funder's own name, with no "the", the "and" is
+// part of one name, as in a committee the funder names, such as "Example
+// and Sample Committee" (#506). Any run of whitespace may part the words,
+// as in a name (#269).
+const JOINER = String.raw`(?:(?:and|with|as\s+well\s+as)\s+(?:(?:by|from)\s+)?|&\s*)`;
+const NAMED = String.raw`(?!(?:${TIE_WORD})+\d)\p{Lu}`;
+const JOINED_NAME = String.raw`${JOINER}(?:[Tt]he\s+)?${NAMED}`;
+const ANOTHER_FUNDER = String.raw`\s+(?:(?<!\p{Lu}\p{L}*\s+)${JOINER}|${JOINER}[Tt]he\s+)${NAMED}`;
 
 // A month as the rules read it in a code.
 const MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
@@ -262,12 +275,13 @@ const SHAPES: readonly Shape[] = [
     // A bare award number, which the text ties to the funder: in brackets
     // straight after its name, or after a word such as "grant" or "award
     // no." that follows its name in the same clause, with no comma,
-    // semicolon or full stop between (#506). A year is not one, and nor is
-    // the start of a longer number, as in 12345/2, 12345-67 or 1234.5.
+    // semicolon or full stop between (#506), and no other funder named
+    // (#525). A year is not one, and nor is the start of a longer number,
+    // as in 12345/2, 12345-67 or 1234.5.
     format: "n",
     shape: String.raw`(?!(?:19|20)\d{2}(?!\d))\d{4,6}`,
-    before: String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})(?!${EDGE})(?:\s?\(\s?|[^;,.]{0,100}?${TIE_WORD}))`,
-    after: String.raw`(?!${SEP}|${DASH}\d|\.\d)`,
+    before: String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})(?!${EDGE})(?:\s?\(\s?|(?!\s*${JOINED_NAME})(?:(?!${ANOTHER_FUNDER})[^;,.]){0,100}?${TIE_WORD}))`,
+    after: NUMBER_AFTER,
     sentenceOnly: true,
   },
 ];
@@ -285,6 +299,19 @@ const PATTERNS = SHAPES.map(
 // hyphen, as in "123456-01" (#97, #177).
 const BARE = String.raw`\d{5,7}`;
 const BARE_SUFFIX = String.raw`${DASH}\d{2}`;
+// Any bare number a reply may be, of the n shape's four digits or of BARE's
+// five to seven, with or without its suffix.
+const BARE_REPLY = new RegExp(String.raw`^\d+(?:${BARE_SUFFIX})?$`, "u");
+
+// A reference as written, between the edges above. The model pass checks
+// its references with this, so the two passes cannot draw a reference's
+// edges differently (#384). A bare number of any length counts only where
+// the text does not go on past it, as the rules read one (#567).
+export const wholeReference = (reference: string): RegExp =>
+  new RegExp(
+    `${START}${escape(reference)}${END}${BARE_REPLY.test(reference) ? NUMBER_AFTER : ""}`,
+    "u",
+  );
 
 // Whether a reference, as written with plain spaces, is a shape the rules
 // read, in capitals but for a month in a code, or a bare number with an

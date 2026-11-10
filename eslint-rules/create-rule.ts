@@ -185,7 +185,7 @@ export function memberName(node: TSESTree.MemberExpression): string | null {
 // The name a key gives, whether it reads a member or an object pattern's
 // property: a plain identifier, a string or a template with nothing
 // interpolated. A computed identifier is a variable, so it gives none.
-function keyName(key: TSESTree.Node, computed: boolean): string | null {
+export function keyName(key: TSESTree.Node, computed: boolean): string | null {
   if (!computed && key.type === AST_NODE_TYPES.Identifier) return key.name;
   if (key.type === AST_NODE_TYPES.TemplateLiteral) {
     return key.expressions.length === 0
@@ -474,7 +474,7 @@ export function destructuredKey(
 // a nested pattern, `{ Date: { now } = D }`, counts only under
 // `with-default`, as destructuredKey says. Null when the name is not in the
 // pattern, or sits under a key that is not a constant.
-export function destructuredPath(
+function destructuredPath(
   pattern: TSESTree.ObjectPattern,
   name: TSESTree.Identifier,
   defaults: "exact" | "with-default",
