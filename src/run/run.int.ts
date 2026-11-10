@@ -683,6 +683,29 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
     },
   );
 
+  it.each([300, 7200])(
+    "fails only once a refusal of the run's search with a Retry-After of %is has been waited out (#264)",
+    async (seconds) => {
+      const fake = fakeDeps({
+        search: () => reply("", 429, { "Retry-After": String(seconds) }),
+      });
+      const started = Date.now();
+      const { status, error, ended, retryDelays } = await runWith(fake);
+      expect(status).toBe("FAILED");
+      expect(error).toContain("Europe PMC refused the run's search");
+      expect(fake.site.files).toBeUndefined();
+      // The step's own retries wait first, then the run waits out the wait
+      // its last refusal asked for before it fails.
+      const retried = retryDelays("search-0").reduce(
+        (sum, delay) => sum + delay,
+        0,
+      );
+      expect(ended - started).toBeGreaterThanOrEqual(
+        (retried + seconds) * 1000,
+      );
+    },
+  );
+
   it("never asks again sooner than its first wait, with no Retry-After", async () => {
     const search = await runWith(fakeDeps({ search: () => reply("", 503) }));
     const paper = await runWith(
@@ -852,6 +875,40 @@ describe("the eval snapshot (evals.md)", () => {
     expect(status).toBe("SUCCEEDED");
     expect(result?.snapshot).toMatchObject({ taken: true });
     expect(fake.text.has(MANIFEST)).toBe(true);
+  });
+
+  it("logs once how many results gold set A's search found and skipped for a malformed PMCID (#279)", async () => {
+    const fake = fakeDeps({
+      goldSearch: smallLastPageMalformed([
+        "PMC0000001",
+        "PMC0000002",
+        "PMC0000003",
+      ]),
+    });
+    const { result } = await runWith(fake);
+    expect(result?.snapshot).toMatchObject({ taken: true });
+    expect(logged("snapshot-search-ended")).toEqual([
+      expect.objectContaining({
+        runId: result?.runId,
+        snapshotId: FAKE_GOLD.snapshotId,
+        found: 3,
+        skipped: 1,
+      }),
+    ]);
+  });
+
+  it("logs how many results gold set A's search skipped before that search fails the snapshot (#279)", async () => {
+    const fake = fakeDeps({ goldSearch: malformedPage });
+    const { result } = await runWith(fake);
+    expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
+    expect(logged("snapshot-search-ended")).toEqual([
+      expect.objectContaining({
+        runId: result?.runId,
+        snapshotId: FAKE_GOLD.snapshotId,
+        found: 0,
+        skipped: 2,
+      }),
+    ]);
   });
 
   it("publishes the page even when the snapshot fails, and leaves it for the next run", async () => {
