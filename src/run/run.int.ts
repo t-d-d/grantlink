@@ -111,6 +111,26 @@ const smallLastPageMalformed = (pmcids: string[]) => (cursor: string) =>
     ),
   );
 
+// A search whose first page holds two papers and one malformed PMCID, and
+// whose next page Europe PMC answers with `later`.
+const laterPageFails =
+  (later: () => ReturnType<typeof reply>) => (cursor: string) =>
+    cursor === "*"
+      ? reply(
+          JSON.stringify({
+            hitCount: 4,
+            nextCursorMark: "AoE",
+            resultList: {
+              result: [
+                { pmcid: "PMC0000001" },
+                { pmcid: "PMC0000002" },
+                { pmcid: "PMC 3" },
+              ],
+            },
+          }),
+        )
+      : later();
+
 // A paper step whose full text Europe PMC refuses every time with `error`.
 function refusingPapers(error: Error) {
   const fake = fakeDeps();
@@ -366,7 +386,12 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
     const { result } = await runWith(fake);
     expect(result).toMatchObject({ found: 2, skipped: 1 });
     expect(logged("search-ended")).toEqual([
-      expect.objectContaining({ found: 2, skipped: 1 }),
+      expect.objectContaining({
+        found: 2,
+        skipped: 1,
+        refused: false,
+        failed: false,
+      }),
     ]);
   });
 
@@ -378,6 +403,21 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
       expect.objectContaining({ found: 0, skipped: 2 }),
     ]);
   });
+
+  it.each([
+    ["refuses", () => reply("", 429, { "Retry-After": "300" }), true, false],
+    ["fails without a refusal", () => reply("", 503), false, true],
+  ] as const)(
+    "logs once how many results the pages it read found and skipped when Europe PMC %s a later page of the run's search (#348)",
+    async (_how, later, refused, failed) => {
+      const fake = fakeDeps({ search: laterPageFails(later) });
+      const { status } = await runWith(fake);
+      expect(status).toBe("FAILED");
+      expect(logged("search-ended")).toEqual([
+        expect.objectContaining({ found: 2, skipped: 1, refused, failed }),
+      ]);
+    },
+  );
 
   it("publishes nothing when the search finds nothing", async () => {
     const fake = fakeDeps({
@@ -939,6 +979,24 @@ describe("the eval snapshot (evals.md)", () => {
         found: 2,
         skipped: 1,
         refused: true,
+        failed: false,
+      }),
+    ]);
+  });
+
+  it("logs once how many results the pages it read found and skipped when a later page of gold set A's search fails without a refusal (#348)", async () => {
+    const fake = fakeDeps({ goldSearch: laterPageFails(() => reply("", 503)) });
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
+    expect(logged("snapshot-search-ended")).toEqual([
+      expect.objectContaining({
+        runId: result?.runId,
+        snapshotId: FAKE_GOLD.snapshotId,
+        found: 2,
+        skipped: 1,
+        refused: false,
+        failed: true,
       }),
     ]);
   });

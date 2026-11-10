@@ -119,6 +119,8 @@ export async function takeSnapshot(
     let page = 0;
     // The wait a refused page leaves owed, once Europe PMC has refused one.
     let refused: { owed: Owed } | null = null;
+    // What a page that failed after its retries without a refusal threw.
+    let failed: { error: unknown } | null = null;
     while (cursor !== null) {
       const from: string = cursor;
       if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
@@ -134,7 +136,8 @@ export async function takeSnapshot(
           async () => searchGoldA(deps, from),
         );
       } catch (error) {
-        failedAs("search-failed", error);
+        failed = { error };
+        break;
       }
       if ("owed" in asked) {
         refused = { owed: asked.owed };
@@ -147,8 +150,9 @@ export async function takeSnapshot(
       page += 1;
     }
     // Logged before the check, so a search that fails it still says how
-    // many results it skipped, and before a refusal ends it, so the totals
-    // of the pages it read still show in one line (#307).
+    // many results it skipped, and before a refusal or a failed page ends
+    // it, so the totals of the pages it read still show in one line (#307,
+    // #348).
     await ctx.step(
       "snapshot-search-ended",
       async () => {
@@ -158,11 +162,13 @@ export async function takeSnapshot(
           found.length,
           skipped,
           refused !== null,
+          failed !== null,
         );
         return Promise.resolve();
       },
       { retryStrategy: storeRetry },
     );
+    if (failed !== null) failedAs("search-failed", failed.error);
     // A refused search loses the snapshot for this run, and leaves the
     // wait Europe PMC asked for owed, which the run waits out before it
     // ends (#236).

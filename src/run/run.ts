@@ -115,17 +115,41 @@ export function makeRun(deps: Deps) {
       if (owed !== null) await ctx.wait(owed.name, { seconds: owed.seconds });
       owed = null;
       const searchStep = `search-${String(page)}`;
-      const searched = await askEuropePmc(
-        ctx,
-        searchStep,
-        `${searchStep}-wait`,
-        europePmcRetry,
-        async () => searchPage(deps, from),
-      );
+      let searched: Asked<Awaited<ReturnType<typeof searchPage>>>;
+      try {
+        searched = await askEuropePmc(
+          ctx,
+          searchStep,
+          `${searchStep}-wait`,
+          europePmcRetry,
+          async () => searchPage(deps, from),
+        );
+      } catch (error) {
+        // A page that fails after its retries fails the run, but first the
+        // totals of the pages it read are logged in one line (#348).
+        await ctx.step(
+          "search-ended",
+          async () => {
+            logSearchEnded(runId, found, skipped, false, true);
+            return Promise.resolve();
+          },
+          { retryStrategy: storeRetry },
+        );
+        throw error;
+      }
       // A refused search fails the run, which publishes nothing, but only
       // once the wait Europe PMC asked for has passed, so a run started
-      // after this one never asks it too soon (#264).
+      // after this one never asks it too soon (#264). The totals of the
+      // pages it read are logged first, in one line (#348).
       if ("owed" in searched) {
+        await ctx.step(
+          "search-ended",
+          async () => {
+            logSearchEnded(runId, found, skipped, true, false);
+            return Promise.resolve();
+          },
+          { retryStrategy: storeRetry },
+        );
         const wait = searched.owed;
         if (wait !== null) await ctx.wait(wait.name, { seconds: wait.seconds });
         throw new Error(
@@ -162,7 +186,7 @@ export function makeRun(deps: Deps) {
     await ctx.step(
       "search-ended",
       async () => {
-        logSearchEnded(runId, found, skipped);
+        logSearchEnded(runId, found, skipped, false, false);
         return Promise.resolve();
       },
       { retryStrategy: storeRetry },
