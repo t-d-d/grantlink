@@ -8,7 +8,7 @@ import funderFile from "./funder.json" with { type: "json" };
 
 // Bump this whenever a pattern, or which references the rules keep,
 // changes, so every stored result says which rules made it.
-export const RULES_VERSION = "rules-8";
+export const RULES_VERSION = "rules-9";
 
 export const funder = z
   .object({
@@ -99,6 +99,13 @@ const funderName = new RegExp(`(?<!${EDGE})(?:${NAMES})(?!${EDGE})`, "iu");
 // too, so its hard cases match what the rules read (#338).
 export const namesFunder = (text: string): boolean => funderName.test(text);
 
+// A reference's edges. Any letter or combining mark joined to a reference,
+// not only A to Z, makes it part of a longer word, as at the funder's name
+// (#339). So does a digit 0 to 9 or an underscore, as \b had it.
+const WORD = String.raw`[\p{L}\p{M}\w]`;
+const START = `(?<!${WORD})`;
+const END = `(?!${WORD})`;
+
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
 
@@ -115,7 +122,10 @@ const MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
 const PATTERNS: Pattern[] = [
   {
     format: "Cn/An",
-    pattern: new RegExp(String.raw`\bC\s?\d{1,6}${SEP}A\s?\d{4,6}\b`, "gu"),
+    pattern: new RegExp(
+      String.raw`${START}C\s?\d{1,6}${SEP}A\s?\d{4,6}${END}`,
+      "gu",
+    ),
     sentenceOnly: false,
   },
   {
@@ -136,7 +146,7 @@ const PATTERNS: Pattern[] = [
     // month in title case written straight onto the code. Only a plain space
     // may follow the hyphen, as referenceSchema allows no other.
     pattern: new RegExp(
-      String.raw`\b[A-Z]{4,12}(?:${DASH} ?([A-Za-z0-9]{2,8})|((?:${MONTHS})(?:\d{4}|\d{2})))?${SEP}1\d{5}\b`,
+      String.raw`${START}[A-Z]{4,12}(?:${DASH} ?([A-Za-z0-9]{2,8})|((?:${MONTHS})(?:\d{4}|\d{2})))?${SEP}1\d{5}${END}`,
       "gu",
     ),
     sentenceOnly: false,
@@ -146,7 +156,7 @@ const PATTERNS: Pattern[] = [
     // name, as in "Cancer Research UK (G123/45)".
     format: "Gn/n",
     pattern: new RegExp(
-      String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}\b`,
+      String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}${END}`,
       "gu",
     ),
     sentenceOnly: false,
@@ -154,24 +164,24 @@ const PATTERNS: Pattern[] = [
   {
     // A Francis Crick Institute core funding number, old style.
     format: "FCn",
-    pattern: /\bFC\s?\d{6}\b/gu,
+    pattern: new RegExp(String.raw`${START}FC\s?\d{6}${END}`, "gu"),
     sentenceOnly: true,
   },
   {
     // A Francis Crick Institute core funding number, new style.
     format: "CCn",
-    pattern: /\bCC\s?\d{4}\b/gu,
+    pattern: new RegExp(String.raw`${START}CC\s?\d{4}${END}`, "gu"),
     sentenceOnly: true,
   },
   {
     // A joint award named for the funder, such as Stand Up To Cancer's.
     format: "RTn",
-    pattern: /\bRT\s?\d{4}\b/gu,
+    pattern: new RegExp(String.raw`${START}RT\s?\d{4}${END}`, "gu"),
     sentenceOnly: true,
   },
   {
     format: "An",
-    pattern: /\bA\s?\d{5}\b/gu,
+    pattern: new RegExp(String.raw`${START}A\s?\d{5}${END}`, "gu"),
     sentenceOnly: true,
   },
 ];
@@ -228,10 +238,7 @@ const BARE_NUMBER = /^\d{5,7}$/u;
 
 function confirmedNumber(id: string, text: readonly string[]): boolean {
   if (!BARE_NUMBER.test(id)) return false;
-  const alone = new RegExp(
-    `(?<![A-Za-z0-9]|${SEP})${id}(?![A-Za-z0-9]|${SEP})`,
-    "u",
-  );
+  const alone = new RegExp(`(?<!${WORD}|${SEP})${id}(?!${WORD}|${SEP})`, "u");
   return text.some((paragraph) => alone.test(paragraph));
 }
 
