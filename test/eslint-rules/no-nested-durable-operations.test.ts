@@ -75,15 +75,20 @@ describe("fitness: no durable operation inside its own context's operation (dura
         }`,
         errors: [{ messageId: "sameContextUsage" }],
       },
-      {
-        name: "calls a step on the same context, asserted with as, inside a step",
+      ...[
+        ["asserted with as", "(ctx as Context)"],
+        ["checked with satisfies", "(ctx satisfies Context)"],
+        ["behind a non-null assertion", "ctx!"],
+        ["in brackets", "(ctx)"],
+      ].map(([what, receiver]) => ({
+        name: `calls a step on the same context ${String(what)} inside a step`,
         code: `async function run(ctx: any) {
           await ctx.step("outer", async () => {
-            await (ctx as Context).step("inner", async () => 1);
+            await ${String(receiver)}.step("inner", async () => 1);
           });
         }`,
-        errors: [{ messageId: "sameContextUsage" }],
-      },
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
 
       ...WRAPPED_DURABLE_CALLS.map((shape) => ({
         name: `uses the same context inside a step written as ${shape.name}`,
