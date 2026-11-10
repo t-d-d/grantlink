@@ -121,6 +121,39 @@ describe("the eval's fingerprint step", () => {
   });
 });
 
+// #672: the AWS CLI fetches every page of a listing and merges them unless
+// told not to, and the merged result keeps no KeyCount, so a query for it
+// prints None. The stub answers the lookup as CLI 2.39.7 does, and writes
+// the filed report when the step fetches it.
+describe("the eval's lookup of the report filed for its fingerprint", () => {
+  const run = script(evalWorkflow, "eval", "cached");
+  const aws = (count: number) =>
+    [
+      'if [ "$2" = get-object ]; then echo \'{"filed":true}\' > "${@: -1}"; exit 0; fi',
+      '[ "$2" = list-objects-v2 ] || exit 1',
+      `for arg in "$@"; do [ "$arg" = --no-paginate ] && { echo ${String(count)}; exit 0; }; done`,
+      "echo None",
+    ].join("\n");
+  const env = { BUCKET: "bucket-placeholder", FINGERPRINT: "f".repeat(64) };
+
+  it("takes the report when one is filed", () => {
+    const { status, stdout, output } = runStep(
+      `${run}\ncat report.json`,
+      { aws: aws(1) },
+      env,
+    );
+    expect(output).toBe("hit=true\n");
+    expect(status).toBe(0);
+    expect(stdout).toContain('{"filed":true}');
+  });
+
+  it("runs the eval when none is filed", () => {
+    const { status, output } = runStep(run, { aws: aws(0) }, env);
+    expect(status).toBe(0);
+    expect(output).toBe("hit=false\n");
+  });
+});
+
 describe("the eval's report hand-on", () => {
   const run = script(evalWorkflow, "eval", "report");
 

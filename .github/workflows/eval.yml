@@ -121,7 +121,9 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # The report is a cache keyed by the fingerprint (#9). Listing with
-      # the key as a prefix is how the role asks whether it exists.
+      # the key as a prefix is how the role asks whether it exists. The
+      # listing asks for one page: the CLI merges pages by default, and the
+      # merged result has no KeyCount, so every lookup read as a miss (#672).
       #
       # The app stack creates the private bucket, and the deploy needs this
       # job, so before the first deploy there is no bucket. Then nothing is
@@ -139,7 +141,7 @@ jobs:
         run: |
           set -euo pipefail
           key="eval-reports/$FINGERPRINT.json"
-          if ! count="$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$key" \
+          if ! count="$(aws s3api list-objects-v2 --no-paginate --bucket "$BUCKET" --prefix "$key" \
             --query KeyCount --output text 2>list.err)"; then
             if grep -q NoSuchBucket list.err; then
               echo "::notice::The private bucket does not exist yet, so no report is filed. The first deploy creates it."
