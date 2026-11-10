@@ -121,6 +121,66 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
           await owed[\`askEuropePmc\`](ctx, "paper", "wait", r, async () => readPaper());
         }`,
       },
+      {
+        name: "awaits I/O inside askEuropePmc's read, reached through a destructured alias of a namespace import",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const { askEuropePmc: ask } = owed;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
+        name: "awaits I/O inside askEuropePmc's read, reached through a constant read from a namespace import",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          const ask = owed.askEuropePmc;
+          await ask(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
+        name: "awaits askEuropePmc through a constant that renames a named import",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        const ask = askEuropePmc;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => readPaper());
+        }`,
+      },
+      {
+        name: "awaits askEuropePmc through a variable that is never assigned again",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        let { askEuropePmc } = owed;
+        async function run(ctx: any) {
+          await askEuropePmc(ctx, "paper", "wait", r, async () => readPaper());
+        }`,
+      },
+      {
+        name: "awaits I/O inside askEuropePmc's read, reached through an alias destructured by a string key",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const { "askEuropePmc": ask } = owed;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
+        name: "awaits askEuropePmc through an alias destructured by a template key",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const { [\`askEuropePmc\`]: ask } = owed;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => readPaper());
+        }`,
+      },
     ],
     invalid: [
       {
@@ -200,6 +260,58 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         code: `import * as other from "./other.ts";
         async function run(ctx: any) {
           await other.askEuropePmc(ctx, "paper", "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits a destructured alias of a namespace import's function that is not a step helper",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const { somethingElse: ask } = owed;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits an alias of askEuropePmc that is assigned again",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        let ask = owed.askEuropePmc;
+        ask = other;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits an alias with a default, which may not be the helper",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const { askEuropePmc: ask = other } = owed;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits an alias destructured by a computed key that is a variable",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const askEuropePmc = "somethingElse";
+        const { [askEuropePmc]: ask } = owed;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits aliases that name each other before either is set",
+        filename: "src/run/run.ts",
+        code: `const a = b;
+        const b = a;
+        async function run(ctx: any) {
+          await a(ctx, "paper", "wait", r, async () => 1);
         }`,
         errors: [{ messageId: "awaitOutsideStep" }],
       },

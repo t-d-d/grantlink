@@ -95,6 +95,14 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         errors: [{ messageId: "reExport" }],
       },
       {
+        name: "exports a local alias of askEuropePmc destructured from a namespace import",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const { askEuropePmc: ask } = owed;
+        export { ask };`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
         name: "exports a namespace import of the helper's module",
         filename: "src/run/run.ts",
         code: `import * as owed from "./owed.ts";
