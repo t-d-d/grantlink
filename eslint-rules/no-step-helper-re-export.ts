@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES } from "@typescript-eslint/utils";
+import { AST_NODE_TYPES, TSESLint } from "@typescript-eslint/utils";
 import type { TSESTree } from "@typescript-eslint/utils";
 import {
   createRule,
@@ -6,6 +6,7 @@ import {
   helperNamed,
   holdsStepHelper,
   importOf,
+  lookup,
   memberName,
   moduleOf,
   repoPath,
@@ -42,15 +43,39 @@ export const noStepHelperReExport = createRule({
     const report = (node: TSESTree.Node, module: string): void => {
       context.report({ node, messageId: "reExport", data: { module } });
     };
+    // The name a chain of local aliases such as `const ask = askEuropePmc`
+    // ends at. A later write to an alias does not stop the chain: the rule
+    // refuses what the export may pass on.
+    const aliasedName = (
+      identifier: TSESTree.Identifier,
+      seen: ReadonlySet<TSESLint.Scope.Variable> = new Set(),
+    ): string => {
+      const variable = lookup(
+        identifier.name,
+        context.sourceCode.getScope(identifier),
+      );
+      const def = variable?.defs[0];
+      if (
+        variable === null ||
+        seen.has(variable) ||
+        variable.defs.length !== 1 ||
+        def?.type !== TSESLint.Scope.DefinitionType.Variable ||
+        def.node.id !== def.name ||
+        def.node.init?.type !== AST_NODE_TYPES.Identifier
+      ) {
+        return identifier.name;
+      }
+      return aliasedName(def.node.init, new Set([...seen, variable]));
+    };
     // The module whose helper an exported value passes on under a name of
     // its own choosing, or null. That is an imported helper, a namespace
     // import of a module that holds one, a helper read from a namespace
-    // import, or this module's own helper.
+    // import, or this module's own helper or a local alias of it.
     const passedOn = (value: TSESTree.Node): string | null => {
       if (value.type === AST_NODE_TYPES.Identifier) {
         const binding = importOf(value, context);
         if (binding === null) {
-          return helperNamed(here, value.name) === null ? null : here;
+          return helperNamed(here, aliasedName(value)) === null ? null : here;
         }
         const passes =
           binding.name === null
