@@ -127,6 +127,38 @@ describe("taking one gold paper", () => {
     expect(taken.kept && taken.entry.grants).toEqual(["A11111", "A56789"]);
   });
 
+  // Europe PMC sometimes holds a trailing slash (#503), which is no part of
+  // the grant, so it does not make a form the fuller one.
+  it("keeps an award number with its A over one without and a trailing slash", async () => {
+    const { deps } = paperDeps(
+      ["56789/", "A56789"],
+      "<funding-group><funding-statement>Funded by A56789.</funding-statement></funding-group>",
+    );
+    const taken = await snapshotPaper(deps, "PMC11", "A");
+    expect(taken.kept && taken.entry.grants).toEqual(["A56789"]);
+  });
+
+  it("puts the fuller form in the place of the first, and leaves the others where they are", async () => {
+    const { deps } = paperDeps(
+      ["56789", "A11111", "C1234/A56789"],
+      "<funding-group><funding-statement>Funded by A11111 and C1234/A56789.</funding-statement></funding-group>",
+    );
+    const taken = await snapshotPaper(deps, "PMC11", "A");
+    expect(taken.kept && taken.entry.grants).toEqual([
+      "C1234/A56789",
+      "A11111",
+    ]);
+  });
+
+  it("keeps a C/A pair over its award number with a CRUK prefix", async () => {
+    const { deps } = paperDeps(
+      ["CRUK-A56789", "C12/A56789"],
+      "<funding-group><funding-statement>Funded by CRUK-A56789, C12/A56789.</funding-statement></funding-group>",
+    );
+    const taken = await snapshotPaper(deps, "PMC11", "A");
+    expect(taken.kept && taken.entry.grants).toEqual(["C12/A56789"]);
+  });
+
   it("judges printed against the whole article, not the funding sections it keeps", async () => {
     const { deps, stored } = paperDeps(
       ["A56789", "A11111"],
