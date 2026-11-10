@@ -79,6 +79,18 @@ export function logSearchEnded(
   logger.info("search-ended", { runId, found, skipped });
 }
 
+// Logs the totals of gold set A's whole search once each time a run
+// searches for the snapshot, before it is judged, as the run's search does
+// (#279).
+export function logGoldSearchEnded(
+  runId: string,
+  snapshotId: string,
+  found: number,
+  skipped: number,
+): void {
+  logger.info("snapshot-search-ended", { runId, snapshotId, found, skipped });
+}
+
 // Why a snapshot failed, as one of a fixed set of reasons. A log line
 // carries ids and counts (docs/constraints/personal-data.md), so the line
 // logs the reason, never the message the snapshot threw, which a store's or

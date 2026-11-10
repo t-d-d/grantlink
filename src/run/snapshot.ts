@@ -4,6 +4,7 @@ import {
 } from "@aws/durable-execution-sdk-js";
 import {
   checkWholeSearch,
+  logGoldSearchEnded,
   type Deps,
   type KnownSnapshotFailure,
 } from "../pipeline/steps.ts";
@@ -88,12 +89,14 @@ async function takeBatch(
 }
 
 // `owed` is a wait the run's last refusal left, which the snapshot waits
-// out before it first asks Europe PMC. It returns whatever wait is still
-// owed when it ends, which the run waits out before it ends, so no run
-// started after it asks Europe PMC too soon.
+// out before it first asks Europe PMC, and `runId` names the run in its
+// logs. It returns whatever wait is still owed when it ends, which the run
+// waits out before it ends, so no run started after it asks Europe PMC too
+// soon.
 export async function takeSnapshot(
   ctx: DurableContext,
   deps: Deps,
+  runId: string,
   owed: Owed,
 ): Promise<{ snapshot: SnapshotSummary; owed: Owed }> {
   let done: boolean;
@@ -152,6 +155,16 @@ export async function takeSnapshot(
       cursor = result.nextCursor;
       page += 1;
     }
+    // Logged before the check, so a search that fails it still says how
+    // many results it skipped.
+    await ctx.step(
+      "snapshot-search-ended",
+      async () => {
+        logGoldSearchEnded(runId, deps.gold.snapshotId, found.length, skipped);
+        return Promise.resolve();
+      },
+      { retryStrategy: storeRetry },
+    );
     try {
       checkWholeSearch(found.length, skipped);
     } catch {
