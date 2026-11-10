@@ -2,11 +2,11 @@ import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
 import {
   createRule,
-  isMethodCallIn,
   isStepHelperCallback,
   lookup,
   outermostWrapper,
   unwrapped,
+  methodCallIn,
 } from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
@@ -157,8 +157,8 @@ export const noClosureInDurableOperations = createRule({
           parent = ancestors[j];
         }
         if (
-          parent !== undefined &&
-          isMethodCallIn(parent, DURABLE_CALLBACKS) &&
+          parent?.type === AST_NODE_TYPES.CallExpression &&
+          methodCallIn(parent, DURABLE_CALLBACKS) !== null &&
           parent.callee !== ancestors[j + 1]
         ) {
           return fn;
@@ -191,7 +191,8 @@ export const noClosureInDurableOperations = createRule({
         if (node.operator === "delete") check(node.argument);
       },
       CallExpression(node) {
-        if (isMethodCallIn(node, MUTATORS)) check(node.callee.object);
+        const mutation = methodCallIn(node, MUTATORS);
+        if (mutation !== null) check(mutation.object);
       },
     };
   },

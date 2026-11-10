@@ -16,6 +16,11 @@ checkpoints recorded, and the SDK stops the run with
 - Code that takes a durable context lives in `src/run/`. Helpers that a
   step calls, such as the Europe PMC client, the rules or the stores, live
   outside it and take no context.
+- A step helper such as `askEuropePmc` is imported from the module that
+  defines it, under its own name. The durable lint rules know a helper by
+  that module and name, so an export that passes one on or renames it
+  would hide its calls from them. `grantlink/no-step-helper-re-export`
+  checks this.
 - Every I/O call, every clock read and every random read happens inside a
   `ctx.step`, and the body branches only on what a durable operation
   returned. `grantlink/no-await-outside-step` and
@@ -68,4 +73,4 @@ from a step, and whether a new field is read tolerantly are for review.
 A per-line `eslint-disable-next-line` for one of these rules names the rule
 and says why the line is replay-safe.
 
-History: #5
+History: #5, #401

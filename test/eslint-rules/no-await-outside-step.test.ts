@@ -3,6 +3,7 @@ import { afterAll, describe, it } from "vitest";
 import { noAwaitOutsideStep } from "../../eslint-rules/no-await-outside-step.ts";
 import { root } from "../repo.ts";
 import { ruleTester } from "../rule-tester.ts";
+import { WRAPPED_DURABLE_CALLS } from "./wrapped-durable-calls.ts";
 import { WRAPPED_STEP_HELPERS } from "./wrapped-step-helpers.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
@@ -10,6 +11,15 @@ const tester = ruleTester({ afterAll, describe, it });
 describe("fitness: no bare await in a durable body (durable-execution.md)", () => {
   tester.run("no-await-outside-step", noAwaitOutsideStep, {
     valid: [
+      {
+        name: "awaits inside askEuropePmc's read asserted with as",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
+          await askEuropePmc(ctx, "paper", "wait", r, (async () => { await readPaper(); }) as any);
+        }`,
+      },
+
       ...[
         ["asserted with as", "(async () => { await fetchPaper(); }) as any"],
         [
@@ -209,8 +219,21 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
           await ask(ctx, "paper", "wait", r, async () => readPaper());
         }`,
       },
+      ...WRAPPED_DURABLE_CALLS.map((shape) => ({
+        name: `awaits a step written as ${shape.name}, and I/O inside it`,
+        code: `async function run(ctx: any) {
+          await ${shape.call("step", `"fetch", async () => { return await fetchPaper(); }, { retryStrategy: r }`)};
+        }`,
+      })),
     ],
     invalid: [
+      ...WRAPPED_DURABLE_CALLS.map((shape) => ({
+        name: `awaits I/O in a child context written as ${shape.name}`,
+        code: `async function run(ctx: any) {
+          await ${shape.call("runInChildContext", `"paper", async (child: any) => { await fetchPaper(); }`)};
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" as const }],
+      })),
       {
         name: "awaits I/O in the body",
         code: `async function run(ctx: any) {

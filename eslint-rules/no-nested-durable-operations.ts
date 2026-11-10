@@ -4,7 +4,7 @@ import type { TSESTree } from "@typescript-eslint/utils";
 import {
   createRule,
   DURABLE_METHODS,
-  isMethodCallIn,
+  methodCallIn,
   stepHelperOf,
   lookup,
   unwrapped,
@@ -70,7 +70,8 @@ export const noNestedDurableOperations = createRule({
     // The context a durable operation or a step helper uses, if the call is
     // one.
     const contextOf = (node: TSESTree.CallExpression): TSESTree.Node | null => {
-      if (isMethodCallIn(node, DURABLE_METHODS)) return node.callee.object;
+      const operation = methodCallIn(node, DURABLE_METHODS);
+      if (operation !== null) return operation.object;
       if (stepHelperOf(node, context) !== null)
         return node.arguments[0] ?? null;
       return null;

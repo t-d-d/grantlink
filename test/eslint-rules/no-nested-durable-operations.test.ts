@@ -1,6 +1,7 @@
 import { afterAll, describe, it } from "vitest";
 import { noNestedDurableOperations } from "../../eslint-rules/no-nested-durable-operations.ts";
 import { ruleTester } from "../rule-tester.ts";
+import { WRAPPED_DURABLE_CALLS } from "./wrapped-durable-calls.ts";
 import { WRAPPED_STEP_HELPERS } from "./wrapped-step-helpers.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
@@ -28,6 +29,22 @@ describe("fitness: no durable operation inside its own context's operation (dura
       },
     ],
     invalid: [
+      ...[
+        ["asserted with as", "ctx as Context"],
+        ["checked with satisfies", "ctx satisfies Context"],
+        ["behind a non-null assertion", "ctx!"],
+      ].map(([what, given]) => ({
+        name: `asks Europe PMC on the same context ${String(what)} inside a step`,
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await askEuropePmc(${String(given)}, "paper", "wait", r, async () => 1);
+          }, { retryStrategy: r });
+        }`,
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
+
       {
         name: "waits on the same context inside a step, both reached through a non-null assertion",
         code: `async function run(ctx: any) {
@@ -47,6 +64,13 @@ describe("fitness: no durable operation inside its own context's operation (dura
         errors: [{ messageId: "sameContextUsage" }],
       },
 
+      ...WRAPPED_DURABLE_CALLS.map((shape) => ({
+        name: `uses the same context inside a step written as ${shape.name}`,
+        code: `async function run(ctx: any) {
+          await ${shape.call("step", `"outer", async () => { await ctx.wait("pause", { seconds: 1 }); }`)};
+        }`,
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
       ...WRAPPED_STEP_HELPERS.map((shape) => ({
         name: `asks Europe PMC through ${shape.name} on the same context inside a step`,
         filename: "src/run/run.ts",

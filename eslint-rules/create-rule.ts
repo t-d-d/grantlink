@@ -36,20 +36,27 @@ export const DURABLE_METHODS = new Set([
   "createCallback",
 ]);
 
-// A method call `<receiver>.<name>(...)` whose name is in the set.
-export function isMethodCallIn(
+// A method call `<receiver>.<name>(...)` whose name is in the set, read
+// through the wrappers unwrapped takes off, on the call and on its callee:
+// `ctx?.step(...)`, `ctx.step!(...)`, `(ctx.step as F)(...)` and
+// `(ctx.step(...) as Promise<T>)` are all a step. It gives the member its
+// callee reads, or null for anything else.
+export function methodCallIn(
   node: TSESTree.Node,
   names: ReadonlySet<string>,
-): node is TSESTree.CallExpression & {
-  callee: TSESTree.MemberExpression;
-} {
-  return (
-    node.type === AST_NODE_TYPES.CallExpression &&
-    node.callee.type === AST_NODE_TYPES.MemberExpression &&
-    !node.callee.computed &&
-    node.callee.property.type === AST_NODE_TYPES.Identifier &&
-    names.has(node.callee.property.name)
-  );
+): TSESTree.MemberExpression | null {
+  const call = unwrapped(node);
+  if (call.type !== AST_NODE_TYPES.CallExpression) return null;
+  const callee = unwrapped(call.callee);
+  if (
+    callee.type !== AST_NODE_TYPES.MemberExpression ||
+    callee.computed ||
+    callee.property.type !== AST_NODE_TYPES.Identifier ||
+    !names.has(callee.property.name)
+  ) {
+    return null;
+  }
+  return callee;
 }
 
 // The operations that checkpoint their callback as a unit: a step, the
@@ -298,7 +305,8 @@ export function withoutExtension(path: string): string {
   return path.replace(/\.[cm]?[jt]s$/, "");
 }
 
-// True when `fn` is an argument a step helper runs inside its step.
+// True when `fn` is an argument a step helper runs inside its step, read
+// through the wrappers unwrapped takes off, as in `(async () => {...}) as F`.
 export function isStepHelperCallback(
   call: TSESTree.Node,
   fn: TSESTree.Node,
@@ -306,7 +314,13 @@ export function isStepHelperCallback(
 ): boolean {
   if (call.type !== AST_NODE_TYPES.CallExpression) return false;
   const helper = stepHelperOf(call, resolver);
-  return helper?.callbacks.some((at) => call.arguments[at] === fn) ?? false;
+  const callback = unwrapped(fn);
+  return (
+    helper?.callbacks.some((at) => {
+      const argument = call.arguments[at];
+      return argument !== undefined && unwrapped(argument) === callback;
+    }) ?? false
+  );
 }
 
 // True when the node sits inside a function passed to an operation that
@@ -330,8 +344,8 @@ export function insideCheckpointedCallback(
     const call = ancestors[at - 1];
     return (
       argument !== undefined &&
-      call !== undefined &&
-      ((isMethodCallIn(call, CHECKPOINTS_CALLBACK) &&
+      call?.type === AST_NODE_TYPES.CallExpression &&
+      ((methodCallIn(call, CHECKPOINTS_CALLBACK) !== null &&
         call.arguments.some((arg) => arg === argument)) ||
         isStepHelperCallback(call, argument, resolver))
     );
