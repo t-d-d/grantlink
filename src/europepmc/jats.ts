@@ -10,8 +10,12 @@ import {
 } from "./xml.ts";
 
 // Cuts a paper's full text, in JATS XML as Europe PMC serves it, down to its
-// funding statement, its acknowledgements and its funding metadata. Nothing
-// else of the paper is kept: not the abstract, the body or the author list.
+// funding metadata, its acknowledgements and its funding sections, notes and
+// footnotes. From the funding metadata it keeps the funding statements and
+// each award's funding sources and award ids. A section is found by its type
+// or its title (#239), and a note or footnote by its type, its title or the
+// funder it names (#505). Nothing else of the paper is kept: not the
+// abstract, the body or the author list.
 // The XML is read through a parser into a tree (#343), so a tag is read as
 // XML reads it, whatever its spacing, quotes or nesting.
 
