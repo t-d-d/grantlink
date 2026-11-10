@@ -20,7 +20,7 @@ import {
   reply,
 } from "../../test/fakes.ts";
 import { NAMES, RECORDED } from "../../test/fixtures.ts";
-import { EuropePmcError } from "../europepmc/client.ts";
+import { europePmc, EuropePmcError } from "../europepmc/client.ts";
 import { found } from "../page/found.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
@@ -1276,6 +1276,43 @@ describe("a paper that fails logs why (#378)", () => {
         why: "answered",
         status: 404,
         tries: 1,
+      }),
+    ]);
+  });
+
+  it("asks again for a paper whose full text times out as it is read, and logs it as a timeout (#389)", async () => {
+    const fake = fakeDeps({ search: unreadable });
+    fake.deps.text.hasSnapshot = () => Promise.resolve(true);
+    const real = fake.deps.europePmc;
+    const instant = { now: () => 0, sleep: () => Promise.resolve() };
+    // Every reply's headers arrive, and its body times out as it is read.
+    const stalls = europePmc({
+      clock: instant,
+      fetch: () =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          body: null,
+          text: () =>
+            Promise.reject(
+              new DOMException("The operation timed out.", "TimeoutError"),
+            ),
+        } as unknown as Response),
+    });
+    fake.deps.europePmc = {
+      search: real.search.bind(real),
+      grants: real.grants.bind(real),
+      sent: () => real.sent() + stalls.sent(),
+      fullText: stalls.fullText.bind(stalls),
+    };
+    await runWith(fake);
+    expect(logged("paper-failed")).toEqual([
+      expect.objectContaining({
+        pmcid: "PMC0000099",
+        why: "timeout",
+        requestsLastTry: 5,
+        tries: 3,
       }),
     ]);
   });
