@@ -96,6 +96,24 @@ describe("cutting a paper to its funding sections", () => {
     ]);
   });
 
+  // A principal award recipient or investigator names people, and the cutter
+  // reads neither. No recorded fixture keeps one any more (#275), so this is
+  // where a change that read one would show.
+  it("drops an award group's principal award recipient and investigator (#275)", () => {
+    const kept = JSON.stringify(
+      fundingSections(
+        shared(
+          `<award-id rid="fs1">67890</award-id>` +
+            `<principal-award-recipient><name><surname>Harrowgate</surname></name></principal-award-recipient>` +
+            `<principal-investigator><name><surname>Fenwhistle</surname></name></principal-investigator>`,
+        ),
+      ),
+    );
+    expect(kept).toContain("67890");
+    expect(kept).not.toContain("Harrowgate");
+    expect(kept).not.toContain("Fenwhistle");
+  });
+
   it("keeps an award group with no award id", () => {
     expect(fundingSections(shared("")).awards).toEqual([
       { sources: ["Cancer Research UK", "Example Trust"], ids: [] },
