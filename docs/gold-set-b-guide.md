@@ -115,8 +115,9 @@ reference twice in different ways, record each way once.
   or separator between them, as in `CRUKC1234/A56789`, dropped. A
   reference whose own form starts with `CRUK/` or `CRUK-` keeps it.
 
-The rules produce the same form (`src/extract/rules.ts`). The last two
-steps cover forms the rules cannot read yet (#177).
+The rules produce the same form (`src/extract/rules.ts`), except for the
+last step: the rules do not yet read a reference with `CRUK` joined to its
+front.
 
 | As written | Normalised |
 | --- | --- |

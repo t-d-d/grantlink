@@ -17,8 +17,8 @@ it.
   (`node evals/check.ts gate`).
 - A pull request's eval job fails when its report is below a gating floor,
   so it cannot merge once the `eval` check is required (#21).
-- A gating row with no data yet, such as gold set B before its labels,
-  shows what it waits for and does not block.
+- A gating row with no data yet, such as a gold set B row before its
+  snapshot is pinned, shows what it waits for and does not block.
 - The deploy records the release in `site/release.json`: its commit, its
   fingerprint, the report with the run that produced it, and the deploy's
   own run. `src/page/release.ts` refuses a record without them. The record
