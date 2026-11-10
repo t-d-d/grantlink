@@ -11,6 +11,20 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
     {
       valid: [
         {
+          name: "reads the clock inside a step's callback through the comma operator",
+          code: `async function run(ctx: any) {
+            await ctx.step("start", (0, async () => Date.now()), { retryStrategy: r });
+          }`,
+        },
+        {
+          name: "reads the clock inside askEuropePmc's read through the comma operator",
+          filename: "src/run/run.ts",
+          code: `import { askEuropePmc } from "./owed.ts";
+          async function run(ctx: any) {
+            await askEuropePmc(ctx, "paper", "wait", r, (0, async () => Date.now()));
+          }`,
+        },
+        {
           name: "reads the clock inside a step's callback asserted with as",
           code: `async function run(ctx: any) {
             await ctx.step("start", (async () => Date.now()) as any, { retryStrategy: r });

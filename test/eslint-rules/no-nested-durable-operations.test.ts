@@ -39,10 +39,21 @@ describe("fitness: no durable operation inside its own context's operation (dura
       },
     ],
     invalid: [
+      {
+        name: "waits on the same context through the comma operator inside a step",
+        code: `async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await (0, ctx).wait("pause", { seconds: 1 });
+          }, { retryStrategy: r });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+
       ...[
         ["asserted with as", "ctx as Context"],
         ["checked with satisfies", "ctx satisfies Context"],
         ["behind a non-null assertion", "ctx!"],
+        ["through the comma operator", "(0, ctx)"],
       ].map(([what, given]) => ({
         name: `asks Europe PMC on the same context ${String(what)} inside a step`,
         filename: "src/run/run.ts",
@@ -212,16 +223,27 @@ describe("fitness: no durable operation inside its own context's operation (dura
         }`,
         errors: [{ messageId: "sameContextUsage" }],
       },
-      {
-        name: "reaches the same context through an alias with a non-null assertion",
+      ...[
+        ["with a non-null assertion", "ctx!"],
+        ["asserted with as", "ctx as Context"],
+        ["asserted with angle brackets", "<Context>ctx"],
+        ["checked with satisfies", "ctx satisfies Context"],
+        ["in brackets", "(ctx)"],
+        ["through the comma operator", "(0, ctx)"],
+        [
+          "through the comma operator and asserted with as",
+          "(0, ctx as Context)",
+        ],
+      ].map(([what, given]) => ({
+        name: `reaches the same context through an alias ${String(what)}`,
         code: `async function run(ctx: any) {
-          const same = ctx!;
+          const same = ${String(given)};
           await ctx.runInChildContext("paper", async () => {
             await same.wait("pause", { seconds: 1 });
           });
         }`,
-        errors: [{ messageId: "sameContextUsage" }],
-      },
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
       {
         name: "reaches the same context through a let alias",
         code: `async function run(ctx: any) {
