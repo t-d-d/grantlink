@@ -89,10 +89,6 @@ export function summarise(
       })),
     }));
   const references = papers.flatMap((paper) => paper.references);
-  const formats = new Map<string, number>();
-  for (const reference of references) {
-    formats.set(reference.format, (formats.get(reference.format) ?? 0) + 1);
-  }
   const pending = rows
     .filter((row) => row.status === "pending")
     .sort(byPmcid)
@@ -107,9 +103,45 @@ export function summarise(
       pending: pending.length,
     },
     papers,
-    formats: [...formats]
-      .map(([format, count]) => ({ format, count }))
-      .sort((a, b) => b.count - a.count || a.format.localeCompare(b.format)),
+    formats: formatCounts(references),
+    pending,
+  });
+}
+
+// Each reference format and how many references have it, most common first.
+function formatCounts(
+  references: Found["papers"][number]["references"],
+): Found["formats"] {
+  const formats = new Map<string, number>();
+  for (const reference of references) {
+    formats.set(reference.format, (formats.get(reference.format) ?? 0) + 1);
+  }
+  return [...formats]
+    .map(([format, count]) => ({ format, count }))
+    .sort((a, b) => b.count - a.count || a.format.localeCompare(b.format));
+}
+
+// The same findings without the papers named, read or not, as if the
+// search had not returned them (#587). found.json lists only papers with a
+// reference and papers not yet read, so a named paper read with no
+// reference cannot be found here and stays in the counts.
+export function leaveOut(data: Found, pmcids: ReadonlySet<string>): Found {
+  const papers = data.papers.filter((paper) => !pmcids.has(paper.pmcid));
+  const pending = data.pending.filter((paper) => !pmcids.has(paper.pmcid));
+  const read = data.papers.length - papers.length;
+  const unread = data.pending.length - pending.length;
+  const references = papers.flatMap((paper) => paper.references);
+  return found.parse({
+    ...data,
+    counts: {
+      papers: data.counts.papers - read - unread,
+      processed: data.counts.processed - read,
+      withReference: papers.length,
+      references: references.length,
+      pending: pending.length,
+    },
+    papers,
+    formats: formatCounts(references),
     pending,
   });
 }
