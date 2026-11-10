@@ -126,6 +126,48 @@ describe("the rules", () => {
     ]);
   });
 
+  // Another funder's reference, such as a Crick African Network award,
+  // may hold an A number between letters and a slash before it and a slash
+  // and more after it. That A number is not the funder's (#642).
+  it.each(["CAN/A00004/1", "CAN/A00003/1", "ABC\\A12345\\2", "ABC/A1234/AB"])(
+    "reads no A number from inside %s",
+    (written) => {
+      expect(
+        findReferences(
+          sections(
+            `Funded by Cancer Research UK (FC001234) and the Example Network (${written}).`,
+          ),
+        ),
+      ).toEqual([
+        { asWritten: "FC001234", normalised: "FC001234", format: "FCn" },
+      ]);
+    },
+  );
+
+  it.each([
+    [
+      "an A number after a slash with no letters before it",
+      "C1234/A12345/2",
+      "C1234/A12345",
+    ],
+    [
+      "an A number after letters and a slash, with nothing more",
+      "CRUK grant/A12345",
+      "A12345",
+    ],
+    [
+      "an A number before a slash, with no letters and slash before it",
+      "A12345/2",
+      "A12345",
+    ],
+  ])("still reads %s", (_, written, normalised) => {
+    expect(
+      findReferences(
+        sections(`Funded by Cancer Research UK (${written}).`),
+      ).map((reference) => reference.normalised),
+    ).toEqual([normalised]);
+  });
+
   it("leaves a word joined to CRUK that has no digit", () => {
     expect(
       findReferences(sections("A CRUK-funded study with CRUK/EPSRC support.")),
