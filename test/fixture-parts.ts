@@ -151,7 +151,7 @@ function parse(xml: string): Element {
 // people (#222), is named with the rest (#215). So is one in the
 // acknowledgements, and a section inside them is named whole, with any
 // <sec-meta> it holds, though the cutter now drops every <sec-meta> it reads
-// (#229).
+// (#229). One inside a paragraph is named too, at any depth (#416).
 const PART_CHILDREN = ["p", "title", "label"];
 
 const hasText = (element: Element): boolean =>
@@ -249,15 +249,29 @@ function strayAttributes(element: Element, path: string): string[] {
   ];
 }
 
-// The same for the element and everything inside it.
-function strayAttributesWithin(element: Element, path: string): string[] {
+// The same for the element and everything inside it, but an element the
+// test picks out, at any depth, is named whole.
+function strayAttributesWithin(
+  element: Element,
+  path: string,
+  whole: (child: Element) => boolean = () => false,
+): string[] {
   return [
     ...strayAttributes(element, path),
-    ...element.children.flatMap((child) =>
-      strayAttributesWithin(child, `${path}/${child.name}`),
-    ),
+    ...element.children.flatMap((child) => {
+      const childPath = `${path}/${child.name}`;
+      return whole(child)
+        ? [childPath]
+        : strayAttributesWithin(child, childPath, whole);
+    }),
   ];
 }
+
+// The cutter drops every <sec-meta> in a part, in any case, wherever it
+// stands, so what one inside a paragraph holds is kept without being read.
+// It is named whole (#416).
+const isSecMeta = (element: Element): boolean =>
+  element.name.toLowerCase() === "sec-meta";
 
 function strayInPart(part: Element, path: string): string[] {
   const paragraphs = part.children.some(
@@ -271,7 +285,7 @@ function strayInPart(part: Element, path: string): string[] {
       if (!PART_CHILDREN.includes(child.name)) return [childPath];
       // A heading's children are named whole by strayInHeadings.
       return child.name === "p"
-        ? strayAttributesWithin(child, childPath)
+        ? strayAttributesWithin(child, childPath, isSecMeta)
         : strayAttributes(child, childPath);
     }),
     ...strayInHeadings(part, path),

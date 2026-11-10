@@ -118,6 +118,27 @@ describe("strayParts", () => {
       "article/back/ack/sec-meta",
     ],
     [
+      "a sec-meta inside a paragraph of the acknowledgements, which the cutter drops (#416)",
+      {
+        back: "<ack><p>G<sec-meta>B</sec-meta></p></ack>",
+      },
+      "article/back/ack/p/sec-meta",
+    ],
+    [
+      "a sec-meta deep inside a paragraph of a funding section (#416)",
+      {
+        body: "<body><sec><title>Funding</title><p>Funded <bold><italic><sec-meta>B</sec-meta></italic></bold>.</p></sec></body>",
+      },
+      "article/body/sec/p/bold/italic/sec-meta",
+    ],
+    [
+      "a sec-meta in any case inside a paragraph of a funding footnote (#416)",
+      {
+        back: '<fn-group><fn fn-type="funding"><p>Funded.<SEC-META>B</SEC-META></p></fn></fn-group>',
+      },
+      "article/back/fn-group/fn/p/SEC-META",
+    ],
+    [
       "the author list",
       {
         meta: "<contrib-group><contrib><name>A</name></contrib></contrib-group>",
