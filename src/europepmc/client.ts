@@ -202,22 +202,76 @@ function openAccessOnly(selection: string): string {
   return `(${selection}) AND OPEN_ACCESS:y AND IN_EPMC:y`;
 }
 
-// A title as plain text: Europe PMC's titles may carry inline markup. A
-// control character or half a surrogate pair goes too, as JSON would spell
-// each in six bytes, and a page of titles must fit in one checkpoint.
+// A title as plain text with its inline markup. Europe PMC's search reply
+// sends a title's sup, sub, i and b either as raw tags or encoded (#619),
+// so both come out as the same raw tag, which the page shows as formatting
+// (#606). Any other tag goes. A control character or half a surrogate pair
+// goes too, as JSON would spell each in six bytes, and a page of titles
+// must fit in one checkpoint.
+const INLINE = ["sup", "sub", "i", "b"] as const;
+const TAGS = INLINE.flatMap((name) => [`<${name}>`, `</${name}>`]);
+// Each kept tag stands as one control character while the text is cleaned,
+// as the cleaning has already turned every control character in the title
+// into a space.
+const MARK = TAGS.map((_, i) => String.fromCharCode(i + 1));
+// A tag holds no "<", so a raw "<" in the text, as in p<0.05, is not read
+// as the start of one and does not take the words up to the next tag. A
+// tag half raw and half encoded is read as a tag, as decoding would make
+// one of it that the page shows.
+const MARKUP =
+  /<(\/?)(sup|sub|i|b)(?:\s[^<>]*)?(?:>|&gt;)|&lt;(\/?)(sup|sub|i|b)(?:&gt;|>)|<[^<>]*>/giu;
+const LIMIT = 500;
+
 export function plainTitle(title: string): string {
-  return title
-    .replace(/<[^>]*>/gu, "")
+  const marked = title
+    .replace(/[\p{Cc}\p{Cs}]/gu, " ")
+    .replace(
+      MARKUP,
+      (
+        _,
+        rawClose?: string,
+        rawName?: string,
+        close?: string,
+        name?: string,
+      ) => {
+        const tag = (rawName ?? name)?.toLowerCase();
+        if (tag === undefined) return "";
+        return MARK[TAGS.indexOf(`<${rawClose ?? close ?? ""}${tag}>`)] ?? "";
+      },
+    )
     .replace(/&lt;/gu, "<")
     .replace(/&gt;/gu, ">")
     .replace(/&quot;/gu, '"')
     .replace(/&#39;|&apos;/gu, "'")
     .replace(/&amp;/gu, "&")
-    .replace(/[\p{Cc}\p{Cs}]/gu, " ")
     .replace(/\s+/gu, " ")
-    .trim()
-    .slice(0, 500)
-    .replace(/\p{Cs}$/u, "");
+    .trim();
+  // Cut at 500 characters between tags, never inside one.
+  const parts: string[] = [];
+  let length = 0;
+  for (const char of marked) {
+    const mark = MARK.indexOf(char);
+    const part = mark === -1 ? char : (TAGS[mark] ?? "");
+    if (length + part.length > LIMIT) break;
+    parts.push(part);
+    length += part.length;
+  }
+  // A dropped tag can leave a space at either end or two together.
+  return paired(parts).join("").replace(/\s+/gu, " ").trim();
+}
+
+// Drops a tag left without its pair, by the cut or in Europe PMC's data.
+function paired(parts: string[]): string[] {
+  const open: number[] = [];
+  const drop = new Set<number>();
+  parts.forEach((part, i) => {
+    if (!TAGS.includes(part)) return;
+    if (!part.startsWith("</")) open.push(i);
+    else if (parts[open.at(-1) ?? -1] === part.replace("/", "")) open.pop();
+    else drop.add(i);
+  });
+  for (const i of open) drop.add(i);
+  return parts.filter((_, i) => !drop.has(i));
 }
 
 function retryAfter(response: Response, clock: Clock): number | undefined {
