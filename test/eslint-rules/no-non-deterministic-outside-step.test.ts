@@ -675,6 +675,66 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "exports by default bind destructured from Date",
+          code: `const { bind } = Date;
+          export default bind;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by assignment bind destructured from Date",
+          code: `const { bind } = Date;
+          export = bind;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports bind destructured from Date in a nested pattern",
+          code: `const { Date: { bind } } = globalThis;
+          export { bind };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default a sibling of bind destructured from Date in a nested pattern",
+          code: `const { foo, Date: { bind } } = globalThis;
+          export default foo;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default bind destructured from Date in a nested pattern",
+          code: `const { Date: { bind } } = globalThis;
+          export default bind;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
           name: "exports an alias of globalThis, which holds every source",
           code: `const g = globalThis;
           export { g };`,
