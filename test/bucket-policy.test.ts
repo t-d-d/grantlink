@@ -208,7 +208,7 @@ describe("deniesReplacingWrites", () => {
     ["it allows rather than denies", { Effect: "Allow" }],
     [
       "it denies only one role",
-      { Principal: { AWS: "arn:aws:iam::123456789012:role/example" } },
+      { Principal: { AWS: "arn:aws:iam::ACCOUNT:role/example" } },
     ],
     [
       "it denies only a service",
@@ -232,7 +232,7 @@ describe("deniesReplacingWrites", () => {
         Condition: {
           StringNotEquals: {
             "s3:if-none-match": "*",
-            "aws:PrincipalAccount": "123456789012",
+            "aws:PrincipalAccount": "ACCOUNT",
           },
         },
       },
