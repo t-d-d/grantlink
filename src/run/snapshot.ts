@@ -5,7 +5,7 @@ import {
 import {
   checkWholeSearch,
   type Deps,
-  type SnapshotFailure,
+  type KnownSnapshotFailure,
 } from "../pipeline/steps.ts";
 import {
   sample,
@@ -34,10 +34,7 @@ export type SnapshotSummary =
 // a store's or Europe PMC's client wrote, so the run logs the reason alone
 // (docs/constraints/personal-data.md, #285). An error the SDK raises for
 // itself, which is not an operation's failure, is thrown as it is.
-function failedAs(
-  reason: Exclude<SnapshotFailure, "unknown">,
-  error: unknown,
-): never {
+function failedAs(reason: KnownSnapshotFailure, error: unknown): never {
   if (error instanceof DurableOperationError) throw new Error(reason);
   throw error;
 }
@@ -158,7 +155,7 @@ export async function takeSnapshot(
     try {
       checkWholeSearch(found.length, skipped);
     } catch {
-      throw new Error("malformed-search" satisfies SnapshotFailure);
+      throw new Error("malformed-search" satisfies KnownSnapshotFailure);
     }
     candidates = sample(found, goldA.seed);
   }

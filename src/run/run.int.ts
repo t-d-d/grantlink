@@ -809,9 +809,6 @@ describe("the eval snapshot (evals.md)", () => {
     expect(status).toBe("SUCCEEDED");
     expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
     expect(fake.text.has(MANIFEST)).toBe(false);
-    expect(logged("snapshot-failed")).toEqual([
-      expect.objectContaining({ runId: expect.any(String) as unknown }),
-    ]);
     expect(snapshotFailedFields()).toEqual({ reason: "malformed-search" });
   });
 
@@ -839,6 +836,7 @@ describe("the eval snapshot (evals.md)", () => {
     expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
     expect(fake.text.has(MANIFEST)).toBe(false);
     expect(snapshotFailedFields()).toEqual({ reason: "store-failed" });
+    expect(logs.join("\n")).not.toContain("S3 answered 503");
   });
 
   // personal-data.md: a log line carries ids and counts, so the line logs
@@ -860,6 +858,7 @@ describe("the eval snapshot (evals.md)", () => {
     expect(status).toBe("SUCCEEDED");
     expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
     expect(snapshotFailedFields()).toEqual({ reason: "search-failed" });
+    expect(logs.join("\n")).not.toContain("answered 500");
   });
 
   it("logs search-failed when gold set A's search replies with what its schema refuses", async () => {

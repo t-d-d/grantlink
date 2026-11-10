@@ -89,7 +89,8 @@ export const SNAPSHOT_FAILURES = [
   "search-failed",
   "malformed-search",
 ] as const;
-export type SnapshotFailure = (typeof SNAPSHOT_FAILURES)[number] | "unknown";
+export type KnownSnapshotFailure = (typeof SNAPSHOT_FAILURES)[number];
+export type SnapshotFailure = KnownSnapshotFailure | "unknown";
 
 export function snapshotFailure(error: unknown): SnapshotFailure {
   if (!(error instanceof Error)) return "unknown";
