@@ -6,6 +6,7 @@ import {
   CREDIT,
   NOTICE,
   TERMS,
+  footerOf,
   foreignLoads,
   loadsOf,
   textOf,
@@ -32,7 +33,11 @@ describe("fitness: the page carries the notice and the credit (independence.md)"
   });
 
   it("carries the independence notice, the credit and the contact", () => {
-    expect(textOf(html)).toMatch(NOTICE);
+    // The footer alone: the line under the headline carries the same words
+    // (#588), and the notice belongs in the footer (#590).
+    const footer = footerOf(html);
+    expect(footer, "the page has no footer").not.toBe("");
+    expect(textOf(footer)).toMatch(NOTICE);
     expect(html).toMatch(CREDIT);
     expect(html).toMatch(TERMS);
     expect(html).toContain(`mailto:${CONTACT}`);
