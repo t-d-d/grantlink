@@ -16,11 +16,24 @@
 // or the back. And in a part with no paragraphs the cutter reads the whole
 // text, but the check names any element there other than a label, a title
 // or an empty paragraph.
+//
+// The cutter reads no attribute values but the ids and types it matches on,
+// so a value can keep a name nobody reads. On every element a recording
+// keeps, the check names each attribute it does not expect, or whose value
+// it does not expect (#304). It names the attribute, never its value.
 
 import { FUNDING_FOOTNOTE, isFundingSectionAt } from "../src/europepmc/jats.ts";
 
+interface Attribute {
+  name: string;
+  value: string;
+}
+
 interface Element {
   name: string;
+  attributes: Attribute[];
+  // Whether its opening tag holds text that is not an attribute.
+  malformed: boolean;
   children: Element[];
   text: boolean;
   // Whether it holds a comment with text, which the cutter drops unread.
@@ -53,6 +66,25 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
   "article/back/fn-group": isFundingFootnote,
 };
 
+// The attributes in an opening tag, after its name, and whether anything
+// else is there.
+function attributesOf(tag: string): {
+  attributes: Attribute[];
+  malformed: boolean;
+} {
+  const attribute = /\s+([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/uy;
+  const attributes: Attribute[] = [];
+  // A sticky pattern goes back to the start when it fails, so the end of
+  // the last attribute is kept apart.
+  let end = 0;
+  for (let match = attribute.exec(tag); match; match = attribute.exec(tag)) {
+    const [, name = "", double, single] = match;
+    attributes.push({ name, value: double ?? single ?? "" });
+    end = attribute.lastIndex;
+  }
+  return { attributes, malformed: tag.slice(end).trim() !== "" };
+}
+
 // The XML's elements as a tree, under a root with no name. Declarations and
 // processing instructions are dropped. A processing instruction ends at its
 // own ?>, as in the pattern that finds a funding section, so a > inside it
@@ -61,6 +93,8 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
 function parse(xml: string): Element {
   const root: Element = {
     name: "",
+    attributes: [],
+    malformed: false,
     children: [],
     text: false,
     comment: false,
@@ -88,6 +122,7 @@ function parse(xml: string): Element {
         (name === "fn" && FOOTNOTE.test(attributes));
       const element = {
         name,
+        ...attributesOf(attributes),
         children: [],
         text: false,
         comment: false,
@@ -152,17 +187,85 @@ function strayInHeadings(part: Element, path: string): string[] {
     });
 }
 
+// An id as papers write them: a few letters and a number, such as sp1 or
+// d1e123, never a word alone.
+const ID = /^[A-Za-z]{0,6}[-_.]?\d+(?:[A-Za-z]{1,3}\d+)*$/u;
+const oneOf =
+  (...values: string[]) =>
+  (value: string) =>
+    values.includes(value);
+
+// Each attribute a recording may keep, with the values it may hold: the ones
+// the recorded papers carry, and for the types the cutter matches on, the
+// values it reads. Any other attribute or value is named. A new recording
+// that carries another adds it here, where review sees it.
+const ATTRIBUTES: Record<string, (value: string) => boolean> = {
+  "article-type": oneOf(
+    "research-article",
+    "review-article",
+    "systematic-review",
+    "letter",
+    "brief-report",
+    "case-report",
+    "editorial",
+  ),
+  "dtd-version": (value) => /^\d+(?:\.\d+)*$/u.test(value),
+  "xml:lang": (value) => /^[a-z]{2}$/u.test(value),
+  "xmlns:xlink": oneOf("http://www.w3.org/1999/xlink"),
+  "xmlns:ali": oneOf("http://www.niso.org/schemas/ali/1.0/"),
+  "pub-id-type": oneOf("pmcid", "pmid", "pmc", "doi", "publisher-id"),
+  "specific-use": oneOf("FundRef", "textmining"),
+  "content-type": oneOf("ccbylicense"),
+  start_date: (value) => /^\d{4}-\d{2}-\d{2}$/u.test(value),
+  "ext-link-type": oneOf("uri", "doi"),
+  "xlink:href": (value) =>
+    /^https?:\/\/creativecommons\.org\/[\w./-]*$/u.test(value),
+  "institution-id-type": oneOf("DOI", "FundRef", "ROR", "Ringgold", "ISNI"),
+  "name-style": oneOf("western", "eastern", "given-only", "islensk"),
+  id: (value) => ID.test(value),
+  rid: (value) => value.split(/\s+/u).every((id) => ID.test(id)),
+  // As the cutter reads them, in src/europepmc/jats.ts.
+  "sec-type": (value) => /^(?:funding|ack|acknowledge?ments?)$/iu.test(value),
+  "fn-type": oneOf("financial-disclosure", "funding", "supported-by"),
+};
+
+// The element's own attributes that the check does not expect.
+function strayAttributes(element: Element, path: string): string[] {
+  return [
+    ...(element.malformed ? [`${path} (attributes)`] : []),
+    ...element.attributes
+      .filter(({ name, value }) => !(ATTRIBUTES[name]?.(value) ?? false))
+      .map(({ name }) => `${path}@${name}`),
+  ];
+}
+
+// The same for the element and everything inside it.
+function strayAttributesWithin(element: Element, path: string): string[] {
+  return [
+    ...strayAttributes(element, path),
+    ...element.children.flatMap((child) =>
+      strayAttributesWithin(child, `${path}/${child.name}`),
+    ),
+  ];
+}
+
 function strayInPart(part: Element, path: string): string[] {
   const paragraphs = part.children.some(
     (child) => child.name === "p" && hasText(child),
   );
   return [
+    ...strayAttributes(part, path),
     ...((paragraphs && part.text) || hasComment(part)
       ? [`${path} (text)`]
       : []),
-    ...part.children
-      .filter((child) => !PART_CHILDREN.includes(child.name))
-      .map((child) => `${path}/${child.name}`),
+    ...part.children.flatMap((child) => {
+      const childPath = `${path}/${child.name}`;
+      if (!PART_CHILDREN.includes(child.name)) return [childPath];
+      // A heading's children are named whole by strayInHeadings.
+      return child.name === "p"
+        ? strayAttributesWithin(child, childPath)
+        : strayAttributes(child, childPath);
+    }),
     ...strayInHeadings(part, path),
   ];
 }
@@ -170,8 +273,11 @@ function strayInPart(part: Element, path: string): string[] {
 function stray(element: Element, path: string): string[] {
   if (isPart(element)) return strayInPart(element, path);
   const allowed = ALLOWED[path];
-  if (allowed === undefined) return [];
+  // The children of an element whose children are not checked are kept, so
+  // their attributes are checked.
+  if (allowed === undefined) return strayAttributesWithin(element, path);
   return [
+    ...strayAttributes(element, path),
     ...(element.text ? [`${path} (text)`] : []),
     ...element.children.flatMap((child) => {
       const childPath = `${path}/${child.name}`;
