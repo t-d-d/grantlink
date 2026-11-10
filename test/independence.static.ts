@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONTACT, CREDIT, NOTICE, TERMS, textOf } from "./page.ts";
+import { CONTACT, CREDIT, NOTICE, TERMS, footerOf, textOf } from "./page.ts";
 import { readRepoFile, repoFiles } from "./repo.ts";
 
 // Cancer Research UK is named only to say whose grants grantlink reads, and
@@ -17,14 +17,12 @@ describe("fitness: every view carries the independence notice (independence.md)"
     "%s carries the notice, the credit and the contact",
     (path) => {
       const html = readRepoFile(path);
-      // The notice belongs in the footer. The line under the headline
-      // (#588) carries the same words, so read the footer alone.
-      const footer = /<footer\b[^>]*>([\s\S]*?)<\/footer>/u.exec(html);
-      expect(footer).not.toBeNull();
-      expect(textOf(footer?.[1] ?? "")).toMatch(NOTICE);
+      // The notice and the address belong in the footer (#593).
+      const footer = footerOf(html);
+      expect(textOf(footer)).toMatch(NOTICE);
       expect(html).toMatch(CREDIT);
       expect(html).toMatch(TERMS);
-      expect(html).toContain(`mailto:${CONTACT}`);
+      expect(footer).toContain(`mailto:${CONTACT}`);
     },
   );
 

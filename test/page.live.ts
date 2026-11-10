@@ -6,6 +6,7 @@ import {
   CREDIT,
   NOTICE,
   TERMS,
+  footerOf,
   foreignLoads,
   loadsOf,
   textOf,
@@ -35,7 +36,8 @@ describe("fitness: the page carries the notice and the credit (independence.md)"
     expect(textOf(html)).toMatch(NOTICE);
     expect(html).toMatch(CREDIT);
     expect(html).toMatch(TERMS);
-    expect(html).toContain(`mailto:${CONTACT}`);
+    // The address for corrections belongs in the footer (#593).
+    expect(footerOf(html)).toContain(`mailto:${CONTACT}`);
   });
 });
 

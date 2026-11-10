@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foreignLoads, loadsOf, textOf } from "./page.ts";
+import { CONTACT, footerOf, foreignLoads, loadsOf, textOf } from "./page.ts";
 
 const page = new URL("https://grantlink.uk/");
 
@@ -57,5 +57,22 @@ describe("reading a page's words", () => {
     expect(
       textOf("<p>One\n  <b>two</b></p><style>p{}</style><script>x</script>"),
     ).toBe("One two");
+  });
+});
+
+// The checks read the correction address from the footer alone (#593).
+describe("reading a page's footer", () => {
+  it("returns the footer's markup", () => {
+    const html = `<main>x</main><footer class="f"><a href="mailto:${CONTACT}">Write</a></footer>`;
+    expect(footerOf(html)).toContain(`mailto:${CONTACT}`);
+  });
+
+  it("leaves out an address that sits outside the footer", () => {
+    const html = `<p><a href="mailto:${CONTACT}">Write</a></p><footer>Notice</footer>`;
+    expect(footerOf(html)).not.toContain(`mailto:${CONTACT}`);
+  });
+
+  it("returns nothing for a page without a footer", () => {
+    expect(footerOf(`<a href="mailto:${CONTACT}">Write</a>`)).toBe("");
   });
 });
