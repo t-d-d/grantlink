@@ -148,21 +148,27 @@ export async function takeSnapshot(
     }
     // Logged before the check, so a search that fails it still says how
     // many results it skipped, and before a refusal ends it, so the totals
-    // of the pages it read still show in one line (#307).
-    await ctx.step(
-      "snapshot-search-ended",
-      async () => {
-        logGoldSearchEnded(
-          runId,
-          deps.gold.snapshotId,
-          found.length,
-          skipped,
-          refused !== null,
-        );
-        return Promise.resolve();
-      },
-      { retryStrategy: storeRetry },
-    );
+    // of the pages it read still show in one line (#307). The line only
+    // reports, so when its step fails the search's own judgment below
+    // still decides how the snapshot ends, not that failure (#370).
+    try {
+      await ctx.step(
+        "snapshot-search-ended",
+        async () => {
+          logGoldSearchEnded(
+            runId,
+            deps.gold.snapshotId,
+            found.length,
+            skipped,
+            refused !== null,
+          );
+          return Promise.resolve();
+        },
+        { retryStrategy: storeRetry },
+      );
+    } catch (error) {
+      if (!(error instanceof DurableOperationError)) throw error;
+    }
     // A refused search loses the snapshot for this run, and leaves the
     // wait Europe PMC asked for owed, which the run waits out before it
     // ends (#236).

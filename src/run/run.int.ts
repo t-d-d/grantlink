@@ -957,6 +957,63 @@ describe("the eval snapshot (evals.md)", () => {
     ]);
   });
 
+  // A failed snapshot-search-ended step leaves the search's own reason in
+  // charge of how the snapshot ends, not its error (#370).
+  describe("when the snapshot-search-ended step fails", () => {
+    afterEach(() => {
+      spy.mockImplementation((...args: unknown[]) => {
+        logs.push(args.map(String).join(" "));
+      });
+    });
+
+    function failSearchEndedLine(): void {
+      spy.mockImplementation((...args: unknown[]) => {
+        const line = args.map(String).join(" ");
+        if (line.includes('"event":"snapshot-search-ended"')) {
+          throw new Error("the log line could not be written");
+        }
+        logs.push(line);
+      });
+    }
+
+    it("logs malformed-search, not unknown, for a malformed search", async () => {
+      failSearchEndedLine();
+      const fake = fakeDeps({ goldSearch: malformedPage });
+      const { status, result } = await runWith(fake);
+      expect(status).toBe("SUCCEEDED");
+      expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
+      expect(snapshotFailedFields()).toEqual({ reason: "malformed-search" });
+    });
+
+    it("ends with Europe PMC's refusal, not a failure, when it refuses the search", async () => {
+      failSearchEndedLine();
+      const fake = fakeDeps({
+        goldSearch: () => reply("", 429, { "Retry-After": "300" }),
+      });
+      const { status, result } = await runWith(fake);
+      expect(status).toBe("SUCCEEDED");
+      expect(result?.snapshot).toEqual({
+        taken: false,
+        reason: "Europe PMC refused gold set A's search",
+      });
+      expect(logged("snapshot-failed")).toEqual([]);
+    });
+
+    it("still takes the snapshot when the search is whole", async () => {
+      failSearchEndedLine();
+      const fake = fakeDeps({
+        goldSearch: smallLastPageMalformed([
+          "PMC0000001",
+          "PMC0000002",
+          "PMC0000003",
+        ]),
+      });
+      const { status, result } = await runWith(fake);
+      expect(status).toBe("SUCCEEDED");
+      expect(result?.snapshot).toMatchObject({ taken: true });
+    });
+  });
+
   it("publishes the page even when the snapshot fails, and leaves it for the next run", async () => {
     const fake = fakeDeps();
     fake.deps.text.hasSnapshot = () =>
