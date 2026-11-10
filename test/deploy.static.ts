@@ -266,8 +266,8 @@ describe("fitness: the eval gates every deploy (deploy-gates.md)", () => {
 // The deploy role's credentials are checked with the eval and conformance
 // roles' in test/role-credentials.static.ts (#349). The live tier reads the
 // page as a visitor would and gets none (#259).
-describe("the deploy role's credentials", () => {
-  it("are not given to the step that reads the live page", () => {
+describe("the step that reads the live page", () => {
+  it("gets none of the deploy role's credentials", () => {
     const live = steps("deploy").find((step) =>
       (step.run ?? "").includes("npm run test:live"),
     );

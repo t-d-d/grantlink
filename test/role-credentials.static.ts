@@ -146,6 +146,21 @@ describe.each(roles)("$title", ({ workflow, job, role, callers, bucket }) => {
     }
   });
 
+  // The tests above count only key, secret, session and the bucket, so any
+  // other output a step reads, such as the account id, would pass them.
+  it("hand on no other output of the assume step", () => {
+    const allowed = ["key", "secret", "session"];
+    if (bucket !== undefined) allowed.push("bucket");
+    const read = all.flatMap((step) =>
+      Object.values(step.env ?? {}).flatMap((value) =>
+        [...value.matchAll(/steps\.assume\.outputs\.(\w+)/gu)].map(
+          ([, name]) => name,
+        ),
+      ),
+    );
+    expect(read.filter((name) => !allowed.includes(name ?? ""))).toEqual([]);
+  });
+
   it("are read nowhere but in those steps' env", () => {
     const rest = {
       ...workflow,
