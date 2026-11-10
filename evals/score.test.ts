@@ -86,6 +86,8 @@ describe("finding which linked grants a paper prints", () => {
     ["A56789", "<p>Grant B56789.</p>"],
     ["A56789", "<p>Grant A567890.</p>"],
     ["C1234/A56789", "<p>Programme C1234.</p>"],
+    ["A12345", "<p>Figure 1 2345 cells.</p>"],
+    ["A12345", "<table><tr><td>1</td><td>2345</td></tr></table>"],
   ])("does not find %s printed in %s", (grant, article) => {
     expect(printedGrants([grant], article)).toEqual([]);
   });

@@ -97,15 +97,21 @@ function withoutReferenceLists(article: string): string {
 
 // A form as a pattern that ignores case and spaces, with a slash written
 // any way canonical reads one, and nothing alphanumeric either side of it.
+// A space may not split a run of digits, or "1 2345" in a sentence, or two
+// table cells, would read as 12345.
 function standingAlone(form: string): RegExp {
   // A form holds only ASCII, as canonical leaves GRANT's characters.
-  const chars = Array.from(form, (char) =>
-    char === "/" ? "[/\\\\∖]" : char === "." ? "\\." : char,
-  );
-  return new RegExp(
-    `(?<![A-Za-z0-9])${chars.join("\\s*")}(?![A-Za-z0-9])`,
-    "iu",
-  );
+  const chars = Array.from(form);
+  const pattern = chars
+    .map((char, i) => {
+      const one = char === "/" ? "[/\\\\∖]" : char === "." ? "\\." : char;
+      const before = chars[i - 1];
+      const between =
+        i > 0 && !(/\d/u.test(char) && /\d/u.test(before ?? "")) ? "\\s*" : "";
+      return `${between}${one}`;
+    })
+    .join("");
+  return new RegExp(`(?<![A-Za-z0-9])${pattern}(?![A-Za-z0-9])`, "iu");
 }
 
 // The linked grants a paper prints, in the order given: those with a form
