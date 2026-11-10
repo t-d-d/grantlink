@@ -17,7 +17,11 @@ describe("fitness: every view carries the independence notice (independence.md)"
     "%s carries the notice, the credit and the contact",
     (path) => {
       const html = readRepoFile(path);
-      expect(textOf(html)).toMatch(NOTICE);
+      // The notice belongs in the footer. The line under the headline
+      // (#588) carries the same words, so read the footer alone.
+      const footer = /<footer\b[^>]*>([\s\S]*?)<\/footer>/u.exec(html);
+      expect(footer).not.toBeNull();
+      expect(textOf(footer?.[1] ?? "")).toMatch(NOTICE);
       expect(html).toMatch(CREDIT);
       expect(html).toMatch(TERMS);
       expect(html).toContain(`mailto:${CONTACT}`);
