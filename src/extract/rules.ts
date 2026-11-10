@@ -158,9 +158,10 @@ interface Shape {
   before?: string;
   after?: string;
   // Whether the model pass keeps a reply of this shape only where the
-  // rules' own pattern reads that reply, and no more or less, in the text.
+  // rules' own scan reads that reply, and no more or less, in the text.
   // A form with a prefix and up to four parts may run on past a reply, as
-  // CRUK/12/34 does past CRUK/12 (#561).
+  // CRUK/12/34 does past CRUK/12 (#561), and an earlier pattern may take
+  // part of it, as the C/A pattern does in CRUK/C1234/A56789 (#599).
   readWhole?: true;
   // A short number such as an A number is common, so it counts only in a
   // sentence that names the funder.
@@ -370,8 +371,11 @@ const READ_SHAPE = new RegExp(
 export const hasReferenceShape = (reference: string): boolean =>
   READ_SHAPE.test(reference);
 
-const READ_WHOLE = SHAPES.flatMap(({ shape, modelShape, readWhole }) =>
-  readWhole === true ? [new RegExp(`^(?:${modelShape ?? shape})$`, "u")] : [],
+const READ_WHOLE = new RegExp(
+  `^(?:${SHAPES.filter(({ readWhole }) => readWhole === true)
+    .map(({ shape, modelShape }) => modelShape ?? shape)
+    .join("|")})$`,
+  "u",
 );
 
 // Whether a paragraph gives a reference as written whole, between the edges
@@ -383,7 +387,7 @@ const READ_WHOLE = SHAPES.flatMap(({ shape, modelShape, readWhole }) =>
 // C1234/A56789 out of CRUK/C1234/A56789, the CRUK- form is not read (#599).
 // Any other counts between the edges above, as wholeReference reads it.
 export function readsWhole(paragraph: string, reference: string): boolean {
-  if (READ_WHOLE.some((shape) => shape.test(reference))) {
+  if (READ_WHOLE.test(reference)) {
     return scan(paragraph, "long").some(
       ({ asWritten }) => asWritten === reference,
     );
