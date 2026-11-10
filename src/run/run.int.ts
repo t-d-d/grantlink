@@ -15,6 +15,7 @@ import {
   FAKE_GOLD,
   fakeDeps,
   fakeRelease,
+  type FakeOptions,
   isGoldSearch,
   reply,
 } from "../../test/fakes.ts";
@@ -449,10 +450,14 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
 // Europe PMC refusing every full text with a Retry-After of `seconds`,
 // from the run's first paper or from the start of the snapshot on, however
 // the snapshot draws gold set A. It records each request sent before the
-// last refusal's wait had passed. The local runner moves Date.now() on
-// through each durable wait.
-function refusingFor(seconds: number, from: "run" | "snapshot") {
-  const fake = fakeDeps();
+// last refusal's wait had passed, and when that wait ends. The local
+// runner moves Date.now() on through each durable wait.
+function refusingFor(
+  seconds: number,
+  from: "run" | "snapshot",
+  options: FakeOptions = {},
+) {
+  const fake = fakeDeps(options);
   const real = fake.deps.europePmc;
   let refusing = from === "run";
   const hasSnapshot = fake.deps.text.hasSnapshot.bind(fake.deps.text);
@@ -489,7 +494,7 @@ function refusingFor(seconds: number, from: "run" | "snapshot") {
       );
     },
   };
-  return { fake, early, refused };
+  return { fake, early, refused, notBefore: () => notBefore };
 }
 
 // Europe PMC refusing only the run's last paper, with a Retry-After of two
@@ -658,6 +663,23 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
       expect(ended - started).toBeGreaterThanOrEqual(
         (retried + seconds) * 1000,
       );
+    },
+  );
+
+  it.each([300, 7200])(
+    "ends only once a refused last gold set A paper's Retry-After of %is has been waited out, when gold set B lists no papers and the manifest write fails (#284)",
+    async (seconds) => {
+      const { fake, early, notBefore } = refusingFor(seconds, "snapshot", {
+        gold: { goldB: { ...FAKE_GOLD.goldB, papers: [] } },
+      });
+      fake.deps.text.putManifest = () =>
+        Promise.reject(new Error("S3 answered 503"));
+      const { status, result, ended } = await runWith(fake);
+      expect(status).toBe("SUCCEEDED");
+      expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
+      expect(early).toEqual([]);
+      expect(notBefore()).toBeGreaterThan(0);
+      expect(ended).toBeGreaterThanOrEqual(notBefore());
     },
   );
 
