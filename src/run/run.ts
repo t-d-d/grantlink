@@ -18,7 +18,13 @@ import {
 } from "../pipeline/steps.ts";
 import { batches } from "../shared/batches.ts";
 import { logOnly } from "./log-only.ts";
-import { askEuropePmc, type Asked, type Owed } from "./owed.ts";
+import {
+  askEuropePmc,
+  askForPaper,
+  type Asked,
+  type Owed,
+  type PaperAsked,
+} from "./owed.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 
@@ -72,26 +78,35 @@ async function readBatch(
   for (const pmcid of pmcids) {
     if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
     due = null;
-    let asked: Asked<{ references: number }>;
+    let asked: PaperAsked<{ references: number }>;
     try {
-      asked = await askEuropePmc(
+      asked = await askForPaper(
         ctx,
         `paper-${pmcid}`,
         `wait-${pmcid}`,
         paperRetry,
+        () => deps.europePmc.sent(),
         async () => readPaper(deps, pmcid, runId),
       );
-    } catch {
-      asked = { owed: null };
+    } catch (error) {
+      // The step returns a paper's own failure, so what reaches here is the
+      // step failing around it, as when its result cannot be checkpointed,
+      // and how many requests or tries it took is unknown. An error the SDK
+      // raises for itself is thrown as it is, as the search does.
+      if (!(error instanceof DurableOperationError)) throw error;
+      asked = { failed: { why: "code" }, owed: null };
     }
     if ("read" in asked) {
       read += 1;
       continue;
     }
     failed += 1;
-    await ctx.step(`failed-${pmcid}`, async () => markFailed(deps, pmcid), {
-      retryStrategy: storeRetry,
-    });
+    const { failed: failure } = asked;
+    await ctx.step(
+      `failed-${pmcid}`,
+      async () => markFailed(deps, pmcid, failure),
+      { retryStrategy: storeRetry },
+    );
     // Europe PMC asked the run to wait before it asks again, so whatever
     // asks it next waits first (docs/constraints/europe-pmc.md).
     due = asked.owed;

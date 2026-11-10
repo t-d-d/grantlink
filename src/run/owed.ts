@@ -2,6 +2,7 @@ import type {
   DurableContext,
   RetryDecision,
 } from "@aws/durable-execution-sdk-js";
+import { readOrFailed, type PaperFailure } from "../pipeline/failure.ts";
 import { readOrRefused } from "../pipeline/refused.ts";
 
 // A wait Europe PMC asked for when it refused a paper, not yet waited. The
@@ -40,6 +41,38 @@ export async function askEuropePmc<T>(
   );
   if ("read" in outcome) return { read: outcome.read };
   return {
+    owed:
+      outcome.waitSeconds > 0
+        ? { name: wait, seconds: outcome.waitSeconds }
+        : null,
+  };
+}
+
+// What a step that reads a paper leaves: what it read, or why the paper
+// failed and the wait Europe PMC's refusal leaves owed, if any.
+export type PaperAsked<T> = { read: T } | { failed: PaperFailure; owed: Owed };
+
+// As askEuropePmc, for one paper: when the step gives up, it returns why
+// the paper failed, how many requests its last try sent by `sent`, Europe
+// PMC's client's count, and how many tries it made, rather than throwing,
+// so the run can log them (#378). The durable lint rules know it as they
+// know askEuropePmc (STEP_HELPERS in eslint-rules/create-rule.ts).
+export async function askForPaper<T>(
+  ctx: DurableContext,
+  step: string,
+  wait: string,
+  retry: (error: Error, attempt: number) => RetryDecision,
+  sent: () => number,
+  read: () => Promise<T>,
+): Promise<PaperAsked<T>> {
+  const outcome = await ctx.step(
+    step,
+    async ({ attempt }) => readOrFailed(attempt, retry, sent, read),
+    { retryStrategy: retry },
+  );
+  if ("read" in outcome) return { read: outcome.read };
+  return {
+    failed: outcome.failed,
     owed:
       outcome.waitSeconds > 0
         ? { name: wait, seconds: outcome.waitSeconds }

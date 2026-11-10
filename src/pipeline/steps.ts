@@ -1,6 +1,7 @@
 import type { goldA, goldB } from "../../evals/gold.ts";
 import type { EuropePmc, SearchPaper } from "../europepmc/client.ts";
 import { fundingSections } from "../europepmc/jats.ts";
+import type { PaperFailure } from "./failure.ts";
 import { findReferences, RULES_VERSION } from "../extract/rules.ts";
 import { logger } from "../log.ts";
 import { summarise } from "../page/found.ts";
@@ -195,9 +196,24 @@ export async function recordSearch(deps: Deps, runId: string): Promise<void> {
   logger.info("search-recorded", { runId });
 }
 
-export async function markFailed(deps: Deps, pmcid: string): Promise<void> {
+// Marks a paper failed, and logs why and how hard the run tried (#378).
+export async function markFailed(
+  deps: Deps,
+  pmcid: string,
+  failure: PaperFailure,
+): Promise<void> {
   await deps.table.markFailed(pmcid);
-  logger.warn("paper-failed", { pmcid });
+  logger.warn("paper-failed", { pmcid, ...failure });
+}
+
+// Logs a gold paper the snapshot could not read, and its set, as a run
+// logs a paper that fails (#378).
+export function logGoldPaperFailed(
+  pmcid: string,
+  set: "A" | "B",
+  failure: PaperFailure,
+): void {
+  logger.warn("gold-paper-failed", { pmcid, set, ...failure });
 }
 
 export type Published =

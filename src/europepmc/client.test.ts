@@ -498,3 +498,60 @@ describe("a title as plain text", () => {
     expect(plainTitle(`${"€".repeat(499)}😀`)).toBe("€".repeat(499));
   });
 });
+
+// Why a request failed and how many the client sent, so a run can log
+// them for a paper that fails (#378).
+describe("what a failed request leaves", () => {
+  it("keeps the status of Europe PMC's last answer when it gives up", async () => {
+    const { client } = harness(() => new Response("", { status: 500 }));
+    const error = await client.fullText("PMC1").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(EuropePmcError);
+    expect(error).toMatchObject({ last: 500 });
+    expect(client.sent()).toBe(5);
+  });
+
+  it("keeps the status of an answer it does not retry", async () => {
+    const { client } = harness(() => new Response("", { status: 404 }));
+    const error = await client.fullText("PMC1").catch((e: unknown) => e);
+    expect(error).toMatchObject({ last: 404 });
+    expect(client.sent()).toBe(1);
+  });
+
+  it("says when the last request could not connect", async () => {
+    const { client } = harness(() => {
+      throw new TypeError("fetch failed");
+    });
+    const error = await client.fullText("PMC1").catch((e: unknown) => e);
+    expect(error).toMatchObject({ last: "connection" });
+  });
+
+  it("says when the last request timed out", async () => {
+    const { client } = harness(() => {
+      throw new DOMException("The operation timed out.", "TimeoutError");
+    });
+    const error = await client.fullText("PMC1").catch((e: unknown) => e);
+    expect(error).toMatchObject({ last: "timeout" });
+  });
+
+  it("says nothing was answered when a wait still owed stops the request", async () => {
+    const { client, clock } = harness(
+      () =>
+        new Response("", { status: 429, headers: { "Retry-After": "7200" } }),
+    );
+    await client.fullText("PMC1").catch(() => undefined);
+    await clock.sleep(60_000);
+    const error = await client.fullText("PMC2").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(EuropePmcError);
+    expect((error as EuropePmcError).last).toBeUndefined();
+    expect(client.sent()).toBe(1);
+  });
+
+  it("counts every request it sends, answered or not", async () => {
+    const { client } = harness((_, call) =>
+      call === 0 ? new Response("", { status: 503 }) : ok(),
+    );
+    await client.fullText("PMC1");
+    await client.fullText("PMC2");
+    expect(client.sent()).toBe(3);
+  });
+});

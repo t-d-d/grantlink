@@ -4,6 +4,7 @@ import {
 } from "@aws/durable-execution-sdk-js";
 import {
   checkWholeSearch,
+  logGoldPaperFailed,
   logGoldSearchEnded,
   type Deps,
   type KnownSnapshotFailure,
@@ -18,7 +19,13 @@ import {
   type Taken,
 } from "../pipeline/snapshot.ts";
 import { logOnly } from "./log-only.ts";
-import { askEuropePmc, type Asked, type Owed } from "./owed.ts";
+import {
+  askEuropePmc,
+  askForPaper,
+  type Asked,
+  type Owed,
+  type PaperAsked,
+} from "./owed.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 
 // Takes the eval snapshot named in the deps' gold, once
@@ -61,17 +68,23 @@ async function takeBatch(
   for (const pmcid of pmcids) {
     if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
     due = null;
-    let asked: Asked<Taken>;
+    let asked: PaperAsked<Taken>;
     try {
-      asked = await askEuropePmc(
+      asked = await askForPaper(
         ctx,
         `gold-${set}-${pmcid}`,
         `gold-${set}-${pmcid}-wait`,
         paperRetry,
+        () => deps.europePmc.sent(),
         async () => snapshotPaper(deps, pmcid, set),
       );
-    } catch {
-      asked = { owed: null };
+    } catch (error) {
+      // The step returns a paper's own failure, so what reaches here is the
+      // step failing around it, as when its result cannot be checkpointed,
+      // and how many requests or tries it took is unknown. An error the SDK
+      // raises for itself is thrown as it is, as the search does.
+      if (!(error instanceof DurableOperationError)) throw error;
+      asked = { failed: { why: "code" }, owed: null };
     }
     if ("read" in asked) {
       if (asked.read.kept) entries.push(asked.read.entry);
@@ -79,6 +92,10 @@ async function takeBatch(
       continue;
     }
     failed += 1;
+    const { failed: failure } = asked;
+    await logOnly(ctx, `gold-${set}-${pmcid}-failed`, () => {
+      logGoldPaperFailed(pmcid, set, failure);
+    });
     // As in a run's batch: nothing more goes to Europe PMC until the wait
     // it asked for has passed.
     due = asked.owed;
