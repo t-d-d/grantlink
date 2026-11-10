@@ -2,10 +2,11 @@ import { StepError, type DurableContext } from "@aws/durable-execution-sdk-js";
 import { describe, expect, it } from "vitest";
 import { logOnly } from "./log-only.ts";
 
-// A context whose every step ends with `outcome`.
+// A context whose every step ends with `outcome`. Only logOnly's await of
+// the step matters here, so a plain promise stands in for the SDK's.
 function contextWhoseStep(outcome: () => Promise<unknown>): DurableContext {
   const ctx: Pick<DurableContext, "step"> = {
-    step: outcome as DurableContext["step"],
+    step: outcome as unknown as DurableContext["step"],
   };
   return ctx as DurableContext;
 }
