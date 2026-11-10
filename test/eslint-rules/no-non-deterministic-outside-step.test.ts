@@ -1214,6 +1214,26 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "draws random from Math given as the default when the initial value starts at another holder",
+          code: `async function run(ctx: any) { const { foo: M = Math } = Date; M.random(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
+        },
+        {
+          name: "draws random destructured from Math given as a nested default when the initial value starts at another holder",
+          code: `async function run(ctx: any) { const { foo: { random: r } = Math } = Date; r(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
+        },
+        {
           name: "passes Date on as a default when the name follows Math from its initial value",
           code: `async function run(ctx: any) { const { Math: M = Date } = globalThis; }`,
           errors: [

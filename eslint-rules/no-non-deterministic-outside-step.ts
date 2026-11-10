@@ -30,8 +30,9 @@ import type { Resolver } from "./create-rule.ts";
 // reports only where it is used, `D()` or `ids.map(D)`, unless it is
 // exported, `export const D = Date`. Then it also reports where it is
 // declared, so `D()` in the same module gives a second report. A name with a
-// default, `const { foo: D = Date } = x`, is followed to the default when its
-// initial value holds no source, and reports as an alias does. A report at
+// default, `const { foo: D = Date } = x`, is followed to the default when the
+// default names a source, or an object that holds one, and its initial value
+// does not, and reports as an alias does. A report at
 // an export, which cannot move inside a step, says the source passes to
 // another module instead.
 const NON_DETERMINISTIC: Readonly<Record<string, ReadonlySet<string>>> = {
@@ -244,15 +245,19 @@ function sourcesOf(
   });
 }
 
-// The value the rule follows a destructured name to: the first that starts
-// at an object holding a clock or random source, such as the default in
-// `const { foo: M = Math } = globalThis`, or else the initial value. A name
-// with a default may hold either, and a path here only makes the rule
-// refuse, so the rule follows the one that may read a source.
+// The value the rule follows a destructured name to: the first that names a
+// clock or random source, `Date` or an object holding one, such as the
+// default in `const { foo: M = Math } = Date`, then the first that starts at
+// such an object, or else the initial value. A name with a default may hold
+// either, and a path here only makes the rule refuse, so the rule follows
+// the one that may read a source.
 function followed(sources: readonly Source[] | null): Source | null {
   if (sources === null) return null;
   return (
-    sources.find((source) => HOLDERS.has(source.path?.[0] ?? "")) ??
+    sources.find(
+      ({ path }) => opOf(path) !== undefined || holderOf(path) !== undefined,
+    ) ??
+    sources.find(({ path }) => HOLDERS.has(path?.[0] ?? "")) ??
     sources[0] ??
     null
   );
