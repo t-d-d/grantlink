@@ -661,6 +661,29 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
     },
   );
 
+  it.each([300, 7200])(
+    "fails only once a refusal of the run's search with a Retry-After of %is has been waited out (#264)",
+    async (seconds) => {
+      const fake = fakeDeps({
+        search: () => reply("", 429, { "Retry-After": String(seconds) }),
+      });
+      const started = Date.now();
+      const { status, error, ended, retryDelays } = await runWith(fake);
+      expect(status).toBe("FAILED");
+      expect(error).toContain("Europe PMC refused the run's search");
+      expect(fake.site.files).toBeUndefined();
+      // The step's own retries wait first, then the run waits out the wait
+      // its last refusal asked for before it fails.
+      const retried = retryDelays("search-0").reduce(
+        (sum, delay) => sum + delay,
+        0,
+      );
+      expect(ended - started).toBeGreaterThanOrEqual(
+        (retried + seconds) * 1000,
+      );
+    },
+  );
+
   it("never asks again sooner than its first wait, with no Retry-After", async () => {
     const search = await runWith(fakeDeps({ search: () => reply("", 503) }));
     const paper = await runWith(
