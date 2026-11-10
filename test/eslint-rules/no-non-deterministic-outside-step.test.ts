@@ -310,7 +310,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export const o = { m: Math };`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Math" },
               line: 1,
             },
@@ -780,6 +780,86 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
               messageId: "exportedOutsideStep",
               data: { op: "Math" },
               line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in an array literal in its declaration",
+          filename: "src/run/run.ts",
+          code: `declare const cond: boolean;
+          export const a = [Math];`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest from an array literal in its declaration",
+          filename: "src/run/run.ts",
+          code: `declare const cond: boolean;
+          export const [{ ...m }] = [Math];`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in a conditional in its declaration",
+          filename: "src/run/run.ts",
+          code: `declare const cond: boolean;
+          export const c = cond ? Math : 1;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in a logical expression in its declaration",
+          filename: "src/run/run.ts",
+          code: `declare const cond: boolean;
+          export const l = Math || 1;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in a conditional by assignment",
+          filename: "src/run/run.ts",
+          code: `declare const cond: boolean;
+          export let m;
+          m = cond ? Math : 1;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest in a for-of target",
+          filename: "src/run/run.ts",
+          code: `declare const cond: boolean;
+          export let m;
+          for ({ ...m } of [Math]);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 3,
             },
           ],
         },

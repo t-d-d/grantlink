@@ -491,9 +491,19 @@ function exportedSource(
   resolver: Resolver,
   holder = false,
 ): boolean {
-  const outer = outermost(node);
-  const assigned = assignedTo(outer);
+  const value = heldBy(outermost(node));
+  const assigned = assignedTo(value);
   if (assigned !== null) return assignsExported(assigned, resolver);
+  // Inside a literal the pattern takes the literal apart, not the source,
+  // so any name it declares may carry the source.
+  const passes = (
+    declarator: TSESTree.VariableDeclarator,
+    pattern: TSESTree.Node,
+  ): boolean =>
+    value.literal
+      ? exportsName(declarator, resolver)
+      : exportsPassed(declarator, pattern, resolver, holder);
+  const outer = value.node;
   const parent = outer.parent;
   switch (parent?.type) {
     case AST_NODE_TYPES.ExportDefaultDeclaration:
@@ -501,17 +511,11 @@ function exportedSource(
     case AST_NODE_TYPES.TSExportAssignment:
       return parent.expression === outer;
     case AST_NODE_TYPES.VariableDeclarator:
-      return (
-        parent.init === outer &&
-        exportsPassed(parent, parent.id, resolver, holder)
-      );
+      return parent.init === outer && passes(parent, parent.id);
     case AST_NODE_TYPES.AssignmentPattern: {
       if (parent.right !== outer) return false;
       const declarator = followedDeclarator(parent);
-      return (
-        declarator !== null &&
-        exportsPassed(declarator, parent.left, resolver, holder)
-      );
+      return declarator !== null && passes(declarator, parent.left);
     }
     default:
       return false;
@@ -523,28 +527,79 @@ function exportedSource(
 // a new value and not the source.
 const PASSES_VALUE = new Set(["=", "||=", "&&=", "??="]);
 
-// The target of an assignment that gives the value to names: its left side
-// when the value is its right side, `m = Math`, or an element or member of
-// a literal there, `[{ ...m }] = [Math]` or `m = { x: Math }`, and the
+// The value that holds a source, climbed out through the expressions whose
+// value may be the source or hold it: an element or member of a literal,
+// `[Math]`, `{ m: Math }` or `{ ...Math }`, an arm of a conditional,
+// `cond ? Math : 1`, and a side of a logical expression that it may give,
+// `Math || 1`, but not the left of `&&`, which gives the source only when
+// it is falsy. `literal` says the climb passed through a literal, and
+// `array` that it passed through an array's element, which a for-of hands
+// to its target.
+interface Held {
+  readonly node: TSESTree.Node;
+  readonly literal: boolean;
+  readonly array: boolean;
+}
+
+function heldBy(outer: TSESTree.Node): Held {
+  let node = outer;
+  let literal = false;
+  let array = false;
+  for (;;) {
+    const parent = node.parent;
+    if (parent === undefined) return { node, literal, array };
+    switch (parent.type) {
+      case AST_NODE_TYPES.ArrayExpression:
+        array = true;
+        literal = true;
+        break;
+      case AST_NODE_TYPES.ObjectExpression:
+      case AST_NODE_TYPES.SpreadElement:
+        literal = true;
+        break;
+      case AST_NODE_TYPES.Property:
+        if (
+          parent.value !== node ||
+          parent.parent.type !== AST_NODE_TYPES.ObjectExpression
+        ) {
+          return { node, literal, array };
+        }
+        break;
+      case AST_NODE_TYPES.ConditionalExpression:
+        if (parent.test === node) return { node, literal, array };
+        break;
+      case AST_NODE_TYPES.LogicalExpression:
+        if (parent.operator === "&&" && parent.left === node) {
+          return { node, literal, array };
+        }
+        break;
+      default:
+        return { node, literal, array };
+    }
+    node = outermost(parent);
+  }
+}
+
+// The target of an assignment that gives the held value to names: its left
+// side when the value is its right side, `m = Math`, `[{ ...m }] = [Math]`
+// or `m = cond ? Math : 1`, the target of a for-of when the value is an
+// element of the array it walks, `for ({ ...m } of [Math])`, and the
 // pattern a default fills when the value is a default in its left side,
 // `{ ...m }` in `({ a, x: { ...m } = Math } = globalThis)`. Null for
 // anything else, such as a declaration, which exportsName reads, or a
 // parameter's default.
-function assignedTo(outer: TSESTree.Node): TSESTree.Node | null {
-  let n = outer;
-  while (
-    n.parent?.type === AST_NODE_TYPES.ArrayExpression ||
-    n.parent?.type === AST_NODE_TYPES.SpreadElement ||
-    (n.parent?.type === AST_NODE_TYPES.Property &&
-      n.parent.value === n &&
-      n.parent.parent.type === AST_NODE_TYPES.ObjectExpression) ||
-    n.parent?.type === AST_NODE_TYPES.ObjectExpression
-  ) {
-    n = outermost(n.parent);
-  }
+function assignedTo(value: Held): TSESTree.Node | null {
+  const n = value.node;
   const parent = n.parent;
   if (parent?.type === AST_NODE_TYPES.AssignmentExpression) {
     return parent.right === n && PASSES_VALUE.has(parent.operator)
+      ? parent.left
+      : null;
+  }
+  if (parent?.type === AST_NODE_TYPES.ForOfStatement) {
+    return value.array &&
+      parent.right === n &&
+      parent.left.type !== AST_NODE_TYPES.VariableDeclaration
       ? parent.left
       : null;
   }
