@@ -1,4 +1,13 @@
-import { posix, relative, resolve, sep } from "node:path";
+import { realpathSync } from "node:fs";
+import {
+  basename,
+  dirname,
+  join,
+  posix,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AST_NODE_TYPES,
@@ -313,14 +322,28 @@ export function lookup(
 }
 
 // The repo's root: the directory that holds eslint.config.js and this
-// folder of rules.
-const root = fileURLToPath(new URL("..", import.meta.url));
+// folder of rules, as its real path.
+const root = realPath(fileURLToPath(new URL("..", import.meta.url)));
 
 // The file's path from the repo's root, with forward slashes, wherever
 // ESLint runs. A relative filename is relative to the directory ESLint runs
-// in, so it is resolved from there first.
+// in, so it is resolved from there first. ESLint gives the path the editor
+// or shell used, which may pass through a symlink, so it is compared to the
+// root as its real path (#402).
 export function repoPath(context: { filename: string; cwd: string }): string {
-  return relative(root, resolve(context.cwd, context.filename))
+  return relative(root, realPath(resolve(context.cwd, context.filename)))
     .split(sep)
     .join("/");
+}
+
+// An absolute path with every symlink resolved. An editor lints a buffer
+// that may not be saved yet, so a file or folder that is not on disk keeps
+// its name under its parent's real path.
+function realPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(realPath(parent), basename(path));
+  }
 }
