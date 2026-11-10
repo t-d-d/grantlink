@@ -87,9 +87,12 @@ async function readBatch(
         () => deps.europePmc.sent(),
         async () => readPaper(deps, pmcid, runId),
       );
-    } catch {
-      // The step returns a paper's own failure, so this is a fault in the
-      // code around it, and how many requests or tries it took is unknown.
+    } catch (error) {
+      // The step returns a paper's own failure, so what reaches here is the
+      // step failing around it, as when its result cannot be checkpointed,
+      // and how many requests or tries it took is unknown. An error the SDK
+      // raises for itself is thrown as it is, as the search does.
+      if (!(error instanceof DurableOperationError)) throw error;
       asked = { failed: { why: "code" }, owed: null };
     }
     if ("read" in asked) {

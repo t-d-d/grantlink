@@ -40,6 +40,16 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         }`,
       },
       {
+        name: "awaits I/O inside askForPaper's read, which runs as its step",
+        filename: "src/run/run.ts",
+        code: `import { askForPaper } from "./owed.ts";
+        async function run(ctx: any) {
+          await askForPaper(ctx, "paper", "wait", r, () => sent(), async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
         name: "awaits askEuropePmc imported under another name",
         filename: "src/run/run.ts",
         code: `import { askEuropePmc as ask } from "./owed.ts";
@@ -118,6 +128,15 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
           { messageId: "awaitOutsideStep" },
           { messageId: "awaitOutsideStep" },
         ],
+      },
+      {
+        name: "awaits I/O in askForPaper's step name, which the body evaluates",
+        filename: "src/run/run.ts",
+        code: `import { askForPaper } from "./owed.ts";
+        async function run(ctx: any) {
+          await askForPaper(ctx, await nameFor(), "wait", r, () => 0, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
       },
       {
         name: "awaits a function of the same name from another module",

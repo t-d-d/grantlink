@@ -58,6 +58,11 @@ describe("readOrFailed", () => {
       new EuropePmcError("x", undefined, 90),
       { why: "waiting" },
     ],
+    [
+      "a reply whose body timed out as it was read",
+      new DOMException("The operation timed out.", "TimeoutError"),
+      { why: "timeout" },
+    ],
     ["a fault in the code", new Error("the table refused"), { why: "code" }],
   ])(
     "returns %s, how many requests it sent and on which try, when the step gives up",
@@ -70,7 +75,7 @@ describe("readOrFailed", () => {
           return Promise.reject(error);
         }),
       ).resolves.toEqual({
-        failed: { ...why, requests: 2, tries: 3 },
+        failed: { ...why, requestsLastTry: 2, tries: 3 },
         waitSeconds:
           error instanceof EuropePmcError ? (error.waitSeconds ?? 0) : 0,
       });
@@ -83,7 +88,7 @@ describe("readOrFailed", () => {
     await expect(
       readOrFailed(1, giveUp, sent, () => Promise.reject(refusal)),
     ).resolves.toEqual({
-      failed: { why: "answered", status: 429, requests: 0, tries: 1 },
+      failed: { why: "answered", status: 429, requestsLastTry: 0, tries: 1 },
       waitSeconds: 7200,
     });
   });

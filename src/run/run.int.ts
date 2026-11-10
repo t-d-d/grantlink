@@ -1182,7 +1182,7 @@ describe("a paper that fails logs why (#378)", () => {
       }),
     );
 
-  it("logs its PMCID, the status of Europe PMC's last answer, and how many requests and tries it took", async () => {
+  it("logs its PMCID, the status of Europe PMC's last answer, how many tries it took, and how many requests its last try sent", async () => {
     const fake = fakeDeps({ search: unreadable });
     fake.deps.text.hasSnapshot = () => Promise.resolve(true);
     const { status, result } = await runWith(fake);
@@ -1193,13 +1193,13 @@ describe("a paper that fails logs why (#378)", () => {
         pmcid: "PMC0000099",
         why: "answered",
         status: 503,
-        requests: 5,
+        requestsLastTry: 5,
         tries: 3,
       }),
     ]);
   });
 
-  it("logs a paper Europe PMC has no full text for after one request and one try", async () => {
+  it("logs a paper Europe PMC has no full text for after one try", async () => {
     const fake = fakeDeps({ search: unreadable });
     fake.deps.text.hasSnapshot = () => Promise.resolve(true);
     const real = fake.deps.europePmc;
@@ -1259,7 +1259,7 @@ describe("a paper that fails logs why (#378)", () => {
         set: "B",
         why: "answered",
         status: 503,
-        requests: 5,
+        requestsLastTry: 5,
         tries: 3,
       }),
     ]);

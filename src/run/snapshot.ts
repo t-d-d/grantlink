@@ -77,8 +77,12 @@ async function takeBatch(
         () => deps.europePmc.sent(),
         async () => snapshotPaper(deps, pmcid, set),
       );
-    } catch {
-      // As in a run's batch: a fault in the code around the step.
+    } catch (error) {
+      // The step returns a paper's own failure, so what reaches here is the
+      // step failing around it, as when its result cannot be checkpointed,
+      // and how many requests or tries it took is unknown. An error the SDK
+      // raises for itself is thrown as it is, as the search does.
+      if (!(error instanceof DurableOperationError)) throw error;
       asked = { failed: { why: "code" }, owed: null };
     }
     if ("read" in asked) {
