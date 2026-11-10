@@ -82,15 +82,16 @@ export function sameGrant(found: string, expected: string): boolean {
 // CRUK's reference forms (#503): a C/A pair; an award number of 4 to 6
 // digits, with or without its A; a Crick core funding number; a newer
 // reference of letters, sometimes with a year or a month, then a slash and
-// a number; or one that starts with CRUK. A C part alone names a
-// programme, and another funder's reference or a word is not CRUK's, so
-// none of those is an answer.
+// a number; or one that starts with CRUK and has a letter or a digit after
+// it. A C part alone names a programme, and another funder's reference, a
+// word or the bare abbreviation CRUK is not CRUK's, so none of those is an
+// answer.
 const CRUK_FORMS = [
   /^C\d+\/A\d+$/u,
   /^A?\d{4,6}$/u,
   /^(?:FC|CC)\d+$/u,
   /^[A-Z]+(?:-?(?:(?:19|20)\d{2}|(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}))?\/\d+$/u,
-  /^CRUK/u,
+  /^CRUK[^A-Z0-9]*[A-Z0-9]/u,
 ];
 
 export function crukReference(id: string): boolean {
