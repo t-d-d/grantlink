@@ -5,9 +5,10 @@ import { readRepoFile, repoFiles } from "./repo.ts";
 
 // The scheduled conformance run (#56). The conformance files read setup
 // outside the repo, such as GitHub's record of the repository, the prod
-// environment's branch rule and the funding text bucket's settings, so a
-// rename, a transfer or a changed setting shows up on a schedule and not
-// only when a deploy fails.
+// environment's branch rule, the funding text bucket's settings and
+// governor's wait ticket, so a rename, a transfer, a changed setting or a
+// closed wait ticket shows up on a schedule and not only when a deploy
+// fails.
 const WORKFLOW = ".github/workflows/conformance.yml";
 
 const Step = z.object({
@@ -70,10 +71,12 @@ describe("the scheduled conformance run", () => {
     expect(conformance[0]?.env?.GITHUB_TOKEN).toBe("${{ github.token }}");
   });
 
-  // Checkout needs contents: read, and the repository's record needs no
-  // permission. The prod environment and its branch policies need
-  // actions: read. The OIDC token for the conformance role needs
-  // id-token: write.
+  // Checkout needs contents: read. The repository's record and the wait
+  // ticket need no permission while the repository is public. If it goes
+  // private, the wait ticket's read fails until this list and the
+  // workflow grant issues: read. The prod environment and its branch
+  // policies need actions: read. The OIDC token for the conformance role
+  // needs id-token: write.
   it("gives the token only the permissions the files need", () => {
     expect(workflow.permissions).toEqual({
       contents: "read",
