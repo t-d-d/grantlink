@@ -508,6 +508,29 @@ function exportsName(
     .some((declared) => exported(declarator, declared));
 }
 
+// True when a declarator exports the name a pattern's rest declares,
+// `export const { Math: { ...m } } = globalThis` or `export { m }` later.
+// Another name the declarator exports, `export { foo }` after `const { foo,
+// Math: { ...m } } = globalThis`, does not carry the rest.
+function exportsRest(
+  declarator: TSESTree.VariableDeclarator,
+  pattern: TSESTree.ObjectPattern,
+  resolver: Resolver,
+): boolean {
+  const rests = new Set<TSESTree.Node>(
+    pattern.properties.flatMap((property) =>
+      property.type === AST_NODE_TYPES.RestElement ? [property.argument] : [],
+    ),
+  );
+  return resolver.sourceCode
+    .getDeclaredVariables(declarator)
+    .some(
+      (declared) =>
+        declared.identifiers.some((identifier) => rests.has(identifier)) &&
+        exported(declarator, declared),
+    );
+}
+
 // True when a declarator sits in an exported declaration,
 // `export const { now } = Date` or `export const M = Math`.
 function exportedDeclaration(declarator: TSESTree.VariableDeclarator): boolean {
@@ -763,7 +786,9 @@ export const noNonDeterministicOutsideStep = createRule({
       // member that calls `Date` from it, `{ Date: { bind } } = globalThis`,
       // or copies the rest of an object that holds a source,
       // `{ Math: { ...m } } = globalThis`, since the name the rest declares
-      // carries the source on unseen.
+      // carries the source on unseen. When the declaration exports that name,
+      // `export const { Math: { ...m } } = globalThis`, the rest passes to
+      // another module, so that report says so.
       // Destructuring that member straight from `Date`, or from a default
       // `Date`, reports at `Date`, as passedOn says.
       VariableDeclarator(node) {
@@ -787,7 +812,9 @@ export const noNonDeterministicOutsideStep = createRule({
               const holder = keys
                 .map(holderOf)
                 .find((found) => found !== undefined);
-              if (holder !== undefined) report(property.key, holder, false);
+              if (holder !== undefined) {
+                report(property.key, holder, exportsRest(node, inner, context));
+              }
             }
             return false;
           },
