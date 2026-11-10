@@ -60,18 +60,6 @@ describe("the deploy workflow", () => {
     expect(runs("deploy")).toContain("assume-role-with-web-identity");
   });
 
-  it("masks the account id before any line that could print it", () => {
-    const all = steps("deploy");
-    const assume = all.findIndex((step) =>
-      (step.run ?? "").includes("assume-role-with-web-identity"),
-    );
-    const assumeRun = all[assume]?.run ?? "";
-    const accountMask = assumeRun.search(/::add-mask::\$account\b/u);
-    expect(accountMask).toBeGreaterThan(-1);
-    // Nothing after the role is assumed runs before the mask is set.
-    expect(accountMask).toBeLessThan(assumeRun.indexOf("GITHUB_OUTPUT"));
-  });
-
   it("names the deploy job so governor sees each deploy", () => {
     expect(jobs.deploy?.name).toMatch(/ · deployed: grantlink$/u);
     expect(deploy.env?.TICKET_LABEL_PATHS).toBe("all");
@@ -286,10 +274,10 @@ describe("the deploy role's credentials", () => {
   it("are masked before the step writes them out", () => {
     const run = assume?.run ?? "";
     const written = run.indexOf("GITHUB_OUTPUT");
-    for (const name of ["key", "secret", "session"]) {
+    for (const name of ["key", "secret", "session", "account"]) {
       const mask = run.indexOf(`::add-mask::$${name}"`);
-      expect(mask).toBeGreaterThan(-1);
-      expect(mask).toBeLessThan(written);
+      expect(mask, name).toBeGreaterThan(-1);
+      expect(mask, name).toBeLessThan(written);
     }
   });
 

@@ -118,13 +118,13 @@ describe("the run reads the funding text bucket", () => {
   });
 
   // The bucket's name carries the account id, so the id is masked before
-  // the name is built or written where a later step could print it.
+  // the name is built. test/role-credentials.static.ts holds that the mask
+  // comes before the step writes its outputs.
   it("masks the account id, then builds the bucket's name from it", () => {
     const run = assume?.run ?? "";
     const mask = run.search(/::add-mask::\$account\b/u);
     const bucket = run.indexOf('echo "bucket=grantlink-text-$account"');
     expect(mask).toBeGreaterThan(-1);
-    expect(mask).toBeLessThan(run.indexOf("GITHUB_OUTPUT"));
     expect(bucket).toBeGreaterThan(mask);
     expect(run.indexOf("GITHUB_OUTPUT", bucket)).toBeGreaterThan(bucket);
   });
