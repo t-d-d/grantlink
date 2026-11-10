@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { funder, normalise, referenceSchema, wholeReference } from "./rules.ts";
+import {
+  DASH,
+  funder,
+  MONTHS,
+  normalise,
+  referenceSchema,
+  wholeReference,
+} from "./rules.ts";
 import { latest, type Version } from "./versions.ts";
 
 // The model pass: reads a paper's funding text and proposes the grant
@@ -7,8 +14,10 @@ import { latest, type Version } from "./versions.ts";
 // only module that calls OpenRouter or names a model id. Every request names
 // Anthropic as its only provider with fallbacks off, and sends only the
 // funding text, marked as data. Every reference in the reply must appear in
-// that text as written, and is normalised only after that check. Nothing it
-// returns carries the text, so nothing it returns can carry a name
+// that text as written, and is normalised only after that check. A reply
+// that carries a word set apart by spaces, such as a name, is rejected, and
+// so is one with a lower-case letter outside a month in a code, so what it
+// returns is shaped as references and not as text
 // (docs/constraints/personal-data.md).
 
 // The candidates the eval scores beside the rules alone (#329). Each id is
@@ -23,7 +32,11 @@ export type ModelId = (typeof MODELS)[number];
 // Bump this whenever the prompt, or how a reply is read, changes, so every
 // stored result says which prompt made it. To bump, add a line naming your
 // issue at the end of PROMPT_VERSIONS below (see versions.ts, #414).
-export const PROMPT_VERSIONS: readonly Version[] = [{ number: 2, issue: 384 }];
+export const PROMPT_VERSIONS: readonly Version[] = [
+  { number: 2, issue: 384 },
+  { number: 3, issue: 413 },
+  { number: 4, issue: 467 },
+];
 export const PROMPT_VERSION = latest("prompt", PROMPT_VERSIONS);
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
@@ -179,10 +192,58 @@ function givesWhole(text: readonly string[], reference: string): boolean {
   return text.some((paragraph) => whole.test(paragraph));
 }
 
+// A name has lower-case letters, and the codes the rules read are capitals,
+// so a reply with a lower-case letter is refused, however its parts are
+// joined, as in "Smith-Jones 2" or "Example/A12345". The one exception is a
+// month in title case that the rules read in a code: written straight onto
+// the code or after its hyphen, and followed by its year, as in
+// "CTRQQRMar21/100010" or "ABCDEF-Mar21/100010" (#467).
+const MONTH_IN_CODE = new RegExp(
+  `(?<=[A-Z]{4}(?:${DASH} ?)?)(?:${MONTHS})(?=\\d{2}(?:\\d{2})?(?!\\d))`,
+  "gu",
+);
+
+function carriesLowerCase(reference: string): boolean {
+  return /[a-z]/u.test(reference.replace(MONTH_IN_CODE, ""));
+}
+
+// A word of letters alone, between spaces, is not part of a reference,
+// unless the rules read it as part of one too: a prefix the rules read set
+// apart from its number, as in "C 1234" or "FC 001234", or a code of
+// capitals that starts the reference, or that code's suffix after its
+// hyphen, set apart from the separator, as in "DRCMDPA / 100010" or
+// "ABCDEF- XYZW / 100001". So a name or a word joined to a reference, as in
+// "Jo Example A12345" or "Grant 2", is refused (#413), and so are initials
+// before a number, as in "JO 12345" (#467).
+const PREFIX = /^(?:A|C|CC|FC|RT)$/u;
+const CODE = /^[A-Z]{4,12}$/u;
+const CODE_AND_DASH = new RegExp(`^[A-Z]{4,12}${DASH}$`, "u");
+const SUFFIX = /^[A-Z]{2,8}$/u;
+const SEPARATED = /^[/\\∖]/u;
+
+function carriesWord(reference: string): boolean {
+  const words = reference.split(" ");
+  return words.some((word, at) => {
+    if (!/^[A-Za-z]+$/u.test(word)) return false;
+    const next = words[at + 1] ?? "";
+    if (PREFIX.test(word) && /^\d/u.test(next)) return false;
+    if (!SEPARATED.test(next)) return true;
+    if (at === 0) return !CODE.test(word);
+    return !(
+      at === 1 &&
+      CODE_AND_DASH.test(words[0] ?? "") &&
+      SUFFIX.test(word)
+    );
+  });
+}
+
 // Keeps a reference only if the text gives it whole as written, it is made
-// of the characters a reference is made of, and it holds a digit, as every
-// reference does, so a name cannot pass. Any space in it reads as a plain
-// one, as in the text. The check runs before the reference is normalised.
+// of the characters a reference is made of, it holds a digit, as every
+// reference does, and it carries no lower-case letter outside a month and
+// no word, such as a name. The characters
+// alone would let a name through, since they include letters and spaces.
+// Any space in it reads as a plain one, as in the text. The check runs
+// before the reference is normalised.
 function check(
   given: Answer["references"],
   text: readonly string[],
@@ -197,6 +258,8 @@ function check(
     if (
       !written.success ||
       !/\d/u.test(asWritten) ||
+      carriesLowerCase(asWritten) ||
+      carriesWord(asWritten) ||
       !givesWhole(source, asWritten)
     ) {
       rejected += 1;

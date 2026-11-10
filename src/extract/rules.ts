@@ -38,7 +38,11 @@ const DASHES = `${String.fromCodePoint(0x2010)}-${String.fromCodePoint(0x2015)}$
 
 export const referenceSchema = z
   .object({
-    // Only the characters a reference is made of, so a name cannot pass.
+    // Only the characters a reference is made of. These include letters and
+    // spaces, so this alone does not keep out a name: the rules' patterns
+    // match no name, and the model pass refuses a reply that carries a word
+    // set apart by spaces (#413), or a lower-case letter outside a month in
+    // a code (#467).
     asWritten: z
       .string()
       .min(1)
@@ -56,7 +60,8 @@ export const referenceSchema = z
 export type Reference = z.infer<typeof referenceSchema>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-const DASH = `[-${DASHES}]`;
+// The model pass reads a code's hyphen with this too (#413).
+export const DASH = `[-${DASHES}]`;
 // A letter as a class of its upper and lower case, for a pattern whose own
 // letters must keep their case and so cannot take the `i` flag. Any letter
 // folds, not only A to Z (#301). A case that is more than one character, as
@@ -137,7 +142,8 @@ interface Pattern {
   sentenceOnly: boolean;
 }
 
-const MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
+// The model pass reads a month in a code with this too (#467).
+export const MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
 
 const PATTERNS: Pattern[] = [
   {
