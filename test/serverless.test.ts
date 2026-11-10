@@ -144,7 +144,7 @@ describe("what serverless.yml's resources hold that the static checks do not rea
   });
 });
 
-describe("inline resources that change what a template, osls or an earlier inline entry declares (#166, #261)", () => {
+describe("inline resources that change what a template, osls or an earlier inline entry declares (#166, #261, #297)", () => {
   it("finds an inline entry that changes a template's resource", () => {
     expect(
       unread([
@@ -232,6 +232,25 @@ describe("inline resources that change what a template, osls or an earlier inlin
       "entry 5 changes FirstRunRole, which entry 3 declares",
       "entry 5 changes the output FirstRunAt, which entry 3 declares",
     ]);
+  });
+
+  it("finds an inline entry that changes a parameter an earlier inline entry declares (#297)", () => {
+    expect(
+      unread([
+        ...known,
+        { Parameters: { CertificateArn: { Default: "a" } } },
+        { Resources: { FirstRunRole: { Type: "T" } } },
+        { Parameters: { CertificateArn: { Default: "b" } } },
+      ]),
+    ).toEqual([
+      "entry 5 changes the parameter CertificateArn, which entry 3 declares",
+    ]);
+  });
+
+  it("passes an inline parameter that sets a template's default, as serverless.yml does", () => {
+    expect(
+      unread([...known, { Parameters: { CertificateArn: { Default: "a" } } }]),
+    ).toEqual([]);
   });
 
   it("passes a resource of its own, such as FirstRunRole", () => {
