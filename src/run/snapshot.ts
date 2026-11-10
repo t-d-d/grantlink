@@ -140,6 +140,22 @@ export async function takeSnapshot(
       // wait Europe PMC asked for owed, which the run waits out before it
       // ends (#236).
       if ("owed" in asked) {
+        // Logged first, so the results the pages already read skipped
+        // still show in one line (#307).
+        await ctx.step(
+          "snapshot-search-ended",
+          async () => {
+            logGoldSearchEnded(
+              runId,
+              deps.gold.snapshotId,
+              found.length,
+              skipped,
+              true,
+            );
+            return Promise.resolve();
+          },
+          { retryStrategy: storeRetry },
+        );
         return {
           snapshot: {
             taken: false,
@@ -159,7 +175,13 @@ export async function takeSnapshot(
     await ctx.step(
       "snapshot-search-ended",
       async () => {
-        logGoldSearchEnded(runId, deps.gold.snapshotId, found.length, skipped);
+        logGoldSearchEnded(
+          runId,
+          deps.gold.snapshotId,
+          found.length,
+          skipped,
+          false,
+        );
         return Promise.resolve();
       },
       { retryStrategy: storeRetry },

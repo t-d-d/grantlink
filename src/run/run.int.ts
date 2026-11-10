@@ -887,6 +887,7 @@ describe("the eval snapshot (evals.md)", () => {
         snapshotId: FAKE_GOLD.snapshotId,
         found: 3,
         skipped: 1,
+        refused: false,
       }),
     ]);
   });
@@ -901,6 +902,43 @@ describe("the eval snapshot (evals.md)", () => {
         snapshotId: FAKE_GOLD.snapshotId,
         found: 0,
         skipped: 2,
+        refused: false,
+      }),
+    ]);
+  });
+
+  it("logs once how many results the pages it read found and skipped when Europe PMC refuses a later page of gold set A's search (#307)", async () => {
+    const fake = fakeDeps({
+      goldSearch: (cursor) =>
+        cursor === "*"
+          ? reply(
+              JSON.stringify({
+                hitCount: 4,
+                nextCursorMark: "AoE",
+                resultList: {
+                  result: [
+                    { pmcid: "PMC0000001" },
+                    { pmcid: "PMC0000002" },
+                    { pmcid: "PMC 3" },
+                  ],
+                },
+              }),
+            )
+          : reply("", 429, { "Retry-After": "300" }),
+    });
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toEqual({
+      taken: false,
+      reason: "Europe PMC refused gold set A's search",
+    });
+    expect(logged("snapshot-search-ended")).toEqual([
+      expect.objectContaining({
+        runId: result?.runId,
+        snapshotId: FAKE_GOLD.snapshotId,
+        found: 2,
+        skipped: 1,
+        refused: true,
       }),
     ]);
   });
