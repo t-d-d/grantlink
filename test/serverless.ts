@@ -232,9 +232,11 @@ export function mergeKeysIn(value: unknown): string[] {
 // one a template declares or osls generates, since osls merges it over
 // them and the checks that filter by Type would miss the merged one (#166).
 // Nor may it change an output a template declares or osls generates, since
-// the deploy reads the stack's outputs (#243), or hold a section that is
-// not a map, which osls would merge over the whole section. It may use no
-// variable but the cf and env ones. Entries count from 1.
+// the deploy reads the stack's outputs (#243), or change a resource or an
+// output an earlier inline entry declares, which osls would merge over it
+// (#261), or hold a section that is not a map, which osls would merge over
+// the whole section. It may use no variable but the cf and env ones.
+// Entries count from 1.
 export function unreadResources(
   resources: unknown,
   templates: readonly string[],
@@ -243,6 +245,9 @@ export function unreadResources(
   if (!Array.isArray(resources)) return ["resources is not a list"];
   const files = templates.map((path) => `\${file(./${path})}`);
   const known = new Set(files);
+  // The entry that first declares each inline resource and output.
+  const inlineResources = new Map<string, string>();
+  const inlineOutputs = new Map<string, string>();
   const head = files.flatMap((file, index): string[] =>
     resources[index] === file
       ? []
@@ -264,10 +269,12 @@ export function unreadResources(
           ? []
           : [`${at} has ${key} that is not a map`];
       });
-      // Each id in `section` that a template declares or osls generates.
+      // Each id in `section` that a template, osls or an earlier inline
+      // entry declares. The rest are this entry's, for later entries.
       const changes = (
         section: unknown,
         declared: readonly string[],
+        inline: Map<string, string>,
         what: string,
       ): string[] =>
         Object.keys(isPlain(section) ? section : {}).flatMap((id): string[] => {
@@ -275,12 +282,22 @@ export function unreadResources(
             return [`${at} changes ${what}${id}, which a template declares`];
           if (oslsGenerates(id, elsewhere.functions))
             return [`${at} changes ${what}${id}, which osls generates`];
+          const earlier = inline.get(id);
+          if (earlier !== undefined)
+            return [`${at} changes ${what}${id}, which ${earlier} declares`];
+          inline.set(id, at);
           return [];
         });
-      const changed = changes(entry.Resources, elsewhere.declared, "");
+      const changed = changes(
+        entry.Resources,
+        elsewhere.declared,
+        inlineResources,
+        "",
+      );
       const changedOutputs = changes(
         entry.Outputs,
         elsewhere.outputs,
+        inlineOutputs,
         "the output ",
       );
       const variables = variablesIn(entry, []).map(

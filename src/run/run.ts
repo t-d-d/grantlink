@@ -13,8 +13,7 @@ import {
   type Published,
 } from "../pipeline/steps.ts";
 import { batches } from "../shared/batches.ts";
-import { readOrRefused, type Read } from "../pipeline/refused.ts";
-import { owedAfter, type Owed } from "./owed.ts";
+import { askEuropePmc, type Asked, type Owed } from "./owed.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 
@@ -68,20 +67,20 @@ async function readBatch(
   for (const pmcid of pmcids) {
     if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
     due = null;
-    let outcome: Read<{ references: number }> | undefined;
+    let asked: Asked<{ references: number }>;
     try {
-      outcome = await ctx.step(
+      // eslint-disable-next-line grantlink/no-await-outside-step -- askEuropePmc's only await is its step
+      asked = await askEuropePmc(
+        ctx,
         `paper-${pmcid}`,
-        async ({ attempt }) =>
-          readOrRefused(attempt, paperRetry, async () =>
-            readPaper(deps, pmcid, runId),
-          ),
-        { retryStrategy: paperRetry },
+        `wait-${pmcid}`,
+        paperRetry,
+        async () => readPaper(deps, pmcid, runId),
       );
     } catch {
-      outcome = undefined;
+      asked = { owed: null };
     }
-    if (outcome !== undefined && "read" in outcome) {
+    if ("read" in asked) {
       read += 1;
       continue;
     }
@@ -91,7 +90,7 @@ async function readBatch(
     });
     // Europe PMC asked the run to wait before it asks again, so whatever
     // asks it next waits first (docs/constraints/europe-pmc.md).
-    due = owedAfter(`wait-${pmcid}`, outcome);
+    due = asked.owed;
   }
   return { read, failed, owed: due };
 }
@@ -115,11 +114,26 @@ export function makeRun(deps: Deps) {
       const from: string = cursor;
       if (owed !== null) await ctx.wait(owed.name, { seconds: owed.seconds });
       owed = null;
-      const result = await ctx.step(
-        `search-${String(page)}`,
+      const searchStep = `search-${String(page)}`;
+      // eslint-disable-next-line grantlink/no-await-outside-step -- askEuropePmc's only await is its step
+      const searched = await askEuropePmc(
+        ctx,
+        searchStep,
+        `${searchStep}-wait`,
+        europePmcRetry,
         async () => searchPage(deps, from),
-        { retryStrategy: europePmcRetry },
       );
+      // A refused search fails the run, which publishes nothing, but only
+      // once the wait Europe PMC asked for has passed, so a run started
+      // after this one never asks it too soon (#264).
+      if ("owed" in searched) {
+        const wait = searched.owed;
+        if (wait !== null) await ctx.wait(wait.name, { seconds: wait.seconds });
+        throw new Error(
+          `Europe PMC refused the run's search, asked to wait ${String(wait?.seconds ?? 0)}s`,
+        );
+      }
+      const result = searched.read;
       // The table's own step, so a failure to write or read it is retried
       // under the store's strategy and never asks Europe PMC again.
       const todo = await ctx.step(
@@ -181,7 +195,7 @@ export function makeRun(deps: Deps) {
     try {
       ({ snapshot, owed: last } = await ctx.runInChildContext(
         "snapshot",
-        async (child) => takeSnapshot(child, deps, owed),
+        async (child) => takeSnapshot(child, deps, runId, owed),
       ));
     } catch (error) {
       snapshot = { taken: false, reason: "failed" };
