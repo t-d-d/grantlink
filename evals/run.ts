@@ -3,6 +3,12 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import {
+  MODELS,
+  proposeReferences,
+  type ModelId,
+  type ModelResult,
+} from "../src/extract/model.ts";
 import { RULES_VERSION, type FundingSections } from "../src/extract/rules.ts";
 import { FLOORS } from "./floors.ts";
 import {
@@ -14,7 +20,13 @@ import {
   snapshotKeys,
 } from "./gold.ts";
 import { makeReport, verdict, type Report } from "./report.ts";
-import { score, type GoldA, type GoldB, type Scores } from "./score.ts";
+import {
+  score,
+  type GoldA,
+  type GoldB,
+  type ModelPass,
+  type Scores,
+} from "./score.ts";
 
 // The eval runner. It reads the snapshot from a directory laid out as the
 // bucket is, and calls nothing outside the repo: the workflow downloads the
@@ -26,9 +38,17 @@ import { score, type GoldA, type GoldB, type Scores } from "./score.ts";
 // to print the scores, and with a second path to write a report. A report
 // needs FINGERPRINT, COMMIT and RUN_URL, which only CI sets. It prints
 // paper ids and scores, never text.
+//
+// It scores the rules alone, then the rules and each model in MODELS on the
+// same papers, and needs OPENROUTER_KEY whenever a gold paper is scored. In
+// CI that is the eval environment's secret. In a session the proxy puts the
+// key in, so any value will do.
 
-// Only the rules run until the model lands (#24).
+// The release is the rules alone until a run calls the model (#332).
 export const MODEL_ID = "none: rules only";
+
+// How many papers each model reads at once.
+const AT_ONCE = 8;
 
 const sha256 = (data: Buffer | string) =>
   createHash("sha256").update(data).digest("hex");
@@ -67,17 +87,119 @@ type Rows = Report["rows"];
 const asRows = (scores: Scores): Rows =>
   FLOORS.map((floor) => ({ id: floor.id, ...scores.rows[floor.id] }));
 
-export function evaluate(input: {
+// Asks one model for one paper's references, from its funding text only.
+export type Propose = (
+  model: ModelId,
+  text: readonly string[],
+) => Promise<ModelResult>;
+
+export interface Candidate {
+  modelId: ModelId;
+  rows: Rows;
+  // Papers whose reply could not be read after one retry. Ids only.
+  unprocessed: string[];
+}
+
+// Runs fn over every item, at most `limit` at a time, keeping their order.
+async function inTurn<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      out[index] = await fn(items[index] as T);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
+  return out;
+}
+
+// Each gold paper's id, once, in order.
+const goldIds = (a: readonly GoldA[], b: readonly GoldB[]): string[] => [
+  ...new Set([...a.map((p) => p.pmcid), ...b.map((p) => p.pmcid)]),
+];
+
+async function modelPass(
+  model: ModelId,
+  pmcids: readonly string[],
+  texts: ReadonlyMap<string, FundingSections>,
+  propose: Propose,
+): Promise<ModelPass & { unprocessed: string[] }> {
+  const results = await inTurn(pmcids, AT_ONCE, (pmcid) => {
+    const sections = texts.get(pmcid);
+    if (sections === undefined) {
+      throw new Error(
+        `no text in the snapshot for ${pmcid}: a new gold paper needs a new snapshot id`,
+      );
+    }
+    return propose(model, sections.text);
+  });
+  const found = new Map<string, string[]>();
+  const unprocessed: string[] = [];
+  let spend = 0;
+  results.forEach((result, i) => {
+    const pmcid = pmcids[i] ?? "";
+    spend += result.spend;
+    if (result.status === "unprocessed") unprocessed.push(pmcid);
+    else
+      found.set(
+        pmcid,
+        result.references.map((r) => r.normalised),
+      );
+  });
+  return { found, spend, unprocessed };
+}
+
+const scoreOf = (rows: Rows, id: string): number | null =>
+  rows.find((row) => row.id === id)?.score ?? null;
+
+export async function evaluate(input: {
   texts: ReadonlyMap<string, FundingSections>;
   goldA: readonly GoldA[];
   goldB: readonly GoldB[];
-}): { rows: Rows; baseline: Rows; missedA: string[] } {
-  // The release is the rules alone until the model lands, so the baseline
-  // is the same run.
+  models: readonly ModelId[];
+  propose: Propose;
+}): Promise<{
+  rows: Rows;
+  baseline: Rows;
+  candidates: Candidate[];
+  missedA: string[];
+}> {
+  // The release is the rules alone until a run calls the model, so the
+  // baseline is the same run.
   const release = score(input);
+  const baseline = asRows(release);
+  const pmcids = goldIds(input.goldA, input.goldB);
+  const candidates: Candidate[] = [];
+  for (const model of input.models) {
+    const pass = await modelPass(model, pmcids, input.texts, input.propose);
+    const rows = asRows(score({ ...input, model: pass }));
+    // What the model adds is its recall on gold set B over the rules'.
+    const withModel = scoreOf(rows, "recall-b");
+    const rulesAlone = scoreOf(baseline, "recall-b");
+    const adds =
+      withModel === null || rulesAlone === null
+        ? null
+        : Math.max(0, withModel - rulesAlone);
+    candidates.push({
+      modelId: model,
+      rows: rows.map((row) =>
+        row.id === "model-adds" ? { ...row, score: adds } : row,
+      ),
+      unprocessed: pass.unprocessed,
+    });
+  }
   return {
-    rows: asRows(release),
-    baseline: asRows(release),
+    rows: baseline,
+    baseline,
+    candidates,
     missedA: release.missedA,
   };
 }
@@ -103,11 +225,25 @@ const ciEnv = z.object({
   RUN_URL: z.string().min(1),
 });
 
-function main(dir: string, out: string | undefined): void {
+// Calls the model through the model module, with the key from the
+// environment. The key is read only when a paper is sent.
+const openRouter: Propose = (model, text) => {
+  const key = process.env.OPENROUTER_KEY;
+  if (key === undefined || key === "") {
+    return Promise.reject(
+      new Error("OPENROUTER_KEY is not set, so no model can be scored"),
+    );
+  }
+  return proposeReferences(text, { model, key });
+};
+
+async function main(dir: string, out: string | undefined): Promise<void> {
   const texts = loadSnapshot(dir, pinned);
-  const result = evaluate({
+  const result = await evaluate({
     texts,
     ...goldToScore(pinned, goldA.papers, goldB.papers),
+    models: MODELS,
+    propose: openRouter,
   });
   const meta = out === undefined ? undefined : ciEnv.parse(process.env);
   const report = makeReport({
@@ -131,6 +267,19 @@ function main(dir: string, out: string | undefined): void {
   if (result.missedA.length > 0) {
     console.log(`missed in gold set A: ${result.missedA.join(" ")}`);
   }
+  for (const candidate of result.candidates) {
+    for (const row of candidate.rows) {
+      const shown = row.score === null ? "-" : row.score.toFixed(4);
+      console.log(
+        `${candidate.modelId}\t${row.id}\t${shown}\tn=${String(row.n)}`,
+      );
+    }
+    if (candidate.unprocessed.length > 0) {
+      console.log(
+        `${candidate.modelId} left for the next run: ${candidate.unprocessed.join(" ")}`,
+      );
+    }
+  }
   if (out !== undefined) writeFileSync(out, `${JSON.stringify(report)}\n`);
 }
 
@@ -139,5 +288,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (dir === undefined) {
     throw new Error("usage: node evals/run.ts <snapshot-dir> [<report.json>]");
   }
-  main(dir, out);
+  await main(dir, out);
 }

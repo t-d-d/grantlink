@@ -29,12 +29,27 @@ describe("the eval workflow", () => {
 
   // The private bucket is grantlink-text-<account id>, built from the
   // account the role is in, as the app stack names it (#43).
-  it("reads nothing from GitHub but the eval role's ARN", () => {
+  it("reads nothing from GitHub but the eval role's ARN and the eval's model key", () => {
     const text = readRepoFile(".github/workflows/eval.yml");
     const names = [...text.matchAll(/\b(secrets|vars)\.(\w+)/gu)].map(
       ([, kind, name]) => `${kind ?? ""}.${name ?? ""}`,
     );
-    expect([...new Set(names)]).toEqual(["secrets.AWS_EVAL_ROLE_ARN"]);
+    expect([...new Set(names)].sort()).toEqual([
+      "secrets.AWS_EVAL_ROLE_ARN",
+      "secrets.OPENROUTER_KEY",
+    ]);
+  });
+
+  // The eval's own key, with its own credit limit (#328), reaches only the
+  // step that calls the model.
+  it("gives the model key to the eval's run alone", () => {
+    const holders = steps.filter((step) =>
+      JSON.stringify(step).includes("secrets.OPENROUTER_KEY"),
+    );
+    expect(holders.map((step) => step.name)).toEqual(["Run the eval"]);
+    expect(named("Run the eval")?.env?.OPENROUTER_KEY).toBe(
+      "${{ secrets.OPENROUTER_KEY }}",
+    );
   });
 
   it("builds the private bucket's name from the account it assumed the role in", () => {

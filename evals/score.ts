@@ -64,16 +64,25 @@ export function sameGrant(found: string, expected: string): boolean {
   return [...forms(expected)].some((form) => a.has(form));
 }
 
+// What a model added after the rules: the normalised references it found
+// in each paper, and what it spent over every gold paper, in US dollars.
+export interface ModelPass {
+  found: ReadonlyMap<string, readonly string[]>;
+  spend: number;
+}
+
 interface Input {
   texts: ReadonlyMap<string, FundingSections>;
   goldA: readonly GoldA[];
   goldB: readonly GoldB[];
+  // The rules alone when left out.
+  model?: ModelPass;
 }
 
 const ratio = (part: number, whole: number): number | null =>
   whole === 0 ? null : part / whole;
 
-export function score({ texts, goldA, goldB }: Input): Scores {
+export function score({ texts, goldA, goldB, model }: Input): Scores {
   const found = (pmcid: string): string[] => {
     const sections = texts.get(pmcid);
     if (sections === undefined) {
@@ -81,8 +90,15 @@ export function score({ texts, goldA, goldB }: Input): Scores {
         `no text in the snapshot for ${pmcid}: a new gold paper needs a new snapshot id`,
       );
     }
-    return findReferences(sections).map((reference) => reference.normalised);
+    // The rules first, then what the model adds, each reference once.
+    return [
+      ...new Set([
+        ...findReferences(sections).map((reference) => reference.normalised),
+        ...(model?.found.get(pmcid) ?? []),
+      ]),
+    ];
   };
+  const papers = goldA.length + goldB.length;
 
   let grantsA = 0;
   let recalledA = 0;
@@ -126,10 +142,19 @@ export function score({ texts, goldA, goldB }: Input): Scores {
       // Nothing goes to review until review lands (#26).
       "review-share": { score: null, n: 0 },
       "recall-a": { score: ratio(recalledA, grantsA), n: goldA.length },
-      // Only the rules run until the model lands (#24).
+      // Set by the runner, against the rules alone.
       "model-adds": { score: null, n: goldB.length },
-      // The rules call no model, so they spend nothing.
-      spend: { score: 0, n: goldA.length + goldB.length },
+      // The rules call no model, so they spend nothing. A model's spend is
+      // per 1,000 papers, and unmeasured when it read none.
+      spend: {
+        score:
+          model === undefined
+            ? 0
+            : papers === 0
+              ? null
+              : (model.spend / papers) * 1000,
+        n: papers,
+      },
     },
     missedA,
   };
