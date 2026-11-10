@@ -163,6 +163,15 @@ describe("the gate and the comment", () => {
     expect(comment?.run).toContain("-X PATCH");
   });
 
+  // #298: the step takes only github-actions[bot]'s marker comment. That is
+  // who GITHUB_TOKEN posts as, so another token would never find its own
+  // comment and would post a new one on every run.
+  it("finds its own comment by the login GITHUB_TOKEN posts as", () => {
+    const comment = named("Comment with CI's scores beside the live release's");
+    expect(comment?.env?.GH_TOKEN).toBe("${{ github.token }}");
+    expect(comment?.run).toContain('.user.login == "github-actions[bot]"');
+  });
+
   // #139: the live release filed its report under the fingerprint its own
   // code worked out. A pull request that changes the fingerprint's inputs
   // works out another, so the step takes the report the release record

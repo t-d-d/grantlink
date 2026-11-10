@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { MARKER as marker } from "../evals/check.ts";
 import {
   conformanceWorkflow,
   deploy,
@@ -279,6 +280,52 @@ describe("the eval's comment", () => {
     expect(readFileSync(join(temp, "gh-args"), "utf8")).toBe(
       "api -X PATCH repos/o/r/issues/comments/101 -F body=@comment.md\n",
     );
+  });
+
+  // #298: anyone can comment on a public pull request. A comment from
+  // another user that starts with the marker was taken as the eval's own,
+  // and the PATCH to it was refused. This stub answers a paginated read
+  // with the comments below, run through the step's own --jq filter by
+  // jq, and records every write it is sent.
+  describe("with a marker comment from another user", () => {
+    const comment = (id: number, login: string, body: string) => ({
+      id,
+      user: { login },
+      body,
+    });
+    const gh = (comments: unknown[]) =>
+      [
+        'if [ "$2" = -X ] || [ "$#" -le 4 ]; then echo "$*" >> "$RUNNER_TEMP/gh-args"; exit 0; fi',
+        '[ "$2" = --paginate ] && [ "$4" = --jq ] || exit 9',
+        `jq -r "$5" <<'EOF'\n${JSON.stringify(comments)}\nEOF`,
+      ].join("\n");
+    const written = (comments: unknown[]) => {
+      const { status, stderr, temp } = runStep(
+        run,
+        { ...stubs, gh: gh(comments) },
+        { PR: "1", GITHUB_REPOSITORY: "o/r", NO_LIVE: "no-deploy" },
+      );
+      expect(stderr).toBe("");
+      expect(status).toBe(0);
+      return readFileSync(join(temp, "gh-args"), "utf8");
+    };
+
+    it("updates the bot's comment, not the other user's", () => {
+      expect(
+        written([
+          comment(101, "someone", `${marker}\nnot the eval's`),
+          comment(102, "github-actions[bot]", `${marker}\nscores`),
+        ]),
+      ).toBe(
+        "api -X PATCH repos/o/r/issues/comments/102 -F body=@comment.md\n",
+      );
+    });
+
+    it("posts a new comment when the bot has none", () => {
+      expect(
+        written([comment(101, "someone", `${marker}\nnot the eval's`)]),
+      ).toBe("api repos/o/r/issues/1/comments -F body=@comment.md\n");
+    });
   });
 });
 
