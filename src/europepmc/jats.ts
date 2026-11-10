@@ -217,10 +217,18 @@ const anyAttribute = (
 ): boolean =>
   element.attributes.some((found) => found.name === name && test(found.value));
 
+// The footnote types that mark a footnote as funding text. The check on
+// recorded fixtures expects these values too (#417).
+export const FUNDING_FOOTNOTE_TYPES: readonly string[] = Object.freeze([
+  "financial-disclosure",
+  "funding",
+  "supported-by",
+]);
+
 // Whether a footnote's type marks it as funding text.
 export const FUNDING_FOOTNOTE = (element: XmlElement): boolean =>
   anyAttribute(element, "fn-type", (value) =>
-    ["financial-disclosure", "funding", "supported-by"].includes(value),
+    FUNDING_FOOTNOTE_TYPES.includes(value),
   );
 
 // What sits between a section's opening tag, its sec-meta, its label and its
@@ -233,7 +241,9 @@ const isGap = (node: XmlNode | undefined): boolean =>
     ((node.kind === "text" || node.kind === "cdata") &&
       node.text.trim() === ""));
 
-const FUNDING_TYPE = /^(?:funding|ack|acknowledge?ments?)$/iu;
+// The section types that mark a section as funding text. The check on
+// recorded fixtures expects these values too (#417).
+export const FUNDING_SECTION_TYPE = /^(?:funding|ack|acknowledge?ments?)$/iu;
 
 // A section title as the list below holds it: in lower case, with "&" read
 // as "and" and every other mark of punctuation as a space, each run of white
@@ -311,7 +321,11 @@ function fundingContent(section: XmlElement): XmlNode[] | undefined {
     at += 1;
     skipGaps();
   }
-  if (anyAttribute(section, "sec-type", (value) => FUNDING_TYPE.test(value))) {
+  if (
+    anyAttribute(section, "sec-type", (value) =>
+      FUNDING_SECTION_TYPE.test(value),
+    )
+  ) {
     return children.slice(at);
   }
   if (isLabel(children[at])) {
