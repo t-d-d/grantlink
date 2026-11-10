@@ -3,9 +3,9 @@ import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
 import {
   aliasDeclarator,
   createRule,
+  destructuredKey,
   exportedName,
   insideCheckpointedCallback,
-  keyName,
   lookup,
   memberName,
   unwrapped,
@@ -46,8 +46,8 @@ const MODULES: Readonly<Record<string, readonly string[]>> = {
 const GLOBAL_OBJECT = new Set(["globalThis", "global"]);
 
 // A path read the way the code would read it from the globals, such as
-// `globalThis.Date` or `perf_hooks.performance`, written the way
-// NON_DETERMINISTIC keys it.
+// `globalThis.Date`, `perf_hooks.performance` or `crypto.webcrypto`,
+// written the way NON_DETERMINISTIC keys it.
 function normalised(path: readonly string[]): readonly string[] {
   let rest = path;
   while (rest.length > 1 && GLOBAL_OBJECT.has(rest[0] ?? "")) {
@@ -56,7 +56,25 @@ function normalised(path: readonly string[]): readonly string[] {
   if (rest[0] === "perf_hooks" && rest[1] === "performance") {
     rest = rest.slice(1);
   }
+  if (rest[0] === "crypto" && rest[1] === "webcrypto") {
+    rest = ["crypto", ...rest.slice(2)];
+  }
   return rest;
+}
+
+// True when a declaration is ambient, `declare const performance: ...` or
+// a `var` in `declare global { ... }`: it names a global, not a local.
+function ambient(node: TSESTree.Node): boolean {
+  for (let n: TSESTree.Node | undefined = node; n; n = n.parent) {
+    if (
+      (n.type === AST_NODE_TYPES.VariableDeclaration ||
+        n.type === AST_NODE_TYPES.TSModuleDeclaration) &&
+      n.declare
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // The global path an expression reads, through the wrappers unwrapped takes
@@ -105,17 +123,14 @@ function identifierPath(
     if (declarator.init === null) return null;
     const init = pathOf(declarator.init, resolver, next);
     if (declarator.id === name || init === null) return init;
-    // A name destructured at the top of an object pattern, `{ now } = Date`.
+    // A name destructured at the top of an object pattern, `{ now } = Date`,
+    // with or without a default.
     if (declarator.id.type !== AST_NODE_TYPES.ObjectPattern) return null;
-    const property = declarator.id.properties.find(
-      (p): p is TSESTree.Property =>
-        p.type === AST_NODE_TYPES.Property && p.value === name,
-    );
-    const key =
-      property === undefined ? null : keyName(property.key, property.computed);
+    const key = destructuredKey(declarator.id, name, "with-default");
     return key === null ? null : normalised([...init, key]);
   }
   const def = end.defs[0];
+  if (def !== undefined && ambient(def.node)) return [end.name];
   if (def?.parent?.type !== AST_NODE_TYPES.ImportDeclaration) return null;
   const module = MODULES[def.parent.source.value.replace(/^node:/, "")];
   if (module === undefined) return null;
@@ -134,9 +149,16 @@ function opOf(path: readonly string[] | null): string | undefined {
     : undefined;
 }
 
-// True when the identifier is read as a value, rather than declared or used
-// as a property's name.
+// True when the identifier is read as a value, rather than declared, used
+// as a property's name, named in a type, `typeof randomUUID`, or passed on
+// by an export, `export { randomUUID }`.
 function isRead(identifier: TSESTree.Identifier, resolver: Resolver): boolean {
+  if (
+    identifier.parent.type === AST_NODE_TYPES.TSTypeQuery ||
+    identifier.parent.type === AST_NODE_TYPES.ExportSpecifier
+  ) {
+    return false;
+  }
   return resolver.sourceCode
     .getScope(identifier)
     .references.some((ref) => ref.identifier === identifier && ref.isRead());

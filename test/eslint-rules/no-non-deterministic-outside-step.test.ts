@@ -89,6 +89,17 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           }`,
         },
         {
+          name: "names a random source's type with typeof",
+          code: `import { randomUUID } from "node:crypto";
+          type MakeId = typeof randomUUID;
+          let make: typeof randomUUID | undefined;`,
+        },
+        {
+          name: "re-exports a random source without reading it",
+          code: `import { randomUUID } from "node:crypto";
+          export { randomUUID };`,
+        },
+        {
           name: "parses a fixed date",
           code: `const since = new Date("2020-01-01");`,
         },
@@ -238,6 +249,31 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
         {
           name: "reads performance from a namespace import of perf_hooks",
           code: `import * as hooks from "perf_hooks"; async function run(ctx: any) { const t = hooks.performance.now(); }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "reads the clock from an ambient declaration of performance",
+          code: `declare const performance: { now(): number }; async function run(ctx: any) { const t = performance.now(); }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "draws random from a global declared in declare global",
+          code: `declare global { var crypto: { randomUUID(): string } } async function run(ctx: any) { const id = crypto.randomUUID(); }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "reads the clock destructured from Date with a default",
+          code: `async function run(ctx: any) { const { now = () => 0 } = Date; const at = now(); }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "draws random from a named import of webcrypto",
+          code: `import { webcrypto } from "node:crypto"; async function run(ctx: any) { const b = webcrypto.getRandomValues(new Uint8Array(4)); }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "draws random through crypto.webcrypto",
+          code: `import * as c from "crypto"; async function run(ctx: any) { const id = c.webcrypto.randomUUID(); }`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
         },
       ],
