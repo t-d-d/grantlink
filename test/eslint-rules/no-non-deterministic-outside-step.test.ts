@@ -652,6 +652,18 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "copies Math through a rest in an assignment to a local that shadows an exported name",
+          code: `export let m;
+          { let m; ({ ...m } = Math); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
           name: "exports bind destructured from Date",
           code: `export const { bind } = Date;`,
           errors: [

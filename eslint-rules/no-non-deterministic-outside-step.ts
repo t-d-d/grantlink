@@ -475,9 +475,9 @@ function exportsUnfollowed(
 // a rest, `export const { ...m } = Math` or `export const { foo: { ...m } =
 // Math } = x`, or an assignment of one to an exported name, `({ ...m } =
 // Math)` after `export let m`, or a member that calls `Date`, `export const
-// { bind } = Date`. Its report stands for the export. A call is never one, since
-// `export const d = new Date()` passes on the value it read and not the
-// source.
+// { bind } = Date`. Its report stands for the export. A call is never one,
+// since `export const d = new Date()` passes on the value it read and not
+// the source.
 function exportedSource(node: TSESTree.Node, resolver: Resolver): boolean {
   const outer = outermost(node);
   const parent = outer.parent;
@@ -519,13 +519,11 @@ function exportedBinding(
     identifier.name,
     resolver.sourceCode.getScope(identifier),
   );
-  return (
-    variable !== null &&
-    variable.defs.some(
-      (def) =>
-        def.node.type === AST_NODE_TYPES.VariableDeclarator &&
-        exported(def.node, variable),
-    )
+  if (variable === null) return false;
+  return variable.defs.some(
+    (def) =>
+      def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+      exported(def.node, variable),
   );
 }
 
