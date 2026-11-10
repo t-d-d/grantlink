@@ -130,12 +130,18 @@ export function snapshotFailure(error: unknown): SnapshotFailure {
   );
 }
 
-// Logs why the snapshot failed (#198).
+// Why a snapshot that returned, rather than threw, was not taken: Europe
+// PMC refused gold set A's search, or a gold set B paper failed (#399).
+export type SnapshotLost = "search-refused" | "gold-paper-failed";
+
+// Logs why the snapshot failed (#198), and where one paper caused it, that
+// paper's PMCID and set (#399).
 export function logSnapshotFailed(
   runId: string,
-  reason: SnapshotFailure,
+  reason: SnapshotFailure | SnapshotLost,
+  paper?: { pmcid: string; set: "A" | "B" },
 ): void {
-  logger.warn("snapshot-failed", { runId, reason });
+  logger.warn("snapshot-failed", { runId, reason, ...paper });
 }
 
 // A whole search that skipped results for a malformed PMCID and found no

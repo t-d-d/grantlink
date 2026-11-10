@@ -28,16 +28,17 @@ describe("sampling gold set A", () => {
 
 // A paper with made-up funding text, and the grant ids Europe PMC links it
 // to. Only the calls snapshotPaper makes are answered.
-function paperDeps(grants: string[]) {
+function paperDeps(
+  grants: string[],
+  xml = "<funding-group><funding-statement>Funded by grant A56789.</funding-statement></funding-group>",
+) {
   const calls: string[] = [];
   const stored = new Map<string, string>();
   const deps = {
     europePmc: {
       fullText: (pmcid: string) => {
         calls.push(`fullText ${pmcid}`);
-        return Promise.resolve(
-          "<funding-group><funding-statement>Funded by grant A56789.</funding-statement></funding-group>",
-        );
+        return Promise.resolve(xml);
       },
       grants: (pmcid: string) => {
         calls.push(`grants ${pmcid}`);
@@ -87,5 +88,30 @@ describe("taking one gold paper", () => {
   it("passes over a gold set A paper whose grant ids the manifest cannot hold", async () => {
     const { deps } = paperDeps(["Programme grant 2021"]);
     expect(await snapshotPaper(deps, "PMC11", "A")).toEqual({ kept: false });
+  });
+
+  it("passes over a gold set A paper with no funding text or awards, since its sample walks on", async () => {
+    const { deps, stored } = paperDeps(["A56789"], "<article></article>");
+    expect(await snapshotPaper(deps, "PMC11", "A")).toEqual({ kept: false });
+    expect(stored.size).toBe(0);
+  });
+
+  it("keeps a gold set B paper with no funding text or awards, with its empty sections (#399)", async () => {
+    const { deps, stored } = paperDeps([], "<article></article>");
+    const taken = await snapshotPaper(deps, "PMC11", "B");
+    expect(taken).toEqual({
+      kept: true,
+      entry: {
+        pmcid: "PMC11",
+        set: "B",
+        sha256: expect.any(String) as string,
+        grants: [],
+      },
+    });
+    expect(JSON.parse(stored.get("PMC11") ?? "null")).toEqual({
+      pmcid: "PMC11",
+      text: [],
+      awards: [],
+    });
   });
 });
