@@ -3,6 +3,7 @@ import {
   checkWholeSearch,
   logSearchEnded,
   logSnapshotFailed,
+  snapshotFailure,
   markFailed,
   publish,
   readPaper,
@@ -199,14 +200,9 @@ export function makeRun(deps: Deps) {
       ));
     } catch (error) {
       snapshot = { taken: false, reason: "failed" };
-      // What reaches here is a message this code wrote or a store's or
-      // Europe PMC's client's, made of ids, counts and statuses: a gold
-      // paper's own failure is caught in its batch, so no paper's text is
-      // in it (docs/constraints/personal-data.md). A reply that fails its
-      // schema can list an issue per result, so the message is cut short.
-      const why = (
-        error instanceof Error ? error.message : String(error)
-      ).slice(0, 500);
+      // Only a fixed reason is logged, never the message, which a store's
+      // or Europe PMC's client wrote (docs/constraints/personal-data.md).
+      const why = snapshotFailure(error);
       await ctx.step(
         "snapshot-failed",
         async () => {

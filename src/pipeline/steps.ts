@@ -91,10 +91,32 @@ export function logGoldSearchEnded(
   logger.info("snapshot-search-ended", { runId, snapshotId, found, skipped });
 }
 
-// Logs why the snapshot failed. The caller passes only a message made of
-// ids, counts and statuses, never a paper's text (#198).
-export function logSnapshotFailed(runId: string, error: string): void {
-  logger.warn("snapshot-failed", { runId, error });
+// Why a snapshot failed, as one of a fixed set of reasons. A log line
+// carries ids and counts (docs/constraints/personal-data.md), so the line
+// logs the reason, never the message the snapshot threw, which a store's or
+// Europe PMC's client wrote (#285). The snapshot throws an error whose
+// message is the reason; any other error is unknown.
+export const SNAPSHOT_FAILURES = [
+  "store-failed",
+  "search-failed",
+  "malformed-search",
+] as const;
+export type KnownSnapshotFailure = (typeof SNAPSHOT_FAILURES)[number];
+export type SnapshotFailure = KnownSnapshotFailure | "unknown";
+
+export function snapshotFailure(error: unknown): SnapshotFailure {
+  if (!(error instanceof Error)) return "unknown";
+  return (
+    SNAPSHOT_FAILURES.find((reason) => reason === error.message) ?? "unknown"
+  );
+}
+
+// Logs why the snapshot failed (#198).
+export function logSnapshotFailed(
+  runId: string,
+  reason: SnapshotFailure,
+): void {
+  logger.warn("snapshot-failed", { runId, reason });
 }
 
 // A whole search that skipped results for a malformed PMCID and found no
