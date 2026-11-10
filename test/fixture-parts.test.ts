@@ -349,6 +349,77 @@ describe("strayParts", () => {
     expect(strayParts(paper(parts))).toEqual([stray]);
   });
 
+  // #275: in a funding group the cutter reads each funding statement whole,
+  // and in each award group each funding source and award id whole. The
+  // check names anything else inside the group.
+  const GROUP = "article/front/article-meta/funding-group";
+
+  it("passes a funding group's statements, and its award groups' funding sources and award ids", () => {
+    const meta =
+      '<funding-group specific-use="FundRef">' +
+      "<funding-statement>Funded by <named-content>X</named-content>.</funding-statement>" +
+      '<award-group id="g1"><funding-source id="s1"><institution-wrap>' +
+      '<institution-id institution-id-type="DOI">10.1/x</institution-id>' +
+      "<institution>X</institution></institution-wrap></funding-source>" +
+      '<award-id rid="s1">A2</award-id></award-group><award-group/>' +
+      "</funding-group>";
+    expect(strayParts(paper({ meta }))).toEqual([]);
+  });
+
+  it.each([
+    [
+      "a principal award recipient in an award group",
+      "<award-group><award-id>A2</award-id><principal-award-recipient><name>A</name>" +
+        "</principal-award-recipient></award-group>",
+      `${GROUP}/award-group/principal-award-recipient`,
+    ],
+    [
+      "a principal investigator in an award group",
+      "<award-group><award-id>A2</award-id><principal-investigator><name>A</name>" +
+        "</principal-investigator></award-group>",
+      `${GROUP}/award-group/principal-investigator`,
+    ],
+    [
+      "an award description in an award group",
+      "<award-group><award-id>A2</award-id><award-desc>Somebody</award-desc></award-group>",
+      `${GROUP}/award-group/award-desc`,
+    ],
+    [
+      "an open access statement in a funding group",
+      "<open-access><p>Somebody</p></open-access>",
+      `${GROUP}/open-access`,
+    ],
+    [
+      "text in a funding group beside its statements",
+      "Somebody<funding-statement>Funded.</funding-statement>",
+      `${GROUP} (text)`,
+    ],
+    [
+      "text in an award group beside its award ids",
+      "<award-group>Somebody<award-id>A2</award-id></award-group>",
+      `${GROUP}/award-group (text)`,
+    ],
+    [
+      "a comment holding text in a funding group",
+      "<!-- <name>A</name> --><funding-statement>Funded.</funding-statement>",
+      `${GROUP} (text)`,
+    ],
+    [
+      "a comment holding text in a funding statement, which the cutter drops",
+      "<funding-statement>Funded.<!-- <name>A</name> --></funding-statement>",
+      `${GROUP}/funding-statement (text)`,
+    ],
+    [
+      "a comment holding text in an award id",
+      "<award-group><award-id>A2<!-- A --></award-id></award-group>",
+      `${GROUP}/award-group/award-id (text)`,
+    ],
+  ])("names %s (#275)", (_what, inner, stray) => {
+    expect(
+      strayParts(paper({ meta: `<funding-group>${inner}</funding-group>` })),
+    ).toEqual([stray]);
+  });
+
   it("names a root that is not an article", () => {
     expect(strayParts("<book><p>B</p></book>")).toEqual(["book"]);
   });

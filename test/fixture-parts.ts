@@ -9,7 +9,11 @@
 // definitions the cutter in src/europepmc/jats.ts exports, so the two agree
 // (#159). Inside a part it allows, the check names anything the cutter does
 // not read but one title and one label, each holding only its own text
-// (#215). Two differences stay, where the check is stricter than the
+// (#215). Inside the funding metadata it names anything the cutter does not
+// read: a funding group may hold its funding statements and award groups,
+// and an award group its funding sources and award ids, so a principal award
+// recipient or investigator, which names people, is named (#275). Two
+// differences stay, where the check is stricter than the
 // cutter. The cutter finds a funding section nested in another section,
 // but the check refuses the outer section, whose other parts can carry
 // names: a recording keeps only the funding section, moved up into the body
@@ -44,6 +48,10 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
   "article/front/article-meta": (child) =>
     ["article-id", "permissions", "funding-group"].includes(child.name),
   "article/front/article-meta/permissions": (child) => child.name === "license",
+  "article/front/article-meta/funding-group": (child) =>
+    ["funding-statement", "award-group"].includes(child.name),
+  "article/front/article-meta/funding-group/award-group": (child) =>
+    ["funding-source", "award-id"].includes(child.name),
   "article/body": isFundingSection,
   "article/back": (child) =>
     child.name === "ack" ||
@@ -167,8 +175,22 @@ function strayInPart(part: Element, path: string): string[] {
   ];
 }
 
+// What the cutter reads whole inside a funding group: each funding
+// statement, and each funding source and award id in an award group. Any
+// element inside one is read with it, but a comment is dropped unread, so a
+// comment with text is named (#275).
+const READ_WHOLE = new Set(
+  [
+    "funding-group/funding-statement",
+    "funding-group/award-group/funding-source",
+    "funding-group/award-group/award-id",
+  ].map((path) => `article/front/article-meta/${path}`),
+);
+
 function stray(element: Element, path: string): string[] {
   if (isPart(element)) return strayInPart(element, path);
+  if (READ_WHOLE.has(path))
+    return hasComment(element) ? [`${path} (text)`] : [];
   const allowed = ALLOWED[path];
   if (allowed === undefined) return [];
   return [
