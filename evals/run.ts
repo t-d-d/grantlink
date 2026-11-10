@@ -69,7 +69,9 @@ export function loadSnapshot(
   }
   const { papers } = manifest.parse(JSON.parse(raw.toString("utf8")));
   for (const entry of papers) {
-    const body = readFileSync(join(dir, snapshotKeys.paper(entry.pmcid)));
+    const body = readFileSync(
+      join(dir, snapshotKeys.paper(pin.id, entry.pmcid)),
+    );
     if (sha256(body) !== entry.sha256) {
       throw new Error(`the text of ${entry.pmcid} does not match the manifest`);
     }

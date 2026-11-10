@@ -75,7 +75,11 @@ export interface EuropePmc {
     selection?: string,
     pageSize?: number,
   ): Promise<SearchPage>;
-  fullText(pmcid: string): Promise<string>;
+  // With `once`, the client sends at most one request and does not try
+  // again, as for a paper whose full text answered 500 when it last failed
+  // (#504). The pace and any wait Europe PMC asked for hold as for any
+  // request.
+  fullText(pmcid: string, options?: { once?: boolean }): Promise<string>;
   // The funder's grant ids Europe PMC links to a paper.
   grants(pmcid: string): Promise<string[]>;
   // How many requests this client has sent, answered or not, so a step can
@@ -236,7 +240,7 @@ export function europePmc(
   // A request's reply body. A body that times out or breaks off as it is
   // read failed on the way like a request that never reached Europe PMC,
   // so it is tried again the same way (#389).
-  async function request(url: URL): Promise<string> {
+  async function request(url: URL, attempts = ATTEMPTS): Promise<string> {
     if (url.protocol !== "https:" || !HOSTS.includes(url.host)) {
       throw new Error(`refusing to call ${url.host}: not Europe PMC`);
     }
@@ -244,7 +248,7 @@ export function europePmc(
     let last: Answer | undefined;
     // The Retry-After of the last refusal, in ms, if it gave one.
     let lastAsked: number | undefined;
-    for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
       const wait = next - clock.now();
       // A wait longer than the client keeps within one try is what is left
       // of a long Retry-After. Nothing is sent, and the run's step waits.
@@ -318,7 +322,7 @@ export function europePmc(
       next = clock.now() + Math.max(backoff, interval);
     }
     throw new EuropePmcError(
-      `${failure}, after ${String(ATTEMPTS)} tries`,
+      `${failure}, after ${String(attempts)} ${attempts === 1 ? "try" : "tries"}`,
       undefined,
       lastAsked === undefined ? undefined : Math.ceil(lastAsked / 1_000),
       last,
@@ -370,9 +374,12 @@ export function europePmc(
       return { hitCount: reply.hitCount, nextCursor, papers, skipped };
     },
 
-    async fullText(pmcid) {
+    async fullText(pmcid, options = {}) {
       if (!isPmcid(pmcid)) throw new Error(`not a PMCID: ${pmcid}`);
-      return request(new URL(`${pmcid}/fullTextXML`, BASE));
+      return request(
+        new URL(`${pmcid}/fullTextXML`, BASE),
+        options.once === true ? 1 : ATTEMPTS,
+      );
     },
 
     async grants(pmcid) {

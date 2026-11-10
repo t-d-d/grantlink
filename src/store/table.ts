@@ -39,6 +39,17 @@ const result = z
 
 export type Result = z.infer<typeof result>;
 
+// Why a paper last failed: the status of Europe PMC's last answer, or that
+// the last request timed out or could not connect, or that a wait Europe PMC
+// asked for was still owed, or that the fault was in the code (#378). A run
+// asks once for a paper whose full text last answered 500 (#504,
+// docs/constraints/europe-pmc.md). Ids and codes only, never a message.
+export const lastFailure = z.union([
+  z.number().int().min(100).max(599),
+  z.enum(["timeout", "no-connection", "waiting", "code"]),
+]);
+export type LastFailure = z.infer<typeof lastFailure>;
+
 const fields = {
   pmcid: PMCID,
   title: z.string().max(500),
@@ -59,6 +70,8 @@ const fields = {
   runId: z.string().min(1).max(100).optional(),
   // How many runs have failed to read the paper.
   failures: z.number().int().nonnegative().optional(),
+  // Why the paper last failed. Rows written before #504 hold none.
+  lastFailure: lastFailure.optional(),
 };
 
 // What may be written: these fields and no other.
@@ -75,6 +88,9 @@ const tolerantRow = z.object({
   ...fields,
   references: z.array(storedReference).max(50).optional(),
   versions: z.object(versions.shape).optional(),
+  // A reason a later version added reads as none, so the paper gets the
+  // usual tries.
+  lastFailure: lastFailure.optional().catch(undefined),
 });
 export const readRow = (item: unknown): PaperRow => tolerantRow.parse(item);
 
@@ -99,8 +115,12 @@ export interface Table {
   // The run whose search is the latest complete one, or null before any.
   latestSearch(): Promise<string | null>;
   processed(pmcids: string[]): Promise<Set<string>>;
+  // Why each paper not yet processed last failed, for those that hold a
+  // reason this version reads.
+  lastFailures(pmcids: string[]): Promise<Map<string, LastFailure>>;
   markProcessed(pmcid: string, result: Result): Promise<void>;
-  markFailed(pmcid: string): Promise<void>;
+  // Counts a failure, and keeps why, or no reason when none is known.
+  markFailed(pmcid: string, why?: LastFailure): Promise<void>;
   all(): Promise<PaperRow[]>;
 }
 
@@ -149,6 +169,49 @@ export function dynamoTable(
   sleep: Sleep = realSleep,
 ): Table {
   const send = (command: object) => client.send(command);
+
+  // The items the table holds of `pmcids`, each with its pmcid, its status
+  // and the `extra` fields, read a hundred keys at a time. The projection
+  // always names #status, so the name it is given is always used.
+  async function getMany(
+    pmcids: string[],
+    extra: string[] = [],
+  ): Promise<unknown[]> {
+    const projection = ["pmcid", "#status", ...extra].join(", ");
+    const items: unknown[] = [];
+    for (const batch of batches(pmcids, 100)) {
+      let keys = batch.map((pmcid) => ({ pmcid }));
+      let stalled = 0;
+      for (let tries = 0; keys.length > 0; tries += 1) {
+        if (stalled === UNPROCESSED_TRIES) {
+          throw new Error(
+            `${String(keys.length)} keys still unprocessed after ${String(UNPROCESSED_TRIES)} tries`,
+          );
+        }
+        if (tries > 0) {
+          await sleep(UNPROCESSED_FIRST_WAIT_MS * 2 ** stalled);
+        }
+        const reply = batchGetReply.parse(
+          await send(
+            new BatchGetCommand({
+              RequestItems: {
+                [name]: {
+                  Keys: keys,
+                  ProjectionExpression: projection,
+                  ExpressionAttributeNames: { "#status": "status" },
+                },
+              },
+            }),
+          ),
+        );
+        items.push(...(reply.Responses?.[name] ?? []));
+        const left = reply.UnprocessedKeys?.[name]?.Keys ?? [];
+        stalled = left.length < keys.length ? 0 : stalled + 1;
+        keys = left;
+      }
+    }
+    return items;
+  }
 
   return {
     // Records each paper a run's search found: adds it if the table does
@@ -256,43 +319,28 @@ export function dynamoTable(
 
     async processed(pmcids) {
       const done = new Set<string>();
-      for (const batch of batches(pmcids, 100)) {
-        let keys = batch.map((pmcid) => ({ pmcid }));
-        let stalled = 0;
-        for (let tries = 0; keys.length > 0; tries += 1) {
-          if (stalled === UNPROCESSED_TRIES) {
-            throw new Error(
-              `${String(keys.length)} keys still unprocessed after ${String(UNPROCESSED_TRIES)} tries`,
-            );
-          }
-          if (tries > 0) {
-            await sleep(UNPROCESSED_FIRST_WAIT_MS * 2 ** stalled);
-          }
-          const reply = batchGetReply.parse(
-            await send(
-              new BatchGetCommand({
-                RequestItems: {
-                  [name]: {
-                    Keys: keys,
-                    ProjectionExpression: "pmcid, #status",
-                    ExpressionAttributeNames: { "#status": "status" },
-                  },
-                },
-              }),
-            ),
-          );
-          for (const item of reply.Responses?.[name] ?? []) {
-            const row = z
-              .object({ pmcid: PMCID, status: z.string() })
-              .parse(item);
-            if (row.status === "processed") done.add(row.pmcid);
-          }
-          const left = reply.UnprocessedKeys?.[name]?.Keys ?? [];
-          stalled = left.length < keys.length ? 0 : stalled + 1;
-          keys = left;
-        }
+      for (const item of await getMany(pmcids)) {
+        const row = z.object({ pmcid: PMCID, status: z.string() }).parse(item);
+        if (row.status === "processed") done.add(row.pmcid);
       }
       return done;
+    },
+
+    async lastFailures(pmcids) {
+      const failed = new Map<string, LastFailure>();
+      for (const item of await getMany(pmcids, ["lastFailure"])) {
+        const row = z
+          .object({
+            pmcid: PMCID,
+            status: z.string(),
+            lastFailure: lastFailure.optional().catch(undefined),
+          })
+          .parse(item);
+        if (row.status !== "processed" && row.lastFailure !== undefined) {
+          failed.set(row.pmcid, row.lastFailure);
+        }
+      }
+      return failed;
     },
 
     async markProcessed(pmcid, given) {
@@ -319,14 +367,21 @@ export function dynamoTable(
       );
     },
 
-    async markFailed(pmcid) {
+    async markFailed(pmcid, why) {
+      const checked = lastFailure.optional().parse(why);
       await send(
         new UpdateCommand({
           TableName: name,
           Key: { pmcid: PMCID.parse(pmcid) },
           ConditionExpression: "attribute_exists(pmcid)",
-          UpdateExpression: "ADD failures :one",
-          ExpressionAttributeValues: { ":one": 1 },
+          UpdateExpression:
+            checked === undefined
+              ? "REMOVE lastFailure ADD failures :one"
+              : "SET lastFailure = :why ADD failures :one",
+          ExpressionAttributeValues:
+            checked === undefined
+              ? { ":one": 1 }
+              : { ":one": 1, ":why": checked },
         }),
       );
     },

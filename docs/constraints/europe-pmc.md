@@ -25,6 +25,10 @@ requests.
   longer wait, and after that the paper waits for the next run. A paper
   with no full text (a 4xx other than 429) is not asked for again in that
   run.
+- A paper whose full text answered 500 when it last failed is asked for
+  once in a run, with no retry by the client or the step, and then waits
+  for the next run. Its row records why it last failed. Every other
+  failure, and a row that records no reason, keeps the usual tries.
 - Every request carries a User-Agent that names grantlink, its address and
   a contact.
 - The back catalogue goes through the same web services, once. A paper
@@ -47,4 +51,4 @@ Whether the deployed run keeps to the pace across Lambda invocations rests
 on the client being made once per invocation and each batch ending with a
 wait, which is for review.
 
-History: #1, #143
+History: #1, #143, #379

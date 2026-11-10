@@ -17,7 +17,7 @@ set -euo pipefail
 dir="${1:?usage: scripts/eval-snapshot.sh <dir>}"
 id="$(jq -r .id evals/snapshot.json)"
 pin="$(jq -r .manifestSha256 evals/snapshot.json)"
-mkdir -p "$dir/eval/$id" "$dir/eval/papers"
+mkdir -p "$dir/eval/$id/papers"
 
 if [ "$pin" = "null" ]; then
   echo "No snapshot is pinned yet, so there is nothing to download."
@@ -35,7 +35,7 @@ if [ "$got" != "$pin" ]; then
 fi
 
 jq -r '.papers[].pmcid' "$manifest" | while read -r pmcid; do
-  aws s3api get-object --bucket "$bucket" --key "eval/papers/$pmcid.json" \
-    "$dir/eval/papers/$pmcid.json" >/dev/null
+  aws s3api get-object --bucket "$bucket" --key "eval/$id/papers/$pmcid.json" \
+    "$dir/eval/$id/papers/$pmcid.json" >/dev/null
 done
 echo "Downloaded snapshot $id: $(jq '.papers | length' "$manifest") papers."

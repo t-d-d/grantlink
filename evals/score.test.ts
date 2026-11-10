@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FundingSections } from "../src/extract/rules.ts";
-import { sameGrant, score } from "./score.ts";
+import { crukReference, printedGrants, sameGrant, score } from "./score.ts";
 
 const paper = (text: string[], awards: FundingSections["awards"] = []) => ({
   text,
@@ -21,6 +21,9 @@ describe("matching a reference to Europe PMC's grant id", () => {
     ["CRUK/C1234/A56789", "C1234/A56789"],
     ["CTRQQR-2021/100010", "CTRQQR-2021\\100010"],
     ["CTRQQR-2021/100010", "ctrqqr-2021 / 100010"],
+    ["A17196", "A17196/"],
+    ["17196", "A17196\\"],
+    ["PRCRPG-NOV21/100001", "PRCRPG-Nov21\\\\100001"],
   ])("%s matches %s", (found, expected) => {
     expect(sameGrant(found, expected)).toBe(true);
   });
@@ -33,6 +36,99 @@ describe("matching a reference to Europe PMC's grant id", () => {
     ["CRUKDF-0123-AB", "DF-0123-AB"],
   ])("%s does not match %s", (found, expected) => {
     expect(sameGrant(found, expected)).toBe(false);
+  });
+});
+
+// What a paper prints decides gold set A's answers (#502): a linked grant
+// counts only if one of the forms sameGrant accepts stands alone in the
+// whole article, ignoring case and spaces.
+// Only a reference in a CRUK form can be gold set A's answer (#503).
+describe("telling a CRUK reference from another linked id", () => {
+  it.each([
+    "C1234/A56789",
+    "C1234\\A56789",
+    "c1234 / a56789",
+    "A56789",
+    "56789",
+    "1234",
+    "A123456",
+    "FC001234",
+    "CC2009",
+    "CTRQQR-2021\\100010",
+    "RRCOER-Jun24/100008",
+    "DRCPGM\\100015",
+    "EDDCPJT\\100018",
+    "A17196/",
+    "A21139\\",
+    "PRCRPG-Nov21\\\\100001",
+    "CRUK-UCL-2023",
+    "CRUK_Manchester",
+  ])("takes %s", (id) => {
+    expect(crukReference(id)).toBe(true);
+  });
+
+  it.each([
+    "C5759",
+    "204826/Z/16/Z",
+    "Prominent",
+    "123",
+    "1234567",
+    "A1234567",
+    "MR/T001234/1",
+    "FC",
+    "SP2312/021",
+    "CTR-Q5-Y3",
+    "RG86786",
+  ])("refuses %s", (id) => {
+    expect(crukReference(id)).toBe(false);
+  });
+});
+
+describe("finding which linked grants a paper prints", () => {
+  it.each([
+    ["C1234/A56789", "<p>Funded by CRUK (C1234/A56789).</p>"],
+    ["C1234/A56789", "<p>Funded by grant A56789.</p>"],
+    ["C1234/A56789", "<p>Funded by grant 56789.</p>"],
+    ["A56789", "<p>Funded by C1234/A56789.</p>"],
+    ["A56789", "<p>grant a 56789</p>"],
+    ["C1234/A56789", "<p>c1234 \\ a56789</p>"],
+    ["CTRQQR-2021/100010", "<p>ctrqqr-2021 / 100010</p>"],
+    ["A56789", "<award-id>A56789</award-id>"],
+    ["A56789", "<p>grant A<italic>56789</italic></p>"],
+    ["A17196/", "<p>Funded by grant A17196.</p>"],
+    ["PRCRPG-Nov21\\\\100001", "<p>PRCRPG-Nov21\\100001</p>"],
+  ])("finds %s printed in %s", (grant, article) => {
+    expect(printedGrants([grant], article)).toEqual([grant]);
+  });
+
+  it.each([
+    ["A56789", "<p>No grant here.</p>"],
+    ["A56789", "<p>Order 1567890 arrived.</p>"],
+    ["A56789", "<p>Grant B56789.</p>"],
+    ["A56789", "<p>Grant A567890.</p>"],
+    ["C1234/A56789", "<p>Programme C1234.</p>"],
+    ["A12345", "<p>Figure 1 2345 cells.</p>"],
+    ["A12345", "<table><tr><td>1</td><td>2345</td></tr></table>"],
+  ])("does not find %s printed in %s", (grant, article) => {
+    expect(printedGrants([grant], article)).toEqual([]);
+  });
+
+  it("does not count a grant that appears only in the reference list", () => {
+    expect(
+      printedGrants(
+        ["A11111", "A22222"],
+        "<article><body><p>Grant A11111.</p></body><back><ref-list><ref>Grant A22222 report.</ref></ref-list></back></article>",
+      ),
+    ).toEqual(["A11111"]);
+  });
+
+  it("keeps only the linked grants the paper prints, in their order", () => {
+    expect(
+      printedGrants(
+        ["A11111", "A22222", "C3/A33333"],
+        "<p>Grants 33333 and A11111.</p>",
+      ),
+    ).toEqual(["A11111", "C3/A33333"]);
   });
 });
 

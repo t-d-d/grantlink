@@ -166,6 +166,27 @@ describe("fitness: requests back off (europe-pmc.md)", () => {
     expect(requests.length).toBeLessThanOrEqual(5);
   });
 
+  it("sends one request and no more for a full text asked for once (#504)", async () => {
+    const { client, requests } = harness(
+      () => new Response("", { status: 500 }),
+    );
+    const error = await client
+      .fullText("PMC1", { once: true })
+      .catch((e: unknown) => e);
+    expect(requests).toHaveLength(1);
+    expect(error).toMatchObject({ name: "EuropePmcError", last: 500 });
+  });
+
+  it("keeps the pace after a full text asked for once (#504)", async () => {
+    const { client, requests } = harness((_, call) =>
+      call === 0 ? new Response("", { status: 500 }) : ok(),
+    );
+    await client.fullText("PMC1", { once: true }).catch(() => undefined);
+    await client.fullText("PMC2");
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.at).toBeGreaterThanOrEqual(2_000);
+  });
+
   it("passes the last Retry-After on when it gives up, so the run waits that long too", async () => {
     const { client } = harness(
       () => new Response("", { status: 429, headers: { "Retry-After": "60" } }),

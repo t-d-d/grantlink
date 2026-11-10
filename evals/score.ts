@@ -6,7 +6,7 @@ import type { RowId } from "./floors.ts";
 // everything that can change a score (docs/constraints/evals.md).
 
 // Gold set A: papers Europe PMC already links to the funder's grants. Its
-// links are the answers.
+// answers are the linked grants each paper prints (#502).
 export interface GoldA {
   pmcid: string;
   grants: string[];
@@ -33,8 +33,15 @@ export interface Scores {
   missedA: string[];
 }
 
+// A doubled backslash reads as one, and a trailing slash is dropped, as
+// Europe PMC sometimes holds them (#503).
 const canonical = (id: string): string =>
-  id.replace(/\s+/gu, "").replace(/[\\∖]/gu, "/").toUpperCase();
+  id
+    .replace(/\s+/gu, "")
+    .replace(/\\\\/gu, "\\")
+    .replace(/[\\∖]/gu, "/")
+    .replace(/\/$/u, "")
+    .toUpperCase();
 
 // The ways one reference can be written: whole, each part of a C/A pair,
 // and an award number with or without its A.
@@ -70,6 +77,74 @@ function forms(id: string): Set<string> {
 export function sameGrant(found: string, expected: string): boolean {
   const a = forms(found);
   return [...forms(expected)].some((form) => a.has(form));
+}
+
+// CRUK's reference forms (#503): a C/A pair; an award number of 4 to 6
+// digits, with or without its A; a Crick core funding number; a newer
+// reference of letters, sometimes with a year or a month, then a slash and
+// a number; or one that starts with CRUK. A C part alone names a
+// programme, and another funder's reference or a word is not CRUK's, so
+// none of those is an answer.
+const CRUK_FORMS = [
+  /^C\d+\/A\d+$/u,
+  /^A?\d{4,6}$/u,
+  /^(?:FC|CC)\d+$/u,
+  /^[A-Z]+(?:-?(?:(?:19|20)\d{2}|(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}))?\/\d+$/u,
+  /^CRUK/u,
+];
+
+export function crukReference(id: string): boolean {
+  const whole = canonical(id);
+  return CRUK_FORMS.some((form) => form.test(whole));
+}
+
+// The innermost reference list, which a loop removes until none is left, so
+// a list nested in another goes too.
+const REF_LIST = /<ref-list\b(?:(?!<ref-list\b)[\s\S])*?<\/ref-list\s*>/gu;
+
+function withoutReferenceLists(article: string): string {
+  let text = article;
+  for (;;) {
+    const next = text.replace(REF_LIST, " ");
+    if (next === text) return text;
+    text = next;
+  }
+}
+
+// A form as a pattern that ignores case and spaces, with a slash written
+// any way canonical reads one, and nothing alphanumeric either side of it.
+// A space may not split a run of digits, or "1 2345" in a sentence, or two
+// table cells, would read as 12345.
+function standingAlone(form: string): RegExp {
+  // A form holds only ASCII, as canonical leaves GRANT's characters.
+  const chars = Array.from(form);
+  const pattern = chars
+    .map((char, i) => {
+      const one = char === "/" ? "[/\\\\∖]" : char === "." ? "\\." : char;
+      const before = chars[i - 1];
+      const between =
+        i > 0 && !(/\d/u.test(char) && /\d/u.test(before ?? "")) ? "\\s*" : "";
+      return `${between}${one}`;
+    })
+    .join("");
+  return new RegExp(`(?<![A-Za-z0-9])${pattern}(?![A-Za-z0-9])`, "iu");
+}
+
+// The linked grants a paper prints, in the order given: those with a form
+// sameGrant accepts standing alone in the whole article less its reference
+// list, ignoring case and spaces (#502, #503). A grant cited only by
+// another paper is not printed. Each markup tag reads as a space, so a tag
+// inside a grant does not hide it.
+export function printedGrants(
+  grants: readonly string[],
+  article: string,
+): string[] {
+  const text = withoutReferenceLists(article).replace(/<[^>]*>/gu, " ");
+  return grants.filter((grant) =>
+    [...forms(grant)].some(
+      (form) => form !== "" && standingAlone(form).test(text),
+    ),
+  );
 }
 
 // What a model added after the rules: the normalised references it found
