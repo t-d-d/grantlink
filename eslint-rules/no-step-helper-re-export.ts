@@ -50,15 +50,19 @@ export const noStepHelperReExport = createRule({
     // a chain of local aliases (walkAliases) such as `const ask =
     // askEuropePmc`. Any name along the chain counts, so an alias of
     // askEuropePmc counts even when askEuropePmc is itself an alias. The rule
-    // refuses what the export may pass on, so an inexact walk counts too.
+    // refuses what the export may pass on, so an inexact walk counts too,
+    // and `exact` says whether the local surely holds the helper.
     const localHelper = (
       identifier: TSESTree.Identifier,
-    ): StepHelper | null => {
-      const chain = walkAliases(identifier, context)?.chain;
-      if (chain === undefined) return helperNamed(here, identifier.name);
-      for (const variable of chain) {
+    ): { helper: StepHelper; exact: boolean } | null => {
+      const walk = walkAliases(identifier, context);
+      if (walk === null) {
+        const helper = helperNamed(here, identifier.name);
+        return helper === null ? null : { helper, exact: true };
+      }
+      for (const variable of walk.chain) {
         const helper = helperNamed(here, variable.name);
-        if (helper !== null) return helper;
+        if (helper !== null) return { helper, exact: walk.exact };
       }
       return null;
     };
@@ -121,11 +125,17 @@ export const noStepHelperReExport = createRule({
           }
           // This module's own helper, exported under its own name, is how
           // callers reach it, whether the local is the helper or an alias.
+          // An alias written again may export something else under the
+          // helper's name, and the rules would treat a call to it as the
+          // helper, so only an exact walk passes.
           const own =
             specifier.local.type === AST_NODE_TYPES.Identifier
               ? localHelper(specifier.local)
               : null;
-          if (own !== null && exportedName(specifier.exported) === own.name) {
+          if (
+            own?.exact === true &&
+            exportedName(specifier.exported) === own.helper.name
+          ) {
             continue;
           }
           checkValue(specifier, specifier.local);

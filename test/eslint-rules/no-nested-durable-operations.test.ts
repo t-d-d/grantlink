@@ -167,6 +167,19 @@ describe("fitness: no durable operation inside its own context's operation (dura
         }`,
         errors: [{ messageId: "sameContextUsage" }],
       },
+      {
+        name: "asks Europe PMC through an alias that is written again later on the same context inside a child context",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        let ask = askEuropePmc;
+        ask = other;
+        async function run(ctx: any) {
+          await ctx.runInChildContext("paper", async () => {
+            await ask(ctx, "fetch", "wait", r, async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
     ],
   });
 });

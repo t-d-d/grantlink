@@ -204,6 +204,16 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         errors: [{ messageId: "reExport" }],
       },
       {
+        name: "exports a local alias of askEuropePmc that is written again later under the helper's own name from its own module",
+        filename: "src/run/owed.ts",
+        code: `async function askEuropePmc() {}
+        function somethingElse() {}
+        let impl = askEuropePmc;
+        impl = somethingElse;
+        export { impl as askEuropePmc };`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
         name: "exports an alias of an imported askEuropePmc that is written again later",
         filename: "src/run/run.ts",
         code: `import { askEuropePmc } from "./owed.ts";

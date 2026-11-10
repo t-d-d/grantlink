@@ -93,18 +93,22 @@ export const STEP_HELPERS: readonly StepHelper[] = [
 // import `<name>(...)`, or a namespace import `<ns>.<name>(...)` or
 // `<ns>["<name>"](...)`, either one reached through an exact walk of local
 // aliases (walkAliases), since the helper's callbacks get a step's
-// allowances. A local function, an import from another module or a computed
+// allowances. A rule that refuses what a call may run, such as
+// no-nested-durable-operations, passes `walk: "any"` to take an inexact
+// walk too. A local function, an import from another module or a computed
 // key that is not a constant string is not one. A re-export would hide the
 // helper's module, so no-step-helper-re-export refuses one.
 export function stepHelperOf(
   node: TSESTree.Node,
   resolver: Resolver,
+  walk: "exact" | "any" = "exact",
 ): StepHelper | null {
   if (node.type !== AST_NODE_TYPES.CallExpression) return null;
   const { callee } = node;
   if (callee.type === AST_NODE_TYPES.Identifier) {
     const binding = importOf(callee, resolver);
-    if (typeof binding?.name !== "string" || !binding.exact) return null;
+    if (typeof binding?.name !== "string") return null;
+    if (walk === "exact" && !binding.exact) return null;
     return helperNamed(binding.module, binding.name);
   }
   if (
@@ -114,7 +118,8 @@ export function stepHelperOf(
     const name = memberName(callee);
     if (name === null) return null;
     const binding = importOf(callee.object, resolver);
-    if (binding?.name !== null || !binding.exact) return null;
+    if (binding?.name !== null) return null;
+    if (walk === "exact" && !binding.exact) return null;
     return helperNamed(binding.module, name);
   }
   return null;
@@ -149,10 +154,12 @@ function keyName(key: TSESTree.Node, computed: boolean): string | null {
 // and the walk ends at it. A later write does not end the walk, but makes it
 // inexact: the local may hold something else when it is read.
 //
-// A rule that decides what a call runs, as stepHelperOf does when it gives a
-// step helper's callbacks a step's allowances, takes only an exact walk. A
-// rule that refuses what a name may hold, such as no-step-helper-re-export
-// or no-nested-durable-operations, takes either.
+// Where what a name holds lets code off a check, only an exact walk counts:
+// stepHelperOf by default, since it gives a step helper's callbacks a step's
+// allowances, and no-step-helper-re-export when it lets a module export its
+// own helper. Where it only makes a rule refuse, an inexact walk counts too:
+// no-step-helper-re-export's refusals, and no-nested-durable-operations, for
+// a context and for a step helper (stepHelperOf with `walk: "any"`).
 export interface AliasWalk {
   // The local the identifier names, then each local it aliases in turn.
   // The last is where the walk ended.
