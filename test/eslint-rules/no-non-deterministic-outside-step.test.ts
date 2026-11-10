@@ -627,6 +627,117 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "exports an alias of Date made by assignment",
+          filename: "src/run/run.ts",
+          code: `export let D;
+          D = Date;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports an alias of Math made by assignment",
+          filename: "src/run/run.ts",
+          code: `export let m;
+          m = Math;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports now destructured from Date by assignment",
+          filename: "src/run/run.ts",
+          code: `export let now;
+          ({ now } = Date);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports random destructured from Math by assignment",
+          filename: "src/run/run.ts",
+          code: `export let random;
+          ({ random } = Math);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest in a nested default by assignment",
+          filename: "src/run/run.ts",
+          code: `export let m;
+          ({ x: { ...m } = Math } = globalThis);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+              column: 28,
+            },
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "globalThis" },
+              line: 2,
+              column: 37,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest inside an array pattern by assignment",
+          filename: "src/run/run.ts",
+          code: `export let m;
+          [{ ...m }] = [Math];`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest into a member of an exported object",
+          filename: "src/run/run.ts",
+          code: `export const o = {};
+          ({ ...o.m } = Math);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest into an exported function's name",
+          filename: "src/run/run.ts",
+          code: `export function m() {}
+          ({ ...m } = Math);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
           name: "exports by name a copy of Math made through a rest in an assignment",
           code: `let m;
           ({ ...m } = Math);
@@ -634,6 +745,45 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           errors: [
             {
               messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns an alias of Date to a name it does not export",
+          filename: "src/run/run.ts",
+          code: `let D;
+          D = Date;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "adds Math to an exported name, which gives a string and not the source",
+          filename: "src/run/run.ts",
+          code: `export let m;
+          m += Math;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "copies Math through a rest into a member of an object it does not export",
+          filename: "src/run/run.ts",
+          code: `const o = {};
+          ({ ...o.m } = Math);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
               data: { op: "Math" },
               line: 2,
             },
