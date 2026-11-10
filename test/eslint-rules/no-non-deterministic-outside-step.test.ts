@@ -605,6 +605,30 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "exports a copy of Math made through a rest by default behind a wrapper",
+          code: `const { ...m } = Math;
+          export default (m as unknown);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest by an export assignment behind a wrapper",
+          code: `const { ...m } = Math;
+          export = m!;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
           name: "exports a copy of Math made through a rest by an export assignment",
           code: `const { ...m } = Math;
           export = m;`,
@@ -1640,6 +1664,20 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
               data: { op: "Math" },
               line: 1,
               column: 14,
+            },
+          ],
+        },
+        {
+          name: "exports a member under an unnamed key beside the rest of Math destructured from globalThis in a nested pattern",
+          filename: "src/run/run.ts",
+          code: `const { Math: { [k]: x, ...m } } = globalThis;
+          export { x };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+              column: 9,
             },
           ],
         },

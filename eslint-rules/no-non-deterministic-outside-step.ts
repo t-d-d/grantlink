@@ -567,16 +567,18 @@ function exportsRest(
 }
 
 // True when a variable is exported by default, `export default m`, or by
-// an export assignment, `export = m`. exported leaves these out, since
+// an export assignment, `export = m`, through the wrappers unwrapped takes
+// off, `export default (m as T)`. exported leaves these out, since
 // checkDefault reports an alias exported this way at the export.
 function exportedByDefault(variable: TSESLint.Scope.Variable): boolean {
   return variable.references.some((ref) => {
-    const parent = ref.identifier.parent;
+    const outer = outermost(ref.identifier);
+    const parent = outer.parent;
     return (
-      (parent.type === AST_NODE_TYPES.ExportDefaultDeclaration &&
-        parent.declaration === ref.identifier) ||
-      (parent.type === AST_NODE_TYPES.TSExportAssignment &&
-        parent.expression === ref.identifier)
+      (parent?.type === AST_NODE_TYPES.ExportDefaultDeclaration &&
+        parent.declaration === outer) ||
+      (parent?.type === AST_NODE_TYPES.TSExportAssignment &&
+        parent.expression === outer)
     );
   });
 }
@@ -863,7 +865,11 @@ export const noNonDeterministicOutsideStep = createRule({
                 .map(holderOf)
                 .find((found) => found !== undefined);
               if (holder !== undefined) {
-                report(property.key, holder, exportsRest(node, inner, context));
+                report(
+                  property.key,
+                  holder,
+                  exportsPassed(node, inner, context, true),
+                );
               }
             }
             return false;
