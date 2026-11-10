@@ -689,6 +689,28 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.rejected).toBe(3);
   });
 
+  // The text is made up.
+  it.each([
+    String.raw`Funded by CRUK (CRUK/12\2019).`,
+    "Funded by CRUK (CRUK/12 /2019).",
+    "Funded by CRUK (CRUK/12/ 2019).",
+    String.raw`Funded by CRUK (CRUK/12\SMITH).`,
+  ])(
+    "rejects the front of a CRUK- form whose next part follows a backslash or a spaced slash (#598): %j",
+    async (text) => {
+      const { fetch } = fakeOpenRouter(
+        answer([{ asWritten: "CRUK/12", confidence: 0.9 }]),
+      );
+      const result = await proposeReferences([text], {
+        model: haiku,
+        key: "k",
+        fetch,
+      });
+      expect(result.status === "read" && result.references).toEqual([]);
+      expect(result.status === "read" && result.rejected).toBe(1);
+    },
+  );
+
   it("rejects the back of a CRUK- form whose prefix the rules read with it (#561)", async () => {
     // The text is made up.
     const { fetch } = fakeOpenRouter(

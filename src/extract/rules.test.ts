@@ -169,6 +169,11 @@ describe("the rules", () => {
     "Funded by CRUK (CRUK/12/JONES).",
     "Funded by CRUK (CRUK/12/ABC).",
     "Funded by CRUK (CRUK/1/2/3/JONES).",
+    // A backslash or a spaced slash parts the form as a slash does (#598).
+    String.raw`Funded by CRUK (CRUK/12\2019).`,
+    "Funded by CRUK (CRUK/12 /2019).",
+    "Funded by CRUK (CRUK/12/ 2019).",
+    String.raw`Funded by CRUK (CRUK/12\SMITH).`,
   ])(
     "leaves a CRUK- form with a part of no digit, or a part that is a year: %j",
     (text) => {
