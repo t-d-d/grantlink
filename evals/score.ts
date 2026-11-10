@@ -89,8 +89,8 @@ export function sameGrant(found: string, expected: string): boolean {
 // reference of letters, sometimes with a year or a month, then a slash and
 // a number; or one that starts with CRUK and is, whole, a shape the rules
 // read, so it has a digit after the CRUK (#532). Only that last form takes
-// an id that starts with CRUK, so the scorer never takes one the rules
-// refuse, such as CRUK/2019 (#575). A C part alone names a
+// an id that starts with CRUK, so the scorer never takes a CRUK id the
+// rules refuse, such as CRUK/2019 (#575). A C part alone names a
 // programme, and another funder's reference, a word, a centre or
 // partnership name such as CRUK_Manchester or CRUK/MRC, or the bare
 // abbreviation CRUK is not a CRUK grant, so none of those is an answer.
