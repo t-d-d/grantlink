@@ -428,7 +428,7 @@ const BARE_NUMBER = new RegExp(`^${BARE}$`, "u");
 function confirmedNumber(id: string, text: readonly string[]): boolean {
   if (!BARE_NUMBER.test(id)) return false;
   const alone = new RegExp(
-    `${NUMBER_BEFORE}(?<!${WORD})${id}(?!${WORD}|${SEP})`,
+    `${NUMBER_BEFORE}${START}${id}(?!${WORD}|${SEP})`,
     "u",
   );
   return text.some((paragraph) => alone.test(paragraph));

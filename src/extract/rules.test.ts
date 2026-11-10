@@ -570,7 +570,7 @@ describe("the rules", () => {
   );
 
   it.each([
-    ["Funded by CRUK grant 123456.", "123456"],
+    ["Funded by CRUK, 123456.", "123456"],
     ["Funded by CRUK (CR 234567).", "234567"],
     ["Funded by CRUK [345678].", "345678"],
     ["Funded by CRUK, award number:45678.", "45678"],
