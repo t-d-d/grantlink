@@ -222,6 +222,26 @@ describe("fitness: no durable operation inside its own context's operation (dura
         }`,
         errors: [{ messageId: "sameContextUsage" }],
       },
+      ...[
+        ["asserted with as", "ctx as Context"],
+        ["asserted with angle brackets", "<Context>ctx"],
+        ["checked with satisfies", "ctx satisfies Context"],
+        ["in brackets", "(ctx)"],
+        ["through the comma operator", "(0, ctx)"],
+        [
+          "through the comma operator and asserted with as",
+          "(0, ctx as Context)",
+        ],
+      ].map(([what, given]) => ({
+        name: `reaches the same context through an alias ${String(what)}`,
+        code: `async function run(ctx: any) {
+          const same = ${String(given)};
+          await ctx.runInChildContext("paper", async () => {
+            await same.wait("pause", { seconds: 1 });
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
       {
         name: "reaches the same context through a let alias",
         code: `async function run(ctx: any) {
