@@ -65,6 +65,10 @@ describe("telling a CRUK reference from another linked id", () => {
     // A CRUK id the rules read, which only their shape check takes (#575).
     "CRUK/12345",
     "CRUK-Nov21/100001",
+    // CRUK later in the letters of a code the rules read (#620).
+    "XCRUK/100001",
+    "ABCRUKDE/123456",
+    "XCRUK-2019/100001",
   ])("takes %s", (id) => {
     expect(crukReference(id)).toBe(true);
   });
