@@ -235,11 +235,18 @@ const isGap = (node: XmlNode | undefined): boolean =>
 
 const FUNDING_TYPE = /^(?:funding|ack|acknowledge?ments?)$/iu;
 
-// A section title as the list below holds it: in lower case, with all
-// punctuation dropped, each run of white space, no-break spaces included, as
-// one space, and no space at either end (#239).
+// A section title as the list below holds it: in lower case, with "&" read
+// as "and" and every other mark of punctuation as a space, each run of white
+// space, no-break spaces included, as one space, and no space at either end
+// (#239). So Role of the funder/sponsor and Role of the funder / sponsor
+// read the same.
 export const normaliseTitle = (title: string): string =>
-  title.toLowerCase().replace(/\p{P}/gu, "").replace(/\s+/gu, " ").trim();
+  title
+    .toLowerCase()
+    .replaceAll("&", " and ")
+    .replace(/\p{P}/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
 
 // The titles that name a funding section, normalised. Europe PMC often marks
 // acknowledgements up as a section rather than an <ack>, and one journal
@@ -265,16 +272,21 @@ export const FUNDING_TITLES: ReadonlySet<string> = new Set([
   "acknowledgments",
   "acknowledgements and funding",
   "funding and acknowledgements",
-  // The joined headings in the other spelling, as the single words have.
   "acknowledgments and funding",
   "funding and acknowledgments",
+  // Headings the old match on a title's first words kept, which no gold
+  // paper uses.
+  "funding source",
+  "financial support and sponsorship",
+  "funding sources and disclosures",
+  "acknowledgements and disclosures",
+  "acknowledgments and disclosures",
   // Found in gold sets A and B.
   "funding and organization",
   "grants",
   "role of funders",
   "role of funding source",
-  // Role of the funder/sponsor, with its slash dropped.
-  "role of the fundersponsor",
+  "role of the funder sponsor",
 ]);
 
 const isFundingTitle = (title: string): boolean =>

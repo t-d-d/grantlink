@@ -165,6 +165,12 @@ describe("cutting a paper to its funding sections", () => {
       ],
       ["<sec><title>Support</title><p>Grant A1.</p></sec>"],
       ["<sec><title>Role of the funder/sponsor</title><p>Grant A1.</p></sec>"],
+      [
+        "<sec><title>Role of the funder / sponsor</title><p>Grant A1.</p></sec>",
+      ],
+      [
+        "<sec><title>Acknowledgements &amp; Funding</title><p>Grant A1.</p></sec>",
+      ],
       // The joined headings take either spelling, as the single words do.
       ["<sec><title>Acknowledgments and Funding</title><p>Grant A1.</p></sec>"],
       ["<sec><title>Funding and Acknowledgments</title><p>Grant A1.</p></sec>"],
@@ -275,6 +281,13 @@ describe("cutting a paper to its funding sections", () => {
       "acknowledgments",
       "acknowledgements and funding",
       "funding and acknowledgements",
+      "acknowledgments and funding",
+      "funding and acknowledgments",
+      "funding source",
+      "financial support and sponsorship",
+      "funding sources and disclosures",
+      "acknowledgements and disclosures",
+      "acknowledgments and disclosures",
     ];
 
     it("lists each heading #239 names, in normal form", () => {
@@ -297,6 +310,11 @@ describe("cutting a paper to its funding sections", () => {
       heading.replaceAll(" ", " "),
       `${heading.replaceAll(" ", "&#160;")}&#x2014;`,
       `(${heading})`,
+      // Words joined by a slash, with and without spaces, and "&" for "and".
+      heading.replaceAll(" ", "/"),
+      heading.replaceAll(" ", " / "),
+      heading.replaceAll(" and ", " &amp; "),
+      heading.replaceAll(" and ", "&amp;"),
     ];
 
     it.each([...new Set([...HEADINGS, ...FUNDING_TITLES])])(
