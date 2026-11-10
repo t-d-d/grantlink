@@ -1,5 +1,7 @@
+import { join } from "node:path";
 import { afterAll, describe, it } from "vitest";
 import { importsWithin } from "../../eslint-rules/imports-within.ts";
+import { root } from "../repo.ts";
 import { ruleTester } from "../rule-tester.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
@@ -64,5 +66,33 @@ describe("fitness: the fingerprint covers what the eval runs (evals.md)", () => 
         errors: [{ messageId: "outside" }],
       },
     ],
+  });
+
+  // ESLint run from src/, as an editor whose folder is src/ would, names
+  // each file from there. The rule still sees the repo's paths.
+  describe("run from src/", () => {
+    ruleTester({ afterAll, describe, it }, { cwd: join(root, "src") }).run(
+      "imports-within",
+      importsWithin,
+      {
+        valid: [
+          {
+            name: "the rules import their config",
+            filename: "extract/rules.ts",
+            code: `import funder from "./funder.json" with { type: "json" };`,
+            options,
+          },
+        ],
+        invalid: [
+          {
+            name: "the rules import the page",
+            filename: "extract/rules.ts",
+            code: `export { found } from "../page/found.ts";`,
+            options,
+            errors: [{ messageId: "outside" }],
+          },
+        ],
+      },
+    );
   });
 });
