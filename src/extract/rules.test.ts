@@ -46,6 +46,22 @@ describe("the rules", () => {
     ]);
   });
 
+  // A Unicode hyphen or dash (U+2010 to U+2015) in the funder's name (#201).
+  it.each(["\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2015"])(
+    "reads an A number after CR%sUK",
+    (dash) => {
+      expect(
+        findReferences(sections(`Funded by CR${dash}UK (A12345).`)),
+      ).toEqual([{ asWritten: "A12345", normalised: "A12345", format: "An" }]);
+    },
+  );
+
+  it("reads a G number in brackets after CR-UK written with a Unicode hyphen", () => {
+    expect(findReferences(sections("Funded by cr\u2010uk (G123/45)."))).toEqual(
+      [{ asWritten: "G123/45", normalised: "G123/45", format: "Gn/n" }],
+    );
+  });
+
   it.each([
     ["a Crick core funding number", "FC001234"],
     ["a newer Crick core funding number", "CC2001"],
