@@ -159,6 +159,40 @@ describe("the rules", () => {
     ).toEqual([{ asWritten: "A12345", normalised: "A12345", format: "An" }]);
   });
 
+  // A letter outside A to Z joined to a reference makes it part of a longer
+  // word, as any letter does at the funder's name (#339).
+  it.each([
+    ["an A number with a letter before it", "éA12345"],
+    ["an A number with an accented letter before it", "e\u0301A12345"],
+    ["an FC number with a letter before it", "éFC001234"],
+    ["a CC number with a letter before it", "éCC2001"],
+    ["an RT number with a letter before it", "éRT1234"],
+    ["a coded reference with a letter before it", "éDRCMDPA/100010"],
+    ["an A number with a letter after it", "A12345é"],
+    ["a G number with a letter after it", "G123/45é"],
+  ])("leaves %s outside A to Z", (_, reference) => {
+    expect(findReferences(sections(`Funded by CRUK (${reference}).`))).toEqual(
+      [],
+    );
+  });
+
+  // The A part of a C/A reference stands alone after its separator, so the
+  // reference sits in a sentence that does not name the funder.
+  it("leaves a C/A reference with a letter outside A to Z before it", () => {
+    expect(
+      findReferences(sections("Funded by CRUK. Grant éC1234/A56789.")),
+    ).toEqual([]);
+  });
+
+  it("leaves a bare number the text gives only with a non-ASCII letter joined to it", () => {
+    expect(
+      findReferences({
+        text: ["Funded by the Example Trust (é12345 and 12345é)."],
+        awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
+      }),
+    ).toEqual([]);
+  });
+
   it("leaves a lowercase g number", () => {
     expect(findReferences(sections("Cancer Research UK (g123/45)."))).toEqual(
       [],
