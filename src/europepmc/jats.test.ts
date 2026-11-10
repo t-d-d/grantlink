@@ -330,13 +330,15 @@ describe("cutting a paper to its funding sections", () => {
     );
 
     // A section's body runs to the closing tag that balances its opening
-    // tag, not to the first closing tag of a subsection (#189).
+    // tag, not to the first closing tag of a subsection (#189). Each
+    // subsection here is untitled or a funding section, so the cut keeps it
+    // (#563).
     it.each([
       [
-        '<sec sec-type="ack"><title>Acknowledgements</title><sec><title>Author contributions</title><p>Made-up text.</p></sec><p>Grant A1.</p></sec>',
+        '<sec sec-type="ack"><title>Acknowledgements</title><sec><title>Funding</title><p>Made-up text.</p></sec><p>Grant A1.</p></sec>',
       ],
       [
-        "<sec><title>Funding</title><sec><title>First</title><p>Made-up text.</p></sec><sec/><p>Grant A1.</p></sec>",
+        "<sec><title>Funding</title><sec><title>Grants</title><p>Made-up text.</p></sec><sec/><p>Grant A1.</p></sec>",
       ],
       [
         '<sec sec-type="funding"><sec><sec><p>Made-up text.</p></sec></sec><p>Grant A1.</p></sec>',
@@ -400,11 +402,11 @@ describe("cutting a paper to its funding sections", () => {
     it.each([
       // A body section never closed, before the back matter.
       [
-        '<article><body><sec><p>Body text.</p></body><back><sec sec-type="funding"><sec><title>A</title><p>Grant A1.</p></sec><p>Grant C2.</p></sec></back></article>',
+        '<article><body><sec><p>Body text.</p></body><back><sec sec-type="funding"><sec><title>Grants</title><p>Grant A1.</p></sec><p>Grant C2.</p></sec></back></article>',
       ],
       // A body section never closed, after the funding section.
       [
-        '<article><body><sec sec-type="funding"><sec><title>A</title><p>Grant A1.</p></sec><p>Grant C2.</p></sec><sec><p>Body text.</p></body></article>',
+        '<article><body><sec sec-type="funding"><sec><title>Grants</title><p>Grant A1.</p></sec><p>Grant C2.</p></sec><sec><p>Body text.</p></body></article>',
       ],
     ])(
       "keeps a well-formed funding section whole when a section elsewhere is never closed, in %s (#263)",
@@ -599,7 +601,7 @@ describe("cutting a paper to its funding sections", () => {
       "<ack><sec><SEC-META><bio>Authorname.</bio></SEC-META><title>Thanks</title>Grant A1.</sec></ack>",
     ],
     [
-      '<sec sec-type="funding"><title>Funding</title><sec><sec-meta><contrib-group><contrib><bio><p>Authorname.</p></bio></contrib></contrib-group></sec-meta><title>Thanks</title><p>Grant A1.</p></sec></sec>',
+      '<sec sec-type="funding"><title>Funding</title><sec><sec-meta><contrib-group><contrib><bio><p>Authorname.</p></bio></contrib></contrib-group></sec-meta><title>Grant support</title><p>Grant A1.</p></sec></sec>',
     ],
     ["<ack><sec><sec-meta/><title>Thanks</title><p>Grant A1.</p></sec></ack>"],
     // Inside a paragraph, at any depth and in any case (#416).
@@ -845,6 +847,108 @@ describe("keeping funding notes and footnotes (#505)", () => {
           "</notes>",
       ).text,
     ).toEqual(["b", "c", "a"]);
+  });
+
+  // A funding section keeps only its untitled subsections and its funding
+  // subsections, wherever it stands: in a note or in the body (#563).
+  it.each([
+    [
+      "in a funding note",
+      '<back><notes notes-type="funding"><sec><title>Funding</title><p>a</p>' +
+        "<sec><title>Author contributions</title><p>Authorname wrote it.</p></sec>" +
+        "</sec></notes></back>",
+    ],
+    [
+      "in the body",
+      "<body><sec><title>Funding</title><p>a</p>" +
+        "<sec><label>1</label><title>Author contributions</title><p>Authorname wrote it.</p></sec>" +
+        "</sec></body>",
+    ],
+    [
+      "typed, in the body, with the subsection wrapped",
+      '<body><sec sec-type="funding"><p>a</p><boxed-text>' +
+        "<sec><title>Author contributions</title><p>Authorname wrote it.</p></sec>" +
+        "</boxed-text></sec></body>",
+    ],
+    [
+      "in the body, with an untitled subsection typed as something else",
+      "<body><sec><title>Funding</title><p>a</p>" +
+        '<sec sec-type="author-contributions"><p>Authorname wrote it.</p></sec>' +
+        "</sec></body>",
+    ],
+  ])(
+    "leaves out a subsection that is not about funding of a funding section %s",
+    (_what, xml) => {
+      const sections = fundingSections(`<article>${xml}</article>`);
+      expect(sections.text).toEqual(["a"]);
+      expect(JSON.stringify(sections)).not.toContain("Authorname");
+    },
+  );
+
+  it("keeps the untitled and funding subsections of a funding section", () => {
+    expect(
+      fundingSections(
+        "<article><body><sec><title>Funding</title><p>a</p>" +
+          "<sec><p>b</p></sec>" +
+          "<sec><title>Grant support</title><p>c</p></sec>" +
+          '<sec sec-type="funding"><p>d</p></sec>' +
+          "</sec></body></article>",
+      ).text,
+    ).toEqual(["a", "b", "c", "d"]);
+  });
+
+  // A section's type counts as its title, so a section typed as something
+  // other than funding is left out of a funding note, and one typed as
+  // funding is kept (#563).
+  it("leaves out an untitled section typed as something else in a funding note", () => {
+    const sections = back(
+      '<notes notes-type="funding"><p>a</p>' +
+        '<sec sec-type="author-contributions"><p>Authorname wrote it.</p></sec>' +
+        '<sec sec-type="funding"><p>b</p></sec>' +
+        '<sec sec-type=" "><p>c</p></sec></notes>',
+    );
+    expect(sections.text).toEqual(["b", "a", "c"]);
+    expect(JSON.stringify(sections)).not.toContain("Authorname");
+  });
+
+  // A note or footnote at any depth in a funding note is read, or left out,
+  // on its own, not as part of the note it stands in (#563).
+  it.each([
+    [
+      "a wrapped note",
+      '<notes notes-type="funding"><p>a</p><boxed-text>' +
+        "<notes><title>Author contributions</title><p>Authorname</p></notes>" +
+        "</boxed-text></notes>",
+    ],
+    [
+      "a note in a section",
+      '<notes notes-type="funding"><p>a</p><sec>' +
+        '<notes notes-type="conflict"><p>Authorname consults.</p></notes>' +
+        "</sec></notes>",
+    ],
+    [
+      "a wrapped footnote",
+      '<notes notes-type="funding"><p>a</p><boxed-text>' +
+        '<fn-group><fn fn-type="conflict"><p>Authorname consults.</p></fn></fn-group>' +
+        "</boxed-text></notes>",
+    ],
+  ])(
+    "leaves out %s that is not about funding inside a funding note",
+    (_what, xml) => {
+      const sections = back(xml);
+      expect(sections.text).toEqual(["a"]);
+      expect(JSON.stringify(sections)).not.toContain("Authorname");
+    },
+  );
+
+  it("reads a wrapped funding note inside a funding note on its own", () => {
+    expect(
+      back(
+        '<notes notes-type="funding"><p>a</p><boxed-text>' +
+          '<notes notes-type="funding"><p>b</p></notes>' +
+          "</boxed-text></notes>",
+      ).text,
+    ).toEqual(["a", "b"]);
   });
 
   // A note kept for its own words drops its sections at any depth, so
