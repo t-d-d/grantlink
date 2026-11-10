@@ -58,14 +58,6 @@ export type Found = z.infer<typeof found>;
 const byPmcid = (a: { pmcid: string }, b: { pmcid: string }) =>
   Number(a.pmcid.slice(3)) - Number(b.pmcid.slice(3));
 
-// Each format with its count, most common first, leaving out any at none.
-function mostCommonFirst(formats: Map<string, number>): Found["formats"] {
-  return [...formats]
-    .filter(([, count]) => count > 0)
-    .map(([format, count]) => ({ format, count }))
-    .sort((a, b) => b.count - a.count || a.format.localeCompare(b.format));
-}
-
 // A correction notice repeats the funding text of the paper it corrects, so
 // it is no finding to show (#660). The search leaves out what Europe PMC
 // marks as one, but neither the table nor found.json keeps a paper's
@@ -77,39 +69,6 @@ const NOTICE =
 
 export function isNotice(title: string): boolean {
   return NOTICE.test(title);
-}
-
-// The published data without any correction notice, its counts taken down
-// by what goes and its formats counted again from the references that
-// stay. A notice a run read and found no reference in is not in found.json,
-// so only a run takes it out of the counts.
-export function withoutNotices(data: Found): Found {
-  const papers = data.papers.filter((paper) => !isNotice(paper.title));
-  const pending = data.pending.filter((paper) => !isNotice(paper.title));
-  const gone = data.papers.filter((paper) => isNotice(paper.title));
-  const references = papers.flatMap((paper) => paper.references);
-  const formats = new Map<string, number>();
-  for (const { format } of references) {
-    formats.set(format, (formats.get(format) ?? 0) + 1);
-  }
-  const goneWaiting = data.pending.length - pending.length;
-  return found.parse({
-    ...data,
-    counts: {
-      papers: data.counts.papers - gone.length - goneWaiting,
-      processed: data.counts.processed - gone.length,
-      withReference:
-        data.counts.withReference -
-        gone.filter((paper) => paper.references.length > 0).length,
-      references:
-        data.counts.references -
-        gone.flatMap((paper) => paper.references).length,
-      pending: data.counts.pending - goneWaiting,
-    },
-    papers,
-    formats: mostCommonFirst(formats),
-    pending,
-  });
 }
 
 // Lists and counts only the papers the latest complete search returned,
@@ -148,10 +107,6 @@ export function summarise(
       })),
     }));
   const references = papers.flatMap((paper) => paper.references);
-  const formats = new Map<string, number>();
-  for (const reference of references) {
-    formats.set(reference.format, (formats.get(reference.format) ?? 0) + 1);
-  }
   const pending = rows
     .filter((row) => row.status === "pending")
     .sort(byPmcid)
@@ -166,7 +121,59 @@ export function summarise(
       pending: pending.length,
     },
     papers,
-    formats: mostCommonFirst(formats),
+    formats: formatCounts(references),
     pending,
   });
+}
+
+// Each reference format and how many references have it, most common first.
+function formatCounts(
+  references: Found["papers"][number]["references"],
+): Found["formats"] {
+  const formats = new Map<string, number>();
+  for (const reference of references) {
+    formats.set(reference.format, (formats.get(reference.format) ?? 0) + 1);
+  }
+  return [...formats]
+    .map(([format, count]) => ({ format, count }))
+    .sort((a, b) => b.count - a.count || a.format.localeCompare(b.format));
+}
+
+// The same findings without the papers named, read or not, as if the
+// search had not returned them (#587). found.json lists only papers with a
+// reference and papers not yet read, so a named paper read with no
+// reference cannot be found here and stays in the counts.
+export function leaveOut(data: Found, pmcids: ReadonlySet<string>): Found {
+  const papers = data.papers.filter((paper) => !pmcids.has(paper.pmcid));
+  const pending = data.pending.filter((paper) => !pmcids.has(paper.pmcid));
+  const read = data.papers.length - papers.length;
+  const unread = data.pending.length - pending.length;
+  const references = papers.flatMap((paper) => paper.references);
+  return found.parse({
+    ...data,
+    counts: {
+      papers: data.counts.papers - read - unread,
+      processed: data.counts.processed - read,
+      withReference: papers.length,
+      references: references.length,
+      pending: pending.length,
+    },
+    papers,
+    formats: formatCounts(references),
+    pending,
+  });
+}
+
+// The same findings without the papers whose titles mark them as
+// correction notices, so a deploy takes a notice an older run published
+// off the page (#660).
+export function withoutNotices(data: Found): Found {
+  return leaveOut(
+    data,
+    new Set(
+      [...data.papers, ...data.pending]
+        .filter((paper) => isNotice(paper.title))
+        .map((paper) => paper.pmcid),
+    ),
+  );
 }
