@@ -98,3 +98,7 @@ export const deploy = parse(
 export const evalWorkflow = parse(
   readRepoFile(".github/workflows/eval.yml"),
 ) as Workflow;
+
+export const conformanceWorkflow = parse(
+  readRepoFile(".github/workflows/conformance.yml"),
+) as Workflow;

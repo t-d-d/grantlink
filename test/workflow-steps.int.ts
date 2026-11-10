@@ -4,7 +4,7 @@
 // failure inside `echo "x=$(cmd)"` does not stop a script, even under
 // `set -e`, so the step would succeed with an empty value. The role steps
 // must fail too when the STS reply lacks a field, where `jq -r` would print
-// `null` and succeed (#122).
+// `null` and succeed (#122). All three role steps are covered (#188).
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -18,7 +18,12 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { deploy, evalWorkflow, type Workflow } from "./app.ts";
+import {
+  conformanceWorkflow,
+  deploy,
+  evalWorkflow,
+  type Workflow,
+} from "./app.ts";
 
 // The system commands the steps and the stubs run. The step's PATH holds
 // only these and the stubs, so a call nothing stubs fails instead of
@@ -302,6 +307,16 @@ describe.each([
     title: "the deploy's role step",
     run: script(deploy, "deploy", "Assume the deploy role"),
     extra: [],
+  },
+  // #188: the third copy of the step, which had neither fix.
+  {
+    title: "the conformance run's role step",
+    run: script(
+      conformanceWorkflow,
+      "conformance",
+      "Assume the conformance role",
+    ),
+    extra: [`grantlink-text-${account}`],
   },
 ])("$title", ({ run, extra }) => {
   // The values only: no test in the gate names the variables that hold a
