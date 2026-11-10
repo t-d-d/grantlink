@@ -244,13 +244,72 @@ describe("cutting a paper to its funding sections", () => {
       expect(kept).not.toContain("Authorname");
     });
 
-    it("runs a funding section with no closing tag only to the next closing tag", () => {
+    // When a paper's section tags do not balance, which closing tag is
+    // missing cannot be told, so a funding section holds no section: it runs
+    // only to the next section tag, opening or closing (#263). A subsection
+    // of it is then lost, as here, since it cannot be told apart from a body
+    // section after it.
+    it("runs a funding section with no closing tag only to the next section tag", () => {
       const sections = fundingSections(
         paper(
           '<sec sec-type="funding"><sec><p>Grant A1.</p></sec><sec><title>Discussion</title><p>Body text.</p></sec>',
         ),
       );
-      expect(sections.text).toEqual(["Grant A1."]);
+      expect(sections.text).toEqual([]);
+      expect(JSON.stringify(sections)).not.toContain("Body text");
+    });
+
+    it.each([
+      // A funding section never closed, with a body section after it.
+      [
+        '<sec sec-type="funding"><p>Grant A1.</p><sec><title>Discussion</title><p>Body text.</p></sec>',
+      ],
+      // A funding section in a parent section, with a subsection never
+      // closed, so its parent's closing tag would balance it.
+      [
+        '<sec><title>Back</title><sec sec-type="funding"><p>Grant A1.</p><sec><p>Sub.</p></sec><p>Body text.</p></sec>',
+      ],
+      // A closing tag too many, before the funding section.
+      [
+        '</sec><sec><title>Back</title><sec sec-type="funding"><p>Grant A1.</p><sec><p>Sub.</p></sec><p>Body text.</p></sec>',
+      ],
+    ])(
+      "keeps no text from outside an unbalanced funding section in %s (#263)",
+      (section) => {
+        const sections = fundingSections(paper(section));
+        expect(sections.text).toEqual(["Grant A1."]);
+        const kept = JSON.stringify(sections);
+        expect(kept).not.toContain("Body text");
+        expect(kept).not.toContain("Sub.");
+      },
+    );
+
+    it.each([
+      // A body section never closed, before the back matter.
+      [
+        '<article><body><sec><p>Body text.</p></body><back><sec sec-type="funding"><sec><title>A</title><p>Grant A1.</p></sec><p>Grant C2.</p></sec></back></article>',
+      ],
+      // A body section never closed, after the funding section.
+      [
+        '<article><body><sec sec-type="funding"><sec><title>A</title><p>Grant A1.</p></sec><p>Grant C2.</p></sec><sec><p>Body text.</p></body></article>',
+      ],
+    ])(
+      "keeps a well-formed funding section whole when a section elsewhere is never closed, in %s (#263)",
+      (xml) => {
+        const sections = fundingSections(xml);
+        expect(sections.text).toEqual(["Grant A1.", "Grant C2."]);
+        expect(JSON.stringify(sections)).not.toContain("Body text");
+      },
+    );
+
+    it("still keeps a funding section's subsections when every section tag balances", () => {
+      expect(
+        fundingSections(
+          paper(
+            '<sec><title>Back</title><sec sec-type="funding"><p>Grant A1.</p><sec><p>Sub.</p></sec></sec><p>Body text.</p></sec>',
+          ),
+        ).text,
+      ).toEqual(["Grant A1.", "Sub."]);
     });
   });
 
@@ -281,12 +340,22 @@ describe("cutting a paper to its funding sections", () => {
     ).toEqual(["Grant A1."]);
   });
 
+  // Which paragraph's closing tag is missing cannot be told, so the
+  // unclosed one ends at the next paragraph tag (#263).
   it("keeps a paragraph whose closing tag is missing", () => {
     expect(
       fundingSections(
         "<article><back><ack><p>Grant A1.</p><p>Grant B2 <p>and A2.</p></ack></back></article>",
       ).text,
-    ).toEqual(["Grant A1.", "Grant B2 and A2."]);
+    ).toEqual(["Grant A1.", "Grant B2", "and A2."]);
+  });
+
+  it("keeps no text from a footnote after an unclosed funding footnote (#263)", () => {
+    const sections = fundingSections(
+      '<article><back><fn-group><fn fn-type="funding"><p>Grant A1.</p><fn><p>Body text.</p></fn></fn-group></back></article>',
+    );
+    expect(sections.text).toEqual(["Grant A1."]);
+    expect(JSON.stringify(sections)).not.toContain("Body text");
   });
 
   it("keeps no more of a paper after an unclosed element than the next closing tag", () => {
@@ -491,9 +560,23 @@ describe("reading an element by its name", () => {
     expect(elements("<fn>a</fn ><fn>b</fn\n>", "fn")).toEqual(["a", "b"]);
   });
 
-  it("ends an unbalanced element at the next closing tag with white space before its >", () => {
-    expect(elements("<fn>a<fn>b</fn >c<fn>d</fn>", "fn")).toEqual([
-      "a<fn>b",
+  it("ends an unbalanced element at the next tag of its name, with white space before its > (#263)", () => {
+    expect(elements("<fn>a<fn>b</fn >c<fn>d</fn >", "fn")).toEqual([
+      "a",
+      "b",
+      "d",
+    ]);
+  });
+
+  it("reads a well-formed element whole when one after it is never closed", () => {
+    expect(elements("<fn>a<fn>b</fn>c</fn><fn>d", "fn")).toEqual([
+      "a<fn>b</fn>c",
+    ]);
+  });
+
+  it("reads elements inside elements of the same name only when the tags balance", () => {
+    expect(elements("<fn>a<fn>b</fn>c</fn><fn>d</fn>", "fn")).toEqual([
+      "a<fn>b</fn>c",
       "d",
     ]);
   });
