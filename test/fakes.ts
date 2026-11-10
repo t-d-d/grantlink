@@ -92,13 +92,13 @@ export function memoryTable(): Table & {
     },
     // As the real table: counts the failure, and keeps why or no reason.
     markFailed(pmcid, why) {
-      const { lastFailure: _held, ...row } = get(pmcid);
+      const row = get(pmcid);
       rows.set(
         pmcid,
         paperRow.parse({
           ...row,
           failures: (row.failures ?? 0) + 1,
-          ...(why === undefined ? {} : { lastFailure: why }),
+          lastFailure: why,
         }),
       );
       return Promise.resolve();

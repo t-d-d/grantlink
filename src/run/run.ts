@@ -25,12 +25,7 @@ import {
   type Owed,
   type PaperAsked,
 } from "./owed.ts";
-import {
-  europePmcRetry,
-  onceRetry,
-  paperRetry,
-  storeRetry,
-} from "./retry.ts";
+import { europePmcRetry, onceRetry, paperRetry, storeRetry } from "./retry.ts";
 import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 
 // A run: search Europe PMC page by page, record what each page found, read
