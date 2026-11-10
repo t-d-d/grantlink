@@ -39,6 +39,27 @@ describe("fitness: no durable operation inside its own context's operation (dura
       },
     ],
     invalid: [
+      {
+        name: "asks Europe PMC on the same context through the comma operator inside a step",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await askEuropePmc((0, ctx), "paper", "wait", r, async () => 1);
+          }, { retryStrategy: r });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
+        name: "waits on the same context through the comma operator inside a step",
+        code: `async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await (0, ctx).wait("pause", { seconds: 1 });
+          }, { retryStrategy: r });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+
       ...[
         ["asserted with as", "ctx as Context"],
         ["checked with satisfies", "ctx satisfies Context"],

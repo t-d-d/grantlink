@@ -11,6 +11,12 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
     {
       valid: [
         {
+          name: "reads the clock inside a step's callback through the comma operator",
+          code: `async function run(ctx: any) {
+            await ctx.step("start", (0, async () => Date.now()), { retryStrategy: r });
+          }`,
+        },
+        {
           name: "reads the clock inside a step's callback asserted with as",
           code: `async function run(ctx: any) {
             await ctx.step("start", (async () => Date.now()) as any, { retryStrategy: r });

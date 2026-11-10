@@ -12,6 +12,21 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
   tester.run("no-await-outside-step", noAwaitOutsideStep, {
     valid: [
       {
+        name: "awaits inside a step's callback through the comma operator",
+        code: `async function run(ctx: any) {
+          await ctx.step("fetch", (0, async () => { await fetchPaper(); }), { retryStrategy: r });
+        }`,
+      },
+      {
+        name: "awaits inside askEuropePmc's read through the comma operator",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
+          await askEuropePmc(ctx, "paper", "wait", r, (0, async () => { await readPaper(); }));
+        }`,
+      },
+
+      {
         name: "awaits inside askEuropePmc's read asserted with as",
         filename: "src/run/run.ts",
         code: `import { askEuropePmc } from "./owed.ts";
