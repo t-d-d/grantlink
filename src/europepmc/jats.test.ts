@@ -162,6 +162,9 @@ describe("cutting a paper to its funding sections", () => {
       [
         '<sec sec-type="funding"><?pi x?><sec-meta><contrib-group><contrib><name><surname>Authorname</surname></name></contrib></contrib-group></sec-meta><?pi x?><title>Funding</title>Grant A1.</sec>',
       ],
+      // Nor does one inside the title, before the words that name it.
+      ["<sec><title><?pi x?>Funding</title><p>Grant A1.</p></sec>"],
+      ["<sec><title><?pi x?>Support</title><p>Grant A1.</p></sec>"],
     ])("in %s", (section) => {
       const sections = fundingSections(paper(section));
       expect(sections.text).toEqual(["Grant A1."]);

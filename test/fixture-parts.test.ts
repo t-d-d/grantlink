@@ -60,7 +60,9 @@ describe("strayParts", () => {
         paper({
           body:
             "<body><sec><?pi x?><title>Funding</title><p>Funded.</p></sec>" +
-            "<sec><label>5.</label><!----><title>Funding</title><p>Funded.</p></sec></body>",
+            "<sec><label>5.</label><!----><title>Funding</title><p>Funded.</p></sec>" +
+            "<sec><title><!----><?pi x?>Funding</title><p>Funded.</p></sec>" +
+            "<sec><?pi a>b?><title>Funding</title><p>Funded.</p></sec></body>",
         }),
       ),
     ).toEqual([]);
@@ -270,6 +272,20 @@ describe("strayParts", () => {
       "a comment holding text before the title of a funding section, not the section (#230)",
       {
         body: "<body><sec><!-- x --><title>Funding</title><p>Funded.</p></sec></body>",
+      },
+      "article/body/sec (text)",
+    ],
+    [
+      "a comment holding text in a funding section with no paragraphs, which the cutter drops",
+      {
+        body: "<body><sec><!-- x --><title>Funding</title>Funded.</sec></body>",
+      },
+      "article/body/sec (text)",
+    ],
+    [
+      "a comment holding text inside the title of a funding section",
+      {
+        body: "<body><sec><title><!-- x -->Funding</title><p>Funded.</p></sec></body>",
       },
       "article/body/sec (text)",
     ],

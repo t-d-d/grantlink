@@ -197,13 +197,14 @@ export const FUNDING_FOOTNOTE = String.raw`\bfn-type="(?:financial-disclosure|fu
 // whether the section is found by its type or its title, so it is not kept,
 // since it can name people (#222). Between a section's opening tag, its
 // sec-meta, its label and its title may sit white space, comments and
-// processing instructions, so neither hides a section. The cutter has
-// dropped the comments by then, but the check on recorded fixtures reads the
-// raw XML (#230). Each comment or instruction ends at its own close, so one
-// cannot run on past a title into another.
+// processing instructions, and so may they inside the title before the
+// words that name it, so neither hides a section. The cutter has dropped the
+// comments by then, but the check on recorded fixtures reads the raw XML
+// (#230). Each comment or instruction ends at its own close, so one cannot
+// run on past a title into another.
 const GAP = String.raw`(?:\s|<!--(?:(?!-->)[\s\S])*-->|<\?(?:(?!\?>)[\s\S])*\?>)*`;
 const SEC_META = String.raw`(?:<sec-meta${NAME_END}(?:[^>]*\/>|[^>]*>(?:(?!<\/sec-meta>)[\s\S])*<\/sec-meta>)${GAP})?`;
-const FUNDING_SECTION_START = String.raw`<sec${NAME_END}(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*(?<!\/)>${GAP}${SEC_META}|[^>]*(?<!\/)>${GAP}${SEC_META}(?:<label${NAME_END}[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>${GAP})?<title${NAME_END}[^>]*(?<!\/)>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
+const FUNDING_SECTION_START = String.raw`<sec${NAME_END}(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*(?<!\/)>${GAP}${SEC_META}|[^>]*(?<!\/)>${GAP}${SEC_META}(?:<label${NAME_END}[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>${GAP})?<title${NAME_END}[^>]*(?<!\/)>${GAP}(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
 
 const FUNDING_SECTION_AT = new RegExp(FUNDING_SECTION_START, "iuy");
 
