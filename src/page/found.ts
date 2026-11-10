@@ -58,13 +58,28 @@ export type Found = z.infer<typeof found>;
 const byPmcid = (a: { pmcid: string }, b: { pmcid: string }) =>
   Number(a.pmcid.slice(3)) - Number(b.pmcid.slice(3));
 
+// A correction notice repeats the funding text of the paper it corrects, so
+// it is no finding to show (#660). The search leaves out what Europe PMC
+// marks as one, but neither the table nor found.json keeps a paper's
+// publication types, so a notice found before that, or still in a
+// found.json, is known by its title: a notice word followed by a colon or
+// "to". "Correction of …" is a research paper's title, and stays.
+const NOTICE =
+  /^(?:(?:author|publisher)\s+)?(?:correction|corrigendum|erratum)(?:\s*:|\s+to\b)/iu;
+
+export function isNotice(title: string): boolean {
+  return NOTICE.test(title);
+}
+
 // Lists and counts only the papers the latest complete search returned,
 // `search` being the run whose search that was, whichever run publishes.
 // The search asks for papers linked to none of the funder's grants and not
-// marked as retracted, so a paper it left out has since been linked,
-// retracted or dropped, and is no longer one the page is about. The table
-// keeps its row. A row keeps the mark of the latest-started run that
-// returned it, and run ids sort as their runs started, so a paper that
+// marked as retracted or as a correction notice, so a paper it left out
+// has since been linked, retracted or dropped, and is no longer one the
+// page is about. A paper whose title marks it as a correction notice is
+// left out too, whichever search returned it. The table keeps its row. A
+// row keeps the mark of the latest-started run that returned it, and run
+// ids sort as their runs started, so a paper that
 // search returned may carry the mark of a run that started after it. Such a run's search is newer, so its papers count too
 // (#125).
 export function summarise(
@@ -73,7 +88,10 @@ export function summarise(
   search: string = run.runId,
 ): Found {
   const rows = all.filter(
-    (row) => row.foundByRun !== undefined && row.foundByRun >= search,
+    (row) =>
+      row.foundByRun !== undefined &&
+      row.foundByRun >= search &&
+      !isNotice(row.title),
   );
   const processed = rows.filter((row) => row.status === "processed");
   const papers = processed
@@ -144,4 +162,18 @@ export function leaveOut(data: Found, pmcids: ReadonlySet<string>): Found {
     formats: formatCounts(references),
     pending,
   });
+}
+
+// The same findings without the papers whose titles mark them as
+// correction notices, so a deploy takes a notice an older run published
+// off the page (#660).
+export function withoutNotices(data: Found): Found {
+  return leaveOut(
+    data,
+    new Set(
+      [...data.papers, ...data.pending]
+        .filter((paper) => isNotice(paper.title))
+        .map((paper) => paper.pmcid),
+    ),
+  );
 }

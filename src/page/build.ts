@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { found, leaveOut } from "./found.ts";
+import { found, leaveOut, withoutNotices } from "./found.ts";
 import { release } from "./release.ts";
 import { buildPage } from "./render.ts";
 
@@ -38,7 +38,10 @@ export function rebuild(
 ): string {
   return buildPage(
     template,
-    data === null ? null : leaveOut(found.parse(JSON.parse(data)), retracted),
+    // A correction notice an older run published goes too (#660).
+    data === null
+      ? null
+      : withoutNotices(leaveOut(found.parse(JSON.parse(data)), retracted)),
     record === null ? null : release.parse(JSON.parse(record)),
   );
 }
