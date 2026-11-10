@@ -649,6 +649,19 @@ describe("a title as plain text", () => {
   it("drops a tag left without its pair", () => {
     expect(plainTitle("One <i>two")).toBe("One two");
     expect(plainTitle("One</sup> two")).toBe("One two");
+    expect(plainTitle("</i> One <b> two")).toBe("One two");
+  });
+
+  it("reads a tag half raw and half encoded as a tag, so it is paired and cut as one", () => {
+    expect(plainTitle("a &lt;sup>2 b")).toBe("a 2 b");
+    expect(plainTitle("a <sup&gt;2</sup> b")).toBe("a <sup>2</sup> b");
+    expect(plainTitle("a &lt;sup>2&lt;/sup> b")).toBe("a <sup>2</sup> b");
+  });
+
+  it("keeps a raw sign as text, and the words after it", () => {
+    expect(plainTitle("p<0.05 in <i>vivo</i> mice")).toBe(
+      "p<0.05 in <i>vivo</i> mice",
+    );
   });
 
   it("never cuts a title inside a tag", () => {
@@ -665,6 +678,7 @@ describe("a title as plain text", () => {
       const title = plainTitle(`${"x".repeat(lead)}&lt;sup&gt;18&lt;/sup&gt;F`);
       expect(title.length).toBeLessThanOrEqual(500);
       expect(title.replace(/<\/?sup>/gu, "")).not.toMatch(/[<>]/u);
+      expect(title.split("<sup>").length).toBe(title.split("</sup>").length);
     }
   });
 

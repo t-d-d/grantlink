@@ -214,8 +214,12 @@ const TAGS = INLINE.flatMap((name) => [`<${name}>`, `</${name}>`]);
 // as the cleaning has already turned every control character in the title
 // into a space.
 const MARK = TAGS.map((_, i) => String.fromCharCode(i + 1));
+// A tag holds no "<", so a raw "<" in the text, as in p<0.05, is not read
+// as the start of one and does not take the words up to the next tag. A
+// tag half raw and half encoded is read as a tag, as decoding would make
+// one of it that the page shows.
 const MARKUP =
-  /<(\/?)(sup|sub|i|b)(?:\s[^>]*)?>|&lt;(\/?)(sup|sub|i|b)&gt;|<[^>]*>/giu;
+  /<(\/?)(sup|sub|i|b)(?:\s[^<>]*)?(?:>|&gt;)|&lt;(\/?)(sup|sub|i|b)(?:&gt;|>)|<[^<>]*>/giu;
 const LIMIT = 500;
 
 export function plainTitle(title: string): string {
@@ -252,7 +256,8 @@ export function plainTitle(title: string): string {
     parts.push(part);
     length += part.length;
   }
-  return paired(parts).join("").trimEnd();
+  // A dropped tag can leave a space at either end or two together.
+  return paired(parts).join("").replace(/\s+/gu, " ").trim();
 }
 
 // Drops a tag left without its pair, by the cut or in Europe PMC's data.
