@@ -142,6 +142,48 @@ describe("the rules", () => {
     ]);
   });
 
+  it("leaves a run of words after CRUK/ when its digit lies past the reference", () => {
+    expect(
+      findReferences(
+        sections("Funded by CRUK/MRC/EPSRC/NIHR/BHF/2020 grants."),
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([
+    "Cancer Research UK grant 12345-67.",
+    "Cancer Research UK grant 12345/2.",
+    "Cancer Research UK grant 12345 / 2.",
+    "Cancer Research UK grant 1234.5.",
+  ])("leaves a bare number that is the start of a longer one: %j", (text) => {
+    expect(findReferences(sections(text))).toEqual([]);
+  });
+
+  it("lists a bare number the text ties to the funder once, beside its A number", () => {
+    expect(
+      findReferences(
+        sections("Funded by Cancer Research UK grant A12345 (ref 12345)."),
+      ),
+    ).toEqual([{ asWritten: "A12345", normalised: "A12345", format: "An" }]);
+    expect(
+      findReferences({
+        text: ["Cancer Research UK grant 12345."],
+        awards: [{ sources: ["Cancer Research UK"], ids: ["A12345"] }],
+      }),
+    ).toEqual([{ asWritten: "A12345", normalised: "A12345", format: "An" }]);
+  });
+
+  it("lists a bare number once beside a CRUK- reference that ends in it", () => {
+    expect(
+      findReferences({
+        text: ["Funded by Cancer Research UK (CRUK-12345)."],
+        awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
+      }),
+    ).toEqual([
+      { asWritten: "CRUK-12345", normalised: "CRUK-12345", format: "CRUK-X" },
+    ]);
+  });
+
   it("reads an A number in a sentence that names the funder", () => {
     expect(
       findReferences(sections("Supported by CRUK grant A28707 to the lab.")),

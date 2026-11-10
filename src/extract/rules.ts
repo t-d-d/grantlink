@@ -166,12 +166,13 @@ const PATTERNS: Pattern[] = [
   {
     // A reference that carries the funder's short name as its own part, as
     // in CRUK/12/034, CRUKDF-0123-AB or ABC-CRUK-ABCD12-AB (#506). The
-    // guide keeps the CRUK in its normalised form. It must hold a digit, so
-    // a word such as CRUK-funded is not one. It comes after the C/A pattern,
-    // so a C/A pair after CRUK/ is read as the pair alone.
+    // guide keeps the CRUK in its normalised form. It must hold a digit
+    // after the CRUK, within what it matches, so a word such as CRUK-funded
+    // or a run of names such as CRUK/MRC/EPSRC is not one. It comes after
+    // the C/A pattern, so a C/A pair after CRUK/ is read as the pair alone.
     format: "CRUK-X",
     pattern: new RegExp(
-      String.raw`${START}(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?=[A-Z0-9/${DASHES}-]*\d)(?:(?:${DASH}|/)[A-Z0-9]{1,8}){1,4}${END}`,
+      String.raw`${START}(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:(?:${DASH}|/)[A-Z0-9]{1,8}){1,4}(?<=CRUK[A-Z0-9/${DASHES}-]*\d[A-Z0-9/${DASHES}-]*)${END}`,
       "gu",
     ),
     sentenceOnly: false,
@@ -243,10 +244,11 @@ const PATTERNS: Pattern[] = [
     // A bare award number, which the text ties to the funder: in brackets
     // straight after its name, or after a word such as "grant" or "award
     // no." that follows its name in the same clause, with no comma,
-    // semicolon or full stop between (#506). A year is not one.
+    // semicolon or full stop between (#506). A year is not one, and nor is
+    // the start of a longer number, as in 12345/2, 12345-67 or 1234.5.
     format: "n",
     pattern: new RegExp(
-      String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})(?!${EDGE})(?:\s?\(\s?|[^;,.]{0,100}?${TIE_WORD}))(?!(?:19|20)\d{2}(?!\d))\d{4,6}${END}`,
+      String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})(?!${EDGE})(?:\s?\(\s?|[^;,.]{0,100}?${TIE_WORD}))(?!(?:19|20)\d{2}(?!\d))\d{4,6}${END}(?!${SEP}|${DASH}\d|\.\d)`,
       "gu",
     ),
     sentenceOnly: true,
@@ -316,11 +318,12 @@ function confirmedNumber(id: string, text: readonly string[]): boolean {
 }
 
 // Whether another reference gives this number, after a letter such as its A
-// or FC, or as the last part of a longer reference, so the number alone
-// would list it twice. It is asked once every reference is found, so the
-// order of the award groups does not matter (#241).
+// or FC, or as the last part of a longer reference after a slash or a
+// hyphen, as in CRUK-12345, so the number alone would list it twice. It is
+// asked once every reference is found, so the order of the award groups
+// does not matter (#241).
 function alreadyFound(id: string, found: readonly Reference[]): boolean {
-  const ending = new RegExp(`[A-Z/]${id}$`, "u");
+  const ending = new RegExp(`[A-Z/-]${id}$`, "u");
   return found.some(({ normalised }) => ending.test(normalised));
 }
 
@@ -332,7 +335,11 @@ export function findReferences(sections: FundingSections): Reference[] {
     found.push(...scan(paragraph, "long"));
     for (const sentence of sentences(paragraph)) {
       if (!funderName.test(sentence)) continue;
-      found.push(...scan(sentence, "short"));
+      // A bare number the text gives waits, as one from the metadata does,
+      // so an A number or a longer reference that ends in it lists it once.
+      for (const reference of scan(sentence, "short")) {
+        (reference.format === "n" ? bare : found).push(reference);
+      }
     }
   }
   for (const award of sections.awards) {
