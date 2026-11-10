@@ -533,9 +533,7 @@ function restExported(
   declarator: TSESTree.VariableDeclarator,
   resolver: Resolver,
 ): boolean {
-  const rest = pattern.properties.find(
-    (property) => property.type === AST_NODE_TYPES.RestElement,
-  );
+  const rest = restOf(pattern);
   if (rest === undefined) return false;
   return resolver.sourceCode
     .getDeclaredVariables(declarator)
@@ -546,12 +544,19 @@ function restExported(
     );
 }
 
-// True when a pattern ends in a rest, `{ a, ...rest }`, which copies the
-// object's other members.
-function copiesRest(pattern: TSESTree.ObjectPattern): boolean {
-  return pattern.properties.some(
+// The rest a pattern ends in, `{ a, ...rest }`, which copies the object's
+// other members.
+function restOf(
+  pattern: TSESTree.ObjectPattern,
+): TSESTree.RestElement | undefined {
+  return pattern.properties.find(
     (property) => property.type === AST_NODE_TYPES.RestElement,
   );
+}
+
+// True when a pattern ends in a rest, `{ a, ...rest }`.
+function copiesRest(pattern: TSESTree.ObjectPattern): boolean {
+  return restOf(pattern) !== undefined;
 }
 
 // True when `Date`, read as a value, goes somewhere that may call it, such

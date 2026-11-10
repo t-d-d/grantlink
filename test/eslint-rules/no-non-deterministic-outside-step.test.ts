@@ -1552,6 +1552,18 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "exports under another name the rest of crypto destructured from globalThis in a nested pattern",
+          filename: "src/run/run.ts",
+          code: `const { crypto: { ...c } } = globalThis; export { c as k };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "crypto" },
+              column: 9,
+            },
+          ],
+        },
+        {
           name: "exports the rest of Math destructured from globalThis in a nested pattern with a default Math",
           filename: "src/run/run.ts",
           code: `export const { Math: { ...m } = Math } = globalThis;`,
