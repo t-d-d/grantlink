@@ -386,8 +386,9 @@ describe("fitness: no invented references (model-calls.md)", () => {
 
   it("keeps a reference written with a hyphen, a slash or a backslash", async () => {
     // Each is a character a reference may hold, and none may break the check
-    // of its edges. The text is made up.
-    const written = ["C1234-A56789", "C2345/A67890", "C3456\\A78901"];
+    // of its edges. The rules read a hyphen only after a code, not between
+    // a C and an A number (#492). The text is made up.
+    const written = ["CTRQQR-2021/100010", "C2345/A67890", "C3456\\A78901"];
     const { fetch } = fakeOpenRouter(
       answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
     );
@@ -589,6 +590,64 @@ describe("fitness: no invented references (model-calls.md)", () => {
     );
     expect(result.status === "read" && result.references).toEqual([]);
     expect(result.status === "read" && result.rejected).toBe(2);
+  });
+  it("rejects a name in capitals next to a number, and a prefix before a number of the wrong length (#492)", async () => {
+    // Each is in the text whole and holds a digit, but is no shape the rules
+    // read: a code reads only before a number of the form 1nnnnn, a name
+    // joined by a slash or a hyphen is no code, a prefix needs a number of
+    // its own length, and a hyphen does not part a C and an A number. The
+    // text is made up.
+    const written = [
+      "SMITH / 2",
+      "JONES / A12345",
+      "EXAMPLE/A12345",
+      "SMITH-JONES 2",
+      "A 2",
+      "C 1",
+      "RT 9",
+      "C1234-A56789",
+    ];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(
+      [`Funded by Cancer Research UK (${written.join(", ")}).`],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(written.length);
+  });
+
+  it("keeps a bare number of five to seven digits, with or without a suffix of two digits (#492)", async () => {
+    // The rules leave a number tied to the funder only by name to the model
+    // (#177). The text is made up.
+    const written = ["12345", "123456", "1234567", "123456-01", "234567‐02"];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(
+      [`Funded by Cancer Research UK (${written.join(", ")}).`],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(written);
+    expect(result.status === "read" && result.rejected).toBe(0);
+  });
+
+  it("rejects a number that is not a bare number's length or suffix (#492)", async () => {
+    // The text is made up.
+    const written = ["2", "1234", "12345678", "123456-1", "123456/01"];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(
+      [`Funded by Cancer Research UK (${written.join(", ")}).`],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(written.length);
   });
 });
 
