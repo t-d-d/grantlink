@@ -122,7 +122,8 @@ const quoted = (field: string, value: string) =>
 
 // Papers published since the funder's start date, whose acknowledgement or
 // funding text names the funder, which Europe PMC links to none of its
-// grants, and which it does not mark as retracted. The client keeps every
+// grants, and which it does not mark as retracted or as a correction
+// notice. The client keeps every
 // search to open-access papers itself.
 export function searchQuery(): string {
   const names = funder.names.map((name) => quoted("ACK_FUND", name));
@@ -131,6 +132,12 @@ export function searchQuery(): string {
     `NOT ${quoted("GRANT_AGENCY", funder.europePmcAgency)}`,
     // A retracted paper is no finding to show (#587).
     `NOT ${quoted("PUB_TYPE", "retracted publication")}`,
+    // A correction notice repeats the funding text of the paper it
+    // corrects, so its grant is already that paper's (#660). Europe PMC
+    // also types many a corrected and republished article as a
+    // correction, and that is the whole paper again, so it stays.
+    `NOT ${quoted("PUB_TYPE", "published erratum")}`,
+    `NOT (${quoted("PUB_TYPE", "correction")} AND NOT ${quoted("PUB_TYPE", "corrected and republished article")})`,
     `FIRST_PDATE:[${funder.since} TO 3000-12-31]`,
   ].join(" AND ");
 }
