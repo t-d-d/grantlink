@@ -597,8 +597,12 @@ function landsIn(
 ): TSESTree.Node | null {
   let target = left;
   for (const step of steps ?? []) {
-    const inner = withoutDefault(target);
-    if (typeof step === "number" && inner.type === AST_NODE_TYPES.ArrayPattern) {
+    const inner =
+      target.type === AST_NODE_TYPES.AssignmentPattern ? target.left : target;
+    if (
+      typeof step === "number" &&
+      inner.type === AST_NODE_TYPES.ArrayPattern
+    ) {
       const rest = inner.elements.findIndex(
         (element) => element?.type === AST_NODE_TYPES.RestElement,
       );
@@ -929,10 +933,13 @@ function passedOn(
 // reaches nothing, `{ PI }` from `Math` or `{ foo: { PI } = Math }` from
 // `globalThis`, gives none: a nested default reports on its own.
 function givesSource(target: TSESTree.Node, base: readonly string[]): boolean {
-  const inner = withoutDefault(target);
+  const inner =
+    target.type === AST_NODE_TYPES.AssignmentPattern ? target.left : target;
   if (inner.type !== AST_NODE_TYPES.ObjectPattern) {
     return (
-      opOf(base) !== undefined || namesDate(base) || holderOf(base) !== undefined
+      opOf(base) !== undefined ||
+      namesDate(base) ||
+      holderOf(base) !== undefined
     );
   }
   return inner.properties.some((property) => {
