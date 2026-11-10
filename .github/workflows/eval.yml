@@ -64,8 +64,12 @@ jobs:
       # assumes its own. The account id, the token and the credentials are
       # masked before anything else runs. The private bucket is
       # grantlink-text-<account id>, as the app stack names it, so the role
-      # is the only value GitHub holds for the eval (#43).
+      # is the only value GitHub holds for the eval (#43). The credentials
+      # and the bucket's name are this step's outputs, and only the steps
+      # that call AWS name them in their env, so no other step's code holds
+      # them (#308).
       - name: Assume the eval role
+        id: assume
         env:
           ROLE: ${{ secrets.AWS_EVAL_ROLE_ARN }}
         run: |
@@ -110,11 +114,11 @@ jobs:
           echo "::add-mask::$secret"
           echo "::add-mask::$session"
           {
-            echo "AWS_ACCESS_KEY_ID=$key"
-            echo "AWS_SECRET_ACCESS_KEY=$secret"
-            echo "AWS_SESSION_TOKEN=$session"
-            echo "BUCKET=grantlink-text-$account"
-          } >> "$GITHUB_ENV"
+            echo "key=$key"
+            echo "secret=$secret"
+            echo "session=$session"
+            echo "bucket=grantlink-text-$account"
+          } >> "$GITHUB_OUTPUT"
 
       # The report is a cache keyed by the fingerprint (#9). Listing with
       # the key as a prefix is how the role asks whether it exists.
@@ -127,6 +131,10 @@ jobs:
       - id: cached
         name: Look for the report filed for this fingerprint
         env:
+          AWS_ACCESS_KEY_ID: ${{ steps.assume.outputs.key }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.assume.outputs.secret }}
+          AWS_SESSION_TOKEN: ${{ steps.assume.outputs.session }}
+          BUCKET: ${{ steps.assume.outputs.bucket }}
           FINGERPRINT: ${{ steps.fingerprint.outputs.value }}
         run: |
           set -euo pipefail
@@ -152,11 +160,19 @@ jobs:
 
       - name: Download the snapshot
         if: steps.cached.outputs.hit != 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ steps.assume.outputs.key }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.assume.outputs.secret }}
+          AWS_SESSION_TOKEN: ${{ steps.assume.outputs.session }}
         run: scripts/eval-snapshot.sh .eval
 
+      # The runner scores the rules, then each model, through OpenRouter
+      # (#329). The eval's key has its own credit limit (#328), and only this
+      # step holds it.
       - name: Run the eval
         if: steps.cached.outputs.hit != 'true'
         env:
+          OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
           FINGERPRINT: ${{ steps.fingerprint.outputs.value }}
           COMMIT: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -168,6 +184,10 @@ jobs:
       - name: File the report
         if: steps.cached.outputs.hit != 'true' && steps.cached.outputs.bucket != 'missing'
         env:
+          AWS_ACCESS_KEY_ID: ${{ steps.assume.outputs.key }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.assume.outputs.secret }}
+          AWS_SESSION_TOKEN: ${{ steps.assume.outputs.session }}
+          BUCKET: ${{ steps.assume.outputs.bucket }}
           FINGERPRINT: ${{ steps.fingerprint.outputs.value }}
         run: |
           set -euo pipefail
@@ -237,8 +257,11 @@ jobs:
           # All the ids first, then the first line, with no pipe: a reader
           # that stops early sends gh SIGPIPE and fails the step (#257).
           # --jq runs once per page, so it alone cannot pick the first.
+          # Only a comment github-actions[bot] wrote, as GH_TOKEN does, is its
+          # own: anyone can post the marker, and the token cannot edit their
+          # comment (#298).
           ids="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
-            --jq '.[] | select(.body | startswith("<!-- grantlink:eval -->")) | .id')"
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- grantlink:eval -->"))) | .id')"
           id="${ids%%$'\n'*}"
           if [ -n "$id" ]; then
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@comment.md >/dev/null

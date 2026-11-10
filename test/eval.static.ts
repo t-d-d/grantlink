@@ -29,21 +29,47 @@ describe("the eval workflow", () => {
 
   // The private bucket is grantlink-text-<account id>, built from the
   // account the role is in, as the app stack names it (#43).
-  it("reads nothing from GitHub but the eval role's ARN", () => {
-    const text = readRepoFile(".github/workflows/eval.yml");
-    const names = [...text.matchAll(/\b(secrets|vars)\.(\w+)/gu)].map(
-      ([, kind, name]) => `${kind ?? ""}.${name ?? ""}`,
+  // Besides the role, the eval reads one secret: its own model key, with
+  // its own credit limit (#328). The key's name is left unwritten here, as
+  // no test in the gate names a key (code-and-tests.md).
+  const secretNames = (text: string): string[] => [
+    ...new Set(
+      [...text.matchAll(/\b(secrets|vars)\.(\w+)/gu)].map(
+        ([, kind, name]) => `${kind ?? ""}.${name ?? ""}`,
+      ),
+    ),
+  ];
+  const ROLE = "secrets.AWS_EVAL_ROLE_ARN";
+
+  it("reads nothing from GitHub but the eval role's ARN and one model key", () => {
+    const names = secretNames(readRepoFile(".github/workflows/eval.yml"));
+    expect(names).toContain(ROLE);
+    const others = names.filter((name) => name !== ROLE);
+    expect(others).toHaveLength(1);
+    // The key is a secret, never a repository variable.
+    expect(others.every((name) => name.startsWith("secrets."))).toBe(true);
+  });
+
+  it("gives the model key to the eval's run alone, as an environment variable", () => {
+    const holders = steps.filter((step) =>
+      secretNames(JSON.stringify(step)).some((name) => name !== ROLE),
     );
-    expect([...new Set(names)]).toEqual(["secrets.AWS_EVAL_ROLE_ARN"]);
+    expect(holders.map((step) => step.name)).toEqual(["Run the eval"]);
+    const run = named("Run the eval");
+    expect(run?.run ?? "").not.toMatch(/secrets\./u);
+    const fromSecrets = Object.entries(run?.env ?? {}).filter(([, value]) =>
+      value.includes("secrets."),
+    );
+    expect(fromSecrets).toHaveLength(1);
   });
 
   it("builds the private bucket's name from the account it assumed the role in", () => {
     const assume = steps[at(/assume-role-with-web-identity/u)]?.run ?? "";
     const mask = assume.indexOf('::add-mask::$account"');
-    const bucket = assume.indexOf('echo "BUCKET=grantlink-text-$account"');
+    const bucket = assume.indexOf('echo "bucket=grantlink-text-$account"');
     expect(mask).toBeGreaterThan(-1);
     expect(bucket).toBeGreaterThan(mask);
-    expect(assume.indexOf("GITHUB_ENV", bucket)).toBeGreaterThan(bucket);
+    expect(assume.indexOf("GITHUB_OUTPUT", bucket)).toBeGreaterThan(bucket);
     expect(readRepoFile("scripts/eval-snapshot.sh")).not.toContain(
       "PRIVATE_BUCKET_NAME",
     );
@@ -137,6 +163,15 @@ describe("the gate and the comment", () => {
     expect(comment?.run).toContain("-X PATCH");
   });
 
+  // #298: the step takes only github-actions[bot]'s marker comment. That is
+  // who GITHUB_TOKEN posts as, so another token would never find its own
+  // comment and would post a new one on every run.
+  it("finds its own comment by the login GITHUB_TOKEN posts as", () => {
+    const comment = named("Comment with CI's scores beside the live release's");
+    expect(comment?.env?.GH_TOKEN).toBe("${{ github.token }}");
+    expect(comment?.run).toContain('.user.login == "github-actions[bot]"');
+  });
+
   // #139: the live release filed its report under the fingerprint its own
   // code worked out. A pull request that changes the fingerprint's inputs
   // works out another, so the step takes the report the release record
@@ -213,7 +248,7 @@ describe("the gate and the comment", () => {
     const assume = named("Assume the eval role")?.run ?? "";
     const mask = assume.search(/::add-mask::\$account\b/u);
     expect(mask).toBeGreaterThan(-1);
-    expect(mask).toBeLessThan(assume.indexOf("GITHUB_ENV"));
+    expect(mask).toBeLessThan(assume.indexOf("GITHUB_OUTPUT"));
   });
 });
 

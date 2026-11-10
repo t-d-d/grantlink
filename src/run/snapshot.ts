@@ -118,6 +118,8 @@ export async function takeSnapshot(
     let skipped = 0;
     let cursor: string | null = "*";
     let page = 0;
+    // The wait a refused page leaves owed, once Europe PMC has refused one.
+    let refused: { owed: Owed } | null = null;
     while (cursor !== null) {
       const from: string = cursor;
       if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
@@ -136,17 +138,9 @@ export async function takeSnapshot(
       } catch (error) {
         failedAs("search-failed", error);
       }
-      // A refused search loses the snapshot for this run, and leaves the
-      // wait Europe PMC asked for owed, which the run waits out before it
-      // ends (#236).
       if ("owed" in asked) {
-        return {
-          snapshot: {
-            taken: false,
-            reason: "Europe PMC refused gold set A's search",
-          },
-          owed: asked.owed,
-        };
+        refused = { owed: asked.owed };
+        break;
       }
       const result = asked.read;
       found.push(...result.pmcids);
@@ -155,15 +149,34 @@ export async function takeSnapshot(
       page += 1;
     }
     // Logged before the check, so a search that fails it still says how
-    // many results it skipped.
+    // many results it skipped, and before a refusal ends it, so the totals
+    // of the pages it read still show in one line (#307).
     await ctx.step(
       "snapshot-search-ended",
       async () => {
-        logGoldSearchEnded(runId, deps.gold.snapshotId, found.length, skipped);
+        logGoldSearchEnded(
+          runId,
+          deps.gold.snapshotId,
+          found.length,
+          skipped,
+          refused !== null,
+        );
         return Promise.resolve();
       },
       { retryStrategy: storeRetry },
     );
+    // A refused search loses the snapshot for this run, and leaves the
+    // wait Europe PMC asked for owed, which the run waits out before it
+    // ends (#236).
+    if (refused !== null) {
+      return {
+        snapshot: {
+          taken: false,
+          reason: "Europe PMC refused gold set A's search",
+        },
+        owed: refused.owed,
+      };
+    }
     try {
       checkWholeSearch(found.length, skipped);
     } catch {

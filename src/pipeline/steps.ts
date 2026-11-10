@@ -79,16 +79,25 @@ export function logSearchEnded(
   logger.info("search-ended", { runId, found, skipped });
 }
 
-// Logs the totals of gold set A's whole search once each time a run
-// searches for the snapshot, before it is judged, as the run's search does
-// (#279).
+// Logs the totals of gold set A's search once each time a run searches
+// for the snapshot, before it is judged, as the run's search does (#279).
+// When Europe PMC refuses a page, `refused` is true and the totals are
+// those of the pages read before it, which are none when it refuses the
+// first (#307).
 export function logGoldSearchEnded(
   runId: string,
   snapshotId: string,
   found: number,
   skipped: number,
+  refused: boolean,
 ): void {
-  logger.info("snapshot-search-ended", { runId, snapshotId, found, skipped });
+  logger.info("snapshot-search-ended", {
+    runId,
+    snapshotId,
+    found,
+    skipped,
+    refused,
+  });
 }
 
 // Why a snapshot failed, as one of a fixed set of reasons. A log line

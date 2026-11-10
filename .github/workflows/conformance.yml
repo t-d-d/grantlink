@@ -45,8 +45,11 @@ jobs:
       # deploy and the eval assume theirs. The account id, the token and the
       # credentials are masked before anything else runs. The private bucket
       # is grantlink-text-<account id>, as the app stack names it, so the
-      # role is the only value GitHub holds for this run (#43).
+      # role is the only value GitHub holds for this run (#43). The
+      # credentials and the bucket's name are this step's outputs, and only
+      # the step that runs the tests names them in its env (#308).
       - name: Assume the conformance role
+        id: assume
         env:
           ROLE: ${{ secrets.AWS_CONFORMANCE_ROLE_ARN }}
         run: |
@@ -91,16 +94,22 @@ jobs:
           echo "::add-mask::$secret"
           echo "::add-mask::$session"
           {
-            echo "AWS_ACCESS_KEY_ID=$key"
-            echo "AWS_SECRET_ACCESS_KEY=$secret"
-            echo "AWS_SESSION_TOKEN=$session"
-            echo "TEXT_BUCKET=grantlink-text-$account"
-          } >> "$GITHUB_ENV"
+            echo "key=$key"
+            echo "secret=$secret"
+            echo "session=$session"
+            echo "bucket=grantlink-text-$account"
+          } >> "$GITHUB_OUTPUT"
 
       # Runs after a failed assume too. A rename or a transfer changes the
       # OIDC subject, so STS refuses the role, and
-      # test/github-oidc.conformance.ts is the check that says why.
-      - run: npm run conformance
+      # test/github-oidc.conformance.ts is the check that says why. The
+      # role's outputs are then empty, and the bucket's checks fail on that.
+      - name: Run the conformance tests
+        run: npm run conformance
         if: ${{ !cancelled() }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          AWS_ACCESS_KEY_ID: ${{ steps.assume.outputs.key }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.assume.outputs.secret }}
+          AWS_SESSION_TOKEN: ${{ steps.assume.outputs.session }}
+          TEXT_BUCKET: ${{ steps.assume.outputs.bucket }}

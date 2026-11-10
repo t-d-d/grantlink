@@ -39,10 +39,10 @@ Claude environment refuses for Anthropic's own hosts.
 
 ## Judgment
 
-The tests that need the model module land with it in #24: every request
-names Anthropic as its only provider with fallbacks off, a reply naming a
-reference absent from the text is rejected, and a malformed reply is
-retried once and then left for the next run. Until then they are for
-review. Tests are left out of the lint rule.
+The tests that need the model module landed with it in #329, in
+`src/extract/model.test.ts`: every request names Anthropic as its only
+provider with fallbacks off, a reply naming a reference absent from the
+text is rejected, and a malformed reply is retried once and then left for
+the next run. Tests are left out of the lint rule.
 
 History: #7
