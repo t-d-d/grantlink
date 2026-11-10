@@ -34,8 +34,8 @@ export async function getRepo(path = ""): Promise<unknown> {
     },
   );
   // GitHub's reply says why a call failed, such as a bad token or the rate
-  // limit, so a failure shows it.
-  // The helper imports no test runner, so it throws rather than asserts.
+  // limit, so a failure shows it. A helper imports no test runner
+  // (test/code-and-tests.static.ts), so this throws rather than asserts.
   const reply = await response.text();
   if (response.status !== 200) {
     throw new Error(`GitHub answered ${String(response.status)}: ${reply}`);
