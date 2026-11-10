@@ -103,10 +103,11 @@ export const STEP_HELPERS: readonly StepHelper[] = [
 // allowances. A rule that refuses what a call may run, such as
 // no-nested-durable-operations, passes `walk: "any"` to take an inexact
 // walk too. It looks through type assertions, non-null assertions, type
-// arguments and optional chaining (unwrapped), on the call, the callee and
-// the namespace alike. A local function, an import from another module or a
-// computed key that is not a constant string is not one. A re-export would
-// hide the helper's module, so no-step-helper-re-export refuses one.
+// arguments, optional chaining and the comma operator (unwrapped), on the
+// call, the callee and the namespace alike. A local function, an import
+// from another module or a computed key that is not a constant string is
+// not one. A re-export would hide the helper's module, so
+// no-step-helper-re-export refuses one.
 export function stepHelperOf(
   node: TSESTree.Node,
   resolver: Resolver,
@@ -140,10 +141,11 @@ export function bindingOf(
   return memberOf(importOf(object, resolver, seen), name);
 }
 
-// The expression a TypeScript wrapper or an optional chain holds, with
-// every such layer taken off: `x as T`, `<T>x`, `x satisfies T`, `x!`,
-// `x<T>` and the chain around `a?.b` or `a?.()`. None of them changes which
-// function a name holds, so the rules read through them.
+// The expression a TypeScript wrapper, an optional chain or the comma
+// operator holds, with every such layer taken off: `x as T`, `<T>x`,
+// `x satisfies T`, `x!`, `x<T>`, the chain around `a?.b` or `a?.()`, and
+// the last expression of `(a, x)`. None of them changes which function a
+// name holds, so the rules read through them.
 export function unwrapped(node: TSESTree.Node): TSESTree.Node {
   let current = node;
   for (;;) {
@@ -156,6 +158,12 @@ export function unwrapped(node: TSESTree.Node): TSESTree.Node {
       case AST_NODE_TYPES.ChainExpression:
         current = current.expression;
         break;
+      case AST_NODE_TYPES.SequenceExpression: {
+        const last = current.expressions.at(-1);
+        if (last === undefined) return current;
+        current = last;
+        break;
+      }
       default:
         return current;
     }
