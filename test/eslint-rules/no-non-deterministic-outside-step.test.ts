@@ -239,8 +239,153 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `const crypto = fixedSource();
           const id = crypto.randomUUID();`,
         },
+        {
+          name: "reads a member of Math under a constant key outside a step",
+          filename: "src/run/run.ts",
+          code: `const M = Math;
+          const a = Math.floor(x);
+          const b = M.max(1, 2);
+          const c = typeof crypto === "undefined";
+          const d = globalThis.Math.abs(-1);`,
+        },
+        {
+          name: "passes Math on and draws random from it inside a step",
+          filename: "src/run/run.ts",
+          code: `async function run(ctx: any) {
+            await ctx.step("pick", async () => helper(Math), { retryStrategy: r });
+            await ctx.step("draw", async () => Math.random(), { retryStrategy: r });
+          }`,
+        },
+        {
+          name: "tests an object that holds a source, or Date, without passing it on",
+          filename: "src/run/run.ts",
+          code: `const a = "randomUUID" in globalThis.crypto;
+          const b = "now" in Date;
+          if (globalThis.crypto) { x(); }
+          const c = !crypto;
+          const d = performance ? 1 : 2;
+          const e = Date && f();`,
+        },
       ],
       invalid: [
+        {
+          name: "passes on the rest of a namespace import of crypto, or an object that holds a source as a fallback",
+          filename: "src/run/run.ts",
+          code: `import * as c from "node:crypto";
+          const { createHash, ...rest } = c;
+          const p = globalThis.performance ?? fallback;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto" },
+              line: 2,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "performance" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "copies the rest of Math given as the default of a nested pattern",
+          filename: "src/run/run.ts",
+          code: `const { Math: { ...rest } = Math } = globalThis;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "passes an object that holds a source on in an exported object",
+          filename: "src/run/o.ts",
+          code: `export const o = { m: Math };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "passes Math to a helper, which may call random on it",
+          filename: "src/run/run.ts",
+          code: `function helper(m: Math) { return m.random(); }
+          const n = helper(Math);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "returns crypto from a function",
+          filename: "src/run/run.ts",
+          code: `function source() { return crypto; }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "passes on an object that holds a source through an alias, globalThis or a key it cannot name",
+          filename: "src/run/run.ts",
+          code: `const M = Math;
+          const a = helper(M);
+          const b = [globalThis.crypto];
+          const c = helper(globalThis);
+          const d = Math[k];
+          const e = { ...performance };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto" },
+              line: 3,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "globalThis" },
+              line: 4,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 5,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "performance" },
+              line: 6,
+            },
+          ],
+        },
+        {
+          name: "passes on a namespace import of crypto",
+          filename: "src/run/run.ts",
+          code: `import * as c from "node:crypto";
+          const a = helper(c);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto" },
+              line: 2,
+            },
+          ],
+        },
         {
           name: "passes Date as a value for something else to call",
           code: `const a = ids.map(Date);
@@ -1365,13 +1510,18 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
-          name: "gives Date as a nested default in an assignment the rule does not follow",
+          name: "gives Date as a nested default in an assignment the rule does not follow, from globalThis, which it passes on",
           code: `async function run(ctx: any) { let now: any; ({ foo: { now } = Date } = globalThis); now(); }`,
           errors: [
             {
               messageId: "nonDeterministicOutsideStep",
               data: { op: "Date" },
               column: 64,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "globalThis" },
+              column: 73,
             },
           ],
         },
