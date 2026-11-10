@@ -4,9 +4,9 @@ import type { TSESTree } from "@typescript-eslint/utils";
 import {
   aliasDeclarator,
   createRule,
-  destructuredPath,
   exportedName,
   insideCheckpointedCallback,
+  keyName,
   lookup,
   memberName,
   unwrapped,
@@ -29,7 +29,9 @@ import type { Resolver } from "./create-rule.ts";
 // reports only at each call. An alias of `Date` itself, `const D = Date`,
 // reports only where it is used, `D()` or `ids.map(D)`, unless it is
 // exported, `export const D = Date`. Then it also reports where it is
-// declared, so `D()` in the same module gives a second report. A report at
+// declared, so `D()` in the same module gives a second report. A name with a
+// default, `const { foo: D = Date } = x`, is followed to the default when its
+// initial value holds no source, and reports as an alias does. A report at
 // an export, which cannot move inside a step, says the source passes to
 // another module instead.
 const NON_DETERMINISTIC: Readonly<Record<string, ReadonlySet<string>>> = {
@@ -164,14 +166,12 @@ function identifierPath(
   if (alias !== null) {
     const { declarator, name } = alias;
     if (declarator.init === null) return null;
-    const init = pathOf(declarator.init, resolver, next);
-    if (declarator.id === name || init === null) return init;
+    if (declarator.id === name) return pathOf(declarator.init, resolver, next);
     // A name destructured from an object pattern, at its top,
     // `{ now } = Date`, or from a nested pattern,
-    // `{ Date: { now } } = globalThis`, with or without a default.
-    if (declarator.id.type !== AST_NODE_TYPES.ObjectPattern) return null;
-    const keys = destructuredPath(declarator.id, name, "with-default");
-    return keys === null ? null : normalised([...init, ...keys]);
+    // `{ Date: { now } } = globalThis`, or from a default along the way,
+    // `{ foo: M = Math } = globalThis`.
+    return followed(sourcesOf(declarator, name, resolver, next))?.path ?? null;
   }
   const def = end.defs[0];
   if (def?.parent?.type !== AST_NODE_TYPES.ImportDeclaration) return null;
@@ -181,6 +181,109 @@ function identifierPath(
       ? exportedName(def.node.imported)
       : null,
   );
+}
+
+// A value a destructured name may hold: the declarator's initial value, or a
+// default along the pattern, each with the global path it gives that name.
+interface Source {
+  readonly node: TSESTree.Node;
+  readonly path: readonly string[] | null;
+}
+
+// The values a name in a declarator's object pattern may hold, outermost
+// first: `const { foo: { random: r } = Math } = globalThis` gives
+// `globalThis.foo.random`, then `Math.random`. Null when the name sits under
+// a key that is not a constant, or in an array pattern, or the declarator
+// has no initial value. `target` is the name, or the left of a default.
+function sourcesOf(
+  declarator: TSESTree.VariableDeclarator,
+  target: TSESTree.Node,
+  resolver: Resolver,
+  seen: ReadonlySet<TSESLint.Scope.Variable>,
+): readonly Source[] | null {
+  if (declarator.init === null) return null;
+  // The keys and defaults from the target up to the declarator's pattern.
+  const steps: (string | TSESTree.Node)[] = [];
+  for (let node = target; node !== declarator.id;) {
+    const parent = node.parent;
+    if (
+      parent?.type === AST_NODE_TYPES.AssignmentPattern &&
+      parent.left === node
+    ) {
+      steps.push(parent.right);
+      node = parent;
+    } else if (
+      parent?.type === AST_NODE_TYPES.Property &&
+      parent.value === node &&
+      parent.parent.type === AST_NODE_TYPES.ObjectPattern
+    ) {
+      const key = keyName(parent.key, parent.computed);
+      if (key === null) return null;
+      steps.push(key);
+      node = parent.parent;
+    } else {
+      return null;
+    }
+  }
+  const found: { node: TSESTree.Node; keys: string[] }[] = [
+    { node: declarator.init, keys: [] },
+  ];
+  for (const step of steps.reverse()) {
+    if (typeof step === "string") {
+      for (const source of found) source.keys.push(step);
+    } else {
+      found.push({ node: step, keys: [] });
+    }
+  }
+  return found.map(({ node, keys }) => {
+    const path = pathOf(node, resolver, seen);
+    return {
+      node,
+      path: path === null ? null : normalised([...path, ...keys]),
+    };
+  });
+}
+
+// The value the rule follows a destructured name to: the first that starts
+// at an object holding a clock or random source, such as the default in
+// `const { foo: M = Math } = globalThis`, or else the initial value. A name
+// with a default may hold either, and a path here only makes the rule
+// refuse, so the rule follows the one that may read a source.
+function followed(sources: readonly Source[] | null): Source | null {
+  if (sources === null) return null;
+  return (
+    sources.find((source) => HOLDERS.has(source.path?.[0] ?? "")) ??
+    sources[0] ??
+    null
+  );
+}
+
+// True when the rule follows a default to the names it binds,
+// `const { foo: D = Date } = x`, so each read of `D` reports, and the
+// default itself is not a value passed on. Not for a parameter's default or
+// a loop's pattern, whose names the rule does not follow.
+function defaultFollowed(
+  assignment: TSESTree.AssignmentPattern,
+  resolver: Resolver,
+): boolean {
+  let node: TSESTree.Node = assignment;
+  let declarator: TSESTree.Node = assignment.parent;
+  while (
+    declarator.type === AST_NODE_TYPES.AssignmentPattern ||
+    declarator.type === AST_NODE_TYPES.Property ||
+    declarator.type === AST_NODE_TYPES.ObjectPattern
+  ) {
+    node = declarator;
+    declarator = declarator.parent;
+  }
+  if (
+    declarator.type !== AST_NODE_TYPES.VariableDeclarator ||
+    declarator.id !== node
+  ) {
+    return false;
+  }
+  const sources = sourcesOf(declarator, assignment.left, resolver, new Set());
+  return sources !== null && followed(sources)?.node === assignment.right;
 }
 
 // The global path a name from a module stands for, or the module itself
@@ -413,6 +516,8 @@ function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
       );
     case AST_NODE_TYPES.UnaryExpression:
       return parent.operator !== "typeof";
+    case AST_NODE_TYPES.AssignmentPattern:
+      return parent.right !== outer || !defaultFollowed(parent, resolver);
     case AST_NODE_TYPES.VariableDeclarator: {
       if (parent.init !== outer) return true;
       if (parent.id.type === AST_NODE_TYPES.ObjectPattern) return false;
