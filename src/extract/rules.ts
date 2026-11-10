@@ -229,6 +229,11 @@ const CRUK_PARTS = [
   `(?:${CRUK_DIGIT_PART}){3}(?:${CRUK_DIGIT_PART}|${CRUK_LETTER_PART}${NO_MORE_PARTS})`,
 ].join("|");
 
+// The CRUK-X form's start: the funder's short name, after two to six
+// letters and a hyphen or with nothing before it. The eval's scorer reads
+// a CRUK id with this too, so the two cannot drift (#596).
+export const CRUK_LEAD = `(?:[A-Z]{2,6}${DASH})?CRUK`;
+
 const SHAPES: readonly Shape[] = [
   {
     // Either letter may be written in lower case (#506).
@@ -252,7 +257,7 @@ const SHAPES: readonly Shape[] = [
     // CRUK/AB12/SMITH/2 (#514). A last part with no digit holds at most
     // two capitals, so CRUK/12/JONES is not one either (#560).
     format: "CRUK-X",
-    shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:${CRUK_PARTS})`,
+    shape: `${CRUK_LEAD}[A-Z]{0,6}(?:${CRUK_PARTS})`,
     readWhole: true,
     sentenceOnly: false,
   },

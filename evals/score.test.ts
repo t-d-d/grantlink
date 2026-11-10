@@ -68,6 +68,7 @@ describe("telling a CRUK reference from another linked id", () => {
     // Letters before the CRUK, which the rules' CRUK-X form reads (#596).
     "ABC-CRUK-ABCD12-AB",
     "AB-CRUK/12/034",
+    "ABCDEF-CRUK-12",
     "AB\u2013CRUK-12",
   ])("takes %s", (id) => {
     expect(crukReference(id)).toBe(true);
