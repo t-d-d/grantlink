@@ -16,8 +16,9 @@ export interface XmlElement {
   name: string;
   // Its attributes in quotes, in the order written.
   attributes: XmlAttribute[];
-  // Whether its opening tag holds anything but attributes in quotes, or its
-  // closing tag holds anything but white space.
+  // Whether its opening tag holds anything but attributes in quotes, each
+  // after white space and each named once, or its closing tag holds anything
+  // but white space.
   malformed: boolean;
   // Whether it is self-closing.
   empty: boolean;
@@ -146,15 +147,15 @@ export function parseXml(
 }
 
 // The XML's nodes as the cutter reads them, in any case (#354), which differ
-// from parseXml's otherwise only when tags do not balance (#263). Then which closing tag is missing cannot
-// be told, so an element the cutter reads by its name, as readByName says,
-// is read with care, and holds no element of its name: one never closed, or
-// opened inside one of its name read with care. It ends at the next opening
-// or closing tag of its name, whether that is its own or not, and one with
-// none after it is dropped, with all it holds, so a broken element never
-// takes in the rest of the paper. What it held after the tag that ends it
-// follows it in its parent instead, and an element that held that tag ends
-// there too. Any other element never closed ends where the parser ends it,
+// from parseXml's otherwise only when tags do not balance (#263). Then which
+// closing tag is missing cannot be told, so an element the cutter reads by its
+// name, as readByName says, is read with care, and holds no element of its
+// name: one never closed, or opened inside one of its name read with care. It
+// ends at the next opening or closing tag of its name, whether that is its own
+// or not, and one with none after it is dropped, with all it holds, so a broken
+// element never takes in the rest of the paper. What it held after the tag that
+// ends it follows it in its parent instead, and an element that held that tag
+// ends there too. Any other element never closed ends where the parser ends it,
 // at its parent's closing tag, and keeps what it holds, so a broken inline
 // element or part of the article loses no words. A self-closing element is
 // empty, and is neither a boundary nor ends one (#195).

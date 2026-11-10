@@ -817,4 +817,18 @@ describe("reading markup that is not well-formed XML (#354)", () => {
       ).toEqual(["Grant A1."]);
     },
   );
+
+  it.each([
+    ['<sec sec-type="other" sec-type="funding">'],
+    ['<sec sec-type="funding" sec-type="other">'],
+  ])(
+    "reads a section as funding when any of its repeated types is funding, in %s, as before #343",
+    (tag) => {
+      expect(
+        fundingSections(
+          `<article><body>${tag}<p>Grant A1.</p></sec></body></article>`,
+        ).text,
+      ).toEqual(["Grant A1."]);
+    },
+  );
 });

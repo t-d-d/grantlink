@@ -207,13 +207,20 @@ function paragraphs(part: XmlNode[]): string[] {
 // What counts as a funding part, read here by the cutter and by the check on
 // recorded fixtures (test/fixture-parts.ts), so the two agree (#159).
 
-// Whether a footnote's type marks it as funding text. A type written twice
-// is not XML, and either value counts, as before #343 (#354).
+// Whether any attribute of this name on the element passes the test. An
+// attribute written twice is not XML, and either value counts, as before
+// #343 (#354).
+const anyAttribute = (
+  element: XmlElement,
+  name: string,
+  test: (value: string) => boolean,
+): boolean =>
+  element.attributes.some((found) => found.name === name && test(found.value));
+
+// Whether a footnote's type marks it as funding text.
 export const FUNDING_FOOTNOTE = (element: XmlElement): boolean =>
-  element.attributes.some(
-    ({ name, value }) =>
-      name === "fn-type" &&
-      ["financial-disclosure", "funding", "supported-by"].includes(value),
+  anyAttribute(element, "fn-type", (value) =>
+    ["financial-disclosure", "funding", "supported-by"].includes(value),
   );
 
 // What sits between a section's opening tag, its sec-meta, its label and its
@@ -255,7 +262,7 @@ function fundingContent(section: XmlElement): XmlNode[] | undefined {
     at += 1;
     skipGaps();
   }
-  if (FUNDING_TYPE.test(attribute(section, "sec-type") ?? "")) {
+  if (anyAttribute(section, "sec-type", (value) => FUNDING_TYPE.test(value))) {
     return children.slice(at);
   }
   if (isLabel(children[at])) {
