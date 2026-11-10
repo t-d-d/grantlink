@@ -70,7 +70,12 @@ export function parseXml(
   const top = (): XmlElement => open.at(-1) ?? root;
   let attributes: XmlAttribute[] = [];
   let cdata = false;
+  let openStart = -1;
   let openEnd = -1;
+  // After a processing instruction, or a closing tag with white space before
+  // its >, the parser starts the next tag one place early, at that >, so a
+  // tag starts at the first < from there (#386).
+  const tagStart = (): number => xml.indexOf("<", parser.startIndex);
   const parser = new Parser(
     {
       onattribute(name, value, quote) {
@@ -79,15 +84,11 @@ export function parseXml(
         if (quote === '"' || quote === "'") attributes.push({ name, value });
       },
       onopentag(name) {
-        // After a processing instruction, or a closing tag with white space
-        // before its >, the parser starts the next tag one place early.
-        const tag = xml.slice(
-          xml.indexOf("<", parser.startIndex),
-          parser.endIndex + 1,
-        );
+        const start = tagStart();
+        const tag = xml.slice(start, parser.endIndex + 1);
         const names = new Set(attributes.map((found) => found.name));
         const opened = {
-          ...element(name, parser.startIndex),
+          ...element(name, start),
           attributes,
           // An attribute written twice is not XML either.
           malformed: !OPENING_TAG.test(tag) || names.size !== attributes.length,
@@ -95,13 +96,14 @@ export function parseXml(
         top().children.push(opened);
         open.push(opened);
         attributes = [];
+        openStart = parser.startIndex;
         openEnd = parser.endIndex;
       },
       onclosetag(_name, implied) {
         const closed = open.pop();
         if (closed === undefined) return;
         if (!implied) {
-          closed.close = parser.startIndex;
+          closed.close = tagStart();
           // The parser ends a closing tag at its name, and skips anything
           // after the name.
           const end = xml.indexOf(">", parser.endIndex);
@@ -109,7 +111,7 @@ export function parseXml(
             closed.malformed = true;
           }
         } else if (
-          parser.startIndex === closed.start &&
+          parser.startIndex === openStart &&
           parser.endIndex === openEnd
         ) {
           // A self-closing element closes where it opens.
