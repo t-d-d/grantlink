@@ -1,10 +1,6 @@
-import { describe, expect, it } from "vitest";
-import {
-  anyCase,
-  findReferences,
-  referenceSchema,
-  RULES_VERSION,
-} from "./rules.ts";
+import { describe, expect, it, vi } from "vitest";
+import funderFile from "./funder.json" with { type: "json" };
+import { findReferences, referenceSchema, RULES_VERSION } from "./rules.ts";
 
 // Every reference here is made up in the shape of one the PRD (#1) quotes.
 const sections = (...text: string[]) => ({ text, awards: [] });
@@ -107,12 +103,22 @@ describe("the rules", () => {
 
   // A made-up name with a capital outside A to Z, as funder.json holds
   // only ASCII names today (#301).
-  it("reads a G number after a non-ASCII name written in lower case", () => {
-    const name = new RegExp(
-      String.raw`(?<=${anyCase("Élan Trust")} \()G\d+`,
-      "u",
-    );
-    expect("Funded by élan trust (G123/45).".match(name)?.[0]).toBe("G123");
+  it("reads a G number after a non-ASCII name written in lower case", async () => {
+    vi.resetModules();
+    vi.doMock("./funder.json", () => ({
+      default: { ...funderFile, names: ["Élan Trust"] },
+    }));
+    try {
+      const rules = await import("./rules.ts");
+      expect(
+        rules.findReferences(sections("Funded by élan trust (G123/45).")),
+      ).toEqual([
+        { asWritten: "G123/45", normalised: "G123/45", format: "Gn/n" },
+      ]);
+    } finally {
+      vi.doUnmock("./funder.json");
+      vi.resetModules();
+    }
   });
 
   it("leaves a G number in another funder's brackets", () => {

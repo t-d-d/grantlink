@@ -55,13 +55,16 @@ const DASH = `[-${String.fromCodePoint(0x2010)}-${String.fromCodePoint(0x2015)}]
 const NAMES = funder.names
   .map((name) => escape(name).replace(/-/gu, DASH))
   .join("|");
-// Turns each letter of a pattern into a class of its upper and lower case,
-// so it matches in any case without the `i` flag, inside a pattern whose
-// own letters must keep their case. Any letter folds, not only A to Z, as
-// the `i` flag does (#301). A case that is more than one character, as
-// "SS" is for "ß", is left out of the class.
-export const anyCase = (pattern: string) =>
-  pattern.replace(/\p{L}/gu, (letter) => {
+// Turns each letter of escaped text into a class of its upper and lower
+// case, so it matches in any case without the `i` flag, inside a pattern
+// whose own letters must keep their case. Any letter folds, not only A to Z
+// (#301). It takes text, not a pattern: an escape such as \s would become
+// \[sS]. A case that is more than one character, as "SS" is for "ß", is left
+// out of the class. The `i` flag also folds a few letters with no upper and
+// lower case pair, such as "ς" with "σ" and "ſ" with "s", which this does
+// not.
+const anyCase = (text: string) =>
+  text.replace(/\p{L}/gu, (letter) => {
     const cases = new Set(
       [letter, letter.toUpperCase(), letter.toLowerCase()].filter((form) =>
         /^.$/su.test(form),
