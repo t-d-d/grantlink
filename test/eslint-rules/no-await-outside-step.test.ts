@@ -3,6 +3,7 @@ import { afterAll, describe, it } from "vitest";
 import { noAwaitOutsideStep } from "../../eslint-rules/no-await-outside-step.ts";
 import { root } from "../repo.ts";
 import { ruleTester } from "../rule-tester.ts";
+import { WRAPPED_DURABLE_CALLS } from "./wrapped-durable-calls.ts";
 import { WRAPPED_STEP_HELPERS } from "./wrapped-step-helpers.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
@@ -133,6 +134,17 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         }`,
       },
       {
+        name: "awaits I/O inside askEuropePmc's read, reached through a let alias that is never written again",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        let ask = askEuropePmc;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
         name: "awaits I/O inside askEuropePmc's read, reached through a destructured alias of a namespace import",
         filename: "src/run/run.ts",
         code: `import * as owed from "./owed.ts";
@@ -192,8 +204,21 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
           await ask(ctx, "paper", "wait", r, async () => readPaper());
         }`,
       },
+      ...WRAPPED_DURABLE_CALLS.map((shape) => ({
+        name: `awaits a step written as ${shape.name}, and I/O inside it`,
+        code: `async function run(ctx: any) {
+          await ${shape.call("step", `"fetch", async () => { return await fetchPaper(); }, { retryStrategy: r }`)};
+        }`,
+      })),
     ],
     invalid: [
+      ...WRAPPED_DURABLE_CALLS.map((shape) => ({
+        name: `awaits I/O in a child context written as ${shape.name}`,
+        code: `async function run(ctx: any) {
+          await ${shape.call("runInChildContext", `"paper", async (child: any) => { await fetchPaper(); }`)};
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" as const }],
+      })),
       {
         name: "awaits I/O in the body",
         code: `async function run(ctx: any) {
@@ -289,6 +314,17 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         filename: "src/run/run.ts",
         code: `import * as owed from "./owed.ts";
         let ask = owed.askEuropePmc;
+        ask = other;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits an alias of an imported askEuropePmc that is assigned again",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        let ask = askEuropePmc;
         ask = other;
         async function run(ctx: any) {
           await ask(ctx, "paper", "wait", r, async () => 1);

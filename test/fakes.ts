@@ -226,8 +226,8 @@ export function fakeEuropePmc(options: FakeSearches = {}) {
   return { client: europePmc({ fetch, clock: instant }), requests };
 }
 
-// A release record, deployed by GitHub Actions run `run`. A later deploy
-// has a higher run id.
+// A release record, deployed by GitHub Actions run `run`. A run compares
+// these ids for equality only, so a test picks them to tell releases apart.
 export function fakeRelease(run: number): Release {
   const rows = FLOORS.map((floor) => ({ id: floor.id, score: 1, n: 300 }));
   return release.parse({

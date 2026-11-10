@@ -2,7 +2,7 @@ import {
   createRule,
   DURABLE_METHODS,
   insideCheckpointedCallback,
-  isMethodCallIn,
+  methodCallIn,
   stepHelperOf,
 } from "./create-rule.ts";
 
@@ -40,7 +40,7 @@ export const noAwaitOutsideStep = createRule({
   create(context) {
     return {
       AwaitExpression(node) {
-        if (isMethodCallIn(node.argument, DURABLE_METHODS)) return;
+        if (methodCallIn(node.argument, DURABLE_METHODS) !== null) return;
         if (stepHelperOf(node.argument, context) !== null) return;
         if (insideCheckpointedCallback(node, context)) return;
         context.report({ node, messageId: "awaitOutsideStep" });
