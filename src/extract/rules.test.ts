@@ -169,12 +169,30 @@ describe("the rules", () => {
     "Funded by CRUK (CRUK/12/JONES).",
     "Funded by CRUK (CRUK/12/ABC).",
     "Funded by CRUK (CRUK/1/2/3/JONES).",
+    // A backslash or a spaced slash parts the form as a slash does (#598).
+    String.raw`Funded by CRUK (CRUK/12\2019).`,
+    "Funded by CRUK (CRUK/12 /2019).",
+    "Funded by CRUK (CRUK/12/ 2019).",
+    String.raw`Funded by CRUK (CRUK/12\SMITH).`,
   ])(
     "leaves a CRUK- form with a part of no digit, or a part that is a year: %j",
     (text) => {
       expect(findReferences(sections(text))).toEqual([]);
     },
   );
+
+  // A slash with a space on each side parts a list of references, not the
+  // parts of one, so each reference in the list is still read (#598).
+  it("reads each CRUK- form in a list parted by a slash spaced on both sides", () => {
+    expect(
+      findReferences(
+        sections(
+          "Funded by CRUK (CRUK-A12345 / CRUK-A23456).",
+          "Funded by CRUK (CRUK/12345 / MRC).",
+        ),
+      ).map(({ asWritten }) => asWritten),
+    ).toEqual(["CRUK-A12345", "CRUK-A23456", "CRUK/12345"]);
+  });
 
   // As the model pass keeps it (#561).
   it("reads the first four parts of a CRUK- form that runs on past them", () => {
