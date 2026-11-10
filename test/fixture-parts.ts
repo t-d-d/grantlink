@@ -88,14 +88,15 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
 };
 
 // The XML's elements as a tree, under a root with no name, read through the
-// parser the cutter reads with (#343). The check reads the tree as parsed,
-// before the cutter's care with tags that do not balance, so nothing the
-// cutter would drop from a broken element is hidden from it. Declarations
-// are dropped. CDATA and comments count as text, since a comment can hold a
-// cut part kept by mistake. So does what a processing instruction holds
-// after its target, other than the XML declaration's before the root, and
-// what one holds that never ends with ?>, which the parser reads as text
-// (#303).
+// parser the cutter reads with (#343), in any case as the cutter reads it, so
+// a closing tag ends the same element for both (#415). The check reads the
+// tree as parsed, before the cutter's care with tags that do not balance, so
+// nothing the cutter would drop from a broken element is hidden from it.
+// Declarations are dropped. CDATA and comments count as text, since a
+// comment can hold a cut part kept by mistake. So does what a processing
+// instruction holds after its target, other than the XML declaration's
+// before the root, and what one holds that never ends with ?>, which the
+// parser reads as text (#303).
 function parse(xml: string): Element {
   const convert = (node: XmlElement, root: boolean): Element => {
     const element: Element = {
@@ -134,7 +135,7 @@ function parse(xml: string): Element {
     }
     return element;
   };
-  return convert(parseXml(xml), true);
+  return convert(parseXml(xml, { anyCase: true }), true);
 }
 
 // What a funding part may hold: its paragraphs, which the cutter reads, and

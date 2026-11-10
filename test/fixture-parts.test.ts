@@ -719,6 +719,12 @@ describe("strayParts", () => {
     expect(strayParts(paper(parts))).toEqual([stray]);
   });
 
+  it("reads tags in any case, as the cutter does, so a closing tag in another case ends its element (#415)", () => {
+    const xml =
+      "<article><back><ack><p>Grant A1.</p></ACK><p>Name</p></ack></back></article>";
+    expect(strayParts(xml)).toEqual(["article/back/p"]);
+  });
+
   it("names a root that is not an article", () => {
     expect(strayParts("<book><p>B</p></book>")).toEqual(["book"]);
   });
