@@ -93,19 +93,6 @@ const isLabel = namedInAnyCase("label");
 const isSecMeta = namedInAnyCase("sec-meta");
 const isSection = namedInAnyCase("sec");
 
-// Every outermost element with this name, as its inner XML, written back
-// out. One inside another it keeps is read as part of that one.
-export function elements(
-  xml: string,
-  name: string,
-  test: (element: XmlElement) => boolean = () => true,
-): string[] {
-  return outermost(
-    readXml(xml),
-    (element) => element.name === name && test(element),
-  ).map(({ children }) => serialize(children));
-}
-
 // An attribute's value split at white space.
 const valuesOf = (element: XmlElement, name: string): string[] =>
   (attribute(element, name) ?? "").split(/\s+/u).filter((part) => part !== "");
@@ -122,6 +109,42 @@ export const FUNDING_METADATA = {
   source: "funding-source",
   id: "award-id",
 } as const;
+
+// The elements the cutter reads by their names, in any case. Only these are
+// read with care when tags do not balance (#263), so a broken inline
+// element, or a broken part of the article around the funding parts, keeps
+// its words.
+const READ_BY_NAME = new Set<string>([
+  "sec",
+  "sec-meta",
+  "label",
+  "title",
+  "p",
+  "ack",
+  "fn",
+  ...Object.values(FUNDING_METADATA),
+]);
+
+// The XML as the cutter reads it, with care too for the element of this
+// name, if one is asked for.
+const read = (xml: string, name?: string): XmlElement =>
+  readXml(
+    xml,
+    (found) => found === name || READ_BY_NAME.has(found.toLowerCase()),
+  );
+
+// Every outermost element with this name, as its inner XML, written back
+// out. One inside another it keeps is read as part of that one.
+export function elements(
+  xml: string,
+  name: string,
+  test: (element: XmlElement) => boolean = () => true,
+): string[] {
+  return outermost(
+    read(xml, name),
+    (element) => element.name === name && test(element),
+  ).map(({ children }) => serialize(children));
+}
 
 // An award group's ids with the funding sources they belong to. An award id
 // whose rid names sources in its group goes to those sources alone. Any
@@ -250,14 +273,14 @@ export const isFundingSection = (element: XmlElement): boolean =>
 // Whether the section whose opening tag starts at this index of the XML is a
 // funding section.
 export function isFundingSectionAt(xml: string, index: number): boolean {
-  for (const element of descendants(readXml(xml))) {
+  for (const element of descendants(read(xml))) {
     if (element.start === index) return isFundingSection(element);
   }
   return false;
 }
 
 export function fundingSections(paper: string): FundingSections {
-  const tree = readXml(paper);
+  const tree = read(paper);
   const groups = outermost(tree, named(FUNDING_METADATA.group));
   const statements = groups.flatMap((group) =>
     outermost(group, named(FUNDING_METADATA.statement)).map((statement) =>

@@ -130,15 +130,21 @@ export function parseXml(xml: string): XmlElement {
 
 // The XML's nodes as the cutter reads them, which differ from parseXml's only
 // when tags do not balance (#263). Then which closing tag is missing cannot
-// be told, so an element read with care holds no element of its name: one
-// never closed, or opened inside one of its name read with care. It ends at
-// the next opening or closing tag of its name, whether that is its own or
-// not, and one with none after it is dropped, with all it holds, so a broken
-// element never takes in the rest of the paper. What it held after the tag
-// that ends it follows it in its parent instead, and an element that held
-// that tag ends there too. A self-closing element is empty, and is neither a
-// boundary nor ends one (#195).
-export function readXml(xml: string): XmlElement {
+// be told, so an element the cutter reads by its name, as readByName says,
+// is read with care, and holds no element of its name: one never closed, or
+// opened inside one of its name read with care. It ends at the next opening
+// or closing tag of its name, whether that is its own or not, and one with
+// none after it is dropped, with all it holds, so a broken element never
+// takes in the rest of the paper. What it held after the tag that ends it
+// follows it in its parent instead, and an element that held that tag ends
+// there too. Any other element never closed ends where the parser ends it,
+// at its parent's closing tag, and keeps what it holds, so a broken inline
+// element or part of the article loses no words. A self-closing element is
+// empty, and is neither a boundary nor ends one (#195).
+export function readXml(
+  xml: string,
+  readByName: (name: string) => boolean,
+): XmlElement {
   const root = parseXml(xml);
   const tags = new Map<string, number[]>();
   const careful = new Set<XmlElement>();
@@ -152,12 +158,16 @@ export function readXml(xml: string): XmlElement {
         tags.set(child.name, at);
       }
       const isCareful =
-        !child.empty && (child.close === undefined || names.has(child.name));
+        !child.empty &&
+        readByName(child.name) &&
+        (child.close === undefined || names.has(child.name));
       if (isCareful) careful.add(child);
       mark(child, isCareful ? new Set([...names, child.name]) : names);
     }
   };
   mark(root, new Set());
+  // When every tag balances, the tree is read as parsed.
+  if (careful.size === 0) return root;
   for (const at of tags.values()) at.sort((a, b) => a - b);
 
   const rebuild = (nodes: XmlNode[]): XmlNode[] => {
@@ -253,8 +263,14 @@ export function serialize(nodes: XmlNode[]): string {
         case "instruction":
           return `<?${node.target}${node.data}?>`;
         case "element": {
+          // A value holds no quote of the kind it was written in, so one
+          // that holds a double quote was in single quotes.
           const attributes = node.attributes
-            .map(({ name, value }) => ` ${name}="${value}"`)
+            .map(({ name, value }) =>
+              value.includes('"')
+                ? ` ${name}='${value}'`
+                : ` ${name}="${value}"`,
+            )
             .join("");
           return node.empty
             ? `<${node.name}${attributes}/>`

@@ -749,6 +749,30 @@ describe("reading JATS through an XML parser (#343)", () => {
     ).toEqual(["Grant A1."]);
   });
 
+  // Only an element the cutter reads by its name is read with care when its
+  // tags do not balance (#263). Any other element never closed ends at its
+  // parent's closing tag, and keeps its words.
+  it("keeps the words of an inline element never closed in a funding paragraph", () => {
+    expect(
+      fundingSections(
+        "<article><back><ack><p>Funded by <italic>Example Trust grant A1.</p></ack></back></article>",
+      ).text,
+    ).toEqual(["Funded by Example Trust grant A1."]);
+  });
+
+  it.each([
+    ["back", "<article><back><ack><p>Grant A1.</p></ack></article>"],
+    ["article", "<article><back><ack><p>Grant A1.</p></ack></back>"],
+  ])("keeps the funding parts when the %s is never closed", (_name, xml) => {
+    expect(fundingSections(xml).text).toEqual(["Grant A1."]);
+  });
+
+  it("writes an attribute value that holds a double quote back out in single quotes", () => {
+    expect(elements(`<fn><p title='a"b'>x</p></fn>`, "fn")).toEqual([
+      `<p title='a"b'>x</p>`,
+    ]);
+  });
+
   it("resolves no entity and reads no DTD", () => {
     const dtd = new URL("../../package.json", import.meta.url).href;
     const sections = fundingSections(
