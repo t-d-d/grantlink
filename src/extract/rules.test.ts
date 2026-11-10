@@ -718,6 +718,14 @@ describe("the rules", () => {
     "Supported by Cancer Research UK with the Example Trust (grant 12345).",
     "Supported by CRUK & Example Foundation grant 12345.",
     "Supported by Cancer Research UK (CRUK) and Example Trust grant 12345.",
+    "Funded by Cancer Research UK Example Centre and the Sample Trust grant 12345.",
+    "Funded by Cancer Research UK Programme Grant and the Example Council grant 12345.",
+    "Funded by Cancer Research UK and by the Example Trust grant 12345.",
+    "Funded by Cancer Research UK and from the Example Trust grant 12345.",
+    "Funded by Cancer Research UK as well as the Example Trust grant 12345.",
+    "Funded by Cancer Research UK and  the Example Trust grant 12345.",
+    "Funded by Cancer Research UK funds  and the Example Trust grant 12345.",
+    "Funded by CRUK&Example Foundation grant 12345.",
   ])("leaves a bare number after another funder's name: %j", (text) => {
     expect(
       findReferences(sections(text)).filter(({ format }) => format === "n"),
@@ -727,6 +735,11 @@ describe("the rules", () => {
   it.each([
     "Supported by Cancer Research UK with grant 12345.",
     "Supported by Cancer Research UK and its grant 12345.",
+    "Supported by Cancer Research UK with Grant 12345.",
+    "Supported by Cancer Research UK and Project Grant 12345.",
+    "Supported by Cancer Research UK with Award No. 12345.",
+    "Supported by Cancer Research UK funding with Grant 12345.",
+    "Cancer Research UK (CRUK) Example  and Sample Committee (Award No. 12345).",
   ])(
     "reads a bare number after a word that names no other funder: %j",
     (text) => {

@@ -166,13 +166,19 @@ interface Shape {
 // before the number (#506). Not part of a longer word.
 const TIE_WORD = String.raw`(?<!\p{L})(?:[Gg]rant|[Aa]ward|[Pp]roject|[Rr]ef(?:erence)?|[Nn]umber|[Nn]o)s?\.?(?:\s?(?:[Nn]o|[Nn]umber|[Rr]ef)\.?)?\s?[:#]?\s?`;
 
-// Where another funder is named: "and", "with" or "&", then a name in
-// capitals, with "the" before it if the text gives one (#525). A number after
-// that name is the other funder's. Between two words in capitals other than
-// the funder's own name, the "and" is part of one name, as in a committee
-// the funder names, such as "Example and Sample Committee" (#506).
-const JOINED_NAME = String.raw`(?:and|with|&)\s(?:[Tt]he\s)?\p{Lu}`;
-const ANOTHER_FUNDER = String.raw`(?<!\p{Lu}\p{L}*)\s${JOINED_NAME}`;
+// Where another funder is named: "and", "with", "as well as" or "&", with
+// "by" or "from" after it if the text gives one, then a name in capitals,
+// with "the" before it if the text gives one (#525). A number after that
+// name is the other funder's. A word such as "Grant" or "Award No." before
+// the number is not a name, as in "with Grant 12345". Between two words in
+// capitals other than the funder's own name, with no "the", the "and" is
+// part of one name, as in a committee the funder names, such as "Example
+// and Sample Committee" (#506). Any run of whitespace may part the words,
+// as in a name (#269).
+const JOINER = String.raw`(?:(?:and|with|as\s+well\s+as)\s+(?:(?:by|from)\s+)?|&\s*)`;
+const NAMED = String.raw`(?!(?:${TIE_WORD})+\d)\p{Lu}`;
+const JOINED_NAME = String.raw`${JOINER}(?:[Tt]he\s+)?${NAMED}`;
+const ANOTHER_FUNDER = String.raw`\s+(?:(?<!\p{Lu}\p{L}*\s+)${JOINER}|${JOINER}[Tt]he\s+)${NAMED}`;
 
 // A month as the rules read it in a code.
 const MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
@@ -276,7 +282,7 @@ const SHAPES: readonly Shape[] = [
     // as in 12345/2, 12345-67 or 1234.5.
     format: "n",
     shape: String.raw`(?!(?:19|20)\d{2}(?!\d))\d{4,6}`,
-    before: String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})(?!${EDGE})(?:\s?\(\s?|(?!\s?${JOINED_NAME})(?:(?!${ANOTHER_FUNDER})[^;,.]){0,100}?${TIE_WORD}))`,
+    before: String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})(?!${EDGE})(?:\s?\(\s?|(?!\s*${JOINED_NAME})(?:(?!${ANOTHER_FUNDER})[^;,.]){0,100}?${TIE_WORD}))`,
     after: String.raw`(?!${SEP}|${DASH}\d|\.\d)`,
     sentenceOnly: true,
   },
