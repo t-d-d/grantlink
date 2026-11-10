@@ -96,6 +96,10 @@ export const STEP_HELPERS: readonly StepHelper[] = [
   { module: "src/run/log-only.ts", name: "logOnly", callbacks: [2] },
 ];
 
+// Which alias walks may reach a step helper: only an exact one, or any,
+// under the alias policy at AliasWalk.
+export type HelperWalk = "exact" | "any";
+
 // The step helper a call calls, if its callee resolves to one: a named
 // import `<name>(...)`, or a namespace import `<ns>.<name>(...)` or
 // `<ns>["<name>"](...)`, either one reached through an exact walk of local
@@ -111,7 +115,7 @@ export const STEP_HELPERS: readonly StepHelper[] = [
 export function stepHelperOf(
   node: TSESTree.Node,
   resolver: Resolver,
-  walk: "exact" | "any" = "exact",
+  walk: HelperWalk = "exact",
 ): StepHelper | null {
   const call = unwrapped(node);
   if (call.type !== AST_NODE_TYPES.CallExpression) return null;
@@ -209,7 +213,9 @@ function keyName(key: TSESTree.Node, computed: boolean): string | null {
 // allowances, and no-step-helper-re-export when it lets a module export its
 // own helper. Where it only makes a rule refuse, an inexact walk counts too:
 // no-step-helper-re-export's refusals, no-nested-durable-operations, for
-// a context and for a step helper (stepHelperOf with `walk: "any"`), and
+// a context and for a step helper (stepHelperOf with `walk: "any"`),
+// no-closure-in-durable-operations, for a step helper's callbacks
+// (isStepHelperCallback with `walk: "any"`), and
 // no-non-deterministic-outside-step, for a clock or random source.
 export interface AliasWalk {
   // The local the identifier names, then each local it aliases in turn.
@@ -513,13 +519,17 @@ export function withoutExtension(path: string): string {
 
 // True when `fn` is an argument a step helper runs inside its step, read
 // through the wrappers unwrapped takes off, as in `(async () => {...}) as F`.
+// `walk` is passed to stepHelperOf: a rule that only refuses more for
+// knowing the helper, such as no-closure-in-durable-operations, passes
+// "any" (#518).
 export function isStepHelperCallback(
   call: TSESTree.Node,
   fn: TSESTree.Node,
   resolver: Resolver,
+  walk: HelperWalk = "exact",
 ): boolean {
   if (call.type !== AST_NODE_TYPES.CallExpression) return false;
-  const helper = stepHelperOf(call, resolver);
+  const helper = stepHelperOf(call, resolver, walk);
   const callback = unwrapped(fn);
   return (
     helper?.callbacks.some((at) => {

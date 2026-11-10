@@ -79,6 +79,11 @@ describe("telling a CRUK reference from another linked id", () => {
     "SP2312/021",
     "CTR-Q5-Y3",
     "RG86786",
+    "CRUK",
+    "CRUK/",
+    "cruk",
+    "CRUK-",
+    "CRUK\\",
   ])("refuses %s", (id) => {
     expect(crukReference(id)).toBe(false);
   });
