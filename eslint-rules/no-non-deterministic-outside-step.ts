@@ -527,11 +527,12 @@ const PASSES_VALUE = new Set(["=", "||=", "&&=", "??="]);
 // when the value is its right side, `m = Math`, or, for an element or
 // member of a literal there, the part of the left side it lands in, `m` in
 // `[a, m] = [1, Math]`, or the whole left side where the two do not line
-// up, `m = { x: Math }`. For a default in the left side it is the pattern
-// the default fills, `{ ...m }` in `({ a, x: { ...m } = Math } =
-// globalThis)`. Null for anything else, such as a declaration, which
-// exportsName reads, a parameter's default, or an element no name takes,
-// `[a] = [1, Math]`.
+// up, `m = { x: Math }`. For a default in the left side it is the part of
+// the pattern the default fills that the value lands in, the same way,
+// `{ ...m }` in `({ a, x: { ...m } = Math } = globalThis)` or `m` in
+// `({ y: [a, m] = [1, Math] } = x)`. Null for anything else, such as a
+// declaration, which exportsName reads, a parameter's default, or an
+// element no name takes, `[a] = [1, Math]`.
 function assignedTo(outer: TSESTree.Node): TSESTree.Node | null {
   let n = outer;
   // Where the value sits in the literal, from the outside in. Null once
@@ -557,7 +558,9 @@ function assignedTo(outer: TSESTree.Node): TSESTree.Node | null {
   if (parent?.type !== AST_NODE_TYPES.AssignmentPattern || parent.right !== n) {
     return null;
   }
-  return assignmentHolding(parent) === null ? null : parent.left;
+  return assignmentHolding(parent) === null
+    ? null
+    : landsIn(parent.left, steps);
 }
 
 // The step from a literal into the node it holds, put in front of the steps
@@ -597,8 +600,7 @@ function landsIn(
 ): TSESTree.Node | null {
   let target = left;
   for (const step of steps ?? []) {
-    const inner =
-      target.type === AST_NODE_TYPES.AssignmentPattern ? target.left : target;
+    const inner = withoutDefault(target);
     if (
       typeof step === "number" &&
       inner.type === AST_NODE_TYPES.ArrayPattern
@@ -621,8 +623,9 @@ function landsIn(
           continue;
         }
         const key = keyName(property.key, property.computed);
-        // A key the rule cannot name may be this one.
-        if (key === null) return target;
+        // A key the rule cannot name may be this one, and a key the
+        // pattern repeats gives the value to more than one name.
+        if (key === null || (key === step && found !== null)) return target;
         if (key === step) found = property.value;
       }
       if (found === null) return null;
@@ -933,8 +936,7 @@ function passedOn(
 // reaches nothing, `{ PI }` from `Math` or `{ foo: { PI } = Math }` from
 // `globalThis`, gives none: a nested default reports on its own.
 function givesSource(target: TSESTree.Node, base: readonly string[]): boolean {
-  const inner =
-    target.type === AST_NODE_TYPES.AssignmentPattern ? target.left : target;
+  const inner = withoutDefault(target);
   if (inner.type !== AST_NODE_TYPES.ObjectPattern) {
     return (
       opOf(base) !== undefined ||

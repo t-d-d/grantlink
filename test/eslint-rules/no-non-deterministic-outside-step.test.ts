@@ -1179,6 +1179,45 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "assigns Math by array destructuring in a nested default to a name it does not export, beside one it does",
+          code: `export let b;
+          let a;
+          ({ y: [a, b] = [Math, 1] } = x);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "assigns Math by array destructuring in a nested default to a name it exports, beside one it does not",
+          code: `export let b;
+          let a;
+          ({ y: [a, b] = [1, Math] } = x);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "assigns Math by object destructuring to an exported name under a key the pattern repeats",
+          code: `export let a;
+          let b;
+          ({ x: a, x: b } = { x: Math });`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
           name: "assigns Math by array destructuring after a spread, beside an exported name",
           code: `export let b;
           let a;
