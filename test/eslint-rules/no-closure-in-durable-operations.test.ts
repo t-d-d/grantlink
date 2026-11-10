@@ -40,6 +40,18 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
             });
           }`,
       },
+      {
+        name: "counts into an outer variable from a function of owed.ts that is no step helper, after askEuropePmc in the comma operator",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+            let read = 0;
+            await (owed.askEuropePmc, owed.notAHelper)(ctx, "paper", "wait", r, async () => {
+              read += 1;
+              return readPaper();
+            });
+          }`,
+      },
     ],
     invalid: [
       ...WRAPPED_STEP_HELPERS.map((shape) => ({

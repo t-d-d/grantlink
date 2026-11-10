@@ -1,7 +1,8 @@
 // Ways to reach askEuropePmc through a TypeScript wrapper, optional
-// chaining (#408) or the comma operator (#429). Each gives the module's opening lines and the text that
-// stands before a call's argument list, so a rule's tests can write
-// `${shape.callee}(ctx, ...)` in a body that follows `shape.prelude`.
+// chaining (#408) or the comma operator (#429). Each gives the module's
+// opening lines and the text that stands before a call's argument list, so
+// a rule's tests can write `${shape.callee}(ctx, ...)` in a body that
+// follows `shape.prelude`.
 export interface WrappedStepHelper {
   name: string;
   prelude: string;
