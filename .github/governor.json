@@ -47,6 +47,18 @@
         "reason": "A merge to main deploys the app stack and its roles."
       },
       {
+        "glob": "scripts/**",
+        "reason": "The deploy job runs them with the deploy role's credentials."
+      },
+      {
+        "glob": "test/page.live.ts",
+        "reason": "The deploy job runs the live tier with the deploy role's credentials."
+      },
+      {
+        "glob": "test/tiers.ts",
+        "reason": "The deploy job runs the live tier with the deploy role's credentials."
+      },
+      {
         "glob": "evals/**",
         "reason": "The gold sets and the gating floors decide what may deploy."
       },

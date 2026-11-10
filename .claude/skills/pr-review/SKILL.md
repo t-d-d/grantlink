@@ -51,9 +51,11 @@ A pass merges the pull request.
 8. **No changed file is on the human-only list.** The list is
    `prReview.humanOnly` in `.github/governor.json`: the stacks in `infra/`,
    everything under `.github/`, the constraint files in `docs/constraints/`,
-   `CLAUDE.md`, `.claude/`, the app stack in `serverless.yml`, the eval set
-   in `evals/`, and the dependencies in `package.json` and
-   `package-lock.json`. A pull request that changes one waits for the owner,
+   `CLAUDE.md`, `.claude/`, the app stack in `serverless.yml`, the scripts
+   in `scripts/` and the live tier in `test/page.live.ts` and
+   `test/tiers.ts`, which the deploy job runs with the deploy role's
+   credentials, the eval set in `evals/`, and the dependencies in
+   `package.json` and `package-lock.json`. A pull request that changes one waits for the owner,
    with the entry's reason. Governor checks this in code.
 
 9. **No required status check is red on its head.** Governor checks this in
