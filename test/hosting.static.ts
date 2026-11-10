@@ -9,7 +9,11 @@ import {
   TEMPLATES,
 } from "./app.ts";
 import { readTemplate, resource } from "./cfn.ts";
-import { strayVariablesIn, unreadResources } from "./serverless.ts";
+import {
+  mergeKeysIn,
+  strayVariablesIn,
+  unreadResources,
+} from "./serverless.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The app stack runs serverless in London, its own account's only
@@ -46,12 +50,25 @@ describe("fitness: data stays in London (hosting.md)", () => {
 // The static checks read the stack as test/app.ts merges it. osls also
 // applies `extensions` and any further template, which they do not read,
 // so serverless.yml may hold neither (#142). An inline entry may only add
-// resources, and may use only the cf and env variables (#166).
+// resources and outputs, and may use only the cf and env variables (#166).
+// The deploy reads the stack's outputs, so an inline entry may not replace
+// one a template declares (#243).
 describe("serverless.yml merges only what the static checks read", () => {
   it("lists the two templates, then only parameters, new inline resources and outputs", () => {
     expect(
       unreadResources(serverless.resources, TEMPLATES, DECLARED_ELSEWHERE),
     ).toEqual([]);
+  });
+
+  it("refuses an inline entry that replaces any of the templates' outputs", () => {
+    expect(DECLARED_ELSEWHERE.outputs).toEqual(
+      expect.arrayContaining([
+        "SiteBucketName",
+        "DistributionId",
+        "PageUrl",
+        "ResultsTableName",
+      ]),
+    );
   });
 
   // osls takes `extensions` from the merged list, so a template that holds
@@ -64,6 +81,16 @@ describe("serverless.yml merges only what the static checks read", () => {
   // entry, so a template may use no variable but the cf and env ones.
   it.each(TEMPLATES)("finds no stray variable in %s", (path) => {
     expect(strayVariablesIn(readTemplate(path))).toEqual([]);
+  });
+
+  // osls applies a YAML merge key, which the static checks read as an
+  // ordinary key, so none of these files may hold one (#242).
+  it("finds no merge key in serverless.yml", () => {
+    expect(mergeKeysIn(serverless)).toEqual([]);
+  });
+
+  it.each(TEMPLATES)("finds no merge key in %s", (path) => {
+    expect(mergeKeysIn(readTemplate(path))).toEqual([]);
   });
 });
 
