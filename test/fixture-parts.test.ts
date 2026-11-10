@@ -201,7 +201,7 @@ describe("strayParts", () => {
       {
         meta: "<funding-group><funding-statement>Funded.<?x Somebody?></funding-statement></funding-group>",
       },
-      "article/front/article-meta/funding-group (text)",
+      "article/front/article-meta/funding-group/funding-statement (text)",
     ],
     [
       "a processing instruction holding text in the licence (#303)",
@@ -215,7 +215,7 @@ describe("strayParts", () => {
       {
         meta: "<funding-group><funding-statement>Funded.<!-- Somebody --></funding-statement></funding-group>",
       },
-      "article/front/article-meta/funding-group (text)",
+      "article/front/article-meta/funding-group/funding-statement (text)",
     ],
   ])("names %s", (_what, parts, stray) => {
     expect(strayParts(paper(parts))).toEqual([stray]);
@@ -519,6 +519,152 @@ describe("strayParts", () => {
     expect(
       strayParts(paper({ meta: `<funding-group>${inner}</funding-group>` })),
     ).toEqual([stray]);
+  });
+
+  // #304: an attribute keeps text the cutter never reads, so the check names
+  // any it does not expect, by its element's path and its own name. It does
+  // not print the value, which could be a name.
+  it("passes the attributes the recorded papers carry", () => {
+    const xml =
+      '<article xmlns:xlink="http://www.w3.org/1999/xlink" xml:lang="en" article-type="research-article" dtd-version="1.4">' +
+      '<front><article-meta><article-id pub-id-type="pmcid">PMC1</article-id>' +
+      '<permissions><license><ali:license_ref xmlns:ali="http://www.niso.org/schemas/ali/1.0/" specific-use="textmining" content-type="ccbylicense" start_date="2026-09-17">L</ali:license_ref>' +
+      '<p><ext-link ext-link-type="uri" xlink:href="https://creativecommons.org/licenses/by/4.0/">CC BY</ext-link></p></license></permissions>' +
+      '<funding-group specific-use="FundRef"><award-group id="gs1"><funding-source id="sp1">' +
+      '<institution-wrap><institution-id institution-id-type="DOI">10.1/x</institution-id></institution-wrap></funding-source>' +
+      '<award-id rid="sp1">A1</award-id>' +
+      "</award-group></funding-group></article-meta></front>" +
+      '<body><sec id="s5" sec-type="funding"><title>Funding</title><p id="P12">Funded.</p></sec></body>' +
+      '<back><fn-group><fn id="fn1" fn-type="financial-disclosure"><p>Funded.</p></fn></fn-group></back></article>';
+    expect(strayParts(xml)).toEqual([]);
+  });
+
+  it.each([
+    [
+      "an attribute it does not expect, under the funding metadata",
+      {
+        meta: '<funding-group><award-group award-type="Somebody"><award-id>A2</award-id></award-group></funding-group>',
+      },
+      "article/front/article-meta/funding-group/award-group@award-type",
+    ],
+    [
+      "a value it does not expect for an attribute it does",
+      { meta: '<article-id pub-id-type="Somebody">1</article-id>' },
+      "article/front/article-meta/article-id@pub-id-type",
+    ],
+    [
+      "an id that is not shaped like one",
+      {
+        meta: '<funding-group><award-group><funding-source id="Somebody">F</funding-source></award-group></funding-group>',
+      },
+      "article/front/article-meta/funding-group/award-group/funding-source@id",
+    ],
+    [
+      "a link that is not to a licence",
+      {
+        meta: '<permissions><license><p><ext-link ext-link-type="uri" xlink:href="https://example.org/somebody">L</ext-link></p></license></permissions>',
+      },
+      "article/front/article-meta/permissions/license/p/ext-link@xlink:href",
+    ],
+    [
+      "an attribute on a paragraph of a funding section",
+      { back: '<sec sec-type="funding"><p title="Somebody">Funded.</p></sec>' },
+      "article/back/sec/p@title",
+    ],
+    [
+      "an attribute deep inside a paragraph of the acknowledgements",
+      {
+        back: '<ack><p>Thanks to <italic><bold title="Somebody">X</bold></italic>.</p></ack>',
+      },
+      "article/back/ack/p/italic/bold@title",
+    ],
+    [
+      "an attribute on the title of a funding section",
+      {
+        back: '<sec sec-type="funding"><title alt="Somebody">Funding</title><p>Funded.</p></sec>',
+      },
+      "article/back/sec/title@alt",
+    ],
+    [
+      "an unexpected type on a section the cutter finds by its title",
+      {
+        body: '<body><sec sec-type="Somebody"><title>Funding</title><p>Funded.</p></sec></body>',
+      },
+      "article/body/sec@sec-type",
+    ],
+    [
+      "text in an opening tag that is not an attribute",
+      { back: '<sec sec-type="funding"><p Somebody>Funded.</p></sec>' },
+      "article/back/sec/p (attributes)",
+    ],
+  ])("names %s (#304)", (_what, parts, stray) => {
+    expect(strayParts(paper(parts))).toEqual([stray]);
+  });
+
+  it("names an attribute on the article itself (#304)", () => {
+    expect(
+      strayParts(paper().replace("<article>", '<article note="Somebody">')),
+    ).toEqual(["article@note"]);
+  });
+
+  it("does not name the attributes of a part it already names (#304)", () => {
+    expect(
+      strayParts(
+        paper({
+          back: '<sec sec-type="data-availability" title="Somebody"><p>D</p></sec>',
+        }),
+      ),
+    ).toEqual(["article/back/sec"]);
+  });
+
+  it.each(["toString", "constructor", "valueOf", "__proto__"])(
+    "names an attribute called %s, which every object has (#304)",
+    (name) => {
+      expect(
+        strayParts(
+          paper({
+            back: `<sec sec-type="funding"><p ${name}="Somebody">Funded.</p></sec>`,
+          }),
+        ),
+      ).toEqual([`article/back/sec/p@${name}`]);
+    },
+  );
+
+  it("names text in a closing tag (#304)", () => {
+    expect(
+      strayParts(
+        paper({
+          back: '<sec sec-type="funding"><p>Funded.</p Somebody></sec>',
+        }),
+      ),
+    ).toEqual(["article/back/sec/p (attributes)"]);
+  });
+
+  it("names a creativecommons.org link that is not to a licence (#304)", () => {
+    expect(
+      strayParts(
+        paper({
+          meta: '<permissions><license><p><ext-link xlink:href="https://creativecommons.org/Somebody">L</ext-link></p></license></permissions>',
+        }),
+      ),
+    ).toEqual([
+      "article/front/article-meta/permissions/license/p/ext-link@xlink:href",
+    ]);
+  });
+
+  it("passes links to the licences", () => {
+    const links = [
+      "https://creativecommons.org/licenses/by/4.0/",
+      "http://creativecommons.org/licenses/by-nc-nd/3.0/us/legalcode",
+      "https://creativecommons.org/publicdomain/zero/1.0/",
+    ];
+    expect(
+      strayParts(
+        paper({
+          meta: `<permissions><license>${links.map((link) => `<p><ext-link xlink:href="${link}">L</ext-link></p>`).join("")}</license></permissions>`,
+        }),
+      ),
+    ).toEqual([]);
   });
 
   it("names a root that is not an article", () => {
