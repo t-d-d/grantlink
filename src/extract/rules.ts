@@ -16,6 +16,7 @@ export const RULES_VERSIONS: readonly Version[] = [
   { number: 11, issue: 506 },
   { number: 12, issue: 510 },
   { number: 13, issue: 525 },
+  { number: 14, issue: 514 },
 ];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
@@ -157,7 +158,7 @@ interface Shape {
   // Whether the model pass keeps a reply of this shape only where the
   // rules' own pattern reads that reply, and no more or less, in the text.
   // A form with a prefix and up to four parts may run on past a reply, as
-  // CRUK/12/2019 does past CRUK/12 (#561).
+  // CRUK/12/34 does past CRUK/12 (#561).
   readWhole?: true;
   // A short number such as an A number is common, so it counts only in a
   // sentence that names the funder.
@@ -203,6 +204,26 @@ const coded = (suffix: string) =>
 const SUFFIX = "[A-Za-z0-9]{2,8}";
 const CAPITAL_SUFFIX = `[A-Z0-9]{2,8}|${MONTH_YEAR}`;
 
+// A year as the rules read it in a bare number or a CRUK- form.
+const A_YEAR = String.raw`(?:19|20)\d{2}`;
+
+// A CRUK- form's parts. Each follows a hyphen or a slash and is a whole run
+// of up to eight capitals and digits, never a year alone. Every part but
+// the last holds a digit (#514).
+const CRUK_SEP = `(?:${DASH}|/)`;
+const CRUK_PART = String.raw`${CRUK_SEP}(?!${A_YEAR}(?![A-Z0-9]))[A-Z0-9]{1,8}(?![A-Z0-9])`;
+const CRUK_DIGIT_PART = String.raw`${CRUK_SEP}(?=[A-Z]*\d)(?!${A_YEAR}(?![A-Z0-9]))[A-Z0-9]{1,8}(?![A-Z0-9])`;
+// No part of any kind follows, so a read is the whole form, not its front.
+const NO_MORE_PARTS = String.raw`(?!${CRUK_SEP}[A-Z0-9]{1,8}(?![A-Z0-9]))`;
+// One to four parts, read whole. A form that runs on past four parts reads
+// its first four, as the model pass keeps them (#561), unless the fourth
+// has no digit and another part follows it.
+const CRUK_PARTS = [
+  `${CRUK_DIGIT_PART}${NO_MORE_PARTS}`,
+  `(?:${CRUK_DIGIT_PART}){1,2}${CRUK_PART}${NO_MORE_PARTS}`,
+  `(?:${CRUK_DIGIT_PART}){3}(?:${CRUK_DIGIT_PART}|${CRUK_PART}${NO_MORE_PARTS})`,
+].join("|");
+
 const SHAPES: readonly Shape[] = [
   {
     // Either letter may be written in lower case (#506).
@@ -219,8 +240,13 @@ const SHAPES: readonly Shape[] = [
     // after the CRUK, within what it matches, so a word such as CRUK-funded
     // or a run of names such as CRUK/MRC/EPSRC is not one. It comes after
     // the C/A pattern, so a C/A pair after CRUK/ is read as the pair alone.
+    // Every part after the CRUK but the last holds a digit, and no part is
+    // a year alone, so a name in capitals, as in CRUK/SMITH/2, or a year,
+    // as in CRUK/2019, is not one. The form is read whole or not at all, so
+    // CRUK/12 is not read from CRUK/12/2019, nor CRUK/AB12 from
+    // CRUK/AB12/SMITH/2 (#514).
     format: "CRUK-X",
-    shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:(?:${DASH}|/)[A-Z0-9]{1,8}){1,4}(?<=CRUK[A-Z0-9/${DASHES}-]*\d[A-Z0-9/${DASHES}-]*)`,
+    shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:${CRUK_PARTS})`,
     readWhole: true,
     sentenceOnly: false,
   },
@@ -285,7 +311,7 @@ const SHAPES: readonly Shape[] = [
     // (#525). A year is not one, and nor is the start of a longer number,
     // as in 12345/2, 12345-67 or 1234.5.
     format: "n",
-    shape: String.raw`(?!(?:19|20)\d{2}(?!\d))\d{4,6}`,
+    shape: String.raw`(?!${A_YEAR}(?!\d))\d{4,6}`,
     before: String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})(?!${EDGE})(?:\s?\(\s?|(?!\s*${JOINED_NAME})(?:(?!${ANOTHER_FUNDER})[^;,.]){0,100}?${TIE_WORD}))`,
     after: NUMBER_AFTER,
     sentenceOnly: true,
@@ -308,15 +334,22 @@ const BARE_SUFFIX = String.raw`${DASH}\d{2}`;
 // Any bare number a reply may be, of the n shape's four digits or of BARE's
 // five to seven, with or without its suffix.
 const BARE_REPLY = new RegExp(String.raw`^\d+(?:${BARE_SUFFIX})?$`, "u");
+// What may not come before a bare number, so it is not the end of a longer
+// one, as in 12/345678, ABC-123456 or 1.23456. The rules' n shape reads a
+// bare number from the text only after a bracket, a tie word, a colon or a
+// hash, so it never reads one there (#571).
+const NUMBER_BEFORE = String.raw`(?<!${SEP}|${DASH}|\d\.)`;
 
 // A reference as written, between the edges above. A bare number of any
-// length counts only where the text does not go on past it, as the rules
-// read one (#567).
-const wholeReference = (reference: string): RegExp =>
-  new RegExp(
-    `${START}${escape(reference)}${END}${BARE_REPLY.test(reference) ? NUMBER_AFTER : ""}`,
+// length counts only where the text neither runs into it nor goes on past
+// it, as the rules read one (#567, #571).
+const wholeReference = (reference: string): RegExp => {
+  const bare = BARE_REPLY.test(reference);
+  return new RegExp(
+    `${bare ? NUMBER_BEFORE : ""}${START}${escape(reference)}${END}${bare ? NUMBER_AFTER : ""}`,
     "u",
   );
+};
 
 // Whether a reference, as written with plain spaces, is a shape the rules
 // read, in capitals but for a month in a code, or a bare number with an
