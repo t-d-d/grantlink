@@ -65,6 +65,8 @@ describe("telling a CRUK reference from another linked id", () => {
     // A CRUK id the rules read, which only their shape check takes (#575).
     "CRUK/12345",
     "CRUK-Nov21/100001",
+    // A month written straight onto the code, as the rules read it.
+    "CTRQQRMar21/100010",
   ])("takes %s", (id) => {
     expect(crukReference(id)).toBe(true);
   });
@@ -100,6 +102,14 @@ describe("telling a CRUK reference from another linked id", () => {
     // A year alone after CRUK, which the rules refuse since #514 (#575).
     "CRUK/2019",
     "CRUK-2019/12345",
+    // A code the rules refuse: too few capitals, a number not of six digits
+    // starting with 1, too many capitals, or a year with no hyphen (#583).
+    "ABC/2019",
+    "DRCPGM/1",
+    "DRCPGM/200015",
+    "DRCPGM/1000150",
+    "ABCDEFGHIJKLM/100010",
+    "CTRQQR2021/100010",
   ])("refuses %s", (id) => {
     expect(crukReference(id)).toBe(false);
   });

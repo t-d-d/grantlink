@@ -87,8 +87,10 @@ export function sameGrant(found: string, expected: string): boolean {
 
 // CRUK's reference forms (#503): a C/A pair; an award number of 4 to 6
 // digits, with or without its A; a Crick core funding number; a newer
-// reference of letters, sometimes with a year or a month, then a slash and
-// a number; or one that starts with CRUK and is, whole, a shape the rules
+// code of the shape the rules read, 4 to 12 capitals, then a hyphen and
+// a suffix of 2 to 8 capitals and digits or a month and year written
+// straight on, then a slash and a number of six digits that starts with 1
+// (#583); or one that starts with CRUK and is, whole, a shape the rules
 // read, so it has a digit after the CRUK (#532). Only that last form takes
 // an id that starts with CRUK, so the scorer never takes a CRUK id the
 // rules refuse, such as CRUK/2019 (#575). A C part alone names a
@@ -99,7 +101,7 @@ const CRUK_FORMS = [
   /^C\d+\/A\d+$/u,
   /^A?\d{4,6}$/u,
   /^(?:FC|CC)\d+$/u,
-  /^(?!CRUK)[A-Z]+(?:-?(?:(?:19|20)\d{2}|(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}))?\/\d+$/u,
+  /^(?!CRUK)[A-Z]{4,12}(?:-[A-Z0-9]{2,8}|(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(?:\d{4}|\d{2}))?\/1\d{5}$/u,
 ];
 
 export function crukReference(id: string): boolean {
