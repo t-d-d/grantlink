@@ -122,7 +122,7 @@ describe("the run reads the funding text bucket", () => {
   // comes before the step writes its outputs.
   it("masks the account id, then builds the bucket's name from it", () => {
     const run = assume?.run ?? "";
-    const mask = run.search(/::add-mask::\$account\b/u);
+    const mask = run.indexOf('::add-mask::$account"');
     const bucket = run.indexOf('echo "bucket=grantlink-text-$account"');
     expect(mask).toBeGreaterThan(-1);
     expect(bucket).toBeGreaterThan(mask);
