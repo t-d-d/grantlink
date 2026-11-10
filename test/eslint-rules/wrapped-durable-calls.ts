@@ -1,7 +1,13 @@
 // Ways to write a call to one of the SDK's durable operations on `ctx`
-// through a TypeScript wrapper or optional chaining (#428). Each takes the
-// operation's name and the text of its arguments and gives the whole call,
-// so a rule's tests can write `await ${shape.call("step", args)}`.
+// through a TypeScript wrapper, optional chaining (#428) or the comma
+// operator around the whole call (#452). Each takes the operation's name and
+// the text of its arguments and gives the whole call, so a rule's tests can
+// write `await ${shape.call("step", args)}`.
+//
+// The comma operator around the callee, `(0, ctx.step)(...)`, is not listed.
+// It calls the method with no `this`, and the SDK's operations read their
+// context from `this`, so the call throws before it runs anything. There is
+// no durable call there for a rule to treat as one.
 export interface WrappedDurableCall {
   name: string;
   call: (method: string, args: string) => string;
@@ -51,6 +57,14 @@ export const WRAPPED_DURABLE_CALLS: readonly WrappedDurableCall[] = [
   {
     name: "a call with a non-null assertion",
     call: (m, a) => `ctx.${m}(${a})!`,
+  },
+  {
+    name: "a call after the comma operator",
+    call: (m, a) => `(0, ctx.${m}(${a}))`,
+  },
+  {
+    name: "a call asserted with as after the comma operator",
+    call: (m, a) => `(0, ctx.${m}(${a}) as Promise<number>)`,
   },
   {
     name: "layers of wrappers on the call and the callee",

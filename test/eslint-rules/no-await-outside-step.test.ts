@@ -389,6 +389,22 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         errors: [{ messageId: "awaitOutsideStep" }],
       },
       {
+        name: "awaits I/O ahead of a step's callback in the comma operator, which the body evaluates",
+        code: `async function run(ctx: any) {
+          await ctx.step("s", (await fetchPaper(), async () => 1), { retryStrategy: r });
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits I/O ahead of askEuropePmc's read in the comma operator, which the body evaluates",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
+          await askEuropePmc(ctx, "paper", "wait", r, (await fetchPaper(), async () => 1));
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
         name: "awaits I/O directly in a child context, which replays",
         code: `async function run(ctx: any) {
           await ctx.runInChildContext("paper", async (child: any) => {
