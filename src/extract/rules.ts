@@ -37,7 +37,7 @@ export const referenceSchema = z
     // Only the characters a reference is made of. These include letters and
     // spaces, so this alone does not keep out a name: the rules' patterns
     // match no name, and the model pass refuses a reply that carries a word
-    // (#413).
+    // set apart by spaces (#413).
     asWritten: z
       .string()
       .min(1)
@@ -55,7 +55,8 @@ export const referenceSchema = z
 export type Reference = z.infer<typeof referenceSchema>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-const DASH = `[-${DASHES}]`;
+// The model pass reads a code's hyphen with this too (#413).
+export const DASH = `[-${DASHES}]`;
 // A letter as a class of its upper and lower case, for a pattern whose own
 // letters must keep their case and so cannot take the `i` flag. Any letter
 // folds, not only A to Z (#301). A case that is more than one character, as

@@ -454,6 +454,46 @@ describe("fitness: no invented references (model-calls.md)", () => {
     ).toEqual(written);
     expect(result.status === "read" && result.rejected).toBe(0);
   });
+
+  it("keeps a coded reference whose separator stands apart, as the rules read it", async () => {
+    // A code of capitals, or its suffix, is a word of letters alone when
+    // spaces set the separator apart. The text is made up.
+    const written = ["DRCMDPA / 100010", "ABCDEF- XYZW / 100001"];
+    const paragraph = `Funded by Cancer Research UK (${written.join(", ")}).`;
+    expect(
+      findReferences({ text: [paragraph], awards: [] }).map(
+        ({ asWritten }) => asWritten,
+      ),
+    ).toEqual(written);
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences([paragraph], {
+      model: haiku,
+      key: "k",
+      fetch,
+    });
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(written);
+    expect(result.status === "read" && result.rejected).toBe(0);
+  });
+
+  it("rejects a word of capitals before a separator when it is not a code's place", async () => {
+    // A name in capitals is not a code unless it starts the reference, and
+    // a suffix follows only a code and its hyphen. The text is made up.
+    const written = ["A12345 SMITH / 100010", "SMITH JONES / 100001"];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(
+      [`Funded by Cancer Research UK (${written.join(", ")}).`],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(2);
+  });
 });
 
 describe("fitness: no lost papers (model-calls.md)", () => {

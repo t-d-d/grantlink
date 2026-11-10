@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { funder, normalise, referenceSchema, wholeReference } from "./rules.ts";
+import {
+  DASH,
+  funder,
+  normalise,
+  referenceSchema,
+  wholeReference,
+} from "./rules.ts";
 
 // The model pass: reads a paper's funding text and proposes the grant
 // references the rules missed (docs/constraints/model-calls.md). This is the
@@ -7,8 +13,10 @@ import { funder, normalise, referenceSchema, wholeReference } from "./rules.ts";
 // Anthropic as its only provider with fallbacks off, and sends only the
 // funding text, marked as data. Every reference in the reply must appear in
 // that text as written, and is normalised only after that check. A reply
-// that carries a word, such as a name, is rejected, so what it returns is
-// shaped as references and not as text (docs/constraints/personal-data.md).
+// that carries a word set apart by spaces, such as a name, is rejected, so
+// what it returns is shaped as references and not as text
+// (docs/constraints/personal-data.md). A word joined by a hyphen or a slash
+// is not yet refused (#467).
 
 // The candidates the eval scores beside the rules alone (#329). Each id is
 // set here once. The eval imports them; nothing else names one.
@@ -177,17 +185,31 @@ function givesWhole(text: readonly string[], reference: string): boolean {
 }
 
 // A word of letters alone, between spaces, is not part of a reference,
-// unless it is a prefix of one or two capitals set apart from its number,
-// as in "C 1234" or "FC 001234", which the rules read too. So a name or a
-// word joined to a reference, as in "Jo Example A12345" or "Grant 2", is
-// refused (#413).
+// unless the rules read it as part of one too: a prefix of one or two
+// capitals set apart from its number, as in "C 1234" or "FC 001234", or a
+// code of capitals that starts the reference, or that code's suffix after
+// its hyphen, set apart from the separator, as in "DRCMDPA / 100010" or
+// "ABCDEF- XYZW / 100001". So a name or a word joined to a reference, as in
+// "Jo Example A12345" or "Grant 2", is refused (#413).
+const CODE = /^[A-Z]{4,12}$/u;
+const CODE_AND_DASH = new RegExp(`^[A-Z]{4,12}${DASH}$`, "u");
+const SUFFIX = /^[A-Za-z]{2,8}$/u;
+const SEPARATED = /^[/\\∖]/u;
+
 function carriesWord(reference: string): boolean {
   const words = reference.split(" ");
-  return words.some(
-    (word, at) =>
-      /^[A-Za-z]+$/u.test(word) &&
-      !(/^[A-Z]{1,2}$/u.test(word) && /^\d/u.test(words[at + 1] ?? "")),
-  );
+  return words.some((word, at) => {
+    if (!/^[A-Za-z]+$/u.test(word)) return false;
+    const next = words[at + 1] ?? "";
+    if (/^[A-Z]{1,2}$/u.test(word) && /^\d/u.test(next)) return false;
+    if (!SEPARATED.test(next)) return true;
+    if (at === 0) return !CODE.test(word);
+    return !(
+      at === 1 &&
+      CODE_AND_DASH.test(words[0] ?? "") &&
+      SUFFIX.test(word)
+    );
+  });
 }
 
 // Keeps a reference only if the text gives it whole as written, it is made
