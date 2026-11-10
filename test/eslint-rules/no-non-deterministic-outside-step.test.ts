@@ -38,6 +38,14 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `async function run(ctx: any) { const { Date: { UTC } } = globalThis; const t = UTC(2020, 0, 1); }`,
         },
         {
+          name: "destructures from Date a member that does not call it, given as a nested pattern's default",
+          code: `async function run(ctx: any) { const { foo: { UTC: u } = Date } = globalThis; u(2020, 0); }`,
+        },
+        {
+          name: "destructures the name of Date.now, which a step reads",
+          code: `async function run(ctx: any) { await ctx.step("n", async () => { const { now: { name } } = Date; return name; }, { retryStrategy: r }); }`,
+        },
+        {
           name: "passes Date as a value inside a step",
           code: `async function run(ctx: any) {
             await ctx.step("at", async () => ids.map(Date), { retryStrategy: r });
@@ -231,8 +239,153 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `const crypto = fixedSource();
           const id = crypto.randomUUID();`,
         },
+        {
+          name: "reads a member of Math under a constant key outside a step",
+          filename: "src/run/run.ts",
+          code: `const M = Math;
+          const a = Math.floor(x);
+          const b = M.max(1, 2);
+          const c = typeof crypto === "undefined";
+          const d = globalThis.Math.abs(-1);`,
+        },
+        {
+          name: "passes Math on and draws random from it inside a step",
+          filename: "src/run/run.ts",
+          code: `async function run(ctx: any) {
+            await ctx.step("pick", async () => helper(Math), { retryStrategy: r });
+            await ctx.step("draw", async () => Math.random(), { retryStrategy: r });
+          }`,
+        },
+        {
+          name: "tests an object that holds a source, or Date, without passing it on",
+          filename: "src/run/run.ts",
+          code: `const a = "randomUUID" in globalThis.crypto;
+          const b = "now" in Date;
+          if (globalThis.crypto) { x(); }
+          const c = !crypto;
+          const d = performance ? 1 : 2;
+          const e = Date && f();`,
+        },
       ],
       invalid: [
+        {
+          name: "passes on the rest of a namespace import of crypto, or an object that holds a source as a fallback",
+          filename: "src/run/run.ts",
+          code: `import * as c from "node:crypto";
+          const { createHash, ...rest } = c;
+          const p = globalThis.performance ?? fallback;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto" },
+              line: 2,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "performance" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "copies the rest of Math given as the default of a nested pattern",
+          filename: "src/run/run.ts",
+          code: `const { Math: { ...rest } = Math } = globalThis;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "passes an object that holds a source on in an exported object",
+          filename: "src/run/o.ts",
+          code: `export const o = { m: Math };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "passes Math to a helper, which may call random on it",
+          filename: "src/run/run.ts",
+          code: `function helper(m: Math) { return m.random(); }
+          const n = helper(Math);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "returns crypto from a function",
+          filename: "src/run/run.ts",
+          code: `function source() { return crypto; }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "passes on an object that holds a source through an alias, globalThis or a key it cannot name",
+          filename: "src/run/run.ts",
+          code: `const M = Math;
+          const a = helper(M);
+          const b = [globalThis.crypto];
+          const c = helper(globalThis);
+          const d = Math[k];
+          const e = { ...performance };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto" },
+              line: 3,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "globalThis" },
+              line: 4,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 5,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "performance" },
+              line: 6,
+            },
+          ],
+        },
+        {
+          name: "passes on a namespace import of crypto",
+          filename: "src/run/run.ts",
+          code: `import * as c from "node:crypto";
+          const a = helper(c);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto" },
+              line: 2,
+            },
+          ],
+        },
         {
           name: "passes Date as a value for something else to call",
           code: `const a = ids.map(Date);
@@ -1165,6 +1318,89 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "draws random from Math given as the default of a destructured name",
+          code: `async function run(ctx: any) { const { foo: M = Math } = globalThis; M.random(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
+        },
+        {
+          name: "draws random destructured from Math given as the default of a nested pattern",
+          code: `async function run(ctx: any) { const { foo: { random: r } = Math } = globalThis; r(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
+        },
+        {
+          name: "calls Date given as the default of a destructured name, once at the call",
+          code: `async function run(ctx: any) { const { foo: D = Date } = x; D(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date()" },
+              column: 61,
+            },
+          ],
+        },
+        {
+          name: "passes Date on as a nested default that destructures a member calling it",
+          code: `async function run(ctx: any) { const { foo: { bind: b } = Date } = x; const f = b(null); }`,
+          errors: [
+            { messageId: "nonDeterministicOutsideStep", data: { op: "Date" } },
+          ],
+        },
+        {
+          name: "exports Date given as the default of a destructured name, once at the name",
+          code: `export const { foo: D = Date } = x;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              column: 21,
+            },
+          ],
+        },
+        {
+          name: "passes Date on as a default the rule does not follow, of a parameter",
+          code: `async function run(ctx: any) { const f = ({ foo: D = Date }: any) => D; }`,
+          errors: [
+            { messageId: "nonDeterministicOutsideStep", data: { op: "Date" } },
+          ],
+        },
+        {
+          name: "draws random from Math given as the default when the initial value starts at another holder",
+          code: `async function run(ctx: any) { const { foo: M = Math } = Date; M.random(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
+        },
+        {
+          name: "draws random destructured from Math given as a nested default when the initial value starts at another holder",
+          code: `async function run(ctx: any) { const { foo: { random: r } = Math } = Date; r(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
+        },
+        {
+          name: "passes Date on as a default when the name follows Math from its initial value",
+          code: `async function run(ctx: any) { const { Math: M = Date } = globalThis; }`,
+          errors: [
+            { messageId: "nonDeterministicOutsideStep", data: { op: "Date" } },
+          ],
+        },
+        {
           name: "reads the clock destructured from Date with a default",
           code: `async function run(ctx: any) { const { now = () => 0 } = Date; const at = now(); }`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
@@ -1173,6 +1409,154 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           name: "draws random from a named import of webcrypto",
           code: `import { webcrypto } from "node:crypto"; async function run(ctx: any) { const b = webcrypto.getRandomValues(new Uint8Array(4)); }`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "reads Date.now in a pattern that destructures call from it",
+          code: `async function run(ctx: any) { const { now: { call: c } } = Date; c(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now" },
+              column: 40,
+            },
+          ],
+        },
+        {
+          name: "reads Date.now in a nested pattern that destructures bind from it",
+          code: `async function run(ctx: any) { const { Date: { now: { bind: b } } } = globalThis; b(null)(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now" },
+              column: 48,
+            },
+          ],
+        },
+        {
+          name: "destructures bind from Date and calls what it returns",
+          code: `async function run(ctx: any) { const { bind: b } = Date; b(null)(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 52,
+            },
+          ],
+        },
+        {
+          name: "destructures bind from Date in a nested pattern",
+          code: `async function run(ctx: any) { const { Date: { bind: b } } = globalThis; b(null)(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 40,
+            },
+          ],
+        },
+        {
+          name: "destructures call from Date given as a nested pattern's default",
+          code: `async function run(ctx: any) { const { foo: { call: c } = Date } = globalThis; c(null); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 59,
+            },
+          ],
+        },
+        {
+          name: "draws random from Math given as a nested pattern's default",
+          code: `async function run(ctx: any) { const { foo: { random: r } = Math } = globalThis; r(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+              column: 82,
+            },
+          ],
+        },
+        {
+          name: "reads the clock from Date given as a default deeper in a pattern",
+          code: `async function run(ctx: any) { const { a: { b: { now } = Date } } = globalThis; now(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+              column: 81,
+            },
+          ],
+        },
+        {
+          name: "gives Date as a parameter's default to a pattern the rule does not follow",
+          code: `async function run(ctx: any) { const stamp = ({ now } = Date) => now(); stamp(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 57,
+            },
+          ],
+        },
+        {
+          name: "gives Date as a parameter's default to a nested pattern that reads now from it",
+          code: `async function run(ctx: any) { const stamp = ({ now: { call } } = Date) => call(); stamp(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 67,
+            },
+          ],
+        },
+        {
+          name: "gives Date as a nested default in an assignment the rule does not follow, from globalThis, which it passes on",
+          code: `async function run(ctx: any) { let now: any; ({ foo: { now } = Date } = globalThis); now(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 64,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "globalThis" },
+              column: 73,
+            },
+          ],
+        },
+        {
+          name: "gives Date as a nested default in a loop's pattern, which has no initial value",
+          code: `async function run(ctx: any) { for (const { foo: { now } = Date } of [{}]) now(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 60,
+            },
+          ],
+        },
+        {
+          name: "reads the clock from a Date default under a key that names another holder",
+          code: `async function run(ctx: any) { const { crypto: { now } = Date } = globalThis; now(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+              column: 79,
+            },
+          ],
+        },
+        {
+          name: "reads the clock from a Date default in a pattern that destructures a holder",
+          code: `async function run(ctx: any) { const { foo: { now } = Date } = Math; now(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+              column: 70,
+            },
+          ],
         },
         {
           name: "draws random through crypto.webcrypto",

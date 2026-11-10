@@ -178,7 +178,7 @@ describe("a run over the back catalogue", () => {
       "CTRQQR-2021/100010",
       "A28707",
     ]);
-    expect(row?.versions).toEqual({ rules: "rules-12", code: "test" });
+    expect(row?.versions).toEqual({ rules: "rules-14", code: "test" });
     expect(fake.table.rows.get("PMC0000003")?.references).toEqual([]);
 
     const page = fake.site.files?.["index.html"] ?? "";

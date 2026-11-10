@@ -61,8 +61,7 @@ describe("telling a CRUK reference from another linked id", () => {
     "A17196/",
     "A21139\\",
     "PRCRPG-Nov21\\\\100001",
-    "CRUK-UCL-2023",
-    "CRUK_Manchester",
+    "CRUK-C5759",
   ])("takes %s", (id) => {
     expect(crukReference(id)).toBe(true);
   });
@@ -84,6 +83,17 @@ describe("telling a CRUK reference from another linked id", () => {
     "cruk",
     "CRUK-",
     "CRUK\\",
+    "CRUK_Manchester",
+    "CRUK/MRC",
+    "CRUK-FUNDED",
+    "CRUK-MI",
+    "CRUK/MRC/EPSRC/NIHR/BHF/2020",
+    "CRUK2019",
+    "CRUK_2019",
+    "CRUK.12345",
+    // A part before the last with no digit (#514).
+    "CRUK-UCL-2023",
+    "CRUK/SMITH/2",
   ])("refuses %s", (id) => {
     expect(crukReference(id)).toBe(false);
   });
@@ -102,6 +112,20 @@ describe("finding which linked grants a paper prints", () => {
     ["A56789", "<p>grant A<italic>56789</italic></p>"],
     ["A17196/", "<p>Funded by grant A17196.</p>"],
     ["PRCRPG-Nov21\\\\100001", "<p>PRCRPG-Nov21\\100001</p>"],
+    ["C1/A23456", "<p>Funded by grant 23456.</p>"],
+    ["A12345", "<p>Grants 12345-A23456.</p>"],
+    ["A2019", "<p>Funded by Cancer Research UK grant 2019.</p>"],
+    ["A2019", "<p>Grant 2019 from CRUK.</p>"],
+    ["A2019", "<p>Recruited in 2019. Funded by grant A2019.</p>"],
+    ["A1234", "<p>Recruited with grant 1234.</p>"],
+    // A year reads near any name the rules read for the funder (#520).
+    ["A2019", "<p>Funded by Cancer Research U.K. grant 2019.</p>"],
+    ["A2019", "<p>Funded by CR-UK grant 2019.</p>"],
+    // Indentation between tags does not push a year away from the name.
+    [
+      "A2019",
+      "<funding-source>\n                    <institution-wrap>\n                      <institution>Cancer Research UK</institution>\n                    </institution-wrap>\n                  </funding-source>\n                  <award-id>2019</award-id>",
+    ],
   ])("finds %s printed in %s", (grant, article) => {
     expect(printedGrants([grant], article)).toEqual([grant]);
   });
@@ -114,6 +138,18 @@ describe("finding which linked grants a paper prints", () => {
     ["C1234/A56789", "<p>Programme C1234.</p>"],
     ["A12345", "<p>Figure 1 2345 cells.</p>"],
     ["A12345", "<table><tr><td>1</td><td>2345</td></tr></table>"],
+    // A bare number with a dot or a hyphen and a digit beside it sits in
+    // a decimal or a DOI (#520).
+    ["C1/A23456", "<p>The ratio was 1.23456 overall.</p>"],
+    ["A12345", "<p>doi.org/10.1038/s41467-020-12345-6</p>"],
+    ["A12345", "<p>Version 12345.6 of the tool.</p>"],
+    ["A12345", "<p>Samples 4-12345 were run.</p>"],
+    // A bare number that reads as a year counts only near CRUK (#520).
+    ["A2019", "<p>Recruited in 2019.</p>"],
+    [
+      "A2019",
+      "<p>Funded by Cancer Research UK. Patients were recruited between the spring and the autumn of the year 2019.</p>",
+    ],
   ])("does not find %s printed in %s", (grant, article) => {
     expect(printedGrants([grant], article)).toEqual([]);
   });

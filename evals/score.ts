@@ -1,4 +1,9 @@
-import { findReferences, type FundingSections } from "../src/extract/rules.ts";
+import {
+  ANY_CASE_FUNDER_NAME,
+  findReferences,
+  hasReferenceShape,
+  type FundingSections,
+} from "../src/extract/rules.ts";
 import type { RowId } from "./floors.ts";
 
 // Scores the extraction on the gold sets. It reads text already on disk and
@@ -82,21 +87,24 @@ export function sameGrant(found: string, expected: string): boolean {
 // CRUK's reference forms (#503): a C/A pair; an award number of 4 to 6
 // digits, with or without its A; a Crick core funding number; a newer
 // reference of letters, sometimes with a year or a month, then a slash and
-// a number; or one that starts with CRUK and has a letter or a digit after
-// it. A C part alone names a programme, and another funder's reference, a
-// word or the bare abbreviation CRUK is not CRUK's, so none of those is an
-// answer.
+// a number; or one that starts with CRUK and is, whole, a shape the rules
+// read, so it has a digit after the CRUK (#532). A C part alone names a
+// programme, and another funder's reference, a word, a centre or
+// partnership name such as CRUK_Manchester or CRUK/MRC, or the bare
+// abbreviation CRUK is not a CRUK grant, so none of those is an answer.
 const CRUK_FORMS = [
   /^C\d+\/A\d+$/u,
   /^A?\d{4,6}$/u,
   /^(?:FC|CC)\d+$/u,
   /^[A-Z]+(?:-?(?:(?:19|20)\d{2}|(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}))?\/\d+$/u,
-  /^CRUK[^A-Z0-9]*[A-Z0-9]/u,
 ];
 
 export function crukReference(id: string): boolean {
   const whole = canonical(id);
-  return CRUK_FORMS.some((form) => form.test(whole));
+  return (
+    CRUK_FORMS.some((form) => form.test(whole)) ||
+    (whole.startsWith("CRUK") && hasReferenceShape(whole))
+  );
 }
 
 // The innermost reference list, which a loop removes until none is left, so
@@ -131,19 +139,60 @@ function standingAlone(form: string): RegExp {
   return new RegExp(`(?<![A-Za-z0-9])${pattern}(?![A-Za-z0-9])`, "iu");
 }
 
+// A bare number with a dot or a hyphen and then a digit on either side of
+// it sits in a decimal or a DOI, so it is not printed there (#520).
+function bareNumber(digits: string): RegExp {
+  return new RegExp(
+    `(?<![A-Za-z0-9]|\\d[.-])${digits}(?![A-Za-z0-9]|[.-]\\d)`,
+    "giu",
+  );
+}
+
+// A bare number that could be a year counts only within this many
+// characters of a name the rules read for the funder (#520).
+const NEAR_FUNDER = 50;
+const YEAR = /^(?:19|20)\d{2}$/u;
+const FUNDER_NAME = new RegExp(ANY_CASE_FUNDER_NAME, "gu");
+
+interface Span {
+  start: number;
+  end: number;
+}
+
+function printedAs(form: string, text: string, names: Span[]): boolean {
+  if (!/^\d+$/u.test(form)) return standingAlone(form).test(text);
+  if (!YEAR.test(form)) return bareNumber(form).test(text);
+  return [...text.matchAll(bareNumber(form))].some(({ index: start }) =>
+    names.some(
+      (name) =>
+        start - name.end <= NEAR_FUNDER &&
+        name.start - (start + form.length) <= NEAR_FUNDER,
+    ),
+  );
+}
+
 // The linked grants a paper prints, in the order given: those with a form
 // sameGrant accepts standing alone in the whole article less its reference
 // list, ignoring case and spaces (#502, #503). A grant cited only by
-// another paper is not printed. Each markup tag reads as a space, so a tag
-// inside a grant does not hide it.
+// another paper is not printed. Each markup tag reads as a space, and any
+// run of spaces as one, so a tag inside a grant does not hide it and
+// indentation does not part a year from the funder's name. A bare number
+// in a decimal or a DOI, or one that reads as a year far from the funder's
+// name, is not printed (#520).
 export function printedGrants(
   grants: readonly string[],
   article: string,
 ): string[] {
-  const text = withoutReferenceLists(article).replace(/<[^>]*>/gu, " ");
+  const text = withoutReferenceLists(article)
+    .replace(/<[^>]*>/gu, " ")
+    .replace(/\s+/gu, " ");
+  const names = [...text.matchAll(FUNDER_NAME)].map((m) => ({
+    start: m.index,
+    end: m.index + m[0].length,
+  }));
   return grants.filter((grant) =>
     [...forms(grant)].some(
-      (form) => form !== "" && standingAlone(form).test(text),
+      (form) => form !== "" && printedAs(form, text, names),
     ),
   );
 }
