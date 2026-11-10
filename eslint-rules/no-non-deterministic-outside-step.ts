@@ -174,8 +174,8 @@ function opOf(path: readonly string[] | null): string | undefined {
 }
 
 // True when the identifier is read as a value, rather than declared, used
-// as a property's name, named in a type, `typeof randomUUID`, or passed on
-// by an export, `export { randomUUID }`.
+// as a property's name, named in a type, `x: Date` or `typeof randomUUID`,
+// or passed on by an export, `export { randomUUID }`.
 function isRead(identifier: TSESTree.Identifier, resolver: Resolver): boolean {
   if (
     identifier.parent.type === AST_NODE_TYPES.TSTypeQuery ||
@@ -185,7 +185,10 @@ function isRead(identifier: TSESTree.Identifier, resolver: Resolver): boolean {
   }
   return resolver.sourceCode
     .getScope(identifier)
-    .references.some((ref) => ref.identifier === identifier && ref.isRead());
+    .references.some(
+      (ref) =>
+        ref.identifier === identifier && ref.isValueReference && ref.isRead(),
+    );
 }
 
 // True when the node is the function a call calls, read through the
@@ -200,6 +203,49 @@ function calledThrough(node: TSESTree.Node): boolean {
     outer.parent?.type === AST_NODE_TYPES.CallExpression &&
     outer.parent.callee === outer
   );
+}
+
+// The members of `Date` that call it: `Date.call(null)` reads the clock as
+// `Date()` does, and `Date.bind(null)` returns a function that does.
+const CALLS_THROUGH = new Set(["call", "apply", "bind"]);
+
+// True when `Date`, read as a value, goes somewhere that may call it, such
+// as `ids.map(Date)` or `Reflect.construct(Date, [])`. Not when the code
+// calls or constructs it, which the call checks report with their
+// arguments in view, reads a member that does not call it, `Date.UTC(...)`,
+// tests `x instanceof Date`, or declares an alias, `const D = Date`, whose
+// own reads the rule follows.
+function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
+  let outer = node;
+  while (outer.parent !== undefined && unwrapped(outer.parent) === node) {
+    outer = outer.parent;
+  }
+  const parent = outer.parent;
+  switch (parent?.type) {
+    case AST_NODE_TYPES.CallExpression:
+    case AST_NODE_TYPES.NewExpression:
+      return parent.callee !== outer;
+    case AST_NODE_TYPES.MemberExpression: {
+      if (parent.object !== outer) return true;
+      const name = memberName(parent);
+      return name !== null && CALLS_THROUGH.has(name);
+    }
+    case AST_NODE_TYPES.BinaryExpression:
+      return !(parent.operator === "instanceof" && parent.right === outer);
+    case AST_NODE_TYPES.VariableDeclarator: {
+      if (parent.init !== outer) return true;
+      if (parent.id.type === AST_NODE_TYPES.ObjectPattern) return false;
+      const [declared, ...more] =
+        resolver.sourceCode.getDeclaredVariables(parent);
+      return (
+        more.length > 0 ||
+        declared === undefined ||
+        aliasDeclarator(declared) === null
+      );
+    }
+    default:
+      return true;
+  }
 }
 
 export const noNonDeterministicOutsideStep = createRule({
@@ -233,9 +279,13 @@ export const noNonDeterministicOutsideStep = createRule({
       if (op === undefined) return;
       report(node, calledThrough(node) ? `${op}()` : op);
     };
-    const isDate = (callee: TSESTree.Node): boolean => {
-      const path = pathOf(callee, context, new Set());
-      return path?.length === 1 && path[0] === "Date";
+    const namesDate = (path: readonly string[] | null): boolean =>
+      path?.length === 1 && path[0] === "Date";
+    const isDate = (callee: TSESTree.Node): boolean =>
+      namesDate(pathOf(callee, context, new Set()));
+    // `Date` read as a value and passed on, such as `ids.map(Date)`.
+    const checkDate = (node: TSESTree.Node, path: readonly string[] | null) => {
+      if (namesDate(path) && passedOn(node, context)) report(node, "Date");
     };
     return {
       NewExpression(node) {
@@ -249,14 +299,17 @@ export const noNonDeterministicOutsideStep = createRule({
         if (isDate(node.callee)) report(node, "Date()");
       },
       MemberExpression(node) {
-        check(node, pathOf(node, context, new Set()));
+        const path = pathOf(node, context, new Set());
+        check(node, path);
+        checkDate(node, path);
       },
       // A named import, or an alias of a member, read on its own, such as
       // `randomUUID()` after `import { randomUUID } from "node:crypto"`.
       Identifier(node) {
         const path = pathOf(node, context, new Set());
-        if (opOf(path) === undefined || !isRead(node, context)) return;
+        if (!isRead(node, context)) return;
         check(node, path);
+        checkDate(node, path);
       },
     };
   },
