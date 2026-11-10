@@ -855,6 +855,40 @@ describe("the eval snapshot (evals.md)", () => {
     expect(fake.text.has(MANIFEST)).toBe(true);
   });
 
+  it("logs once how many results gold set A's search found and skipped for a malformed PMCID (#279)", async () => {
+    const fake = fakeDeps({
+      goldSearch: smallLastPageMalformed([
+        "PMC0000001",
+        "PMC0000002",
+        "PMC0000003",
+      ]),
+    });
+    const { result } = await runWith(fake);
+    expect(result?.snapshot).toMatchObject({ taken: true });
+    expect(logged("snapshot-search-ended")).toEqual([
+      expect.objectContaining({
+        runId: result?.runId,
+        snapshotId: FAKE_GOLD.snapshotId,
+        found: 3,
+        skipped: 1,
+      }),
+    ]);
+  });
+
+  it("logs how many results gold set A's search skipped before that search fails the snapshot (#279)", async () => {
+    const fake = fakeDeps({ goldSearch: malformedPage });
+    const { result } = await runWith(fake);
+    expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
+    expect(logged("snapshot-search-ended")).toEqual([
+      expect.objectContaining({
+        runId: result?.runId,
+        snapshotId: FAKE_GOLD.snapshotId,
+        found: 0,
+        skipped: 2,
+      }),
+    ]);
+  });
+
   it("publishes the page even when the snapshot fails, and leaves it for the next run", async () => {
     const fake = fakeDeps();
     fake.deps.text.hasSnapshot = () =>
