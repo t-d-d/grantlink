@@ -173,29 +173,51 @@ const JOINER = `[.\u00b7${DASHES}-]`;
 const IN_DOI = String.raw`\b10\.\d{4,9}/[-.;()/:\w]*`;
 
 // An inline tag, which may fall inside a DOI as in 10.7554/eLife.<italic>
-// 12345</italic>, and a line break after a dot, a slash or a hyphen, where
-// a DOI may wrap. Inside a DOI both are dropped, so it reads whole (#613).
+// 12345</italic> or between its prefix and the slash, and a line break
+// after a dot, a slash or a hyphen, with or without a tag between, where a
+// DOI may wrap. Inside a DOI both are dropped, so it reads whole (#613).
 const INLINE_TAG = String.raw`<\/?(?:italic|bold|sup|sub|sc|monospace|underline|roman|sans-serif|styled-content|named-content)(?=[\s>/])[^>]*>`;
 const SPLIT_DOI = new RegExp(
-  String.raw`\b10\.\d{4,9}\/(?:[-.;()/:\w]|${INLINE_TAG}|(?<=[-./])\s*\n\s*)*`,
+  String.raw`\b10\.\d{4,9}(?:${INLINE_TAG})*\/(?:[-.;()/:\w]|${INLINE_TAG}|(?<=[-./](?:${INLINE_TAG})*)\s*\n\s*)*`,
   "gu",
 );
 const INLINE_TAGS = new RegExp(INLINE_TAG, "gu");
 
-// A link whose href holds a DOI and whose text is only part of it, such as
-// eLife.12345, reads as the whole DOI (#613).
-const LINK = /<(ext-link|uri)(?=[\s>])([^>]*)>([\s\S]*?)<\/\1\s*>/gu;
+// A link whose href holds a DOI and whose text is only a whole part of
+// it, such as eLife.12345, reads as the whole DOI (#613). A self-closing
+// link holds no text. A full stop or a comma that ends the text is not
+// part of it, and an href may write the slash as %2F.
+const LINK =
+  /<(ext-link|uri)(?=[\s>])((?:[^>/]|\/(?!>))*)>([\s\S]*?)<\/\1\s*>/gu;
 const DOI_IN_HREF =
   /\bxlink:href\s*=\s*(["'])[^"']*?\b(10\.\d{4,9}\/[^"'\s<>]*)\1/u;
+
+// Whether shown stands in doi between the ends or a dot, a slash or a
+// hyphen, so 12345 is not part of eLife.123456.
+function wholePartOf(doi: string, shown: string): boolean {
+  const ends = (char: string | undefined): boolean =>
+    char === undefined || /[-./]/u.test(char);
+  for (
+    let at = doi.indexOf(shown);
+    at !== -1;
+    at = doi.indexOf(shown, at + 1)
+  ) {
+    if (ends(doi[at - 1]) && ends(doi[at + shown.length])) return true;
+  }
+  return false;
+}
 
 function withDoisWhole(article: string): string {
   return article
     .replace(LINK, (link, _tag, attributes: string, inner: string) => {
-      const doi = DOI_IN_HREF.exec(attributes)?.[2];
-      const shown = inner.replace(/<[^>]*>|\s+/gu, "").toLowerCase();
+      const doi = DOI_IN_HREF.exec(attributes.replace(/%2F/giu, "/"))?.[2];
+      const shown = inner
+        .replace(/<[^>]*>|\s+/gu, "")
+        .replace(/[.,;:]+$/u, "")
+        .toLowerCase();
       return doi !== undefined &&
         shown !== "" &&
-        doi.toLowerCase().includes(shown)
+        wholePartOf(doi.toLowerCase(), shown)
         ? ` ${doi} `
         : link;
     })
