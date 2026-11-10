@@ -18,9 +18,8 @@ import {
 // follows `const` aliases, so `const same = ctx` is the same context, and
 // resolves by binding, so a shadowing parameter is a different one. It reads
 // a context, or an alias's value, through the wrappers unwrapped takes off,
-// so `ctx!` and `ctx as Ctx` are ctx. A step
-// helper such as askEuropePmc counts as an operation on the context it is
-// given first.
+// so `ctx!` and `ctx as Ctx` are ctx. A step helper such as askEuropePmc
+// counts as an operation on the context it is given first.
 function aliasRoot(variable: TSESLint.Scope.Variable): TSESLint.Scope.Variable {
   const seen = new Set<TSESLint.Scope.Variable>();
   let current = variable;

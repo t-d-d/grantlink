@@ -5,9 +5,10 @@ import { WRAPPED_STEP_HELPERS } from "./wrapped-step-helpers.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
 
-// Ways to reach a context through a TypeScript wrapper (#427), as the text
-// that stands where the context does.
+// Ways to reach a context through a TypeScript wrapper or brackets (#440),
+// as the text that stands where the context does.
 const WRAPPED_CONTEXTS = [
+  { name: "brackets", context: "(ctx)" },
   { name: "as", context: "(ctx as any)" },
   { name: "angle brackets", context: "(<any>ctx)" },
   { name: "satisfies", context: "(ctx satisfies any)" },
@@ -96,6 +97,16 @@ describe("fitness: no durable operation inside its own context's operation (dura
           const same = ${shape.context};
           await ctx.runInChildContext("paper", async () => {
             await same.wait("pause", { seconds: 1 });
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
+      ...WRAPPED_CONTEXTS.map((shape) => ({
+        name: `calls a step on an alias of the same context reached through ${shape.name}`,
+        code: `async function run(ctx: any) {
+          const same = ctx;
+          await ctx.step("outer", async () => {
+            await ${shape.context.replace("ctx", "same")}.wait("pause", { seconds: 1 });
           });
         }`,
         errors: [{ messageId: "sameContextUsage" as const }],
