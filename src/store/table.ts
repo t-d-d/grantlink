@@ -60,9 +60,10 @@ const fields = {
   // The latest-started run whose search returned the paper. A run that
   // started earlier never replaces it, so two runs that overlap cannot
   // take each other's papers off the page (#125). The search asks for papers
-  // linked to none of the funder's grants, so a paper a later search leaves
-  // out has since been linked, or dropped. Optional, so rows written before
-  // it read as before (docs/constraints/durable-execution.md).
+  // linked to none of the funder's grants and not marked as retracted, so a
+  // paper a later search leaves out has since been linked, retracted or
+  // dropped. Optional, so rows written before it read as before
+  // (docs/constraints/durable-execution.md).
   foundByRun: z.string().min(1).max(100).optional(),
   references: result.shape.references.optional(),
   versions: versions.optional(),
