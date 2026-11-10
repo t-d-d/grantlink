@@ -1,6 +1,8 @@
 import type { DurableContext } from "@aws/durable-execution-sdk-js";
 import {
   checkWholeSearch,
+  logSearchEnded,
+  logSnapshotFailed,
   markFailed,
   publish,
   readPaper,
@@ -36,6 +38,8 @@ export const BATCH = 50;
 export interface RunSummary {
   runId: string;
   found: number;
+  // Results the search skipped for a malformed PMCID.
+  skipped: number;
   read: number;
   failed: number;
   published: Published;
@@ -140,6 +144,16 @@ export function makeRun(deps: Deps) {
       cursor = result.nextCursor;
       page += 1;
     }
+    // Logged before the check, so a search that fails it still says how
+    // many results it skipped.
+    await ctx.step(
+      "search-ended",
+      async () => {
+        logSearchEnded(runId, found, skipped);
+        return Promise.resolve();
+      },
+      { retryStrategy: storeRetry },
+    );
     checkWholeSearch(found, skipped);
 
     // The search has ended, so the run records it once as the latest
@@ -169,8 +183,24 @@ export function makeRun(deps: Deps) {
         "snapshot",
         async (child) => takeSnapshot(child, deps, owed),
       ));
-    } catch {
+    } catch (error) {
       snapshot = { taken: false, reason: "failed" };
+      // What reaches here is a message this code wrote or a store's or
+      // Europe PMC's client's, made of ids, counts and statuses: a gold
+      // paper's own failure is caught in its batch, so no paper's text is
+      // in it (docs/constraints/personal-data.md). A reply that fails its
+      // schema can list an issue per result, so the message is cut short.
+      const why = (
+        error instanceof Error ? error.message : String(error)
+      ).slice(0, 500);
+      await ctx.step(
+        "snapshot-failed",
+        async () => {
+          logSnapshotFailed(runId, why);
+          return Promise.resolve();
+        },
+        { retryStrategy: storeRetry },
+      );
       // The snapshot may have waited this out under its own name already,
       // so waiting again takes a name of its own.
       last =
@@ -179,6 +209,6 @@ export function makeRun(deps: Deps) {
     // A wait still owed is waited out before the run ends, so a run started
     // after this one never asks Europe PMC before it has passed.
     if (last !== null) await ctx.wait(last.name, { seconds: last.seconds });
-    return { runId, found, read, failed, published, snapshot };
+    return { runId, found, skipped, read, failed, published, snapshot };
   };
 }

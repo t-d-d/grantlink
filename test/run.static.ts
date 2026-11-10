@@ -14,6 +14,7 @@ import {
 } from "./cfn.ts";
 import {
   BucketPolicy,
+  deniesReplacingWrites,
   grantsInPolicy,
   refusesPlainHttp,
 } from "./bucket-policy.ts";
@@ -291,12 +292,9 @@ describe("fitness: cache entries never change (evals.md)", () => {
   );
 
   it("refuses any write under eval/ or eval-reports/ that could replace an object", () => {
-    expect(writeOnce).toMatchObject({
-      Effect: "Deny",
-      Principal: "*",
-      Action: "s3:PutObject",
-      Condition: { StringNotEquals: { "s3:if-none-match": "*" } },
-    });
+    // A strict check: an extra condition or a narrowed principal would let
+    // some callers replace a report, and a subset match passes both (#244).
+    expect(deniesReplacingWrites(writeOnce)).toBe(true);
     expect((writeOnce?.Resource as unknown[]).map((r) => subText(r))).toEqual([
       "${TextBucket.Arn}/eval/*",
       "${TextBucket.Arn}/eval-reports/*",
