@@ -233,16 +233,20 @@ export const noNonDeterministicOutsideStep = createRule({
       if (op === undefined) return;
       report(node, calledThrough(node) ? `${op}()` : op);
     };
+    const isDate = (callee: TSESTree.Node): boolean => {
+      const path = pathOf(callee, context, new Set());
+      return path?.length === 1 && path[0] === "Date";
+    };
     return {
       NewExpression(node) {
-        const path = pathOf(node.callee, context, new Set());
-        if (
-          path?.length === 1 &&
-          path[0] === "Date" &&
-          node.arguments.length === 0
-        ) {
+        if (node.arguments.length === 0 && isDate(node.callee)) {
           report(node, "new Date()");
         }
+      },
+      // `Date()` without `new` returns the current time as a string, so it
+      // reads the clock as `new Date()` does, with or without arguments.
+      CallExpression(node) {
+        if (isDate(node.callee)) report(node, "Date()");
       },
       MemberExpression(node) {
         check(node, pathOf(node, context, new Set()));
