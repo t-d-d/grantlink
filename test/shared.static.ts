@@ -38,7 +38,10 @@ describe("one definition of each shared helper", () => {
   it.each(code.filter((path) => path !== "src/title.ts"))(
     "%s names no title tags of its own",
     (path) => {
-      expect(readRepoFile(path)).not.toMatch(/sup\|sub/u);
+      // A list of the names, in a pattern or an array, in any order.
+      expect(readRepoFile(path)).not.toMatch(
+        /\bsu[pb]\|\w|\w\|su[pb]\b|["'`]su[pb]["'`]/u,
+      );
     },
   );
 });

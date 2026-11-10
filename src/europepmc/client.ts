@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { funder } from "../extract/rules.ts";
 import { isPmcid } from "../shared/pmcid.ts";
-import { INLINE_NAMES, paired, type Part } from "../title.ts";
+import { INLINE_NAMES, paired, titleParts, type Part } from "../title.ts";
 
 // The only module that talks to Europe PMC, and the only outside service a
 // run reads papers from (docs/constraints/public-data.md). It keeps to
@@ -257,26 +257,30 @@ export function plainTitle(title: string): string {
   const last = parts.at(-1);
   if (last && "text" in last) last.text = last.text.trimEnd();
   // Cut at 500 characters between tags, never inside one.
-  const kept: Part[] = [];
+  const kept: string[] = [];
   let length = 0;
   for (const part of parts) {
-    if ("tag" in part) {
-      if (length + part.tag.length > LIMIT) break;
-      kept.push(part);
-      length += part.tag.length;
+    const whole = "tag" in part ? part.tag : part.text;
+    if (length + whole.length <= LIMIT) {
+      kept.push(whole);
+      length += whole.length;
       continue;
     }
+    if ("tag" in part) break;
     let text = "";
     for (const char of part.text) {
       if (length + char.length > LIMIT) break;
       text += char;
       length += char.length;
     }
-    kept.push({ text });
-    if (text.length < part.text.length) break;
+    kept.push(text);
+    break;
   }
-  // A dropped tag can leave a space at either end or two together.
-  return paired(kept)
+  // Pair what the page will read. Dropping another tag can join two halves
+  // of text into a tag, as "<" and "i>" either side of a <span>, so the
+  // kept text is read again as the page reads it. A dropped tag can leave a
+  // space at either end or two together.
+  return paired(titleParts(kept.join("")))
     .map((part) => ("tag" in part ? part.tag : part.text))
     .join("")
     .replace(/\s+/gu, " ")

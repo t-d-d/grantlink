@@ -49,6 +49,10 @@ describe("src/title.ts pairs a title's tags for plainTitle and the page", () => 
       "</i> One <b> two",
       "<i>a <b>b</i> c</b>",
       "[&lt;sup&gt;18&lt;/sup&gt;F] <i>in <sub>vivo</sub></i>",
+      // Dropping another tag can join two halves of text into a tag the
+      // page reads, so plainTitle pairs that one too.
+      "<<span>i>x",
+      "a &lt;<br>/b&gt; c",
     ]) {
       const parts = titleParts(plainTitle(raw));
       expect(paired(parts)).toEqual(parts);
