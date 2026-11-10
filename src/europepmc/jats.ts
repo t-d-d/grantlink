@@ -389,13 +389,19 @@ const saysWhatItIs = (section: XmlElement): boolean =>
 const keptInFundingPart = (element: XmlElement): boolean =>
   !isSection(element) || !saysWhatItIs(element) || isFundingSection(element);
 
-// What a funding section holds that is read with it, at any depth (#563).
-const sectionContent = (content: XmlNode[]): XmlNode[] =>
-  pruned(content, keptInFundingPart);
-
-// The notes and footnotes inside a note, at any depth, which are read, or
-// left out, on their own (#563).
+// The notes and footnotes inside a note, a funding section or an <ack>, at
+// any depth, which are read, or left out, on their own (#563, #584).
 const NOTES_WITHIN = new Set(["notes", "fn-group", "fn"]);
+
+// What a funding section or an <ack> holds that is read with it, at any
+// depth: all but its sections titled or typed as something other than
+// funding, and the notes and footnotes in it (#563, #584). An <ack> is cut
+// as a section typed ack is, so the two markups of acknowledgements agree.
+const sectionContent = (content: XmlNode[]): XmlNode[] =>
+  pruned(
+    content,
+    (element) => keptInFundingPart(element) && !NOTES_WITHIN.has(element.name),
+  );
 
 // What a note or footnote holds that is read with it: all but the notes
 // and footnotes inside a note, and any section in it, at any depth, titled
@@ -504,7 +510,7 @@ export function fundingSections(paper: string): FundingSections {
     ...statements,
     ...sections.flatMap(paragraphs),
     ...outermost(tree, named("ack")).flatMap(({ children }) =>
-      paragraphs(children),
+      paragraphs(sectionContent(children)),
     ),
     ...fundingNoteParts(tree).flatMap(paragraphs),
   ].filter((paragraph) => paragraph !== "");
