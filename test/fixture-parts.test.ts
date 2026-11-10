@@ -182,6 +182,88 @@ describe("strayParts", () => {
     expect(strayParts(xml).length === 0).toBe(read);
   });
 
+  // #215: inside a funding part the cutter reads the paragraphs, or the
+  // whole text less the title when there are none. The check names any
+  // other element inside the part, and text beside its paragraphs.
+  it("passes a funding part's label, title and paragraphs, and the bare text of one with no paragraphs", () => {
+    expect(
+      strayParts(
+        paper({
+          body:
+            "<body><sec><label>5.</label><title>Funding</title>" +
+            "<p>Funded by <italic>X</italic>.</p></sec></body>",
+          back:
+            '<fn fn-type="funding"><label>*</label><p>Funded.</p></fn>' +
+            '<fn-group><fn fn-type="supported-by">Funded.</fn></fn-group>',
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([
+    [
+      "a contributor group inside a funding section",
+      {
+        back:
+          '<sec sec-type="funding"><contrib-group><name>A</name></contrib-group>' +
+          "<p>Funded.</p></sec>",
+      },
+      "article/back/sec/contrib-group",
+    ],
+    [
+      "a contributor group inside a funding section with no paragraphs",
+      {
+        back: '<sec sec-type="funding"><contrib-group><name>A</name></contrib-group></sec>',
+      },
+      "article/back/sec/contrib-group",
+    ],
+    [
+      "a contributor group inside a body section found by its title",
+      {
+        body:
+          "<body><sec><title>Funding</title><p>Funded.</p>" +
+          "<contrib-group><name>A</name></contrib-group></sec></body>",
+      },
+      "article/body/sec/contrib-group",
+    ],
+    [
+      "a section nested in a funding section",
+      {
+        back:
+          '<sec sec-type="funding"><p>Funded.</p>' +
+          "<sec><title>Methods</title><p>M</p></sec></sec>",
+      },
+      "article/back/sec/sec",
+    ],
+    [
+      "text beside the paragraphs of a funding section",
+      { back: '<sec sec-type="funding">Somebody<p>Funded.</p></sec>' },
+      "article/back/sec (text)",
+    ],
+    [
+      "a name inside the acknowledgements",
+      { back: "<ack><name>A</name><p>Thanks.</p></ack>" },
+      "article/back/ack/name",
+    ],
+    [
+      "a list inside a funding footnote",
+      {
+        back: '<fn fn-type="funding"><p>Funded.</p><list><list-item>A</list-item></list></fn>',
+      },
+      "article/back/fn/list",
+    ],
+    [
+      "a comment beside the paragraphs of a funding footnote",
+      {
+        back:
+          '<fn-group><fn fn-type="funding"><!-- <name>A</name> --><p>Funded.</p></fn></fn-group>',
+      },
+      "article/back/fn-group/fn (text)",
+    ],
+  ])("names %s (#215)", (_what, parts, stray) => {
+    expect(strayParts(paper(parts))).toEqual([stray]);
+  });
+
   it("names a root that is not an article", () => {
     expect(strayParts("<book><p>B</p></book>")).toEqual(["book"]);
   });
