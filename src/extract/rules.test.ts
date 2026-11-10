@@ -703,7 +703,7 @@ describe("the rules", () => {
 
   it.each([
     ["Funded by CRUK, 12345 and the Example Trust."],
-    ["Funded by CRUK (12345)."],
+    ["Funded by CRUK and others (12345)."],
     ["Funded by CRUK, 12345."],
     ["Funded by CRUK, 12345, and the Example Trust."],
   ])(
