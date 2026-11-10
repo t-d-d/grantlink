@@ -269,24 +269,47 @@ describe("the pull request's comment", () => {
     expect(text).toContain(
       "The live release was scored on snapshot s2 and this pull request on snapshot s3, so their scores do not compare.",
     );
+    expect(text.indexOf("do not compare")).toBeLessThan(
+      text.indexOf("| Measure |"),
+    );
   });
 
   it("says when only one of the two was scored on a snapshot", () => {
-    const text = comment(
-      { ...report({ spend: 0 }), snapshot: s3 },
-      { runUrl: report({}).runUrl, snapshot: null, rows: [] },
+    const live = readLive(
+      JSON.stringify({ ...report({ spend: 0 }), snapshot: null }),
+      () => undefined,
     );
+    expect(live).not.toBe("older-format");
+    if (live === "older-format") return;
+    const text = comment({ ...report({ spend: 0 }), snapshot: s3 }, live);
     expect(text).toContain(
       "The live release was scored on no snapshot and this pull request on snapshot s3, so their scores do not compare.",
     );
   });
+
+  // The id goes into the comment, so it keeps the strict report's bounds,
+  // as runUrl does.
+  it.each([
+    ["empty", ""],
+    ["longer than a report allows", "s".repeat(21)],
+  ])(
+    "treats a live report whose snapshot id is %s as one it cannot read",
+    (_, id) => {
+      const live = JSON.stringify({
+        ...report({ spend: 0 }),
+        snapshot: { ...s2, id },
+      });
+      expect(readLive(live, () => undefined)).toBe("older-format");
+    },
+  );
 
   it("says nothing about snapshots when both were scored on the same one", () => {
     const live = readLive(
       JSON.stringify({ ...report({ spend: 0 }), snapshot: s3 }),
       () => undefined,
     );
-    if (live === "older-format") throw new Error("unread");
+    expect(live).not.toBe("older-format");
+    if (live === "older-format") return;
     const text = comment({ ...report({ spend: 0 }), snapshot: s3 }, live);
     expect(text).not.toContain("do not compare");
   });

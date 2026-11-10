@@ -59,8 +59,9 @@ const NO_LIVE: Record<NoLive | OlderFormat, string> = {
 export type OlderFormat = "older-format";
 
 // What the comparison reads from the live report: its run, its snapshot's
-// id and each row's score. Older code may have filed it before a row or a field was added, so
-// unknown keys are dropped and rows are matched by id, not position (#153).
+// id and each row's score. Older code may have filed it before a row or a
+// field was added, so unknown keys are dropped and rows are matched by id,
+// not position (#153).
 // CI's own report and the gate keep the strict schema in report.ts.
 // A report that shares no row with this code has nothing to compare, so it
 // reads as one this code cannot read.
@@ -84,8 +85,9 @@ const liveReport = z.object({
   runUrl: report.shape.runUrl,
   // Scores compare only on the same snapshot (#232), so its id is kept to
   // say when they do not. A report from before there was one reads as null.
+  // The id goes into the comment too, so it keeps the strict bounds.
   snapshot: z
-    .object({ id: z.string() })
+    .object({ id: report.shape.snapshot.unwrap().shape.id })
     .nullish()
     .transform((snapshot) => snapshot?.id ?? null),
   rows: z.array(z.unknown()).transform((list, ctx) => {
@@ -163,6 +165,7 @@ export function comment(
   const named = (id: string | null): string =>
     id === null ? "no snapshot" : `snapshot ${id}`;
   const ours = ci.snapshot?.id ?? null;
+  // Above the table, so it is read before the scores it qualifies.
   const otherSnapshot =
     typeof live === "string" || live.snapshot === ours
       ? []
@@ -175,11 +178,11 @@ export function comment(
     `### Eval: ${mine.releasable ? "go" : "no-go"}`,
     "",
     `CI's scores come from [this run](${ci.runUrl}), for fingerprint \`${ci.fingerprint.slice(0, 12)}\`. ${liveLine}`,
+    ...otherSnapshot,
     "",
     "| Measure | On | Go if | This pull request | Live release | Result |",
     "| --- | --- | --- | --- | --- | --- |",
     ...rows,
-    ...otherSnapshot,
     "",
     ci.snapshot === null
       ? "No snapshot is pinned yet, so the gold sets are not scored."
