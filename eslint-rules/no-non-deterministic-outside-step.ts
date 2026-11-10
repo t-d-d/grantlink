@@ -21,7 +21,13 @@ import type { Resolver } from "./create-rule.ts";
 // body can take a different path than the one its checkpoints recorded. A
 // child context, parallel and map replay their callbacks, and a step's name
 // is evaluated in the body, so none of those count as inside. The rule
-// reports at the read itself, once, and does not follow calls.
+// reports at each read and does not follow calls. A call, `Date.now()`,
+// reports once, at its callee. An alias of a method, `const now =
+// Date.now`, reports where it is declared, since that reads the method, and
+// again at each call, `now()`. An alias of `Date` itself, `const D = Date`,
+// reports only where it is used, `D()` or `ids.map(D)`, unless it is
+// exported, `export const D = Date`. Then it also reports where it is
+// declared, so `D()` in the same module gives a second report.
 const NON_DETERMINISTIC: Readonly<Record<string, ReadonlySet<string>>> = {
   Math: new Set(["random"]),
   Date: new Set(["now"]),
