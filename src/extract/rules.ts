@@ -136,12 +136,6 @@ const WORD = String.raw`[\p{L}\p{M}\p{Nd}_]`;
 const START = `(?<!${WORD})`;
 const END = `(?!${WORD})`;
 
-// A reference as written, between the edges above. The model pass checks
-// its references with this, so the two passes cannot draw a reference's
-// edges differently (#384).
-export const wholeReference = (reference: string): RegExp =>
-  new RegExp(`${START}${escape(reference)}${END}`, "u");
-
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
 
@@ -301,6 +295,24 @@ const PATTERNS = SHAPES.map(
 // hyphen, as in "123456-01" (#97, #177).
 const BARE = String.raw`\d{5,7}`;
 const BARE_SUFFIX = String.raw`${DASH}\d{2}`;
+
+// Any bare number a reply may be, of any length, with or without its suffix.
+const BARE_REPLY = new RegExp(String.raw`^\d+(?:${BARE_SUFFIX})?$`, "u");
+// What may not come before a bare number, so it is not the end of a longer
+// one, as in 12/345678, ABC-123456 or 1.23456. The rules read a bare number
+// only after a bracket, a tie word, a colon or a hash, so they never read
+// one there (#571).
+const NUMBER_BEFORE = String.raw`(?<!${SEP}|${DASH}|\d\.)`;
+
+// A reference as written, between the edges above. The model pass checks
+// its references with this, so the two passes cannot draw a reference's
+// edges differently (#384). A bare number counts only where the text does
+// not run into it (#571).
+export const wholeReference = (reference: string): RegExp =>
+  new RegExp(
+    `${BARE_REPLY.test(reference) ? NUMBER_BEFORE : ""}${START}${escape(reference)}${END}`,
+    "u",
+  );
 
 // Whether a reference, as written with plain spaces, is a shape the rules
 // read, in capitals but for a month in a code, or a bare number with an
