@@ -6,7 +6,8 @@
 // must fail too when the STS reply lacks a field, where `jq -r` would print
 // `null` and succeed (#122). All three role steps are covered (#188). The
 // eval and conformance role steps stop before the network when their
-// secret is unset (#250).
+// secret is unset (#250). Each role step hands its credentials on as step
+// outputs, so only the steps that call AWS hold them (#259, #308).
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -411,14 +412,12 @@ describe.each([
     title: "the eval's role step",
     run: evalRole,
     extra: [`grantlink-text-${account}`],
-    to: "env",
+    to: "output",
   },
   {
     title: "the deploy's role step",
     run: script(deploy, "deploy", "Assume the deploy role"),
     extra: [],
-    // The deploy hands its credentials to the steps that call AWS as
-    // step outputs, so no other step holds them (#259).
     to: "output",
   },
   // #188: the third copy of the step, which had neither fix.
@@ -426,7 +425,7 @@ describe.each([
     title: "the conformance run's role step",
     run: conformanceRole,
     extra: [`grantlink-text-${account}`],
-    to: "env",
+    to: "output",
   },
 ] as const)("$title", ({ run, extra, to }) => {
   // Where the step writes the credentials, and where it must write none.
