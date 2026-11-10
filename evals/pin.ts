@@ -64,8 +64,9 @@ export function pin(
   };
 }
 
-// Writes a file the gate's format check accepts. JSON.stringify puts each
-// item of a short array on its own line, and Prettier would join them.
+// Returns a file's text that the gate's format check accepts. The caller
+// writes it. JSON.stringify puts each item of a short array on its own
+// line, and Prettier would join them.
 export function toFile(
   file: string,
   value: unknown,
@@ -86,13 +87,19 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     snapshot,
     read("gold-a.json") as GoldAFile,
   );
-  const write = async (file: string, value: unknown) => {
+  // Formats both files before writing either, so a failure leaves neither
+  // half pinned. The editorconfig option matches what `prettier --check`
+  // reads by default.
+  const formatted = async (file: string, value: unknown) => {
     const path = fileURLToPath(here(file));
-    const options = (await resolveConfig(path)) ?? {};
-    writeFileSync(path, await toFile(path, value, options));
+    const options = (await resolveConfig(path, { editorconfig: true })) ?? {};
+    return { path, text: await toFile(path, value, options) };
   };
-  await write("snapshot.json", result.snapshot);
-  await write("gold-a.json", result.goldA);
+  const files = await Promise.all([
+    formatted("snapshot.json", result.snapshot),
+    formatted("gold-a.json", result.goldA),
+  ]);
+  for (const { path, text } of files) writeFileSync(path, text);
   console.log(
     `Pinned snapshot ${snapshot.id}: ${String(result.goldA.papers.length)} papers in gold set A.`,
   );
