@@ -39,6 +39,41 @@ describe("fitness: no durable operation inside its own context's operation (dura
       },
     ],
     invalid: [
+      ...[
+        ["asserted with as", "ctx as Context"],
+        ["checked with satisfies", "ctx satisfies Context"],
+        ["behind a non-null assertion", "ctx!"],
+      ].map(([what, given]) => ({
+        name: `asks Europe PMC on the same context ${String(what)} inside a step`,
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await askEuropePmc(${String(given)}, "paper", "wait", r, async () => 1);
+          }, { retryStrategy: r });
+        }`,
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
+
+      {
+        name: "waits on the same context inside a step, both reached through a non-null assertion",
+        code: `async function run(ctx: any) {
+          await ctx!.step("outer", async () => {
+            await ctx!.wait("pause", { seconds: 1 });
+          }, { retryStrategy: r });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
+        name: "calls a step on the same context, asserted with as, inside a step",
+        code: `async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await (ctx as Context).step("inner", async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+
       ...WRAPPED_DURABLE_CALLS.map((shape) => ({
         name: `uses the same context inside a step written as ${shape.name}`,
         code: `async function run(ctx: any) {

@@ -55,6 +55,78 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
       },
     ],
     invalid: [
+      ...[
+        [
+          "asserted with as",
+          "(async () => { read += 1; return readPaper(); }) as any",
+        ],
+        [
+          "behind a non-null assertion",
+          "(async () => { read += 1; return readPaper(); })!",
+        ],
+      ].map(([what, callback]) => ({
+        name: `counts into an outer variable from askEuropePmc's read ${String(what)}`,
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
+          let read = 0;
+          await askEuropePmc(ctx, "paper", "wait", r, ${String(callback)});
+        }`,
+        errors: [{ messageId: "closureVariableUsage" as const }],
+      })),
+
+      ...[
+        ["pushes through a non-null assertion", "found!.push(1);", "found"],
+        [
+          "pushes through a type assertion",
+          "(found as number[]).push(1);",
+          "found",
+        ],
+        [
+          "pushes through satisfies",
+          "(found satisfies number[]).push(1);",
+          "found",
+        ],
+        [
+          "counts into an outer object through a non-null assertion",
+          "totals!.papers += 1;",
+          "totals",
+        ],
+        [
+          "assigns an outer variable through a non-null assertion",
+          "count! = 1;",
+          "count",
+        ],
+        [
+          "deletes from an outer object through a type assertion",
+          "delete (totals as any).papers;",
+          "totals",
+        ],
+      ].map(([what, write, name]) => ({
+        name: `${String(what)} inside a step`,
+        code: `async function run(ctx: any, found: number[], totals: any) {
+          let count: number | undefined;
+          await ctx.step("count", async () => {
+            ${String(write)}
+          }, { retryStrategy: r });
+        }`,
+        errors: [
+          { messageId: "closureVariableUsage" as const, data: { name } },
+        ],
+      })),
+      ...[
+        ["asserted with as", "(async () => { read += 1; }) as any"],
+        ["checked with satisfies", "(async () => { read += 1; }) satisfies F"],
+        ["behind a non-null assertion", "(async () => { read += 1; })!"],
+      ].map(([what, callback]) => ({
+        name: `counts into an outer variable from a step's callback ${String(what)}`,
+        code: `async function run(ctx: any) {
+          let read = 0;
+          await ctx.step("count", ${String(callback)}, { retryStrategy: r });
+        }`,
+        errors: [{ messageId: "closureVariableUsage" as const }],
+      })),
+
       ...WRAPPED_DURABLE_CALLS.map((shape) => ({
         name: `counts into an outer variable inside a step written as ${shape.name}`,
         code: `async function run(ctx: any) {
@@ -190,6 +262,27 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
         }`,
         errors: [{ messageId: "closureVariableUsage" }],
       },
+      ...[
+        [
+          "an array of branches asserted with as",
+          "[async () => { done += 1; }] as F[]",
+        ],
+        [
+          "an object of branches checked with satisfies",
+          "{ one: async () => { done += 1; } } satisfies B",
+        ],
+        [
+          "an array of branches behind a non-null assertion",
+          "[async () => { done += 1; }]!",
+        ],
+      ].map(([what, branches]) => ({
+        name: `counts into an outer variable from a parallel branch in ${String(what)}`,
+        code: `async function run(ctx: any) {
+          let done = 0;
+          await ctx.parallel("both", ${String(branches)});
+        }`,
+        errors: [{ messageId: "closureVariableUsage" as const }],
+      })),
       {
         name: "counts into an outer variable",
         code: `async function run(ctx: any) {

@@ -6,6 +6,7 @@ import {
   DURABLE_METHODS,
   methodCallIn,
   stepHelperOf,
+  unwrapped,
   walkAliases,
 } from "./create-rule.ts";
 
@@ -16,9 +17,10 @@ import {
 // through `runInChildContext` and use the child it hands you. The rule
 // follows aliases as walkAliases does, so `const same = ctx` or
 // `let same = ctx` is the same context, even if it is written again later,
-// and resolves by binding, so a shadowing parameter is a different one. A
-// step helper such as askEuropePmc counts as an operation on the context it
-// is given first.
+// and resolves by binding, so a shadowing parameter is a different one. It
+// reads the context through the wrappers unwrapped takes off, so `ctx!.step`
+// and `(ctx as Context).step` use ctx. A step helper such as askEuropePmc
+// counts as an operation on the context it is given first.
 
 export const noNestedDurableOperations = createRule({
   name: "no-nested-durable-operations",
@@ -39,8 +41,9 @@ export const noNestedDurableOperations = createRule({
     const { sourceCode } = context;
     const stack: (TSESLint.Scope.Variable | null)[] = [];
     const receiverRoot = (
-      receiver: TSESTree.Node,
+      node: TSESTree.Node,
     ): TSESLint.Scope.Variable | null => {
+      const receiver = unwrapped(node);
       if (receiver.type !== AST_NODE_TYPES.Identifier) return null;
       return walkAliases(receiver, context)?.chain.at(-1) ?? null;
     };
