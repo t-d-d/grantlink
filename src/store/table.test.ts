@@ -93,6 +93,43 @@ describe("reading rows tolerantly (durable-execution.md)", () => {
       }),
     ).toEqual(processed);
   });
+
+  // A made-up reference in a shape a later version might allow: an
+  // underscore, which referenceSchema does not (#314).
+  const later = { asWritten: "A_12345", normalised: "A_12345", format: "A_n" };
+
+  it("reads a row a later version wrote with a character this version does not allow in a reference", () => {
+    const row = { ...processed, references: [later] };
+    expect(readRow(row)).toEqual(row);
+  });
+
+  it("still checks a stored reference's length and type", () => {
+    expect(() =>
+      readRow({
+        ...processed,
+        references: [{ ...later, asWritten: "A".repeat(49) }],
+      }),
+    ).toThrow();
+    expect(() =>
+      readRow({ ...processed, references: [{ ...later, normalised: 12345 }] }),
+    ).toThrow();
+    expect(() =>
+      readRow({ ...processed, references: [{ ...later, format: "" }] }),
+    ).toThrow();
+  });
+
+  it("does not write a reference with a character this version does not allow", async () => {
+    const { client, sent } = recorder();
+    await expect(
+      dynamoTable("results", client).markProcessed("PMC11", {
+        references: [later],
+        versions: processed.versions,
+        processedAt: processed.processedAt,
+        runId: processed.runId,
+      }),
+    ).rejects.toThrow();
+    expect(sent).toEqual([]);
+  });
 });
 
 describe("the table module", () => {

@@ -66,10 +66,23 @@ export type PaperRow = z.infer<typeof paperRow>;
 
 // What is read: a row a later version wrote may carry a new field, which
 // this version drops (docs/constraints/durable-execution.md). So may a
-// reference or the versions within it.
+// reference or the versions within it. A reference may also hold a character
+// a later version allows and this one does not (#314), so a stored one is
+// read by the length and type of each field alone. What is written still
+// passes the whole of referenceSchema.
+const lengthOnly = (field: z.ZodString) =>
+  z
+    .string()
+    .min(field.minLength ?? 0)
+    .max(field.maxLength ?? Infinity);
+const storedReference = z.object({
+  asWritten: lengthOnly(referenceSchema.shape.asWritten),
+  normalised: lengthOnly(referenceSchema.shape.normalised),
+  format: lengthOnly(referenceSchema.shape.format),
+});
 const tolerantRow = z.object({
   ...fields,
-  references: z.array(z.object(referenceSchema.shape)).max(50).optional(),
+  references: z.array(storedReference).max(50).optional(),
   versions: z.object(versions.shape).optional(),
 });
 export const readRow = (item: unknown): PaperRow => tolerantRow.parse(item);

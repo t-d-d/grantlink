@@ -71,6 +71,46 @@ describe("the pull request's comment", () => {
     expect(text).toContain("<!-- grantlink:eval -->");
   });
 
+  it("shows recall and spend for the rules alone and for each model", () => {
+    const text = comment(
+      {
+        ...report({ "recall-a": 0.96, spend: 0 }),
+        candidates: [
+          {
+            modelId: "anthropic/claude-haiku-5.5",
+            rows: rows({ "recall-a": 0.98, spend: 0.4 }),
+            unprocessed: [],
+          },
+          {
+            modelId: "anthropic/claude-sonnet-5.5",
+            rows: rows({ "recall-a": 0.99, spend: 4.2 }),
+            unprocessed: ["PMC7"],
+          },
+        ],
+      },
+      "no-deploy",
+    );
+    expect(text).toContain(
+      "| Measure | On | Rules alone | anthropic/claude-haiku-5.5 | anthropic/claude-sonnet-5.5 |",
+    );
+    expect(text).toContain("| Recall | Gold set A | 96.0% | 98.0% | 99.0% |");
+    expect(text).toContain(
+      "| Model spend | Per 1,000 papers | $0.00 | $0.40 | $4.20 |",
+    );
+    // A gold set B row with no snapshot says what it waits for.
+    expect(text).toContain(
+      "| Recall of true CRUK references | Gold set B | awaiting snapshot | awaiting snapshot | awaiting snapshot |",
+    );
+    expect(text).toContain(
+      "anthropic/claude-sonnet-5.5 left 1 paper for the next run: PMC7.",
+    );
+  });
+
+  it("shows no model table for a report with no candidates", () => {
+    const text = comment(report({ spend: 0 }), "no-deploy");
+    expect(text).not.toContain("Rules alone");
+  });
+
   it("says when main has not been deployed yet", () => {
     const text = comment(report({ spend: 0 }), "no-deploy");
     expect(text).toContain("No deploy of main has run yet");

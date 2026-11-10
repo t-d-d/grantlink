@@ -50,6 +50,41 @@ describe("fitness: every score names what produced it (evals.md)", () => {
     ).toThrow();
   });
 
+  it("takes the scores of each candidate model, with the papers each left", () => {
+    const withModels: Report = {
+      ...good,
+      candidates: [
+        {
+          modelId: "anthropic/claude-haiku-5.5",
+          rows: rows({ "recall-a": 0.98, spend: 0.4 }),
+          unprocessed: ["PMC2"],
+        },
+      ],
+    };
+    expect(makeReport(withModels)).toEqual(withModels);
+  });
+
+  it("takes a report filed before the eval scored any model", () => {
+    expect(makeReport(good).candidates).toBeUndefined();
+  });
+
+  it("refuses a candidate without its model or with a row left out", () => {
+    const candidate = {
+      modelId: "anthropic/claude-haiku-5.5",
+      rows: rows(),
+      unprocessed: [],
+    };
+    expect(() =>
+      makeReport({ ...good, candidates: [{ ...candidate, modelId: "" }] }),
+    ).toThrow();
+    expect(() =>
+      makeReport({
+        ...good,
+        candidates: [{ ...candidate, rows: candidate.rows.slice(1) }],
+      }),
+    ).toThrow();
+  });
+
   it("refuses a report that leaves out a row", () => {
     expect(() => makeReport({ ...good, rows: good.rows.slice(1) })).toThrow();
   });
