@@ -474,7 +474,7 @@ export function destructuredKey(
 // a nested pattern, `{ Date: { now } = D }`, counts only under
 // `with-default`, as destructuredKey says. Null when the name is not in the
 // pattern, or sits under a key that is not a constant.
-export function destructuredPath(
+function destructuredPath(
   pattern: TSESTree.ObjectPattern,
   name: TSESTree.Identifier,
   defaults: "exact" | "with-default",

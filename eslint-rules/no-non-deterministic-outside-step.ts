@@ -26,15 +26,17 @@ import type { Resolver } from "./create-rule.ts";
 // at the call. An alias of a method, `const now = Date.now`, reports where
 // it is declared, since that reads the method, and again at each call,
 // `now()`. A method destructured from its object, `const { now } = Date`,
-// reports only at each call. An alias of `Date` itself, `const D = Date`,
-// reports only where it is used, `D()` or `ids.map(D)`, unless it is
-// exported, `export const D = Date`. Then it also reports where it is
-// declared, so `D()` in the same module gives a second report. A name with a
-// default, `const { foo: D = Date } = x`, is followed to the default when the
-// default names a source, or an object that holds one, and its initial value
-// does not, and reports as an alias does. A report at
-// an export, which cannot move inside a step, says the source passes to
-// another module instead.
+// reports only at each call. A name with a default, `const { foo: D = Date }
+// = x`, is followed to the default when its initial value names no source,
+// and reports as an alias does. A pattern that destructures from a source,
+// `const { now: { call } } = Date`, or a member that calls `Date`,
+// `const { Date: { bind } } = globalThis`, reports once, at that key, or at
+// `Date` itself when it is what the pattern destructures, `{ bind } = Date`.
+// An alias of `Date` itself, `const D = Date`, reports only where it is
+// used, `D()` or `ids.map(D)`, unless it is exported, `export const D =
+// Date`. Then it also reports where it is declared, so `D()` in the same
+// module gives a second report. A report at an export, which cannot move
+// inside a step, says the source passes to another module instead.
 const NON_DETERMINISTIC: Readonly<Record<string, ReadonlySet<string>>> = {
   Math: new Set(["random"]),
   Date: new Set(["now"]),
@@ -167,12 +169,19 @@ function identifierPath(
   if (alias !== null) {
     const { declarator, name } = alias;
     if (declarator.init === null) return null;
-    if (declarator.id === name) return pathOf(declarator.init, resolver, next);
+    const init = pathOf(declarator.init, resolver, next);
+    if (declarator.id === name) return init;
     // A name destructured from an object pattern, at its top,
     // `{ now } = Date`, or from a nested pattern,
-    // `{ Date: { now } } = globalThis`, or from a default along the way,
-    // `{ foo: M = Math } = globalThis`.
-    return followed(sourcesOf(declarator, name, resolver, next))?.path ?? null;
+    // `{ Date: { now } } = globalThis`, with or without a default.
+    if (declarator.id.type !== AST_NODE_TYPES.ObjectPattern) return null;
+    return destructuredFrom(
+      declarator.id,
+      init === null ? [] : [init],
+      name,
+      resolver,
+      next,
+    );
   }
   const def = end.defs[0];
   if (def?.parent?.type !== AST_NODE_TYPES.ImportDeclaration) return null;
@@ -184,111 +193,107 @@ function identifierPath(
   );
 }
 
-// A value a destructured name may hold: the declarator's initial value, or a
-// default along the pattern, each with the global path it gives that name.
-interface Source {
-  readonly node: TSESTree.Node;
-  readonly path: readonly string[] | null;
-}
-
-// The values a name in a declarator's object pattern may hold, outermost
-// first: `const { foo: { random: r } = Math } = globalThis` gives
-// `globalThis.foo.random`, then `Math.random`. Null when the name sits under
-// a key that is not a constant, or in an array pattern, or the declarator
-// has no initial value. `target` is the name, or the left of a default.
-function sourcesOf(
-  declarator: TSESTree.VariableDeclarator,
-  target: TSESTree.Node,
+// Visit each property of an object pattern, down any nested patterns, with
+// the global paths it may read. `keys` follows the keys from what the
+// pattern destructures, `{ Date: { now } } = globalThis` reading
+// `Date.now` at `now`. A nested pattern also reads from its default,
+// `{ foo: { random } = Math } = globalThis`, in place of `foo` when that
+// is undefined. Given a target, the walk goes down only the nested
+// patterns that hold it. A visit that returns true stops the walk.
+function eachProperty(
+  pattern: TSESTree.ObjectPattern,
+  bases: readonly (readonly string[])[],
   resolver: Resolver,
   seen: ReadonlySet<TSESLint.Scope.Variable>,
-): readonly Source[] | null {
-  if (declarator.init === null) return null;
-  // The keys and defaults from the target up to the declarator's pattern.
-  const steps: (string | TSESTree.Node)[] = [];
-  for (let node = target; node !== declarator.id;) {
-    const parent = node.parent;
+  visit: (
+    property: TSESTree.Property,
+    keys: readonly (readonly string[])[],
+  ) => boolean,
+  target?: TSESTree.Node,
+): boolean {
+  for (const property of pattern.properties) {
+    if (property.type !== AST_NODE_TYPES.Property) continue;
+    const key = keyName(property.key, property.computed);
+    const keys =
+      key === null ? [] : bases.map((base) => normalised([...base, key]));
+    if (visit(property, keys)) return true;
+    const inner = withoutDefault(property.value);
     if (
-      parent?.type === AST_NODE_TYPES.AssignmentPattern &&
-      parent.left === node
+      inner.type !== AST_NODE_TYPES.ObjectPattern ||
+      (target !== undefined &&
+        (target.range[0] < inner.range[0] || target.range[1] > inner.range[1]))
     ) {
-      steps.push(parent.right);
-      node = parent;
-    } else if (
-      parent?.type === AST_NODE_TYPES.Property &&
-      parent.value === node &&
-      parent.parent.type === AST_NODE_TYPES.ObjectPattern
-    ) {
-      const key = keyName(parent.key, parent.computed);
-      if (key === null) return null;
-      steps.push(key);
-      node = parent.parent;
-    } else {
-      return null;
+      continue;
+    }
+    const values = [...keys];
+    if (property.value.type === AST_NODE_TYPES.AssignmentPattern) {
+      const fallback = pathOf(property.value.right, resolver, seen);
+      if (fallback !== null) values.push(fallback);
+    }
+    if (eachProperty(inner, values, resolver, seen, visit, target)) {
+      return true;
     }
   }
-  const found: { node: TSESTree.Node; keys: string[] }[] = [
-    { node: declarator.init, keys: [] },
-  ];
-  for (const step of steps.reverse()) {
-    if (typeof step === "string") {
-      for (const source of found) source.keys.push(step);
-    } else {
-      found.push({ node: step, keys: [] });
-    }
-  }
-  return found.map(({ node, keys }) => {
-    const path = pathOf(node, resolver, seen);
-    return {
-      node,
-      path: path === null ? null : normalised([...path, ...keys]),
-    };
-  });
+  return false;
 }
 
-// The value the rule follows a destructured name to: the first that names a
-// clock or random source, `Date` or an object holding one, such as the
-// default in `const { foo: M = Math } = Date`, then the first that starts at
-// such an object, or else the initial value. A name with a default may hold
-// either, and a path here only makes the rule refuse, so the rule follows
-// the one that may read a source.
-function followed(sources: readonly Source[] | null): Source | null {
-  if (sources === null) return null;
+// A pattern's target without the default it may give, `{ now = f }`.
+function withoutDefault(value: TSESTree.Property["value"]): TSESTree.Node {
+  return value.type === AST_NODE_TYPES.AssignmentPattern ? value.left : value;
+}
+
+// The global path a name destructured from an object pattern reads, from
+// what the pattern destructures or from a default, the name's own,
+// `{ foo: M = Math } = globalThis`, or a nested pattern's. Where they
+// differ, the first that names a source or an object holding one, `Date`
+// among them, wins, then one that starts at such an object, since a path
+// here only makes the rule refuse.
+// Null when none is known.
+function destructuredFrom(
+  pattern: TSESTree.ObjectPattern,
+  bases: readonly (readonly string[])[],
+  name: TSESTree.Identifier,
+  resolver: Resolver,
+  seen: ReadonlySet<TSESLint.Scope.Variable>,
+): readonly string[] | null {
+  let found: readonly (readonly string[])[] = [];
+  eachProperty(
+    pattern,
+    bases,
+    resolver,
+    seen,
+    (property, keys) => {
+      if (withoutDefault(property.value) !== name) return false;
+      // A name's own default, `{ foo: M = Math } = globalThis`, may give it
+      // in place of what the pattern reads.
+      const fallback =
+        property.value.type === AST_NODE_TYPES.AssignmentPattern
+          ? pathOf(property.value.right, resolver, seen)
+          : null;
+      found = fallback === null ? keys : [...keys, fallback];
+      return true;
+    },
+    name,
+  );
   return (
-    sources.find(
-      ({ path }) => opOf(path) !== undefined || holderOf(path) !== undefined,
+    found.find(
+      (path) => opOf(path) !== undefined || holderOf(path) !== undefined,
     ) ??
-    sources.find(({ path }) => HOLDERS.has(path?.[0] ?? "")) ??
-    sources[0] ??
+    found.find((path) => HOLDERS.has(path[0] ?? "")) ??
+    found[0] ??
     null
   );
 }
 
-// True when the rule follows a default to the names it binds,
-// `const { foo: D = Date } = x`, so each read of `D` reports, and the
-// default itself is not a value passed on. Not for a parameter's default or
-// a loop's pattern, whose names the rule does not follow.
-function defaultFollowed(
-  assignment: TSESTree.AssignmentPattern,
-  resolver: Resolver,
-): boolean {
-  let node: TSESTree.Node = assignment;
-  let declarator: TSESTree.Node = assignment.parent;
-  while (
-    declarator.type === AST_NODE_TYPES.AssignmentPattern ||
-    declarator.type === AST_NODE_TYPES.Property ||
-    declarator.type === AST_NODE_TYPES.ObjectPattern
-  ) {
-    node = declarator;
-    declarator = declarator.parent;
-  }
-  if (
-    declarator.type !== AST_NODE_TYPES.VariableDeclarator ||
-    declarator.id !== node
-  ) {
-    return false;
-  }
-  const sources = sourcesOf(declarator, assignment.left, resolver, new Set());
-  return sources !== null && followed(sources)?.node === assignment.right;
+// True when an object pattern destructures a member that calls what it
+// destructures from, `{ bind }`, or one under a key the rule cannot name,
+// which may be `call`.
+function callsThrough(pattern: TSESTree.ObjectPattern): boolean {
+  return pattern.properties.some((property) => {
+    if (property.type !== AST_NODE_TYPES.Property) return false;
+    const key = keyName(property.key, property.computed);
+    return key === null || CALLS_THROUGH.has(key);
+  });
 }
 
 // The global path a name from a module stands for, or the module itself
@@ -329,6 +334,11 @@ function opOf(path: readonly string[] | null): string | undefined {
   return NON_DETERMINISTIC[object]?.has(property) === true
     ? `${object}.${property}`
     : undefined;
+}
+
+// True when a path names `Date` itself, which reads the clock when called.
+function namesDate(path: readonly string[] | null): boolean {
+  return path?.length === 1 && path[0] === "Date";
 }
 
 // The object a path names when it is one of HOLDERS. Another module that
@@ -495,18 +505,6 @@ function exportedDeclaration(declarator: TSESTree.VariableDeclarator): boolean {
   );
 }
 
-// True when a pattern a `Date` default fills may take a member that calls
-// it, `{ bind } = Date`, or one under a key the rule cannot name. The names
-// it binds then hold no path the rule reports, so the default reports.
-function callsThrough(pattern: TSESTree.Node): boolean {
-  if (pattern.type !== AST_NODE_TYPES.ObjectPattern) return false;
-  return pattern.properties.some((property) => {
-    if (property.type !== AST_NODE_TYPES.Property) return true;
-    const key = keyName(property.key, property.computed);
-    return key === null || CALLS_THROUGH.has(key);
-  });
-}
-
 // True when `Date`, read as a value, goes somewhere that may call it, such
 // as `ids.map(Date)` or `Reflect.construct(Date, [])`. Not when the code
 // calls or constructs it, which the call checks report with their
@@ -533,15 +531,26 @@ function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
       );
     case AST_NODE_TYPES.UnaryExpression:
       return parent.operator !== "typeof";
+    // A default of a nested pattern in a declaration the rule follows,
+    // `const { foo: { bind } = Date } = globalThis`, calls it only through
+    // a member the pattern destructures. A name's own default, `const {
+    // foo: D = Date } = x`, reports where the name is used, as an alias of
+    // `Date` does, when the rule follows the name to it. Anywhere else, such
+    // as a parameter's default or an assignment, the rule does not follow
+    // the names it gives, so it counts as passed on.
     case AST_NODE_TYPES.AssignmentPattern:
-      return (
-        parent.right !== outer ||
-        callsThrough(parent.left) ||
-        !defaultFollowed(parent, resolver)
-      );
+      if (parent.right !== outer || !inFollowedDeclaration(parent)) {
+        return true;
+      }
+      return parent.left.type === AST_NODE_TYPES.ObjectPattern
+        ? callsThrough(parent.left)
+        : parent.left.type !== AST_NODE_TYPES.Identifier ||
+            !namesDate(pathOf(parent.left, resolver, new Set()));
     case AST_NODE_TYPES.VariableDeclarator: {
       if (parent.init !== outer) return true;
-      if (parent.id.type === AST_NODE_TYPES.ObjectPattern) return false;
+      if (parent.id.type === AST_NODE_TYPES.ObjectPattern) {
+        return callsThrough(parent.id);
+      }
       const [declared, ...more] =
         resolver.sourceCode.getDeclaredVariables(parent);
       return (
@@ -553,6 +562,30 @@ function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
     }
     default:
       return true;
+  }
+}
+
+// True when a nested pattern's default sits in an object pattern that a
+// declarator with an initial value declares, `const { foo: { now } = Date }
+// = globalThis`, whose names identifierPath follows. Not for a parameter, an
+// assignment, or a loop's declarator, which has no initial value.
+function inFollowedDeclaration(node: TSESTree.AssignmentPattern): boolean {
+  let n: TSESTree.Node = node;
+  for (;;) {
+    const parent: TSESTree.Node = n.parent;
+    if (parent.type !== AST_NODE_TYPES.Property || parent.value !== n) {
+      return false;
+    }
+    const pattern: TSESTree.Node = parent.parent;
+    if (pattern.type !== AST_NODE_TYPES.ObjectPattern) return false;
+    const above: TSESTree.Node = pattern.parent;
+    if (above.type === AST_NODE_TYPES.VariableDeclarator) {
+      return above.id === pattern && above.init !== null;
+    }
+    n =
+      above.type === AST_NODE_TYPES.AssignmentPattern && above.left === pattern
+        ? above
+        : pattern;
   }
 }
 
@@ -600,8 +633,6 @@ export const noNonDeterministicOutsideStep = createRule({
       if (calledThrough(node)) report(node, `${op}()`, false);
       else report(node, op, exportedSource(node, context));
     };
-    const namesDate = (path: readonly string[] | null): boolean =>
-      path?.length === 1 && path[0] === "Date";
     const isDate = (callee: TSESTree.Node): boolean =>
       namesDate(pathOf(callee, context, new Set()));
     // An object that holds a source, exported by default, `export default
@@ -659,6 +690,34 @@ export const noNonDeterministicOutsideStep = createRule({
       },
       TSExportAssignment(node) {
         checkDefault(node.expression);
+      },
+      // A pattern that reads a source to destructure from it, `const {
+      // now: { call } } = Date`, reports at that key, since the name it
+      // declares reads no source itself. So does one that destructures a
+      // member that calls `Date` from it, `{ Date: { bind } } = globalThis`.
+      // Destructuring that member straight from `Date`, or from a default
+      // `Date`, reports at `Date`, as passedOn says.
+      VariableDeclarator(node) {
+        if (node.id.type !== AST_NODE_TYPES.ObjectPattern) return;
+        const init =
+          node.init === null ? null : pathOf(node.init, context, new Set());
+        eachProperty(
+          node.id,
+          init === null ? [] : [init],
+          context,
+          new Set(),
+          (property, keys) => {
+            const inner = withoutDefault(property.value);
+            if (inner.type !== AST_NODE_TYPES.ObjectPattern) return false;
+            const op = keys.map(opOf).find((found) => found !== undefined);
+            if (op !== undefined) {
+              report(property.key, op, false);
+            } else if (keys.some(namesDate) && callsThrough(inner)) {
+              report(property.key, "Date", false);
+            }
+            return false;
+          },
+        );
       },
       // A named import, or an alias of a member, read on its own, such as
       // `randomUUID()` after `import { randomUUID } from "node:crypto"`, or one
