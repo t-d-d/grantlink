@@ -131,20 +131,51 @@ function standingAlone(form: string): RegExp {
   return new RegExp(`(?<![A-Za-z0-9])${pattern}(?![A-Za-z0-9])`, "iu");
 }
 
+// A bare number with a dot or a hyphen and then a digit on either side of
+// it sits in a decimal or a DOI, so it is not printed there (#520).
+function bareNumber(digits: string): RegExp {
+  return new RegExp(
+    `(?<![A-Za-z0-9]|\\d[.-])${digits}(?![A-Za-z0-9]|[.-]\\d)`,
+    "giu",
+  );
+}
+
+// A bare number that could be a year counts only within this many
+// characters of CRUK or Cancer Research UK (#520).
+const NEAR_CRUK = 50;
+const YEAR = /^(?:19|20)\d{2}$/u;
+const CRUK_NAME = /(?<![A-Za-z])(?:CRUK|Cancer\s+Research\s+UK)(?![A-Za-z])/giu;
+
+function printedAs(form: string, text: string): boolean {
+  if (!/^\d+$/u.test(form)) return standingAlone(form).test(text);
+  const spots = [...text.matchAll(bareNumber(form))].map((m) => m.index);
+  if (!YEAR.test(form)) return spots.length > 0;
+  const names = [...text.matchAll(CRUK_NAME)].map((m) => ({
+    start: m.index,
+    end: m.index + m[0].length,
+  }));
+  return spots.some((start) =>
+    names.some(
+      (name) =>
+        start - name.end <= NEAR_CRUK &&
+        name.start - (start + form.length) <= NEAR_CRUK,
+    ),
+  );
+}
+
 // The linked grants a paper prints, in the order given: those with a form
 // sameGrant accepts standing alone in the whole article less its reference
 // list, ignoring case and spaces (#502, #503). A grant cited only by
 // another paper is not printed. Each markup tag reads as a space, so a tag
-// inside a grant does not hide it.
+// inside a grant does not hide it. A bare number in a decimal or a DOI, or
+// one that reads as a year far from CRUK, is not printed (#520).
 export function printedGrants(
   grants: readonly string[],
   article: string,
 ): string[] {
   const text = withoutReferenceLists(article).replace(/<[^>]*>/gu, " ");
   return grants.filter((grant) =>
-    [...forms(grant)].some(
-      (form) => form !== "" && standingAlone(form).test(text),
-    ),
+    [...forms(grant)].some((form) => form !== "" && printedAs(form, text)),
   );
 }
 

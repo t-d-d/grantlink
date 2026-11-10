@@ -102,6 +102,12 @@ describe("finding which linked grants a paper prints", () => {
     ["A56789", "<p>grant A<italic>56789</italic></p>"],
     ["A17196/", "<p>Funded by grant A17196.</p>"],
     ["PRCRPG-Nov21\\\\100001", "<p>PRCRPG-Nov21\\100001</p>"],
+    ["C1/A23456", "<p>Funded by grant 23456.</p>"],
+    ["A12345", "<p>Grants 12345-A23456.</p>"],
+    ["A2019", "<p>Funded by Cancer Research UK grant 2019.</p>"],
+    ["A2019", "<p>Grant 2019 from CRUK.</p>"],
+    ["A2019", "<p>Recruited in 2019. Funded by grant A2019.</p>"],
+    ["A1234", "<p>Recruited with grant 1234.</p>"],
   ])("finds %s printed in %s", (grant, article) => {
     expect(printedGrants([grant], article)).toEqual([grant]);
   });
@@ -114,6 +120,18 @@ describe("finding which linked grants a paper prints", () => {
     ["C1234/A56789", "<p>Programme C1234.</p>"],
     ["A12345", "<p>Figure 1 2345 cells.</p>"],
     ["A12345", "<table><tr><td>1</td><td>2345</td></tr></table>"],
+    // A bare number with a dot or a hyphen and a digit beside it sits in
+    // a decimal or a DOI (#520).
+    ["C1/A23456", "<p>The ratio was 1.23456 overall.</p>"],
+    ["A12345", "<p>doi.org/10.1038/s41467-020-12345-6</p>"],
+    ["A12345", "<p>Version 12345.6 of the tool.</p>"],
+    ["A12345", "<p>Samples 4-12345 were run.</p>"],
+    // A bare number that reads as a year counts only near CRUK (#520).
+    ["A2019", "<p>Recruited in 2019.</p>"],
+    [
+      "A2019",
+      "<p>Funded by Cancer Research UK. Patients were recruited between the spring and the autumn of the year 2019.</p>",
+    ],
   ])("does not find %s printed in %s", (grant, article) => {
     expect(printedGrants([grant], article)).toEqual([]);
   });
