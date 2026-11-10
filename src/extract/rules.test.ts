@@ -181,6 +181,19 @@ describe("the rules", () => {
     },
   );
 
+  // A slash with a space on each side parts a list of references, not the
+  // parts of one, so each reference in the list is still read (#598).
+  it("reads each CRUK- form in a list parted by a slash spaced on both sides", () => {
+    expect(
+      findReferences(
+        sections(
+          "Funded by CRUK (CRUK-A12345 / CRUK-A23456).",
+          "Funded by CRUK (CRUK/12345 / MRC).",
+        ),
+      ).map(({ asWritten }) => asWritten),
+    ).toEqual(["CRUK-A12345", "CRUK-A23456", "CRUK/12345"]);
+  });
+
   // As the model pass keeps it (#561).
   it("reads the first four parts of a CRUK- form that runs on past them", () => {
     expect(

@@ -711,6 +711,23 @@ describe("fitness: no invented references (model-calls.md)", () => {
     },
   );
 
+  it("keeps each CRUK- form in a list parted by a slash spaced on both sides (#598)", async () => {
+    // The text is made up.
+    const written = ["CRUK-A12345", "CRUK-A23456"];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(
+      ["Funded by CRUK (CRUK-A12345 / CRUK-A23456)."],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(written);
+    expect(result.status === "read" && result.rejected).toBe(0);
+  });
+
   it("rejects the back of a CRUK- form whose prefix the rules read with it (#561)", async () => {
     // The text is made up.
     const { fetch } = fakeOpenRouter(
