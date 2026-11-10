@@ -183,7 +183,7 @@ describe("a run over the back catalogue", () => {
 
     const page = fake.site.files?.["index.html"] ?? "";
     expect(page).toContain("What it found");
-    expect(page).toContain("RRCOER-Jun24/100008");
+    expect(page).toContain("RRCOER-JUN24/100008");
     expect(page).toContain("https://europepmc.org/article/PMC/PMC0000002");
   });
 
@@ -268,7 +268,7 @@ describe("a run over the back catalogue", () => {
       references: before.references,
       page: "written",
     });
-    expect(fake.site.files?.["index.html"]).toContain("RRCOER-Jun24/100008");
+    expect(fake.site.files?.["index.html"]).toContain("RRCOER-JUN24/100008");
   });
 });
 
@@ -292,7 +292,7 @@ describe("a run that finishes after a deploy", () => {
     fake.site.live = JSON.stringify(fakeRelease(300));
     const { result } = await runWith(fake);
     expect(result?.published).toMatchObject({ page: "written" });
-    expect(fake.site.files?.["index.html"]).toContain("RRCOER-Jun24/100008");
+    expect(fake.site.files?.["index.html"]).toContain("RRCOER-JUN24/100008");
     expect(fake.site.files?.["found.json"]).toContain("RRCOER-Jun24/100008");
   });
 });
@@ -333,7 +333,7 @@ describe("a paper Europe PMC has since linked to a grant", () => {
     });
     const page = fake.site.files?.["index.html"] ?? "";
     expect(page).not.toContain("Another made-up study.");
-    expect(page).not.toContain("RRCOER-Jun24/100008");
+    expect(page).not.toContain("RRCOER-JUN24/100008");
     const data = found.parse(
       JSON.parse(fake.site.files?.["found.json"] ?? "{}"),
     );

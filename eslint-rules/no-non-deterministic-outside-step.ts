@@ -11,6 +11,7 @@ import {
   memberName,
   unwrapped,
   walkAliases,
+  withoutDefault,
 } from "./create-rule.ts";
 import type { Resolver } from "./create-rule.ts";
 
@@ -238,11 +239,6 @@ function eachProperty(
     }
   }
   return false;
-}
-
-// A pattern's target without the default it may give, `{ now = f }`.
-function withoutDefault(value: TSESTree.Property["value"]): TSESTree.Node {
-  return value.type === AST_NODE_TYPES.AssignmentPattern ? value.left : value;
 }
 
 // The global path a name destructured from an object pattern reads, from
@@ -473,10 +469,14 @@ function exportsUnfollowed(
 
 // True when a source read as a value passes to another module: the value
 // an export default or an export assignment passes on, `export default
-// Date.now`, or the initial value of an alias that is exported, `export const
-// now = Date.now`, or `const D = Date` and then `export { D }`. Its report
-// stands for the export. A call is never one, since `export const d = new
-// Date()` passes on the value it read and not the source.
+// Date.now`, or the initial value, or a nested pattern's default, of a
+// declaration that exports a name it declares, `export const now =
+// Date.now`, `const D = Date` and then `export { D }`, a copy made through
+// a rest, `export const { ...m } = Math` or `export const { foo: { ...m } =
+// Math } = x`, or a member that calls `Date`, `export const { bind } =
+// Date`. Its report stands for the export. A call is never one, since
+// `export const d = new Date()` passes on the value it read and not the
+// source.
 function exportedSource(node: TSESTree.Node, resolver: Resolver): boolean {
   const outer = outermost(node);
   const parent = outer.parent;
@@ -485,19 +485,27 @@ function exportedSource(node: TSESTree.Node, resolver: Resolver): boolean {
       return parent.declaration === outer;
     case AST_NODE_TYPES.TSExportAssignment:
       return parent.expression === outer;
-    case AST_NODE_TYPES.VariableDeclarator: {
-      if (
-        parent.init !== outer ||
-        parent.id.type !== AST_NODE_TYPES.Identifier
-      ) {
-        return false;
-      }
-      const [declared] = resolver.sourceCode.getDeclaredVariables(parent);
-      return declared !== undefined && exported(parent, declared);
+    case AST_NODE_TYPES.VariableDeclarator:
+      return parent.init === outer && exportsName(parent, resolver);
+    case AST_NODE_TYPES.AssignmentPattern: {
+      if (parent.right !== outer) return false;
+      const declarator = followedDeclarator(parent);
+      return declarator !== null && exportsName(declarator, resolver);
     }
     default:
       return false;
   }
+}
+
+// True when a declarator exports a name it declares, in its declaration or
+// later, `export { m }`.
+function exportsName(
+  declarator: TSESTree.VariableDeclarator,
+  resolver: Resolver,
+): boolean {
+  return resolver.sourceCode
+    .getDeclaredVariables(declarator)
+    .some((declared) => exported(declarator, declared));
 }
 
 // True when a declarator sits in an exported declaration,
@@ -582,7 +590,7 @@ function passedOn(
     // as a parameter's default or an assignment, the rule does not follow
     // the names it gives, so it counts as passed on.
     case AST_NODE_TYPES.AssignmentPattern:
-      if (parent.right !== outer || !inFollowedDeclaration(parent)) {
+      if (parent.right !== outer || followedDeclarator(parent) === null) {
         return true;
       }
       return parent.left.type === AST_NODE_TYPES.ObjectPattern
@@ -614,22 +622,24 @@ function passedOn(
   }
 }
 
-// True when a nested pattern's default sits in an object pattern that a
-// declarator with an initial value declares, `const { foo: { now } = Date }
-// = globalThis`, whose names identifierPath follows. Not for a parameter, an
-// assignment, or a loop's declarator, which has no initial value.
-function inFollowedDeclaration(node: TSESTree.AssignmentPattern): boolean {
+// The declarator with an initial value whose object pattern holds a nested
+// pattern's default, `const { foo: { now } = Date } = globalThis`, whose
+// names identifierPath follows. Null for a parameter, an assignment, or a
+// loop's declarator, which has no initial value.
+function followedDeclarator(
+  node: TSESTree.AssignmentPattern,
+): TSESTree.VariableDeclarator | null {
   let n: TSESTree.Node = node;
   for (;;) {
     const parent: TSESTree.Node = n.parent;
     if (parent.type !== AST_NODE_TYPES.Property || parent.value !== n) {
-      return false;
+      return null;
     }
     const pattern: TSESTree.Node = parent.parent;
-    if (pattern.type !== AST_NODE_TYPES.ObjectPattern) return false;
+    if (pattern.type !== AST_NODE_TYPES.ObjectPattern) return null;
     const above: TSESTree.Node = pattern.parent;
     if (above.type === AST_NODE_TYPES.VariableDeclarator) {
-      return above.id === pattern && above.init !== null;
+      return above.id === pattern && above.init !== null ? above : null;
     }
     n =
       above.type === AST_NODE_TYPES.AssignmentPattern && above.left === pattern
@@ -750,7 +760,10 @@ export const noNonDeterministicOutsideStep = createRule({
       // A pattern that reads a source to destructure from it, `const {
       // now: { call } } = Date`, reports at that key, since the name it
       // declares reads no source itself. So does one that destructures a
-      // member that calls `Date` from it, `{ Date: { bind } } = globalThis`.
+      // member that calls `Date` from it, `{ Date: { bind } } = globalThis`,
+      // or copies the rest of an object that holds a source,
+      // `{ Math: { ...m } } = globalThis`, since the name the rest declares
+      // carries the source on unseen.
       // Destructuring that member straight from `Date`, or from a default
       // `Date`, reports at `Date`, as passedOn says.
       VariableDeclarator(node) {
@@ -770,6 +783,11 @@ export const noNonDeterministicOutsideStep = createRule({
               report(property.key, op, false);
             } else if (keys.some(namesDate) && callsThrough(inner)) {
               report(property.key, "Date", false);
+            } else if (copiesRest(inner)) {
+              const holder = keys
+                .map(holderOf)
+                .find((found) => found !== undefined);
+              if (holder !== undefined) report(property.key, holder, false);
             }
             return false;
           },
