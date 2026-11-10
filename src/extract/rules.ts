@@ -48,7 +48,7 @@ export interface FundingSections {
 
 // A hyphen, in a name or a reference, may be written as a Unicode hyphen or
 // dash (U+2010 to U+2015) (#201) or as the minus sign (U+2212) (#269).
-const DASHES = `${String.fromCodePoint(0x2010)}-${String.fromCodePoint(0x2015)}${String.fromCodePoint(0x2212)}`;
+export const DASHES = `${String.fromCodePoint(0x2010)}-${String.fromCodePoint(0x2015)}${String.fromCodePoint(0x2212)}`;
 
 export const referenceSchema = z
   .object({

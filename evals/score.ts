@@ -1,5 +1,6 @@
 import {
   ANY_CASE_FUNDER_NAME,
+  DASHES,
   findReferences,
   hasReferenceShape,
   type FundingSections,
@@ -158,10 +159,14 @@ function standingAlone(form: string): RegExp {
 }
 
 // A bare number with a dot or a hyphen and then a digit on either side of
-// it sits in a decimal or a DOI, so it is not printed there (#520).
+// it sits in a decimal, a range or a DOI, so it is not printed there
+// (#520). A middle dot writes a decimal too, and a hyphen may be any dash
+// the rules read as one (#556).
+const JOINER = `[.\u00b7${DASHES}-]`;
+
 function bareNumber(digits: string): RegExp {
   return new RegExp(
-    `(?<![A-Za-z0-9]|\\d[.-])${digits}(?![A-Za-z0-9]|[.-]\\d)`,
+    `(?<![A-Za-z0-9]|\\d${JOINER})${digits}(?![A-Za-z0-9]|${JOINER}\\d)`,
     "giu",
   );
 }
@@ -196,8 +201,9 @@ function printedAs(form: string, text: string, names: Span[]): boolean {
 // another paper is not printed. Each markup tag reads as a space, and any
 // run of spaces as one, so a tag inside a grant does not hide it and
 // indentation does not part a year from the funder's name. A bare number
-// in a decimal or a DOI, or one that reads as a year far from the funder's
-// name, is not printed (#520).
+// in a decimal, a range or a DOI, with a dot, a middle dot or any dash the
+// rules read as a hyphen, or one that reads as a year far from the
+// funder's name, is not printed (#520, #556).
 export function printedGrants(
   grants: readonly string[],
   article: string,
