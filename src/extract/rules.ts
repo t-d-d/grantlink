@@ -151,10 +151,11 @@ const NUMBER_AFTER = String.raw`(?!${SEP}|${DASH}\d|\.\d)`;
 // An A number inside another funder's reference, with letters and a slash
 // before it and a slash and more after it, as in CAN/A00004/1, is part of
 // that reference, not the funder's (#642). A slash here is written straight
-// against both its neighbours, so a list spaced with slashes is not one.
+// against both its neighbours, so a list spaced with slashes is not one,
+// and another A number after it makes a list too, as in grant/A12345/A23456.
 // Read at the A, before the shape.
 const TIGHT_SEP = String.raw`[/\\∖]`;
-const NOT_INSIDE_REFERENCE = String.raw`(?:(?<!\p{L}${TIGHT_SEP})|(?!A\s?\d+${TIGHT_SEP}${WORD}))`;
+const NOT_INSIDE_REFERENCE = String.raw`(?:(?<!\p{L}${TIGHT_SEP})|(?!A\s?\d+${TIGHT_SEP}(?!A\s?\d)${WORD}))`;
 
 // An A number, as the An shape reads it.
 const A_SHAPE = String.raw`A(?:\s?\d{5}|\d{4}${END}(?!${SEP}A\s?\d))`;

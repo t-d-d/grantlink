@@ -168,6 +168,16 @@ describe("the rules", () => {
     ).toEqual([normalised]);
   });
 
+  it("reads each A number of a list written tight with slashes after a word", () => {
+    // Another A number after the slash makes a list, not another funder's
+    // reference (#642).
+    expect(
+      findReferences(
+        sections("Funded by Cancer Research UK (grant/A12345/A23456)."),
+      ).map((reference) => reference.normalised),
+    ).toEqual(["A12345", "A23456"]);
+  });
+
   it("leaves a word joined to CRUK that has no digit", () => {
     expect(
       findReferences(sections("A CRUK-funded study with CRUK/EPSRC support.")),
