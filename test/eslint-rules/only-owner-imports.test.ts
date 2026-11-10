@@ -1,5 +1,7 @@
+import { join } from "node:path";
 import { afterAll, describe, it } from "vitest";
 import { onlyOwnerImports } from "../../eslint-rules/only-owner-imports.ts";
+import { root } from "../repo.ts";
 import { ruleTester } from "../rule-tester.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
@@ -61,5 +63,33 @@ describe("fitness: one way in to each store (storage.md)", () => {
         errors: [{ messageId: "notOwner" }],
       },
     ],
+  });
+
+  // ESLint run from src/ names the table module store/table.ts. The rule
+  // still knows it as the owner, src/store/table.ts.
+  describe("run from src/", () => {
+    ruleTester({ afterAll, describe, it }, { cwd: join(root, "src") }).run(
+      "only-owner-imports",
+      onlyOwnerImports,
+      {
+        valid: [
+          {
+            name: "the table module imports DynamoDB",
+            filename: "store/table.ts",
+            code: `import { DynamoDBClient } from "@aws-sdk/client-dynamodb";`,
+            options,
+          },
+        ],
+        invalid: [
+          {
+            name: "a run imports DynamoDB itself",
+            filename: "run/handler.ts",
+            code: `import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";`,
+            options,
+            errors: [{ messageId: "notOwner" }],
+          },
+        ],
+      },
+    );
   });
 });

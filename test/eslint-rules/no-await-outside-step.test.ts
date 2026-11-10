@@ -1,5 +1,7 @@
+import { join } from "node:path";
 import { afterAll, describe, it } from "vitest";
 import { noAwaitOutsideStep } from "../../eslint-rules/no-await-outside-step.ts";
+import { root } from "../repo.ts";
 import { ruleTester } from "../rule-tester.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
@@ -93,6 +95,32 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
           await askEuropePmc(ctx, "paper", "wait", r, async () => readPaper());
         }`,
       },
+      {
+        name: "awaits I/O inside askEuropePmc's read, reached through a namespace import",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          await owed.askEuropePmc(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
+        name: "awaits askEuropePmc reached through a namespace import by a string key",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          await owed["askEuropePmc"](ctx, "paper", "wait", r, async () => readPaper());
+        }`,
+      },
+      {
+        name: "awaits askEuropePmc reached through a namespace import by a template key",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          await owed[\`askEuropePmc\`](ctx, "paper", "wait", r, async () => readPaper());
+        }`,
+      },
     ],
     invalid: [
       {
@@ -158,6 +186,24 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         errors: [{ messageId: "awaitOutsideStep" }],
       },
       {
+        name: "awaits a namespace import's function that is not a step helper",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          await owed.somethingElse(ctx, "paper", "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits askEuropePmc through a namespace import of another module",
+        filename: "src/run/run.ts",
+        code: `import * as other from "./other.ts";
+        async function run(ctx: any) {
+          await other.askEuropePmc(ctx, "paper", "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
         name: "awaits I/O directly in a child context, which replays",
         code: `async function run(ctx: any) {
           await ctx.runInChildContext("paper", async (child: any) => {
@@ -167,5 +213,36 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         errors: [{ messageId: "awaitOutsideStep" }],
       },
     ],
+  });
+
+  // ESLint run from src/ names the file run/run.ts. The rule still knows
+  // askEuropePmc from src/run/owed.ts.
+  describe("run from src/", () => {
+    ruleTester({ afterAll, describe, it }, { cwd: join(root, "src") }).run(
+      "no-await-outside-step",
+      noAwaitOutsideStep,
+      {
+        valid: [
+          {
+            name: "awaits askEuropePmc, whose only await is its step",
+            filename: "run/run.ts",
+            code: `import { askEuropePmc } from "./owed.ts";
+          async function run(ctx: any) {
+            await askEuropePmc(ctx, "paper", "wait", r, async () => readPaper());
+          }`,
+          },
+        ],
+        invalid: [
+          {
+            name: "awaits I/O directly in a durable body",
+            filename: "run/run.ts",
+            code: `async function run(ctx: any) {
+            await fetchPaper();
+          }`,
+            errors: [{ messageId: "awaitOutsideStep" }],
+          },
+        ],
+      },
+    );
   });
 });

@@ -81,6 +81,28 @@ describe("fitness: no durable operation inside its own context's operation (dura
         errors: [{ messageId: "sameContextUsage" }],
       },
       {
+        name: "calls a step on the same context inside askEuropePmc's read, reached through a namespace import",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          await owed.askEuropePmc(ctx, "paper", "wait", r, async () => {
+            await ctx.step("inner", async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
+        name: "asks Europe PMC through a namespace import on the same context inside a step",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await owed.askEuropePmc(ctx, "paper", "wait", r, async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
         name: "reaches the same context through an alias",
         code: `async function run(ctx: any) {
           const same = ctx;

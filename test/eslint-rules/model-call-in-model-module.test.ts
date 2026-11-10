@@ -1,5 +1,7 @@
+import { join } from "node:path";
 import { afterAll, describe, it } from "vitest";
 import { modelCallInModelModule } from "../../eslint-rules/model-call-in-model-module.ts";
+import { root } from "../repo.ts";
 import { ruleTester } from "../rule-tester.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
@@ -46,5 +48,33 @@ describe("fitness: one model, in one place (model-calls.md)", () => {
         errors: [{ messageId: "modelClient" }],
       },
     ],
+  });
+
+  // ESLint run from src/ names the model module extract/model.ts. The rule
+  // still knows it as the owner, src/extract/model.ts.
+  describe("run from src/", () => {
+    ruleTester({ afterAll, describe, it }, { cwd: join(root, "src") }).run(
+      "model-call-in-model-module",
+      modelCallInModelModule,
+      {
+        valid: [
+          {
+            name: "the model module names OpenRouter",
+            filename: "extract/model.ts",
+            code: `const endpoint = "https://openrouter.ai/api/v1/chat/completions";`,
+            options,
+          },
+        ],
+        invalid: [
+          {
+            name: "another module calls OpenRouter",
+            filename: "run/handler.ts",
+            code: "await fetch(`https://openrouter.ai/api/v1/chat/completions`);",
+            options,
+            errors: [{ messageId: "openRouter" }],
+          },
+        ],
+      },
+    );
   });
 });
