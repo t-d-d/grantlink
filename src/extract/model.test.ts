@@ -591,6 +591,7 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.references).toEqual([]);
     expect(result.status === "read" && result.rejected).toBe(2);
   });
+
   it("rejects a name in capitals next to a number, and a prefix before a number of the wrong length (#492)", async () => {
     // Each is in the text whole and holds a digit, but is no shape the rules
     // read: a code reads only before a number of the form 1nnnnn, a name

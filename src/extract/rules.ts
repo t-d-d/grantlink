@@ -41,8 +41,8 @@ export const referenceSchema = z
     // Only the characters a reference is made of. These include letters and
     // spaces, so this alone does not keep out a name: the rules' patterns
     // match no name, and the model pass refuses a reply that is not one of
-    // their shapes or a bare number (#492), or that carries a lower-case
-    // letter outside a month in a code (#467).
+    // their shapes in capitals, but for a month in a code, or a bare number
+    // (#467, #492).
     asWritten: z
       .string()
       .min(1)
@@ -60,8 +60,7 @@ export const referenceSchema = z
 export type Reference = z.infer<typeof referenceSchema>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-// The model pass reads a code's hyphen with this too (#413).
-export const DASH = `[-${DASHES}]`;
+const DASH = `[-${DASHES}]`;
 // A letter as a class of its upper and lower case, for a pattern whose own
 // letters must keep their case and so cannot take the `i` flag. Any letter
 // folds, not only A to Z (#301). A case that is more than one character, as
@@ -140,14 +139,16 @@ interface Shape {
   // between a reference's edges, after `before` where one is given, and the
   // model pass reads a reply only if it is one of these shapes whole (#492).
   shape: string;
+  // The shape the model pass reads instead, where it is narrower.
+  modelShape?: string;
   before?: string;
   // A short number such as an A number is common, so it counts only in a
   // sentence that names the funder.
   sentenceOnly: boolean;
 }
 
-// The model pass reads a month in a code with this too (#467).
-export const MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
+// A month as the rules read it in a code.
+const MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
 
 // Each pattern's pieces, stated once. A prefix of capitals may stand apart
 // from its number by one space. A code's suffix follows a hyphen, which a
@@ -156,10 +157,15 @@ export const MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
 // allows no other.
 const prefixed = (prefix: string, digits: string) =>
   String.raw`${prefix}\s?\d{${digits}}`;
-const CODE = "[A-Z]{4,12}";
-const CODE_SUFFIX = `${DASH} ?([A-Za-z0-9]{2,8})`;
-const CODE_MONTH = String.raw`((?:${MONTHS})(?:\d{4}|\d{2}))`;
-const CODE_NUMBER = String.raw`1\d{5}`;
+const YEAR = String.raw`(?:\d{4}|\d{2})`;
+const MONTH_YEAR = `(?:${MONTHS})${YEAR}`;
+const coded = (suffix: string) =>
+  String.raw`[A-Z]{4,12}(?:${DASH} ?(${suffix})|(${MONTH_YEAR}))?${SEP}1\d{5}`;
+// The rules read a suffix in any case. A name has lower-case letters, so
+// the model pass reads one only in capitals and digits, or as a month in
+// title case and its year, as in "ABCDEF-Mar21/100010" (#467).
+const SUFFIX = "[A-Za-z0-9]{2,8}";
+const CAPITAL_SUFFIX = `[A-Z0-9]{2,8}|${MONTH_YEAR}`;
 
 const SHAPES: readonly Shape[] = [
   {
@@ -181,7 +187,8 @@ const SHAPES: readonly Shape[] = [
       }
       return "CODE-X/n";
     },
-    shape: `${CODE}(?:${CODE_SUFFIX}|${CODE_MONTH})?${SEP}${CODE_NUMBER}`,
+    shape: coded(SUFFIX),
+    modelShape: coded(CAPITAL_SUFFIX),
     sentenceOnly: false,
   },
   {
@@ -230,11 +237,12 @@ const BARE = String.raw`\d{5,7}`;
 const BARE_SUFFIX = String.raw`${DASH}\d{2}`;
 
 // Whether a reference, as written with plain spaces, is a shape the rules
-// read or a bare number with an optional suffix, and nothing more. The model
+// read, in capitals but for a month in a code, or a bare number with an
+// optional suffix, and nothing more. The model
 // pass keeps only a reply of these shapes, so a name next to a number is
 // never one (#492).
 const READ_SHAPE = new RegExp(
-  `^(?:${[...SHAPES.map(({ shape }) => shape), `${BARE}(?:${BARE_SUFFIX})?`].join("|")})$`,
+  `^(?:${[...SHAPES.map(({ shape, modelShape }) => modelShape ?? shape), `${BARE}(?:${BARE_SUFFIX})?`].join("|")})$`,
   "u",
 );
 export const hasReferenceShape = (reference: string): boolean =>

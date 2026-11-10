@@ -1,9 +1,7 @@
 import { z } from "zod";
 import {
-  DASH,
   funder,
   hasReferenceShape,
-  MONTHS,
   normalise,
   referenceSchema,
   wholeReference,
@@ -16,9 +14,9 @@ import { latest, type Version } from "./versions.ts";
 // Anthropic as its only provider with fallbacks off, and sends only the
 // funding text, marked as data. Every reference in the reply must appear in
 // that text as written, and is normalised only after that check. A reply
-// that is not a shape the rules read, or a bare number, is rejected, and so
-// is one with a lower-case letter outside a month in a code, so what it
-// returns is shaped as references and not as text, such as a name
+// that is not a shape the rules read, in capitals but for a month in a
+// code, or a bare number, is rejected, so what it returns is shaped as
+// references and not as text, such as a name
 // (docs/constraints/personal-data.md, #492).
 
 // The candidates the eval scores beside the rules alone (#329). Each id is
@@ -194,27 +192,12 @@ function givesWhole(text: readonly string[], reference: string): boolean {
   return text.some((paragraph) => whole.test(paragraph));
 }
 
-// A name has lower-case letters, and the codes the rules read are capitals,
-// so a reply with a lower-case letter is refused, however its parts are
-// joined, as in "Smith-Jones 2" or "Example/A12345". The one exception is a
-// month in title case that the rules read in a code: written straight onto
-// the code or after its hyphen, and followed by its year, as in
-// "CTRQQRMar21/100010" or "ABCDEF-Mar21/100010" (#467).
-const MONTH_IN_CODE = new RegExp(
-  `(?<=[A-Z]{4}(?:${DASH} ?)?)(?:${MONTHS})(?=\\d{2}(?:\\d{2})?(?!\\d))`,
-  "gu",
-);
-
-function carriesLowerCase(reference: string): boolean {
-  return /[a-z]/u.test(reference.replace(MONTH_IN_CODE, ""));
-}
-
 // Keeps a reference only if the text gives it whole as written, it is made
-// of the characters a reference is made of, it is a shape the rules read or
-// a bare number with an optional suffix, built from the rules' own pieces,
-// and it carries no lower-case letter outside a month. The characters alone
-// would let a name through, since they include letters and spaces, and the
-// shapes alone would let one through in a code's suffix (#467, #492). Any
+// of the characters a reference is made of, and it is a shape the rules read,
+// in capitals but for a month in a code, or a bare number with an optional
+// suffix. The shapes are built from the rules' own pieces, so a change to a
+// pattern reaches this check. The characters alone would let a name
+// through, since they include letters and spaces (#413, #467, #492). Any
 // space in it reads as a plain one, as in the text. The check runs before
 // the reference is normalised.
 function check(
@@ -230,9 +213,7 @@ function check(
     const written = referenceSchema.shape.asWritten.safeParse(asWritten);
     if (
       !written.success ||
-      !/\d/u.test(asWritten) ||
       !hasReferenceShape(asWritten) ||
-      carriesLowerCase(asWritten) ||
       !givesWhole(source, asWritten)
     ) {
       rejected += 1;
