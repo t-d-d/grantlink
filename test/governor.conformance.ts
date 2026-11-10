@@ -22,23 +22,18 @@ const { GITHUB_TOKEN } = z
 // `waits.issue` is required here, though governor's schema leaves it
 // optional: with no wait ticket named there is nothing to check, and the
 // test must say so rather than pass.
-const config = z
-  .object({
-    waits: z.object({ issue: z.number().int().positive() }),
-  })
-  .safeParse(JSON.parse(readRepoFile(".github/governor.json")));
+const Config = z.object({
+  waits: z.object({ issue: z.number().int().positive() }),
+});
 
 describe("governor's wait ticket", () => {
-  it("is named in .github/governor.json", () => {
-    expect(
-      config.error?.issues,
-      "waits.issue in .github/governor.json",
-    ).toBeUndefined();
-  });
-
   it("stays open", async () => {
-    expect(config.success, "waits.issue in .github/governor.json").toBe(true);
-    const issue = config.data?.waits.issue ?? 0;
+    const issue = Config.parse(
+      JSON.parse(readRepoFile(".github/governor.json")),
+    ).waits.issue;
+    // fetch follows GitHub's redirect for an issue moved to another
+    // repository, and the moved issue takes a new number there, so the
+    // number in the reply shows whether the wait ticket is still here.
     const response = await fetch(
       `https://api.github.com/repos/${repository}/issues/${String(issue)}`,
       {
@@ -52,12 +47,14 @@ describe("governor's wait ticket", () => {
     );
     const reply = await response.text();
     expect(response.status, reply).toBe(200);
-    const { state, pull_request } = z
+    const { number, state, pull_request } = z
       .object({
+        number: z.number().int().positive(),
         state: z.enum(["open", "closed"]),
         pull_request: z.unknown().optional(),
       })
       .parse(JSON.parse(reply));
+    expect(number, `#${String(issue)} moved to another repository`).toBe(issue);
     expect(pull_request, `#${String(issue)} is a pull request`).toBeUndefined();
     expect(state, `#${String(issue)}, governor's wait ticket`).toBe("open");
   }, 30_000);
