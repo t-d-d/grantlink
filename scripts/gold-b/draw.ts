@@ -5,11 +5,9 @@ import {
 } from "../../src/europepmc/client.ts";
 import { fundingSections } from "../../src/europepmc/jats.ts";
 import {
+  ANY_CASE_FUNDER_NAME,
   findReferences,
-  funder,
-  NAME_EDGE,
   namesFunder,
-  namesPattern,
   sentences,
 } from "../../src/extract/rules.ts";
 import { sample } from "../../src/pipeline/snapshot.ts";
@@ -30,12 +28,11 @@ export const HARD_CASES = [
 
 export type HardCase = (typeof HARD_CASES)[number];
 
-// The funder's name as the rules read it: any dash, any run of whitespace,
-// either case, and the rules' own edge (#360). The words after it keep
-// their case, so the name carries its case in its own pattern.
-const NAME = `(?<!${NAME_EDGE})(?:${namesPattern(funder.names, true)})(?!${NAME_EDGE})`;
+// The funder's name as the rules read it, with any dash, any run of
+// whitespace and the rules' own edge (#360). The words after it keep their
+// case, so the name carries its case in its own pattern.
 const centre = new RegExp(
-  `${NAME}(?:\\s+[A-Z][A-Za-z'&-]*){0,4}\\s+(?:Centre|Center|Institute|Unit)\\b`,
+  `${ANY_CASE_FUNDER_NAME}(?:\\s+[A-Z][A-Za-z'&-]*){0,4}\\s+(?:Centre|Center|Institute|Unit)\\b`,
   "u",
 );
 // Words that say a mention is about money or support, not about a place.
