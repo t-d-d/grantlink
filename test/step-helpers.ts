@@ -48,17 +48,18 @@ export function callbackMismatches(
   const problems: string[] = [];
   for (const position of callbacks) {
     const parameter = fn.parameters[position];
-    if (!parameter) problems.push(`${name} has no parameter ${position}`);
+    if (!parameter)
+      problems.push(`${name} has no parameter ${String(position)}`);
     else if (!isFunction(checker, parameter))
       problems.push(
-        `${name}'s parameter ${position} (${parameter.name.getText()}) is not a function`,
+        `${name}'s parameter ${String(position)} (${parameter.name.getText()}) is not a function`,
       );
   }
   fn.parameters.forEach((parameter, position) => {
     if (position === 0 || callbacks.includes(position)) return;
     if (isFunction(checker, parameter))
       problems.push(
-        `${name}'s parameter ${position} (${parameter.name.getText()}) is a function the table does not list`,
+        `${name}'s parameter ${String(position)} (${parameter.name.getText()}) is a function the table does not list`,
       );
   });
   return problems;
