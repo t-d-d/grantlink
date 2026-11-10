@@ -17,6 +17,7 @@ export const RULES_VERSIONS: readonly Version[] = [
   { number: 12, issue: 510 },
   { number: 13, issue: 525 },
   { number: 14, issue: 514 },
+  { number: 15, issue: 573 },
 ];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
@@ -337,7 +338,8 @@ const BARE_REPLY = new RegExp(String.raw`^\d+(?:${BARE_SUFFIX})?$`, "u");
 // What may not come before a bare number, so it is not the end of a longer
 // one, as in 12/345678, ABC-123456 or 1.23456. The rules' n shape reads a
 // bare number from the text only after a bracket, a tie word, a colon or a
-// hash, so it never reads one there (#571).
+// hash, so it never reads one there (#571). A number the metadata gives
+// counts only with this edge too (#573).
 const NUMBER_BEFORE = String.raw`(?<!${SEP}|${DASH}|\d\.)`;
 
 // A reference as written, between the edges above. A bare number of any
@@ -447,13 +449,16 @@ function scan(text: string, keep: "long" | "short" | "all"): Reference[] {
 // A bare number is common in any text, so it counts only when the metadata
 // gives it to the funder as a whole award id and the paper's own funding or
 // acknowledgement text gives the same number, standing alone (#97). A number
-// joined to a letter, any decimal digit or a separator is part of a longer
-// reference.
+// joined to a letter, any decimal digit or a separator, or after a hyphen or
+// a digit and a decimal point, is part of a longer reference (#573).
 const BARE_NUMBER = new RegExp(`^${BARE}$`, "u");
 
 function confirmedNumber(id: string, text: readonly string[]): boolean {
   if (!BARE_NUMBER.test(id)) return false;
-  const alone = new RegExp(`(?<!${WORD}|${SEP})${id}(?!${WORD}|${SEP})`, "u");
+  const alone = new RegExp(
+    `${NUMBER_BEFORE}${START}${id}(?!${WORD}|${SEP})`,
+    "u",
+  );
   return text.some((paragraph) => alone.test(paragraph));
 }
 
