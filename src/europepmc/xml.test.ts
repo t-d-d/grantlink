@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { descendants, parseXml } from "./xml.ts";
+import { descendants, parseXml, serialize } from "./xml.ts";
 
 describe("where parseXml starts an element (#386)", () => {
   it.each([
@@ -32,5 +32,13 @@ describe("where parseXml starts an element (#386)", () => {
       (found) => found.name === "a",
     );
     expect(a?.close).toBe(xml.indexOf("</a>"));
+  });
+});
+
+describe("writing nodes back out", () => {
+  it("writes an attribute value that holds a double quote back out in single quotes", () => {
+    expect(serialize(parseXml(`<p title='a"b'>x</p>`).children)).toBe(
+      `<p title='a"b'>x</p>`,
+    );
   });
 });

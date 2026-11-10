@@ -3,8 +3,9 @@ import {
   FUNDING_FOOTNOTE_TYPES,
   FUNDING_METADATA,
   FUNDING_SECTION_TYPE,
-  isFundingSectionAt,
+  isFundingSection,
 } from "../src/europepmc/jats.ts";
+import { descendants, parseXml } from "../src/europepmc/xml.ts";
 import { strayParts } from "./fixture-parts.ts";
 import { FIXTURES, RECORDED, fixture, sources } from "./fixtures.ts";
 import { readRepoFile, repoFiles } from "./repo.ts";
@@ -48,9 +49,22 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
     const text = fixture(entry.file);
     expect(text).not.toMatch(/<abstract\b/u);
     // Every section, nested ones too, is one the cutter reads as funding
-    // (#159).
+    // (#159). Each <sec tag must open an element the parser reads, so one
+    // inside a comment or CDATA counts against the fixture too. It must close
+    // too: the cutter drops a section never closed, so its text is kept
+    // unread.
+    const elements = new Map(
+      [...descendants(parseXml(text))].map((element) => [
+        element.start,
+        element,
+      ]),
+    );
     for (const section of text.matchAll(/<sec\b[^>]*>/gu)) {
-      expect(isFundingSectionAt(text, section.index), section[0]).toBe(true);
+      const element = elements.get(section.index);
+      expect(
+        element?.close !== undefined && isFundingSection(element),
+        section[0],
+      ).toBe(true);
     }
   });
 
@@ -107,6 +121,21 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
       expect(check).not.toContain(`"${type}"`);
     },
   );
+
+  // The check names a sec-meta by the test the cutter drops one by, so when
+  // the cutter changes what it drops as a sec-meta the check follows. The
+  // name is written once in the cutter, and never in the check (#472).
+  it("the cutter writes the sec-meta name once, and the check does not copy it", () => {
+    // Written in any quotes and any case, so a copy in a template literal
+    // or in capitals is caught too.
+    expect(cutter.match(/["'`]sec-meta["'`]/giu)).toHaveLength(1);
+    expect(cutter).toMatch(
+      /^const isSecMeta = [^;]*\bisSecMetaName\(element\.name\);$/mu,
+    );
+    expect(check).toContain("isSecMetaName(");
+    expect(check).not.toMatch(/["'`]sec-meta["'`]/iu);
+    expect(check).not.toMatch(/\bconst isSecMeta\b/u);
+  });
 
   // The licence a recorded paper carries, in its own licence element, is
   // the one its entry lists.
