@@ -79,6 +79,60 @@ describe("scoring the rules on the gold sets", () => {
     expect(score({ texts, goldA: [], goldB: [] }).rows.spend.score).toBe(0);
   });
 
+  it("scores the rules with a model's references added", () => {
+    // The rules find nothing in PMC5. The model finds its reference.
+    const withPMC5 = new Map([
+      ...texts,
+      ["PMC5", paper(["Funded by CRUK award ref X1."])],
+    ]);
+    const goldB = [
+      { pmcid: "PMC1", references: ["C1234/A56789"] },
+      { pmcid: "PMC5", references: ["A77777"] },
+    ];
+    const rules = score({ texts: withPMC5, goldA: [], goldB });
+    expect(rules.rows["recall-b"].score).toBe(1 / 2);
+    const both = score({
+      texts: withPMC5,
+      goldA: [],
+      goldB,
+      model: { found: new Map([["PMC5", ["A77777", "B1"]]]), spend: 0.01 },
+    });
+    expect(both.rows["recall-b"]).toEqual({ score: 1, n: 2 });
+    // Found: C1234/A56789 by the rules, A77777 and B1 by the model.
+    expect(both.rows["precision-b"]).toEqual({ score: 2 / 3, n: 2 });
+  });
+
+  it("counts a reference the rules and the model both found once", () => {
+    const result = score({
+      texts,
+      goldA: [],
+      goldB: [{ pmcid: "PMC1", references: ["C1234/A56789"] }],
+      model: { found: new Map([["PMC1", ["C1234/A56789"]]]), spend: 0 },
+    });
+    expect(result.rows["precision-b"].score).toBe(1);
+  });
+
+  it("gives a model's spend per 1,000 papers", () => {
+    const result = score({
+      texts,
+      goldA: [{ pmcid: "PMC1", grants: ["A56789"] }],
+      goldB: [{ pmcid: "PMC2", references: ["A11111"] }],
+      model: { found: new Map(), spend: 0.004 },
+    });
+    // $0.004 over 2 papers is $2 per 1,000.
+    expect(result.rows.spend).toEqual({ score: 2, n: 2 });
+  });
+
+  it("leaves a model's spend unmeasured when it read no paper", () => {
+    const result = score({
+      texts,
+      goldA: [],
+      goldB: [],
+      model: { found: new Map(), spend: 0 },
+    });
+    expect(result.rows.spend.score).toBeNull();
+  });
+
   it("refuses to score a gold paper whose text is missing", () => {
     expect(() =>
       score({

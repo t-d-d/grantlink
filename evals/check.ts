@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { FLOORS, shownScore } from "./floors.ts";
+import { FLOORS, judge, shownScore } from "./floors.ts";
 import { report, verdict, type Judged, type Report } from "./report.ts";
 
 // What CI does with a report (docs/constraints/deploy-gates.md). Run
@@ -187,7 +187,42 @@ export function comment(
     ci.snapshot === null
       ? "No snapshot is pinned yet, so the gold sets are not scored."
       : `Scored on snapshot ${ci.snapshot.id}, manifest \`${ci.snapshot.manifestSha256.slice(0, 12)}\`.`,
+    ...models(ci),
   ].join("\n");
+}
+
+// The rules alone beside the rules and then each model the eval compares
+// (#329). They do not gate: the release is the rules alone until a run
+// calls a model. A row with no score says what it waits for.
+function models(ci: Report): string[] {
+  const candidates = ci.candidates ?? [];
+  if (candidates.length === 0) return [];
+  const cell = (id: (typeof FLOORS)[number]["id"], score: number | null) =>
+    score === null ? judge(id, null) : shownScore(id, score);
+  const scoreIn = (rows: Report["rows"], i: number) => rows[i]?.score ?? null;
+  const rows = FLOORS.map((floor, i) =>
+    [
+      floor.measure,
+      floor.on,
+      cell(floor.id, scoreIn(ci.baseline, i)),
+      ...candidates.map((c) => cell(floor.id, scoreIn(c.rows, i))),
+    ].join(" | "),
+  );
+  const left = candidates
+    .filter((c) => c.unprocessed.length > 0)
+    .map(
+      (c) =>
+        `${c.modelId} left ${String(c.unprocessed.length)} ${c.unprocessed.length === 1 ? "paper" : "papers"} for the next run: ${c.unprocessed.join(", ")}.`,
+    );
+  return [
+    "",
+    "#### The rules alone and with each model",
+    "",
+    `| Measure | On | Rules alone | ${candidates.map((c) => c.modelId).join(" | ")} |`,
+    `| --- | --- | --- | ${candidates.map(() => "---").join(" | ")} |`,
+    ...rows.map((row) => `| ${row} |`),
+    ...(left.length === 0 ? [] : ["", ...left]),
+  ];
 }
 
 // The comment command's arguments after "comment" (#154). The first names
