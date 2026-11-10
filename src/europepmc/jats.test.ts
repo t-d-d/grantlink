@@ -284,6 +284,24 @@ describe("cutting a paper to its funding sections", () => {
       },
     );
 
+    it.each([
+      // A body section never closed, before the back matter.
+      [
+        '<article><body><sec><p>Body text.</p></body><back><sec sec-type="funding"><sec><title>A</title><p>Grant A1.</p></sec><p>Grant C2.</p></sec></back></article>',
+      ],
+      // A body section never closed, after the funding section.
+      [
+        '<article><body><sec sec-type="funding"><sec><title>A</title><p>Grant A1.</p></sec><p>Grant C2.</p></sec><sec><p>Body text.</p></body></article>',
+      ],
+    ])(
+      "keeps a well-formed funding section whole when a section elsewhere is never closed, in %s (#263)",
+      (xml) => {
+        const sections = fundingSections(xml);
+        expect(sections.text).toEqual(["Grant A1.", "Grant C2."]);
+        expect(JSON.stringify(sections)).not.toContain("Body text");
+      },
+    );
+
     it("still keeps a funding section's subsections when every section tag balances", () => {
       expect(
         fundingSections(
@@ -547,6 +565,12 @@ describe("reading an element by its name", () => {
       "a",
       "b",
       "d",
+    ]);
+  });
+
+  it("reads a well-formed element whole when one after it is never closed", () => {
+    expect(elements("<fn>a<fn>b</fn>c</fn><fn>d", "fn")).toEqual([
+      "a<fn>b</fn>c",
     ]);
   });
 

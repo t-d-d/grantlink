@@ -63,20 +63,29 @@ function markup(xml: string): string {
 // Every element with this name, in the order its opening tags come, with the
 // attributes in its opening tag, where its content starts and where it ends.
 // JATS nests some elements, such as a paragraph in a list item in a
-// paragraph. If the name's tags balance, each element ends at the closing tag
-// that balances its opening tag, so the elements inside it are part of it
-// (#189). If they do not, which closing tag is missing cannot be told, and a
-// balanced reading could run an element on past where it ends, into text
-// outside it. So then no element holds another of its name: each ends at the
-// next opening or closing tag of its name, and one with none after it is
-// dropped, so a broken element never takes in the rest of the paper (#263).
-// A self-closing element is empty, and is neither a boundary nor ends one
-// (#195). Tags match in any case if caseless is set.
-function spans(
-  xml: string,
-  name: string,
-  caseless = false,
-): { index: number; tag: string; start: number; end: number }[] {
+// paragraph, so each element ends at the closing tag that balances its
+// opening tag, and the elements inside it are part of it (#189).
+//
+// An element whose tags do not balance is read with care, since which
+// closing tag is missing cannot be told (#263). Then its own closing tag,
+// or the closing tag of an element inside it, is missing, and balancing
+// would end it, and any element it sits in, at a later closing tag: in
+// another element after it, or in the one around it. So an element that is
+// never closed, and every element opened inside one, holds no element of
+// its name: it ends at the next opening or closing tag of its name, and one
+// with none after it is dropped, so a broken element never takes in the
+// rest of the paper. A missing closing tag elsewhere does not change how an
+// element is read, and nor does a closing tag too many, which only ends an
+// element sooner. A self-closing element is empty, and is neither a
+// boundary nor ends one (#195). Tags match in any case if caseless is set.
+interface Span {
+  index: number;
+  tag: string;
+  start: number;
+  end: number;
+}
+
+function spans(xml: string, name: string, caseless = false): Span[] {
   const tags = [
     ...xml.matchAll(
       new RegExp(
@@ -93,30 +102,45 @@ function spans(
       kind: rest.endsWith("/") ? "empty" : closing ? "close" : "open",
     };
   });
-  const found: { index: number; tag: string; start: number; end: number }[] =
-    [];
-  const open: { index: number; tag: string; start: number; end: number }[] = [];
-  let balanced = true;
-  for (const { kind, ...tag } of tags) {
+  // Where the next tag that is not self-closing starts, after each tag.
+  const next: number[] = [];
+  let after = -1;
+  for (let i = tags.length - 1; i >= 0; i -= 1) {
+    next[i] = after;
+    const tag = tags[i];
+    if (tag !== undefined && tag.kind !== "empty") after = tag.index;
+  }
+  const found: (Span & { parent: Span | undefined; next: number })[] = [];
+  const open: (typeof found)[number][] = [];
+  tags.forEach(({ kind, ...tag }, i) => {
     if (kind === "empty") {
-      found.push({ ...tag, end: tag.start });
+      found.push({ ...tag, end: tag.start, parent: undefined, next: -1 });
     } else if (kind === "open") {
-      const element = { ...tag, end: -1 };
+      const element = {
+        ...tag,
+        end: -1,
+        parent: open.at(-1),
+        next: next[i] ?? -1,
+      };
       found.push(element);
       open.push(element);
     } else {
       const element = open.pop();
-      if (element === undefined) balanced = false;
-      else element.end = tag.index;
+      if (element !== undefined) element.end = tag.index;
     }
-  }
-  if (balanced && open.length === 0) return found;
-  const bounds = tags.filter(({ kind }) => kind !== "empty");
-  return tags.flatMap(({ kind, ...tag }) => {
-    if (kind === "close") return [];
-    if (kind === "empty") return [{ ...tag, end: tag.start }];
-    const next = bounds.find(({ index }) => index > tag.index);
-    return [{ ...tag, end: next?.index ?? -1 }];
+  });
+  // An element is read with care if it is never closed, or if it was opened
+  // inside one read with care. A parent comes before its children.
+  const careful = new Set<number>();
+  return found.map(({ parent, next: boundary, ...span }) => {
+    if (
+      span.end === -1 ||
+      (parent !== undefined && careful.has(parent.index))
+    ) {
+      careful.add(span.index);
+      return { ...span, end: boundary };
+    }
+    return span;
   });
 }
 
@@ -282,11 +306,42 @@ export function isFundingSectionAt(xml: string, index: number): boolean {
 // own opening tag, so one nested in another section is found too.
 const FUNDING_SECTION = new RegExp(FUNDING_SECTION_START, "giu");
 
+// The tags no section runs across: those of the parts of an article, and of
+// an appendix. A section never closed in the body cannot reach a funding
+// section in the back matter (#263).
+const PART_TAG =
+  /<\/?(?:front|body|back|floats-group|app-group|app|sub-article|response)(?=[\s/>])[^>]*>/giu;
+
+// Every section in the XML, by where its opening tag starts. Each part is
+// balanced apart from the others.
+function sectionsOf(xml: string): Map<number, Span> {
+  const bounds = [
+    0,
+    ...[...xml.matchAll(PART_TAG)].map(({ index }) => index),
+    xml.length,
+  ];
+  const sections = new Map<number, Span>();
+  bounds.slice(1).forEach((to, i) => {
+    const from = bounds[i] ?? 0;
+    // Tags match in any case, as the pattern that finds the section does.
+    for (const { index, tag, start, end } of spans(
+      xml.slice(from, to),
+      "sec",
+      true,
+    )) {
+      sections.set(from + index, {
+        index: from + index,
+        tag,
+        start: from + start,
+        end: end === -1 ? -1 : from + end,
+      });
+    }
+  });
+  return sections;
+}
+
 function fundingBodySections(xml: string): string[] {
-  // Tags match in any case, as the pattern that finds the section does.
-  const sections = new Map(
-    spans(xml, "sec", true).map((section) => [section.index, section]),
-  );
+  const sections = sectionsOf(xml);
   return [...xml.matchAll(FUNDING_SECTION)].flatMap((match) => {
     const start = match.index + match[0].length;
     const end = sections.get(match.index)?.end ?? -1;
