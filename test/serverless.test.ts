@@ -315,6 +315,32 @@ describe("inline resources that change what a template, osls or an earlier inlin
     ]);
   });
 
+  it("finds a resource osls generates named as a template's parameter", () => {
+    expect(
+      unreadResources(known, TEMPLATES, {
+        ...stack,
+        parameters: {
+          ...stack.parameters,
+          ServerlessDeploymentBucket: ["Type"],
+        },
+      }),
+    ).toEqual([
+      "osls generates the resource ServerlessDeploymentBucket, which a template declares as a parameter",
+    ]);
+  });
+
+  it("names a resource that shares its name with a template's parameter and an inline one only once", () => {
+    expect(
+      unread([
+        ...known,
+        { Parameters: { CertificateArn: { Default: "a" } } },
+        { Resources: { CertificateArn: { Type: "T" } } },
+      ]),
+    ).toEqual([
+      "entry 3 declares the parameter CertificateArn, which entry 4 declares as a resource",
+    ]);
+  });
+
   it("passes an inline parameter that sets a template's default, as serverless.yml does", () => {
     expect(
       unread([...known, { Parameters: { CertificateArn: { Default: "a" } } }]),

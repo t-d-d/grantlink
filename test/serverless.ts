@@ -397,18 +397,17 @@ export function unreadResources(
       ? []
       : [`${at} declares the parameter ${id}, which ${by} as a resource`];
   });
-  // Nor may a resource, a template's or an inline entry's, share its name
-  // with a template's parameter (#359).
-  const templateParameterIds = Object.keys(elsewhere.parameters);
-  const resourceClashes = [
-    ...elsewhere.declared.map((id) => [id, "a template"] as const),
-    ...[...inlineResources],
-  ].flatMap(([id, by]): string[] =>
-    templateParameterIds.includes(id)
-      ? [
-          `${by} declares the resource ${id}, which a template declares as a parameter`,
-        ]
-      : [],
-  );
+  // Nor may any resource share its name with a template's parameter (#359).
+  // An inline entry that sets that parameter's Default is named above.
+  const resourceClashes = Object.keys(elsewhere.parameters)
+    .filter((id) => !inlineParameters.has(id))
+    .flatMap((id): string[] => {
+      const by = declarer(id, elsewhere.declared, byOsls, inlineResources);
+      return by === undefined
+        ? []
+        : [
+            `${by} the resource ${id}, which a template declares as a parameter`,
+          ];
+    });
   return [...head, ...rest, ...clashes, ...resourceClashes];
 }
