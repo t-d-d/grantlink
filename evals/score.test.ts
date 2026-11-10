@@ -108,6 +108,14 @@ describe("finding which linked grants a paper prints", () => {
     ["A2019", "<p>Grant 2019 from CRUK.</p>"],
     ["A2019", "<p>Recruited in 2019. Funded by grant A2019.</p>"],
     ["A1234", "<p>Recruited with grant 1234.</p>"],
+    // A year reads near any name the rules read for the funder (#520).
+    ["A2019", "<p>Funded by Cancer Research U.K. grant 2019.</p>"],
+    ["A2019", "<p>Funded by CR-UK grant 2019.</p>"],
+    // Indentation between tags does not push a year away from the name.
+    [
+      "A2019",
+      "<funding-source>\n                    <institution-wrap>\n                      <institution>Cancer Research UK</institution>\n                    </institution-wrap>\n                  </funding-source>\n                  <award-id>2019</award-id>",
+    ],
   ])("finds %s printed in %s", (grant, article) => {
     expect(printedGrants([grant], article)).toEqual([grant]);
   });
