@@ -214,6 +214,26 @@ describe("inline resources that change what a template or osls declares (#166)",
     },
   );
 
+  it("finds an inline entry that changes a resource or an output an earlier inline entry declares (#261)", () => {
+    expect(
+      unread([
+        ...known,
+        {
+          Resources: { FirstRunRole: { Type: "T" } },
+          Outputs: { FirstRunAt: { Value: "a" } },
+        },
+        { Parameters: { A: { Default: "x" } } },
+        {
+          Resources: { FirstRunRole: { Properties: {} } },
+          Outputs: { FirstRunAt: { Value: "b" } },
+        },
+      ]),
+    ).toEqual([
+      "entry 5 changes FirstRunRole, which entry 3 declares",
+      "entry 5 changes the output FirstRunAt, which entry 3 declares",
+    ]);
+  });
+
   it("passes a resource of its own, such as FirstRunRole", () => {
     expect(
       unread([...known, { Resources: { FirstRunRole: { Type: "T" } } }]),
