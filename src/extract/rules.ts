@@ -6,9 +6,9 @@ import funderFile from "./funder.json" with { type: "json" };
 // only, never the text around them, so nothing it returns can carry a name
 // (docs/constraints/personal-data.md).
 
-// Bump this whenever a pattern changes, so every stored result says which
-// rules made it.
-export const RULES_VERSION = "rules-5";
+// Bump this whenever a pattern, or which references the rules keep,
+// changes, so every stored result says which rules made it.
+export const RULES_VERSION = "rules-6";
 
 export const funder = z
   .object({
@@ -193,9 +193,10 @@ function confirmedNumber(id: string, text: readonly string[]): boolean {
   return text.some((paragraph) => alone.test(paragraph));
 }
 
-// Whether a reference already found gives this number, after a letter such
-// as its A or FC, or as the last part of a longer reference, so the number
-// alone would list it twice.
+// Whether another reference gives this number, after a letter such as its A
+// or FC, or as the last part of a longer reference, so the number alone
+// would list it twice. It is asked once every reference is found, so the
+// order of the award groups does not matter (#241).
 function alreadyFound(id: string, found: readonly Reference[]): boolean {
   const ending = new RegExp(`[A-Z/]${id}$`, "u");
   return found.some(({ normalised }) => ending.test(normalised));
@@ -203,6 +204,7 @@ function alreadyFound(id: string, found: readonly Reference[]): boolean {
 
 export function findReferences(sections: FundingSections): Reference[] {
   const found: Reference[] = [];
+  const bare: Reference[] = [];
   for (const paragraph of sections.text) {
     if (!funderName.test(paragraph)) continue;
     found.push(...scan(paragraph, "long"));
@@ -220,10 +222,13 @@ export function findReferences(sections: FundingSections): Reference[] {
       const trimmed = id.trim();
       if (shared || !confirmedNumber(trimmed, sections.text)) {
         found.push(...scan(trimmed, "all"));
-      } else if (!alreadyFound(trimmed, found)) {
-        found.push({ asWritten: trimmed, normalised: trimmed, format: "n" });
+      } else {
+        bare.push({ asWritten: trimmed, normalised: trimmed, format: "n" });
       }
     }
+  }
+  for (const reference of bare) {
+    if (!alreadyFound(reference.normalised, found)) found.push(reference);
   }
   const seen = new Set<string>();
   return found.filter((reference) => {
