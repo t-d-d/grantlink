@@ -213,7 +213,8 @@ function keyName(key: TSESTree.Node, computed: boolean): string | null {
 // no-closure-in-durable-operations, for a step helper's callbacks
 // (isStepHelperCallback with `walk: "any"`), and
 // no-non-deterministic-outside-step, for a clock or random source. A name
-// destructured with a default makes a walk inexact.
+// destructured with a default makes the import binding inexact (importOf),
+// though this walk stays exact.
 export interface AliasWalk {
   // The local the identifier names, then each local it aliases in turn.
   // The last is where the walk ended.
@@ -292,7 +293,8 @@ export function aliasDeclarator(variable: TSESLint.Scope.Variable): {
 }
 
 // What an import binding gives: a named import, or the whole module (name
-// null) for a namespace import. Exact as the walk that reached it is.
+// null) for a namespace import. Exact as the walk that reached it is, and
+// inexact when a name along the way is destructured with a default.
 export interface ImportBinding {
   module: string;
   name: string | null;
@@ -438,14 +440,12 @@ function aliasOf(
   ) {
     return null;
   }
+  const key = destructuredKey(id, name, "with-default");
+  if (key === null) return null;
+  const member = memberOf(importOf(init, resolver, seen, true), key);
   // A name with a default may hold the default instead, so it binds the
   // member only inexactly: a rule that asks for an exact walk refuses it.
-  const key = destructuredKey(id, name, "exact");
-  const withDefault = key === null;
-  const member = memberOf(
-    importOf(init, resolver, seen, true),
-    key ?? destructuredKey(id, name, "with-default"),
-  );
+  const withDefault = name.parent.type === AST_NODE_TYPES.AssignmentPattern;
   return member === null || !withDefault ? member : { ...member, exact: false };
 }
 
