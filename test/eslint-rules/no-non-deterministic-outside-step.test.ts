@@ -18,6 +18,12 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           }`,
         },
         {
+          name: "reads the clock inside askEuropePmc's read, which runs as its step",
+          code: `async function run(ctx: any) {
+            await askEuropePmc(ctx, "paper", "wait", r, async () => Date.now());
+          }`,
+        },
+        {
           name: "parses a fixed date",
           code: `const since = new Date("2020-01-01");`,
         },
@@ -51,6 +57,11 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
         {
           name: "reads the clock in a step's name, which the body evaluates",
           code: "async function run(ctx: any) { await ctx.step(`at-${Date.now()}`, async () => 1); }",
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "reads the clock in askEuropePmc's step name, which the body evaluates",
+          code: 'async function run(ctx: any) { await askEuropePmc(ctx, `at-${Date.now()}`, "wait", r, async () => 1); }',
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
         },
         {

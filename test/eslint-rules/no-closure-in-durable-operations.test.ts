@@ -19,10 +19,10 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
           }`,
       },
       {
-        name: "writes an outer variable from askEuropePmc's other arguments",
+        name: "writes an outer variable in askEuropePmc's step name, which the body evaluates",
         code: `async function run(ctx: any) {
-            let tries = 0;
-            await askEuropePmc(ctx, "paper", "wait", () => { tries += 1; return r; }, async () => readPaper());
+            let page = 0;
+            await askEuropePmc(ctx, \`search-\${String(page++)}\`, "wait", r, async () => readPaper());
           }`,
       },
     ],
@@ -35,6 +35,14 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
             read += 1;
             return readPaper();
           });
+        }`,
+        errors: [{ messageId: "closureVariableUsage" }],
+      },
+      {
+        name: "counts into an outer variable from askEuropePmc's retry, which runs inside its step",
+        code: `async function run(ctx: any) {
+          let tries = 0;
+          await askEuropePmc(ctx, "paper", "wait", () => { tries += 1; return r; }, async () => readPaper());
         }`,
         errors: [{ messageId: "closureVariableUsage" }],
       },

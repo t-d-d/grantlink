@@ -46,12 +46,14 @@ export const CHECKPOINTS_CALLBACK = new Set([
   "waitForCondition",
 ]);
 
-// Functions in src/run/ that run one of their arguments as a step, keyed by
-// name, with that argument's position. The rules treat a call to one as a
-// durable operation and that argument as a step's callback. They match the
-// bare name, so a caller imports it under that name.
-export const STEP_HELPERS: ReadonlyMap<string, number> = new Map([
-  ["askEuropePmc", 4],
+// Functions in src/run/ that take a context as their first argument and run
+// some of their other arguments inside a step, keyed by name, with those
+// arguments' positions. askEuropePmc runs `read` as its step and calls
+// `retry` from inside it. The rules treat a call to one as a durable
+// operation on that context and those arguments as a step's callback. They
+// match the bare name, so a caller imports it under that name.
+export const STEP_HELPERS: ReadonlyMap<string, readonly number[]> = new Map([
+  ["askEuropePmc", [3, 4]],
 ]);
 
 // A call `<name>(...)` to one of STEP_HELPERS.
@@ -65,21 +67,20 @@ export function isStepHelperCall(
   );
 }
 
-// True when `fn` is the argument a step helper runs as its step.
+// True when `fn` is an argument a step helper runs inside its step.
 export function isStepHelperCallback(
   call: TSESTree.Node,
   fn: TSESTree.Node,
 ): boolean {
-  return (
-    isStepHelperCall(call) &&
-    call.arguments[STEP_HELPERS.get(call.callee.name) ?? -1] === fn
-  );
+  if (!isStepHelperCall(call)) return false;
+  const positions = STEP_HELPERS.get(call.callee.name) ?? [];
+  return positions.some((at) => call.arguments[at] === fn);
 }
 
 // True when the node sits inside a function passed to an operation that
-// checkpoints its callback, or run by a step helper as its step. The operation's other arguments, such as the
-// step's name, are evaluated in the body on every replay, so they do not
-// count.
+// checkpoints its callback, or that a step helper runs inside its step.
+// The operation's other arguments, such as the step's name, are evaluated
+// in the body on every replay, so they do not count.
 export function insideCheckpointedCallback(
   node: TSESTree.Node,
   sourceCode: Readonly<TSESLint.SourceCode>,

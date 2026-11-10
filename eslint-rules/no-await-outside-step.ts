@@ -17,8 +17,8 @@ import {
 // 2. As an ancestor of an inner await: only the callback of an operation
 //    that checkpoints it as a unit (CHECKPOINTS_CALLBACK). A child context,
 //    parallel and map run their callbacks again on every replay, so an await
-//    inside one needs its own step. The argument a step helper runs as its
-//    step counts as a step's callback.
+//    inside one needs its own step. An argument a step helper runs inside
+//    its step counts as a step's callback.
 //
 // `for await` reads an async source on every pass, so it counts as an await.
 
