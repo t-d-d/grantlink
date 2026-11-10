@@ -166,9 +166,13 @@ jobs:
           AWS_SESSION_TOKEN: ${{ steps.assume.outputs.session }}
         run: scripts/eval-snapshot.sh .eval
 
+      # The runner scores the rules, then each model, through OpenRouter
+      # (#329). The eval's key has its own credit limit (#328), and only this
+      # step holds it.
       - name: Run the eval
         if: steps.cached.outputs.hit != 'true'
         env:
+          OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
           FINGERPRINT: ${{ steps.fingerprint.outputs.value }}
           COMMIT: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -29,12 +29,38 @@ describe("the eval workflow", () => {
 
   // The private bucket is grantlink-text-<account id>, built from the
   // account the role is in, as the app stack names it (#43).
-  it("reads nothing from GitHub but the eval role's ARN", () => {
-    const text = readRepoFile(".github/workflows/eval.yml");
-    const names = [...text.matchAll(/\b(secrets|vars)\.(\w+)/gu)].map(
-      ([, kind, name]) => `${kind ?? ""}.${name ?? ""}`,
+  // Besides the role, the eval reads one secret: its own model key, with
+  // its own credit limit (#328). The key's name is left unwritten here, as
+  // no test in the gate names a key (code-and-tests.md).
+  const secretNames = (text: string): string[] => [
+    ...new Set(
+      [...text.matchAll(/\b(secrets|vars)\.(\w+)/gu)].map(
+        ([, kind, name]) => `${kind ?? ""}.${name ?? ""}`,
+      ),
+    ),
+  ];
+  const ROLE = "secrets.AWS_EVAL_ROLE_ARN";
+
+  it("reads nothing from GitHub but the eval role's ARN and one model key", () => {
+    const names = secretNames(readRepoFile(".github/workflows/eval.yml"));
+    expect(names).toContain(ROLE);
+    const others = names.filter((name) => name !== ROLE);
+    expect(others).toHaveLength(1);
+    // The key is a secret, never a repository variable.
+    expect(others.every((name) => name.startsWith("secrets."))).toBe(true);
+  });
+
+  it("gives the model key to the eval's run alone, as an environment variable", () => {
+    const holders = steps.filter((step) =>
+      secretNames(JSON.stringify(step)).some((name) => name !== ROLE),
     );
-    expect([...new Set(names)]).toEqual(["secrets.AWS_EVAL_ROLE_ARN"]);
+    expect(holders.map((step) => step.name)).toEqual(["Run the eval"]);
+    const run = named("Run the eval");
+    expect(run?.run ?? "").not.toMatch(/secrets\./u);
+    const fromSecrets = Object.entries(run?.env ?? {}).filter(([, value]) =>
+      value.includes("secrets."),
+    );
+    expect(fromSecrets).toHaveLength(1);
   });
 
   it("builds the private bucket's name from the account it assumed the role in", () => {

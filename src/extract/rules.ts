@@ -174,7 +174,9 @@ const PATTERNS: Pattern[] = [
 
 const UNICODE_DASH = new RegExp(`[${DASHES}]`, "gu");
 
-function normalise(written: string): string {
+// The reference as one form, for counting and matching. The model module
+// calls it only after it has found the reference in the text as written.
+export function normalise(written: string): string {
   return written
     .replace(/\s+/gu, "")
     .replace(/[\\∖]/gu, "/")
