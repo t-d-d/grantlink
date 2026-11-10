@@ -15,6 +15,9 @@ describe("matching a reference to Europe PMC's grant id", () => {
     ["A56789", "56789"],
     ["CTRQQR-2021/100010", "CTRQQR-2021\\100010"],
     ["CTRQQR-2021/100010", "ctrqqr-2021 / 100010"],
+    ["A17196", "A17196/"],
+    ["17196", "A17196\\"],
+    ["PRCRPG-NOV21/100001", "PRCRPG-Nov21\\\\100001"],
   ])("%s matches %s", (found, expected) => {
     expect(sameGrant(found, expected)).toBe(true);
   });
@@ -45,6 +48,11 @@ describe("telling a CRUK reference from another linked id", () => {
     "CC2009",
     "CTRQQR-2021\\100010",
     "RRCOER-Jun24/100008",
+    "DRCPGM\\100015",
+    "EDDCPJT\\100018",
+    "A17196/",
+    "A21139\\",
+    "PRCRPG-Nov21\\\\100001",
     "CRUK-UCL-2023",
     "CRUK_Manchester",
   ])("takes %s", (id) => {
@@ -60,6 +68,9 @@ describe("telling a CRUK reference from another linked id", () => {
     "A1234567",
     "MR/T001234/1",
     "FC",
+    "SP2312/021",
+    "CTR-Q5-Y3",
+    "RG86786",
   ])("refuses %s", (id) => {
     expect(crukReference(id)).toBe(false);
   });
@@ -76,6 +87,8 @@ describe("finding which linked grants a paper prints", () => {
     ["CTRQQR-2021/100010", "<p>ctrqqr-2021 / 100010</p>"],
     ["A56789", "<award-id>A56789</award-id>"],
     ["A56789", "<p>grant A<italic>56789</italic></p>"],
+    ["A17196/", "<p>Funded by grant A17196.</p>"],
+    ["PRCRPG-Nov21\\\\100001", "<p>PRCRPG-Nov21\\100001</p>"],
   ])("finds %s printed in %s", (grant, article) => {
     expect(printedGrants([grant], article)).toEqual([grant]);
   });
