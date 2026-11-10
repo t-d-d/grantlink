@@ -161,6 +161,9 @@ describe("the rules", () => {
     ["Katakana", "グラントはCRUKファンド (A12345)."],
     ["Katakana with its long vowel mark", "データーCRUKー (A12345)."],
     ["Thai", "งานนี้ได้รับทุนจากCRUKครับ (A12345)."],
+    ["Lao", "ທຶນCRUKໄດ້ (A12345)."],
+    ["Khmer", "ថវិកាCRUKបាន (A12345)."],
+    ["Myanmar", "ငွေCRUKက (A12345)."],
   ])("reads an A number when %s letters touch the name", (_, text) => {
     expect(findReferences(sections(text))).toEqual([
       { asWritten: "A12345", normalised: "A12345", format: "An" },
