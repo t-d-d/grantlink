@@ -76,13 +76,18 @@ describe("reading a page's footer", () => {
     expect(footerOf(`<a href="mailto:${CONTACT}">Write</a>`)).toBe("");
   });
 
-  it("reads the page's footer, not an earlier one inside an article", () => {
+  it("reads the page's footer after an article's own footer", () => {
     const html = `<main><article><p>Paper</p><footer>Card</footer></article></main><footer><a href="mailto:${CONTACT}">Write</a></footer>`;
     expect(footerOf(html)).toContain(`mailto:${CONTACT}`);
   });
 
   it("ignores a footer that is commented out", () => {
     const html = `<!-- <footer><a href="mailto:${CONTACT}">Write</a></footer> --><footer>Notice</footer>`;
+    expect(footerOf(html)).not.toContain(`mailto:${CONTACT}`);
+  });
+
+  it("leaves out an address in an element whose name only starts with footer", () => {
+    const html = `<footer-note><a href="mailto:${CONTACT}">Write</a></footer-note><footer>Notice</footer>`;
     expect(footerOf(html)).not.toContain(`mailto:${CONTACT}`);
   });
 

@@ -23,15 +23,16 @@ export function textOf(html: string): string {
     .trim();
 }
 
-// The markup inside the page's footer, or "" when it has none. The notice
-// and the address for corrections belong there (independence.md), and the
-// line under the headline (#588) repeats the notice, so a check reads the
-// footer alone. An article may have a footer of its own, so the page's
-// footer is the last one, and a commented-out footer does not count.
+// The markup of the page's <footer> elements, where the notice belongs
+// (independence.md), or "" when the page has none. A footer in a comment
+// or a script is not one the reader sees, so it does not count.
 export function footerOf(html: string): string {
-  const live = html.replace(/<!--[\s\S]*?-->/gu, "");
-  const footers = [...live.matchAll(/<footer\b[^>]*>([\s\S]*?)<\/footer>/giu)];
-  return footers.at(-1)?.[1] ?? "";
+  const shown = html
+    .replace(/<!--[\s\S]*?-->/gu, " ")
+    .replace(/<(script|style)\b[\s\S]*?<\/\1>/giu, " ");
+  return [...shown.matchAll(/<footer(?=[\s/>])[^>]*>([\s\S]*?)<\/footer>/giu)]
+    .map(([, inner = ""]) => inner)
+    .join(" ");
 }
 
 // Every URL the page makes the browser fetch by itself: scripts, styles,
