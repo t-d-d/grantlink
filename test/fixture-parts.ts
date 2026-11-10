@@ -31,7 +31,9 @@
 
 import {
   FUNDING_FOOTNOTE,
+  FUNDING_FOOTNOTE_TYPES,
   FUNDING_METADATA,
+  FUNDING_SECTION_TYPE,
   isFundingSection as isFundingSectionElement,
 } from "../src/europepmc/jats.ts";
 import { parseXml, type XmlElement } from "../src/europepmc/xml.ts";
@@ -88,14 +90,15 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
 };
 
 // The XML's elements as a tree, under a root with no name, read through the
-// parser the cutter reads with (#343). The check reads the tree as parsed,
-// before the cutter's care with tags that do not balance, so nothing the
-// cutter would drop from a broken element is hidden from it. Declarations
-// are dropped. CDATA and comments count as text, since a comment can hold a
-// cut part kept by mistake. So does what a processing instruction holds
-// after its target, other than the XML declaration's before the root, and
-// what one holds that never ends with ?>, which the parser reads as text
-// (#303).
+// parser the cutter reads with (#343), in any case as the cutter reads it, so
+// a closing tag ends the same element for both (#415). The check reads the
+// tree as parsed, before the cutter's care with tags that do not balance, so
+// nothing the cutter would drop from a broken element is hidden from it.
+// Declarations are dropped. CDATA and comments count as text, since a
+// comment can hold a cut part kept by mistake. So does what a processing
+// instruction holds after its target, other than the XML declaration's
+// before the root, and what one holds that never ends with ?>, which the
+// parser reads as text (#303).
 function parse(xml: string): Element {
   const convert = (node: XmlElement, root: boolean): Element => {
     const element: Element = {
@@ -134,7 +137,7 @@ function parse(xml: string): Element {
     }
     return element;
   };
-  return convert(parseXml(xml), true);
+  return convert(parseXml(xml, { anyCase: true }), true);
 }
 
 // What a funding part may hold: its paragraphs, which the cutter reads, and
@@ -149,7 +152,7 @@ function parse(xml: string): Element {
 // people (#222), is named with the rest (#215). So is one in the
 // acknowledgements, and a section inside them is named whole, with any
 // <sec-meta> it holds, though the cutter now drops every <sec-meta> it reads
-// (#229).
+// (#229). One inside a paragraph is named too, at any depth (#416).
 const PART_CHILDREN = ["p", "title", "label"];
 
 const hasText = (element: Element): boolean =>
@@ -231,9 +234,9 @@ const ATTRIBUTES = new Map<string, (value: string) => boolean>(
     "institution-id-type": oneOf("DOI", "FundRef", "ROR", "Ringgold", "ISNI"),
     id: (value) => ID.test(value),
     rid: (value) => value.split(/\s+/u).every((id) => ID.test(id)),
-    // As the cutter reads them, in src/europepmc/jats.ts.
-    "sec-type": (value) => /^(?:funding|ack|acknowledge?ments?)$/iu.test(value),
-    "fn-type": oneOf("financial-disclosure", "funding", "supported-by"),
+    // As the cutter reads them, taken from src/europepmc/jats.ts (#417).
+    "sec-type": (value) => FUNDING_SECTION_TYPE.test(value),
+    "fn-type": oneOf(...FUNDING_FOOTNOTE_TYPES),
   }),
 );
 
@@ -247,15 +250,29 @@ function strayAttributes(element: Element, path: string): string[] {
   ];
 }
 
-// The same for the element and everything inside it.
-function strayAttributesWithin(element: Element, path: string): string[] {
+// The same for the element and everything inside it, but an element the
+// test picks out, at any depth, is named whole.
+function strayAttributesWithin(
+  element: Element,
+  path: string,
+  whole: (child: Element) => boolean = () => false,
+): string[] {
   return [
     ...strayAttributes(element, path),
-    ...element.children.flatMap((child) =>
-      strayAttributesWithin(child, `${path}/${child.name}`),
-    ),
+    ...element.children.flatMap((child) => {
+      const childPath = `${path}/${child.name}`;
+      return whole(child)
+        ? [childPath]
+        : strayAttributesWithin(child, childPath, whole);
+    }),
   ];
 }
+
+// The cutter drops every <sec-meta> in a part, in any case, wherever it
+// stands, so what one inside a paragraph holds is kept without being read.
+// It is named whole (#416).
+const isSecMeta = (element: Element): boolean =>
+  element.name.toLowerCase() === "sec-meta";
 
 function strayInPart(part: Element, path: string): string[] {
   const paragraphs = part.children.some(
@@ -269,7 +286,7 @@ function strayInPart(part: Element, path: string): string[] {
       if (!PART_CHILDREN.includes(child.name)) return [childPath];
       // A heading's children are named whole by strayInHeadings.
       return child.name === "p"
-        ? strayAttributesWithin(child, childPath)
+        ? strayAttributesWithin(child, childPath, isSecMeta)
         : strayAttributes(child, childPath);
     }),
     ...strayInHeadings(part, path),

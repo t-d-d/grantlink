@@ -208,8 +208,9 @@ function keyName(key: TSESTree.Node, computed: boolean): string | null {
 // stepHelperOf by default, since it gives a step helper's callbacks a step's
 // allowances, and no-step-helper-re-export when it lets a module export its
 // own helper. Where it only makes a rule refuse, an inexact walk counts too:
-// no-step-helper-re-export's refusals, and no-nested-durable-operations, for
-// a context and for a step helper (stepHelperOf with `walk: "any"`).
+// no-step-helper-re-export's refusals, no-nested-durable-operations, for
+// a context and for a step helper (stepHelperOf with `walk: "any"`), and
+// no-non-deterministic-outside-step, for a clock or random source.
 export interface AliasWalk {
   // The local the identifier names, then each local it aliases in turn.
   // The last is where the walk ended.
@@ -272,7 +273,7 @@ export function walkAliases(
 
 // The declarator a local is an alias through, under the policy above, and
 // the name it declares there.
-function aliasDeclarator(variable: TSESLint.Scope.Variable): {
+export function aliasDeclarator(variable: TSESLint.Scope.Variable): {
   declarator: TSESTree.VariableDeclarator;
   name: TSESTree.Identifier;
 } | null {
@@ -433,15 +434,31 @@ function aliasOf(
   ) {
     return null;
   }
-  const property = id.properties.find(
+  const key = destructuredKey(id, name, "exact");
+  if (key === null) return null;
+  return memberOf(importOf(init, resolver, seen, true), key);
+}
+
+// The constant key an object pattern destructures `name` from, at its top
+// level: `{ now }` or `{ now: at }`. A name with a default, `{ now = f }`,
+// may not hold what it reads, so only `with-default` counts it, for a rule
+// that only refuses. Null for a computed key that is not a constant.
+export function destructuredKey(
+  pattern: TSESTree.ObjectPattern,
+  name: TSESTree.Identifier,
+  defaults: "exact" | "with-default",
+): string | null {
+  const property = pattern.properties.find(
     (p): p is TSESTree.Property =>
-      p.type === AST_NODE_TYPES.Property && p.value === name,
+      p.type === AST_NODE_TYPES.Property &&
+      (p.value === name ||
+        (defaults === "with-default" &&
+          p.value.type === AST_NODE_TYPES.AssignmentPattern &&
+          p.value.left === name)),
   );
-  if (property === undefined) return null;
-  return memberOf(
-    importOf(init, resolver, seen, true),
-    keyName(property.key, property.computed),
-  );
+  return property === undefined
+    ? null
+    : keyName(property.key, property.computed);
 }
 
 // The named import a member of a namespace import gives.

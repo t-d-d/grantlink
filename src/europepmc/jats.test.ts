@@ -597,6 +597,14 @@ describe("cutting a paper to its funding sections", () => {
       '<sec sec-type="funding"><title>Funding</title><sec><sec-meta><contrib-group><contrib><bio><p>Authorname.</p></bio></contrib></contrib-group></sec-meta><title>Thanks</title><p>Grant A1.</p></sec></sec>',
     ],
     ["<ack><sec><sec-meta/><title>Thanks</title><p>Grant A1.</p></sec></ack>"],
+    // Inside a paragraph, at any depth and in any case (#416).
+    ["<ack><p>Grant A1.<sec-meta><bio>Authorname.</bio></sec-meta></p></ack>"],
+    [
+      '<sec sec-type="funding"><p>Grant A1.<bold><italic><sec-meta>Authorname.</sec-meta></italic></bold></p></sec>',
+    ],
+    [
+      '<fn-group><fn fn-type="funding"><p>Grant A1.<SEC-META>Authorname.</SEC-META></p></fn></fn-group>',
+    ],
   ])("keeps no text from a sec-meta inside a funding part, in %s", (part) => {
     const sections = fundingSections(`<article><back>${part}</back></article>`);
     expect(sections.text).toEqual(["Grant A1."]);
