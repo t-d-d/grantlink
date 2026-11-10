@@ -2,11 +2,17 @@ import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import { TSESLint } from "@typescript-eslint/utils";
 import type { TSESTree } from "@typescript-eslint/utils";
 import {
+  aliasDeclarator,
   createRule,
+  destructuredKey,
+  exportedName,
   insideCheckpointedCallback,
   lookup,
+  memberName,
   unwrapped,
+  walkAliases,
 } from "./create-rule.ts";
+import type { Resolver } from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
 //
@@ -30,69 +36,156 @@ const NON_DETERMINISTIC: Readonly<Record<string, ReadonlySet<string>>> = {
   ]),
 };
 
-// The read a member names, such as `Date.now`, and the identifier it reads
-// it from. The object is read through unwrapped, so `(Date as any).now()`,
-// `Math!.random()` and `(crypto satisfies Crypto).randomUUID()` count too.
-function memberOp(
-  node: TSESTree.MemberExpression,
-): { op: string; object: TSESTree.Identifier } | undefined {
-  if (node.computed) return undefined;
-  const object = unwrapped(node.object);
-  if (object.type !== AST_NODE_TYPES.Identifier) return undefined;
-  if (node.property.type !== AST_NODE_TYPES.Identifier) return undefined;
-  const allowed = NON_DETERMINISTIC[object.name];
-  return allowed?.has(node.property.name) === true
-    ? { op: `${object.name}.${node.property.name}`, object }
-    : undefined;
-}
-
-// The Node modules that export the same reads under the global's name, so
-// `import crypto from "node:crypto"` or `import { performance } from
-// "node:perf_hooks"` binds the source the rule refuses, not a stand-in.
-const SAME_SOURCE: Readonly<Record<string, ReadonlySet<string>>> = {
-  crypto: new Set(["crypto", "node:crypto"]),
-  performance: new Set(["perf_hooks", "node:perf_hooks"]),
+// The global path a module's import stands for: its default or namespace
+// import is the module itself, and a named import is a member of it.
+const MODULES: Readonly<Record<string, readonly string[]>> = {
+  crypto: ["crypto"],
+  perf_hooks: ["perf_hooks"],
 };
 
-// True when the identifier names a value the file declares in place of the
-// global, such as a parameter or a class called `Math`. A global the config
-// declares has no definition in the file. A type, an interface, an ambient
-// `declare` and a type-only import declare no value, and an import from a
-// module in SAME_SOURCE is the same source, so none of them shadows it.
-function declaredLocally(
-  identifier: TSESTree.Identifier,
-  sourceCode: Readonly<TSESLint.SourceCode>,
-): boolean {
-  const variable = lookup(identifier.name, sourceCode.getScope(identifier));
-  return variable?.defs.some((def) => shadows(identifier.name, def)) ?? false;
+// The names a path may start with that stand for the global object.
+const GLOBAL_OBJECT = new Set(["globalThis", "global"]);
+
+// A path read the way the code would read it from the globals, such as
+// `globalThis.Date`, `perf_hooks.performance` or `crypto.webcrypto`,
+// written the way NON_DETERMINISTIC keys it.
+function normalised(path: readonly string[]): readonly string[] {
+  let rest = path;
+  while (rest.length > 1 && GLOBAL_OBJECT.has(rest[0] ?? "")) {
+    rest = rest.slice(1);
+  }
+  if (rest[0] === "perf_hooks" && rest[1] === "performance") {
+    rest = rest.slice(1);
+  }
+  if (rest[0] === "crypto" && rest[1] === "webcrypto") {
+    rest = ["crypto", ...rest.slice(2)];
+  }
+  return rest;
 }
 
-function shadows(name: string, def: TSESLint.Scope.Definition): boolean {
+// True when a declaration is ambient, `declare const performance: ...` or
+// a `var` in `declare global { ... }`: it names a global, not a local.
+function ambient(node: TSESTree.Node): boolean {
+  for (let n: TSESTree.Node | undefined = node; n; n = n.parent) {
+    if (
+      (n.type === AST_NODE_TYPES.VariableDeclaration ||
+        n.type === AST_NODE_TYPES.TSModuleDeclaration ||
+        n.type === AST_NODE_TYPES.ClassDeclaration ||
+        n.type === AST_NODE_TYPES.TSDeclareFunction) &&
+      n.declare
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// True when a definition declares a value in place of the global of the
+// same name. A type, an interface, an ambient declaration and a type-only
+// import declare no value, so a name with only those still reads the
+// global.
+function declaresValue(def: TSESLint.Scope.Definition): boolean {
   switch (def.type) {
     case TSESLint.Scope.DefinitionType.Type:
     case TSESLint.Scope.DefinitionType.ImplicitGlobalVariable:
       return false;
-    case TSESLint.Scope.DefinitionType.ImportBinding: {
-      const declaration = def.parent;
-      if (declaration.type !== AST_NODE_TYPES.ImportDeclaration) return true;
-      if (declaration.importKind === "type") return false;
-      if (
-        def.node.type === AST_NODE_TYPES.ImportSpecifier &&
-        def.node.importKind === "type"
-      ) {
-        return false;
-      }
-      return !(SAME_SOURCE[name]?.has(declaration.source.value) ?? false);
-    }
-    case TSESLint.Scope.DefinitionType.Variable:
-      return !def.parent.declare;
-    case TSESLint.Scope.DefinitionType.ClassName:
-    case TSESLint.Scope.DefinitionType.FunctionName:
-    case TSESLint.Scope.DefinitionType.TSModuleName:
-      return !("declare" in def.node && def.node.declare);
+    case TSESLint.Scope.DefinitionType.ImportBinding:
+      return !(
+        (def.parent.type === AST_NODE_TYPES.ImportDeclaration &&
+          def.parent.importKind === "type") ||
+        (def.node.type === AST_NODE_TYPES.ImportSpecifier &&
+          def.node.importKind === "type")
+      );
     default:
-      return true;
+      return !ambient(def.node);
   }
+}
+
+// The global path an expression reads, through the wrappers unwrapped takes
+// off: a global name, a member of one under any constant key, a local alias
+// of either, or an import from a module MODULES names. Null for anything
+// else, such as a parameter or a local function. An alias's later write does
+// not stop the walk, since a path here only makes the rule refuse.
+function pathOf(
+  node: TSESTree.Node,
+  resolver: Resolver,
+  seen: ReadonlySet<TSESLint.Scope.Variable>,
+): readonly string[] | null {
+  const value = unwrapped(node);
+  if (value.type === AST_NODE_TYPES.Identifier) {
+    return identifierPath(value, resolver, seen);
+  }
+  if (value.type !== AST_NODE_TYPES.MemberExpression) return null;
+  const name = memberName(value);
+  if (name === null) return null;
+  const object = pathOf(value.object, resolver, seen);
+  return object === null ? null : normalised([...object, name]);
+}
+
+function identifierPath(
+  identifier: TSESTree.Identifier,
+  resolver: Resolver,
+  seen: ReadonlySet<TSESLint.Scope.Variable>,
+): readonly string[] | null {
+  const walk = walkAliases(identifier, resolver);
+  if (walk === null) {
+    // An implicit global, or a chain that loops back on itself.
+    const declared = lookup(
+      identifier.name,
+      resolver.sourceCode.getScope(identifier),
+    );
+    return declared === null ? [identifier.name] : null;
+  }
+  const end = walk.chain.at(-1);
+  if (end === undefined || seen.has(end)) return null;
+  // A global the scope manager knows, such as one from a lib or a config,
+  // or a name the file declares only as a type or ambiently.
+  if (!end.defs.some(declaresValue)) return [end.name];
+  const next = new Set([...seen, end]);
+  const alias = aliasDeclarator(end);
+  if (alias !== null) {
+    const { declarator, name } = alias;
+    if (declarator.init === null) return null;
+    const init = pathOf(declarator.init, resolver, next);
+    if (declarator.id === name || init === null) return init;
+    // A name destructured at the top of an object pattern, `{ now } = Date`,
+    // with or without a default.
+    if (declarator.id.type !== AST_NODE_TYPES.ObjectPattern) return null;
+    const key = destructuredKey(declarator.id, name, "with-default");
+    return key === null ? null : normalised([...init, key]);
+  }
+  const def = end.defs[0];
+  if (def?.parent?.type !== AST_NODE_TYPES.ImportDeclaration) return null;
+  const module = MODULES[def.parent.source.value.replace(/^node:/, "")];
+  if (module === undefined) return null;
+  if (def.node.type === AST_NODE_TYPES.ImportSpecifier) {
+    return normalised([...module, exportedName(def.node.imported)]);
+  }
+  return module;
+}
+
+// The clock or random source a path names, such as `Date.now`.
+function opOf(path: readonly string[] | null): string | undefined {
+  if (path?.length !== 2) return undefined;
+  const [object = "", property = ""] = path;
+  return NON_DETERMINISTIC[object]?.has(property) === true
+    ? `${object}.${property}`
+    : undefined;
+}
+
+// True when the identifier is read as a value, rather than declared, used
+// as a property's name, named in a type, `typeof randomUUID`, or passed on
+// by an export, `export { randomUUID }`.
+function isRead(identifier: TSESTree.Identifier, resolver: Resolver): boolean {
+  if (
+    identifier.parent.type === AST_NODE_TYPES.TSTypeQuery ||
+    identifier.parent.type === AST_NODE_TYPES.ExportSpecifier
+  ) {
+    return false;
+  }
+  return resolver.sourceCode
+    .getScope(identifier)
+    .references.some((ref) => ref.identifier === identifier && ref.isRead());
 }
 
 // True when the node is the function a call calls, read through the
@@ -133,34 +226,37 @@ export const noNonDeterministicOutsideStep = createRule({
         data: { op },
       });
     };
-    const isGlobalDate = (callee: TSESTree.Node): boolean => {
-      const name = unwrapped(callee);
-      return (
-        name.type === AST_NODE_TYPES.Identifier &&
-        name.name === "Date" &&
-        !declaredLocally(name, context.sourceCode)
-      );
+    // A call reports through its callee, so `Date.now()` and a bare
+    // `Math.random` passed as a value each report once.
+    const check = (node: TSESTree.Node, path: readonly string[] | null) => {
+      const op = opOf(path);
+      if (op === undefined) return;
+      report(node, calledThrough(node) ? `${op}()` : op);
+    };
+    const isDate = (callee: TSESTree.Node): boolean => {
+      const path = pathOf(callee, context, new Set());
+      return path?.length === 1 && path[0] === "Date";
     };
     return {
-      // The callee is read through unwrapped too, so `new (Date as any)()`,
-      // `new Date!()` and `(Date as any)()` count. `Date()` without `new`
-      // returns the current time as a string, so it reads the clock too.
       NewExpression(node) {
-        if (node.arguments.length === 0 && isGlobalDate(node.callee)) {
+        if (node.arguments.length === 0 && isDate(node.callee)) {
           report(node, "new Date()");
         }
       },
+      // `Date()` without `new` returns the current time as a string, so it
+      // reads the clock as `new Date()` does, with or without arguments.
       CallExpression(node) {
-        if (isGlobalDate(node.callee)) report(node, "Date()");
+        if (isDate(node.callee)) report(node, "Date()");
       },
-      // A call reports through its callee, so `Date.now()` and a bare
-      // `Math.random` passed as a value each report once. A local that
-      // shadows the global, such as a parameter named `Math`, is not read.
       MemberExpression(node) {
-        const read = memberOp(node);
-        if (read === undefined) return;
-        if (declaredLocally(read.object, context.sourceCode)) return;
-        report(node, calledThrough(node) ? `${read.op}()` : read.op);
+        check(node, pathOf(node, context, new Set()));
+      },
+      // A named import, or an alias of a member, read on its own, such as
+      // `randomUUID()` after `import { randomUUID } from "node:crypto"`.
+      Identifier(node) {
+        const path = pathOf(node, context, new Set());
+        if (opOf(path) === undefined || !isRead(node, context)) return;
+        check(node, path);
       },
     };
   },
