@@ -88,6 +88,31 @@ describe.each(roles)("$title", ({ workflow, job, role, callers, bucket }) => {
     }
   });
 
+  // The OIDC token is masked before the step hands it to STS, so no line
+  // that could print it comes first.
+  it("are traded for an OIDC token masked first", () => {
+    const run = assume?.run ?? "";
+    const mask = run.indexOf('::add-mask::$token"');
+    expect(mask).toBeGreaterThan(-1);
+    expect(mask).toBeLessThan(run.indexOf("assume-role-with-web-identity"));
+  });
+
+  // The private bucket is grantlink-text-<account id>, as the app stack
+  // names it (#43). The id is masked before the name is built from it or
+  // written where a later step could print it.
+  it("leave the bucket's name, if any, until the account is masked", () => {
+    const run = assume?.run ?? "";
+    const built = run.indexOf('echo "bucket=grantlink-text-$account"');
+    if (bucket === undefined) {
+      expect(built).toBe(-1);
+      return;
+    }
+    const mask = run.indexOf('::add-mask::$account"');
+    expect(mask).toBeGreaterThan(-1);
+    expect(built).toBeGreaterThan(mask);
+    expect(run.indexOf("GITHUB_OUTPUT", built)).toBeGreaterThan(built);
+  });
+
   it("go only to the steps that call AWS", () => {
     expect(given.map((step) => step.name)).toEqual(callers);
   });

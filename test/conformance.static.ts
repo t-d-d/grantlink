@@ -117,25 +117,9 @@ describe("the run reads the funding text bucket", () => {
     expect(assumed).toBeLessThan(at(/^npm run conformance/u));
   });
 
-  // The bucket's name carries the account id, so the id is masked before
-  // the name is built. test/role-credentials.static.ts holds that the mask
-  // comes before the step writes its outputs.
-  it("masks the account id, then builds the bucket's name from it", () => {
+  // test/role-credentials.static.ts checks the masks and the bucket's name.
+  it("stops on the first error and never traces the shell", () => {
     const run = assume?.run ?? "";
-    const mask = run.indexOf('::add-mask::$account"');
-    const bucket = run.indexOf('echo "bucket=grantlink-text-$account"');
-    expect(mask).toBeGreaterThan(-1);
-    expect(bucket).toBeGreaterThan(mask);
-    expect(run.indexOf("GITHUB_OUTPUT", bucket)).toBeGreaterThan(bucket);
-  });
-
-  it("masks the token and the credentials, and never traces the shell", () => {
-    const run = assume?.run ?? "";
-    for (const name of ["token", "key", "secret", "session"]) {
-      expect(run, name).toMatch(
-        new RegExp(String.raw`::add-mask::\$${name}\b`, "u"),
-      );
-    }
     expect(run).toMatch(/^set -euo pipefail$/mu);
     expect(text).not.toMatch(/\bset -x\b/u);
   });

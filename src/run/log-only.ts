@@ -7,7 +7,8 @@ import { storeRetry } from "./retry.ts";
 // Runs `log` as the step `step`, retried under the store's strategy, and
 // carries on when the step still fails. A step that only writes a log line
 // never ends the run, so a lost line never stops the run publishing or
-// waiting out a wait a refusal left owed (#380). The step's failure is
+// waiting out a wait a refusal left owed (#380), and never decides how
+// gold set A's search ends (#370). The step's failure is
 // checkpointed, so a replay takes the same path. An error the SDK raises
 // for itself is not a failed step, and is thrown as it is. Its only await
 // is the step itself, so a caller's await of it is replay-safe. The durable
