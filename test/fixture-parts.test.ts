@@ -410,6 +410,11 @@ describe("strayParts", () => {
       `${GROUP}/funding-statement (text)`,
     ],
     [
+      "a comment holding text in a funding source",
+      "<award-group><funding-source>X<!-- A --></funding-source></award-group>",
+      `${GROUP}/award-group/funding-source (text)`,
+    ],
+    [
       "a comment holding text in an award id",
       "<award-group><award-id>A2<!-- A --></award-id></award-group>",
       `${GROUP}/award-group/award-id (text)`,

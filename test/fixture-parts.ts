@@ -12,14 +12,15 @@
 // (#215). Inside the funding metadata it names anything the cutter does not
 // read: a funding group may hold its funding statements and award groups,
 // and an award group its funding sources and award ids, so a principal award
-// recipient or investigator, which names people, is named (#275). Two
-// differences stay, where the check is stricter than the
-// cutter. The cutter finds a funding section nested in another section,
-// but the check refuses the outer section, whose other parts can carry
-// names: a recording keeps only the funding section, moved up into the body
-// or the back. And in a part with no paragraphs the cutter reads the whole
-// text, but the check names any element there other than a label, a title
-// or an empty paragraph.
+// recipient or investigator, which names people, is named (#275). Three
+// differences stay, where the check is stricter than the cutter. The cutter
+// finds a funding section nested in another section, but the check refuses
+// the outer section, whose other parts can carry names: a recording keeps
+// only the funding section, moved up into the body or the back. In a part
+// with no paragraphs the cutter reads the whole text, but the check names
+// any element there other than a label, a title or an empty paragraph. And
+// the cutter finds a funding statement, funding source or award id at any
+// depth in its group, but the check names one anywhere but its own place.
 
 import { FUNDING_FOOTNOTE, isFundingSectionAt } from "../src/europepmc/jats.ts";
 
