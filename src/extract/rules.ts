@@ -371,9 +371,7 @@ export const hasReferenceShape = (reference: string): boolean =>
   READ_SHAPE.test(reference);
 
 const READ_WHOLE = SHAPES.flatMap(({ shape, modelShape, readWhole }) =>
-  readWhole === true
-    ? [new RegExp(`^(?:${modelShape ?? shape})$`, "u")]
-    : [],
+  readWhole === true ? [new RegExp(`^(?:${modelShape ?? shape})$`, "u")] : [],
 );
 
 // Whether a paragraph gives a reference as written whole, between the edges
