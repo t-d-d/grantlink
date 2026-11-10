@@ -54,9 +54,10 @@ const BATCH = 50;
 
 // Takes a batch of gold papers, first waiting out any wait an earlier
 // refusal left `owed`, as a run's batch does. A gold set B batch stops at
-// its first paper that fails or is not kept, since the snapshot is lost
-// then and asking Europe PMC about the rest would be wasted, and names that
-// paper in `stopped`.
+// its first paper that fails, since the snapshot is lost then and asking
+// Europe PMC about the rest would be wasted, and names that paper in
+// `stopped`. A gold set B paper is always kept once read (#399), so one
+// that is not kept is a fault, and stops the batch the same way.
 async function takeBatch(
   ctx: DurableContext,
   deps: Deps,

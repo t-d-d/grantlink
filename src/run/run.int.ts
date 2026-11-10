@@ -1119,7 +1119,7 @@ describe("the eval snapshot (evals.md)", () => {
       expect(snapshotFailedFields()).toEqual({ reason: "malformed-search" });
     });
 
-    it("ends with Europe PMC's refusal, not a failure, when it refuses the search", async () => {
+    it("ends with Europe PMC's refusal, not the step's error, when it refuses the search", async () => {
       failToLog("snapshot-search-ended");
       const fake = fakeDeps({
         goldSearch: () => reply("", 429, { "Retry-After": "300" }),
