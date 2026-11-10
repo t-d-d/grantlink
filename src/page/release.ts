@@ -38,8 +38,9 @@ export type Release = z.infer<typeof release>;
 // run is read (docs/constraints/durable-execution.md).
 export const liveRelease = z.object({ deployRunUrl });
 
-// The id of the GitHub Actions run that deployed a release. GitHub numbers
-// runs in the order they start, so a later deploy has a higher id.
+// The id of the GitHub Actions run that deployed a release. A run compares
+// its own release's id with the live record's for equality only, to tell
+// whether the live page is its own release's.
 export function deployRun(record: { deployRunUrl: string }): number {
   const id = DEPLOY_RUN.exec(record.deployRunUrl)?.[1];
   if (id === undefined) throw new Error("not a deploy run URL");
