@@ -1,8 +1,12 @@
-import type { DurableContext } from "@aws/durable-execution-sdk-js";
+import {
+  DurableOperationError,
+  type DurableContext,
+} from "@aws/durable-execution-sdk-js";
 import {
   checkWholeSearch,
   logGoldSearchEnded,
   type Deps,
+  type KnownSnapshotFailure,
 } from "../pipeline/steps.ts";
 import {
   sample,
@@ -25,6 +29,15 @@ import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 export type SnapshotSummary =
   | { taken: true; papers: number; manifestSha256: string }
   | { taken: false; reason: string };
+
+// Throws `reason` in place of a durable operation's failure, whose message
+// a store's or Europe PMC's client wrote, so the run logs the reason alone
+// (docs/constraints/personal-data.md, #285). An error the SDK raises for
+// itself, which is not an operation's failure, is thrown as it is.
+function failedAs(reason: KnownSnapshotFailure, error: unknown): never {
+  if (error instanceof DurableOperationError) throw new Error(reason);
+  throw error;
+}
 
 // Gold papers per child context, each ending with a short wait, as a run's
 // batches do.
@@ -85,11 +98,14 @@ export async function takeSnapshot(
   runId: string,
   owed: Owed,
 ): Promise<{ snapshot: SnapshotSummary; owed: Owed }> {
-  const done = await ctx.step(
-    "snapshot-check",
-    async () => snapshotTaken(deps),
-    { retryStrategy: storeRetry },
-  );
+  let done: boolean;
+  try {
+    done = await ctx.step("snapshot-check", async () => snapshotTaken(deps), {
+      retryStrategy: storeRetry,
+    });
+  } catch (error) {
+    failedAs("store-failed", error);
+  }
   if (done)
     return { snapshot: { taken: false, reason: "already taken" }, owed };
   let due = owed;
@@ -107,14 +123,19 @@ export async function takeSnapshot(
       if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
       due = null;
       const name = `snapshot-search-${String(page)}`;
-      // eslint-disable-next-line grantlink/no-await-outside-step -- askEuropePmc's only await is its step
-      const asked = await askEuropePmc(
-        ctx,
-        name,
-        `${name}-wait`,
-        europePmcRetry,
-        async () => searchGoldA(deps, from),
-      );
+      let asked: Asked<Awaited<ReturnType<typeof searchGoldA>>>;
+      try {
+        // eslint-disable-next-line grantlink/no-await-outside-step -- askEuropePmc's only await is its step
+        asked = await askEuropePmc(
+          ctx,
+          name,
+          `${name}-wait`,
+          europePmcRetry,
+          async () => searchGoldA(deps, from),
+        );
+      } catch (error) {
+        failedAs("search-failed", error);
+      }
       // A refused search loses the snapshot for this run, and leaves the
       // wait Europe PMC asked for owed, which the run waits out before it
       // ends (#236).
@@ -143,7 +164,11 @@ export async function takeSnapshot(
       },
       { retryStrategy: storeRetry },
     );
-    checkWholeSearch(found.length, skipped);
+    try {
+      checkWholeSearch(found.length, skipped);
+    } catch {
+      throw new Error("malformed-search" satisfies KnownSnapshotFailure);
+    }
     candidates = sample(found, goldA.seed);
   }
 
@@ -207,6 +232,6 @@ export async function takeSnapshot(
     };
   } catch (error) {
     if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
-    throw error;
+    failedAs("store-failed", error);
   }
 }
