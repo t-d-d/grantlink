@@ -101,14 +101,15 @@ export type Taken =
 // prints none of them, or one with no funding text or awards, is passed
 // over, and its sample walks on to the next. A kept gold set A paper's
 // answers are the linked grants its whole article prints, less its
-// reference list, not only its funding sections, so a cutter that dropped
-// text cannot shrink the answers with it (#502, #503), each grant once
-// (#508). A funder registry id is never an answer. A gold set B paper is
-// always kept, even with empty sections, since its label is scored against
-// what the rules find in it, which may be nothing (#399). A gold set A
-// paper's grants are read first, so a paper with none costs no full text. A
-// grant id the manifest cannot hold, such as one with a space, is left out,
-// or the manifest would refuse the whole snapshot.
+// reference list and the metadata in its front matter, not only its
+// funding sections, so a cutter that dropped text cannot shrink the
+// answers with it (#502, #503, #555), each grant once (#508). A funder
+// registry id is never an answer. A gold set B paper is always kept, even
+// with empty sections, since its label is scored against what the rules
+// find in it, which may be nothing (#399). A gold set A paper's grants are
+// read first, so a paper with none costs no full text. A grant id the
+// manifest cannot hold, such as one with a space, is left out, or the
+// manifest would refuse the whole snapshot.
 export async function snapshotPaper(
   deps: Deps,
   pmcid: string,
