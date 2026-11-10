@@ -7,6 +7,7 @@ import {
   FUNDING_FOOTNOTE,
   fundingSections,
   isFundingSectionAt,
+  isSecMetaName,
   normaliseTitle,
 } from "./jats.ts";
 
@@ -708,6 +709,19 @@ describe("reading an element by its name", () => {
       "y",
     ]);
   });
+});
+
+describe("naming a sec-meta (#472)", () => {
+  it.each(["sec-meta", "SEC-META", "Sec-Meta"])("names %s", (name) => {
+    expect(isSecMetaName(name)).toBe(true);
+  });
+
+  it.each(["sec", "meta", "sec-metadata", "x-sec-meta", ""])(
+    "does not name %j",
+    (name) => {
+      expect(isSecMetaName(name)).toBe(false);
+    },
+  );
 });
 
 describe("reading an element by an attribute (#217)", () => {
