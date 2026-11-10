@@ -56,7 +56,10 @@ const DASH = String.raw`[-\u2010-\u2015]`;
 // so only the name's own letters ever become any-case classes (#271). The
 // any-case form matches in any case without the `i` flag, for a pattern
 // whose own letters must keep their case.
-export function namesPattern(names: string[], anyCase: boolean): string {
+export function namesPattern(
+  names: readonly string[],
+  anyCase: boolean,
+): string {
   const char = (c: string) => {
     if (c === "-") return DASH;
     if (anyCase && /[A-Za-z]/u.test(c)) {
