@@ -22,9 +22,11 @@ import type { Resolver } from "./create-rule.ts";
 // child context, parallel and map replay their callbacks, and a step's name
 // is evaluated in the body, so none of those count as inside. The rule
 // reports at each read and does not follow calls. A call, `Date.now()`,
-// reports once, at its callee. An alias of a method, `const now =
-// Date.now`, reports where it is declared, since that reads the method, and
-// again at each call, `now()`. An alias of `Date` itself, `const D = Date`,
+// reports once, at its callee, and `Date()` and `new Date()` report once,
+// at the call. An alias of a method, `const now = Date.now`, reports where
+// it is declared, since that reads the method, and again at each call,
+// `now()`. A method destructured from its object, `const { now } = Date`,
+// reports only at each call. An alias of `Date` itself, `const D = Date`,
 // reports only where it is used, `D()` or `ids.map(D)`, unless it is
 // exported, `export const D = Date`. Then it also reports where it is
 // declared, so `D()` in the same module gives a second report.
