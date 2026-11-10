@@ -9,7 +9,11 @@ import {
   TEMPLATES,
 } from "./app.ts";
 import { readTemplate, resource } from "./cfn.ts";
-import { strayVariablesIn, unreadResources } from "./serverless.ts";
+import {
+  mergeKeysIn,
+  strayVariablesIn,
+  unreadResources,
+} from "./serverless.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The app stack runs serverless in London, its own account's only
@@ -77,6 +81,16 @@ describe("serverless.yml merges only what the static checks read", () => {
   // entry, so a template may use no variable but the cf and env ones.
   it.each(TEMPLATES)("finds no stray variable in %s", (path) => {
     expect(strayVariablesIn(readTemplate(path))).toEqual([]);
+  });
+
+  // osls applies a YAML merge key, which the static checks read as an
+  // ordinary key, so none of these files may hold one (#242).
+  it("finds no merge key in serverless.yml", () => {
+    expect(mergeKeysIn(serverless)).toEqual([]);
+  });
+
+  it.each(TEMPLATES)("finds no merge key in %s", (path) => {
+    expect(mergeKeysIn(readTemplate(path))).toEqual([]);
   });
 });
 
