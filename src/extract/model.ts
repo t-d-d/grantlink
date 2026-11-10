@@ -4,7 +4,7 @@ import {
   hasReferenceShape,
   normalise,
   referenceSchema,
-  wholeReference,
+  readsWhole,
 } from "./rules.ts";
 import { latest, type Version } from "./versions.ts";
 
@@ -37,6 +37,8 @@ export const PROMPT_VERSIONS: readonly Version[] = [
   { number: 4, issue: 467 },
   { number: 5, issue: 492 },
   { number: 6, issue: 510 },
+  { number: 7, issue: 567 },
+  { number: 8, issue: 561 },
 ];
 export const PROMPT_VERSION = latest("prompt", PROMPT_VERSIONS);
 
@@ -187,10 +189,10 @@ const plainSpaces = (text: string) => text.replace(/\s/gu, " ");
 // run of letters and digits, as "A5678" is out of "A56789". Its edges are
 // the rules' own, read a whole code point at a time, so the two passes agree
 // on combining marks, underscores, letters outside the Basic Multilingual
-// Plane and numbers that are not decimal digits (#339, #369, #384).
+// Plane and numbers that are not decimal digits (#339, #369, #384). A bare
+// number is not the front of a longer one, as 12345 is of 12345/2 (#567).
 function givesWhole(text: readonly string[], reference: string): boolean {
-  const whole = wholeReference(reference);
-  return text.some((paragraph) => whole.test(paragraph));
+  return text.some((paragraph) => readsWhole(paragraph, reference));
 }
 
 // Keeps a reference only if the text gives it whole as written, it is made

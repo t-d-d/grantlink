@@ -664,6 +664,70 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.rejected).toBe(written.length);
   });
 
+  it("rejects a piece of a CRUK- form the text goes on past, as the rules read none (#561)", async () => {
+    // The rules read each of these forms whole, so a reply that stops
+    // before another part of it is refused. The text is made up.
+    const { fetch } = fakeOpenRouter(
+      answer(
+        ["CRUK/12", "CRUK/AB12", "CRUK-12"].map((asWritten) => ({
+          asWritten,
+          confidence: 0.9,
+        })),
+      ),
+    );
+    const result = await proposeReferences(
+      [
+        "Funded by CRUK (CRUK/12/2019).",
+        "Funded by CRUK (CRUK/AB12/SMITH/2).",
+        "Funded by CRUK (CRUK-12-AB).",
+      ],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(3);
+  });
+
+  it("rejects the back of a CRUK- form whose prefix the rules read with it (#561)", async () => {
+    // The text is made up.
+    const { fetch } = fakeOpenRouter(
+      answer([{ asWritten: "CRUK-12", confidence: 0.9 }]),
+    );
+    const result = await proposeReferences(["Funded by CRUK (ABC-CRUK-12)."], {
+      model: haiku,
+      key: "k",
+      fetch,
+    });
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(1);
+  });
+
+  it("keeps a CRUK- form just where the rules read it, at their limits too (#561)", async () => {
+    // What follows is no part the rules read: a part in lower case, a part
+    // too long, or a fifth part. The text is made up.
+    const written = [
+      "CRUK/12/034",
+      "CRUK-12",
+      "CRUK/34",
+      "CRUK/56",
+      "CRUK/1/2/3/4",
+    ];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(
+      [
+        "Funded by CRUK (CRUK/12/034; CRUK-12, CRUK/34/abc).",
+        "Funded by CRUK (CRUK/56/ABCDEFGHIJ, CRUK/1/2/3/4/5).",
+      ],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(written);
+    expect(result.status === "read" && result.rejected).toBe(0);
+  });
+
   it("keeps a bare number of five to seven digits, with or without a suffix of two digits (#492)", async () => {
     // The rules leave a number tied to the funder only by name to the model
     // (#177). The text is made up.
@@ -694,6 +758,67 @@ describe("fitness: no invented references (model-calls.md)", () => {
     );
     expect(result.status === "read" && result.references).toEqual([]);
     expect(result.status === "read" && result.rejected).toBe(written.length);
+  });
+
+  it("rejects a bare number the text goes on past, as the rules read none (#567)", async () => {
+    // The rules refuse a number followed by a separator, a hyphen and a
+    // digit, or a decimal point and a digit, so a reply cut from the front
+    // of one is refused too. The text is made up.
+    const { fetch } = fakeOpenRouter(
+      answer(
+        ["123456", "234567", "34567", "456789", "567890-01"].map(
+          (asWritten) => ({ asWritten, confidence: 0.9 }),
+        ),
+      ),
+    );
+    const result = await proposeReferences(
+      [
+        "Funded by CRUK (123456/2).",
+        "Funded by CRUK grant 234567-789.",
+        "Funded by CRUK grant 34567.6.",
+        "Funded by CRUK (456789-01).",
+        "Funded by CRUK (567890-01/2).",
+      ],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(5);
+  });
+
+  it("rejects a four-digit bare number the text goes on past, as the rules read none (#567)", async () => {
+    // The rules read a bare number of four digits too, so its reply is
+    // held to the same after. The text is made up.
+    const { fetch } = fakeOpenRouter(
+      answer([{ asWritten: "1234", confidence: 0.9 }]),
+    );
+    const result = await proposeReferences(
+      ["Funded by CRUK award number 1234/5."],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(1);
+  });
+
+  it("keeps a bare number the text ends, or follows with a comma or a full stop (#567)", async () => {
+    // The text is made up.
+    const written = ["123456", "234567", "345678", "456789-01"];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(
+      [
+        "Funded by CRUK grant 123456",
+        "Funded by CRUK grant 234567, and others.",
+        "Funded by CRUK grant 345678. Thanks to all.",
+        "Funded by CRUK (456789-01).",
+      ],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(written);
+    expect(result.status === "read" && result.rejected).toBe(0);
   });
 });
 

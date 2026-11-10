@@ -137,14 +137,12 @@ const WORD = String.raw`[\p{L}\p{M}\p{Nd}_]`;
 const START = `(?<!${WORD})`;
 const END = `(?!${WORD})`;
 
-// A reference as written, between the edges above. The model pass checks
-// its references with this, so the two passes cannot draw a reference's
-// edges differently (#384).
-export const wholeReference = (reference: string): RegExp =>
-  new RegExp(`${START}${escape(reference)}${END}`, "u");
-
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
+
+// What may not follow a bare number, so it is not the start of a longer
+// one, as in 12345/2, 12345-67 or 1234.5.
+const NUMBER_AFTER = String.raw`(?!${SEP}|${DASH}\d|\.\d)`;
 
 interface Shape {
   format: string | ((match: RegExpMatchArray) => string);
@@ -157,6 +155,11 @@ interface Shape {
   // What must come before and after it in the text, beyond its edges.
   before?: string;
   after?: string;
+  // Whether the model pass keeps a reply of this shape only where the
+  // rules' own pattern reads that reply, and no more or less, in the text.
+  // A form with a prefix and up to four parts may run on past a reply, as
+  // CRUK/12/2019 does past CRUK/12 (#561).
+  readWhole?: true;
   // A short number such as an A number is common, so it counts only in a
   // sentence that names the funder.
   sentenceOnly: boolean;
@@ -229,6 +232,7 @@ const SHAPES: readonly Shape[] = [
     format: "CRUK-X",
     shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:${CRUK_SEP}${NOT_YEAR}(?=[A-Z0-9]*\d)[A-Z0-9]{1,8}){0,3}${CRUK_SEP}${NOT_YEAR}[A-Z0-9]{1,8}(?<=CRUK[A-Z0-9/${DASHES}-]*\d[A-Z0-9/${DASHES}-]*)`,
     after: `(?!${CRUK_SEP}[A-Z0-9])`,
+    readWhole: true,
     sentenceOnly: false,
   },
   {
@@ -294,7 +298,7 @@ const SHAPES: readonly Shape[] = [
     format: "n",
     shape: String.raw`(?!(?:19|20)\d{2}(?!\d))\d{4,6}`,
     before: String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})(?!${EDGE})(?:\s?\(\s?|(?!\s*${JOINED_NAME})(?:(?!${ANOTHER_FUNDER})[^;,.]){0,100}?${TIE_WORD}))`,
-    after: String.raw`(?!${SEP}|${DASH}\d|\.\d)`,
+    after: NUMBER_AFTER,
     sentenceOnly: true,
   },
 ];
@@ -312,6 +316,18 @@ const PATTERNS = SHAPES.map(
 // hyphen, as in "123456-01" (#97, #177).
 const BARE = String.raw`\d{5,7}`;
 const BARE_SUFFIX = String.raw`${DASH}\d{2}`;
+// Any bare number a reply may be, of the n shape's four digits or of BARE's
+// five to seven, with or without its suffix.
+const BARE_REPLY = new RegExp(String.raw`^\d+(?:${BARE_SUFFIX})?$`, "u");
+
+// A reference as written, between the edges above. A bare number of any
+// length counts only where the text does not go on past it, as the rules
+// read one (#567).
+const wholeReference = (reference: string): RegExp =>
+  new RegExp(
+    `${START}${escape(reference)}${END}${BARE_REPLY.test(reference) ? NUMBER_AFTER : ""}`,
+    "u",
+  );
 
 // Whether a reference, as written with plain spaces, is a shape the rules
 // read, in capitals but for a month in a code, or a bare number with an
@@ -324,6 +340,38 @@ const READ_SHAPE = new RegExp(
 );
 export const hasReferenceShape = (reference: string): boolean =>
   READ_SHAPE.test(reference);
+
+const READ_WHOLE = SHAPES.flatMap(
+  ({ shape, modelShape, before, after, readWhole }) =>
+    readWhole === true
+      ? [
+          {
+            shape: new RegExp(`^(?:${modelShape ?? shape})$`, "u"),
+            pattern: new RegExp(
+              `${before ?? START}${shape}${END}${after ?? ""}`,
+              "gu",
+            ),
+          },
+        ]
+      : [],
+);
+
+// Whether a paragraph gives a reference as written whole, between the edges
+// above. The model pass checks its references with this, so the two passes
+// cannot draw a reference's edges differently (#384). A reference of a shape
+// the rules read whole, such as a CRUK- form, counts only where the rules'
+// pattern reads just that reference (#561). Any other counts between the
+// edges above, as wholeReference reads it.
+export function readsWhole(paragraph: string, reference: string): boolean {
+  const whole = READ_WHOLE.find(({ shape }) => shape.test(reference));
+  if (whole !== undefined) {
+    return Array.from(
+      paragraph.matchAll(whole.pattern),
+      ([match]) => match,
+    ).includes(reference);
+  }
+  return wholeReference(reference).test(paragraph);
+}
 
 const UNICODE_DASH = new RegExp(`[${DASHES}]`, "gu");
 
