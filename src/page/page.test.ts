@@ -215,19 +215,43 @@ describe("fitness: the page shows only titles, links and references (no-republis
     expect(() => foundSchema.parse(extra)).toThrow();
   });
 
-  it("shows each paper in one row of title, references, normalised references and status (#587)", () => {
+  it("shows each paper in one row of title, references and status (#587)", () => {
     const html = renderFound(found);
     const table =
       /<table class="references">([\s\S]*?)<\/table>/u.exec(html)?.[1] ?? "";
     const bodyRows = [...table.matchAll(/<tr>([\s\S]*?)<\/tr>/gu)].slice(1);
     expect(bodyRows).toHaveLength(2);
     for (const [, cells = ""] of bodyRows) {
-      expect(cells.match(/<td\b/gu)).toHaveLength(4);
+      expect(cells.match(/<td\b/gu)).toHaveLength(3);
     }
     const first = bodyRows[0]?.[1] ?? "";
     expect(first).toContain("Title of PMC1");
-    expect(first).toContain(">C1234/A56789<br>A 28707</td>");
     expect(first).toContain(">C1234/A56789<br>A28707</td>");
+  });
+
+  // The page shows each reference in its normal form, as gold set B stores
+  // it. found.json and the table keep the text the paper printed (#606).
+  it("shows each reference in its normal form, not as the paper spaced it (#606)", () => {
+    const spaced = [
+      { asWritten: "C18281 /A19169", normalised: "C18281/A19169" },
+      { asWritten: "C1287/A 10710", normalised: "C1287/A10710" },
+      { asWritten: "C45074 / A26553", normalised: "C45074/A26553" },
+      { asWritten: "CTRQQR-2021\\100012", normalised: "CTRQQR-2021/100012" },
+      { asWritten: "PPRPGM-Nov20∖100002", normalised: "PPRPGM-NOV20/100002" },
+      { asWritten: "C1234\u2212A5", normalised: "C1234-A5" },
+    ].map((reference) => ({ ...reference, format: "Cn/An" }));
+    const published = summarise([done("PMC9", spaced)], run);
+    expect(published.papers[0]?.references.map((r) => r.asWritten)).toEqual(
+      spaced.map((r) => r.asWritten),
+    );
+    const html = renderFound(published);
+    expect(html).toContain(
+      `>${spaced.map((r) => r.normalised).join("<br>")}</td>`,
+    );
+    for (const { asWritten } of spaced) {
+      expect(html).not.toContain(asWritten);
+    }
+    expect(html).not.toContain("as written");
   });
 });
 
@@ -288,6 +312,52 @@ describe("rendering the page", () => {
     expect(html).toContain(
       "&lt;script&gt;&quot;x&quot;&lt;/script&gt; &amp; y",
     );
+  });
+
+  describe("a title with inline markup (#606)", () => {
+    const shown = (title: string) =>
+      /<a href="[^"]*">([\s\S]*?)<\/a>/u.exec(
+        renderFound(summarise([{ ...done("PMC9", [ca]), title }], run)),
+      )?.[1];
+
+    it("shows sup, sub, i and b as formatting, not as text", () => {
+      expect(shown("[<sup>18</sup>F]fluoromethyl and H<sub>2</sub>O")).toBe(
+        "[<sup>18</sup>F]fluoromethyl and H<sub>2</sub>O",
+      );
+      expect(shown("<i>BRCA1</i> in <b>mice</b>")).toBe(
+        "<i>BRCA1</i> in <b>mice</b>",
+      );
+      expect(shown("<I>Upper</I> case")).toBe("<i>Upper</i> case");
+    });
+
+    it("nests the tags it shows, and closes any left open", () => {
+      expect(shown("<i>a <sup>b</sup> c</i>")).toBe("<i>a <sup>b</sup> c</i>");
+      expect(shown("<i>open <b>both")).toBe("<i>open <b>both</b></i>");
+      expect(shown("<i>a <b>b</i> c</b>")).toBe("<i>a <b>b</b></i> c");
+    });
+
+    it("drops a closing tag with nothing open, rather than show it", () => {
+      expect(shown("a</sup> b")).toBe("a b");
+    });
+
+    it("escapes any other markup, and a tag that carries attributes", () => {
+      expect(shown('<sup onclick="x">1</sup>')).toBe(
+        "&lt;sup onclick=&quot;x&quot;&gt;1",
+      );
+      expect(shown("<script>alert(1)</script> <a>b</a>")).toBe(
+        "&lt;script&gt;alert(1)&lt;/script&gt; &lt;a&gt;b&lt;/a&gt;",
+      );
+      expect(shown("<sup>a & b</sup> <5 > 3")).toBe(
+        "<sup>a &amp; b</sup> &lt;5 &gt; 3",
+      );
+    });
+
+    it("shows the markup the same way in the list of papers not yet read", () => {
+      const html = renderFound(
+        summarise([row("PMC8", { title: "H<sub>2</sub>O" })], run),
+      );
+      expect(html).toContain(">H<sub>2</sub>O</a></li>");
+    });
   });
 
   it("counts the papers as a gap in linking, not a failure (#588)", () => {

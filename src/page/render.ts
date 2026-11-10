@@ -23,12 +23,50 @@ const escape = (text: string) =>
 
 type Reference = Found["papers"][number]["references"][number];
 
+// Europe PMC's titles may carry a little inline markup, such as the
+// <sup>18</sup> of [18F] (#606). Those few tags are shown as formatting,
+// when they carry no attribute, and everything else in a title is escaped.
+// A tag is shown only inside its pair: one left open is closed at the end of
+// the title, and a closing tag with nothing open is dropped, so a title's
+// markup never reaches past the title.
+const INLINE = /<(\/?)(sup|sub|i|b)>/giu;
+
+const titleHtml = (title: string) => {
+  const open: string[] = [];
+  let html = "";
+  let from = 0;
+  for (const match of title.matchAll(INLINE)) {
+    html += escape(title.slice(from, match.index));
+    from = match.index + match[0].length;
+    const tag = (match[2] ?? "").toLowerCase();
+    if (match[1] === "") {
+      open.push(tag);
+      html += `<${tag}>`;
+    } else if (open.includes(tag)) {
+      // Closing an outer tag closes any opened inside it first.
+      let closed: string | undefined;
+      while ((closed = open.pop()) !== undefined) {
+        html += `</${closed}>`;
+        if (closed === tag) break;
+      }
+    }
+  }
+  html += escape(title.slice(from));
+  return (
+    html +
+    open
+      .reverse()
+      .map((tag) => `</${tag}>`)
+      .join("")
+  );
+};
+
 const number = (n: number) => n.toLocaleString("en-GB");
 
 const paperLink = (paper: { pmcid: string; title: string }) =>
-  `<a href="https://europepmc.org/article/PMC/${escape(paper.pmcid)}">${escape(
-    paper.title === "" ? paper.pmcid : paper.title,
-  )}</a>`;
+  `<a href="https://europepmc.org/article/PMC/${escape(paper.pmcid)}">${
+    paper.title === "" ? escape(paper.pmcid) : titleHtml(paper.title)
+  }</a>`;
 
 const DATE = new Intl.DateTimeFormat("en-GB", {
   day: "numeric",
@@ -52,16 +90,17 @@ export function renderFound(found: Found): string {
   // One row per paper, so a paper with two references is listed once
   // (#587). Each cell holds one line per reference, in the same order, and
   // each reference keeps its own status (accuracy.md). A paper with no
-  // reference has no link to show, so it gets no row.
+  // reference has no link to show, so it gets no row. A reference is shown
+  // in its normal form, as gold set B stores it, with no stray space and the
+  // usual slash and hyphen. found.json keeps it as the paper printed it
+  // (#606).
   const rows = found.papers
     .filter((paper) => paper.references.length > 0)
     .map((paper) => {
       const lines = (text: (reference: Reference) => string) =>
         paper.references.map(text).join("<br>");
       return `<tr><td class="paper">${paperLink(paper)}</td><td class="ref">${lines(
-        (reference) => escape(reference.asWritten),
-      )}</td><td class="ref">${lines((reference) =>
-        escape(reference.normalised),
+        (reference) => escape(reference.normalised),
       )}</td><td class="status">${lines(() => "Proposed by software")}</td></tr>`;
     });
   const formats = found.formats.map(
@@ -90,7 +129,7 @@ ${cards.map(([n, label]) => `          <p class="card stat"><span class="value">
         </p>
         <div class="table-scroll">
           <table class="references">
-            <tr><th scope="col">Paper</th><th scope="col">Reference as written</th><th scope="col">Normalised</th><th scope="col">Status</th></tr>
+            <tr><th scope="col">Paper</th><th scope="col">Grant reference</th><th scope="col">Status</th></tr>
             ${rows.join("\n            ")}
           </table>
         </div>
