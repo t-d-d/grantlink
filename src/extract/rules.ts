@@ -14,13 +14,20 @@ import { latest, type Version } from "./versions.ts";
 export const RULES_VERSIONS: readonly Version[] = [
   { number: 10, issue: 368 },
   { number: 11, issue: 506 },
+  { number: 12, issue: 510 },
 ];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
 export const funder = z
   .object({
     name: z.string().min(1),
+    // The names the search, the prompt and the rules all read.
     names: z.array(z.string().min(1)).min(1),
+    // Names the search and the prompt leave out: too common as words to
+    // widen the search with, but plain enough in a paragraph that names a
+    // grant (#510). Whatever reads namesFunder reads them too, such as the
+    // JATS check for a funding footnote and gold set B's draw.
+    rulesOnlyNames: z.array(z.string().min(1)),
     europePmcAgency: z.string().min(1),
     since: z.iso.date(),
   })
@@ -97,8 +104,9 @@ export function namesPattern(
   return names.map((name) => Array.from(name, char).join("")).join("|");
 }
 
-const NAMES = namesPattern(funder.names, false);
-const ANY_CASE_NAMES = namesPattern(funder.names, true);
+const RULES_NAMES = [...funder.names, ...funder.rulesOnlyNames];
+const NAMES = namesPattern(RULES_NAMES, false);
+const ANY_CASE_NAMES = namesPattern(RULES_NAMES, true);
 // Any letter, not only A to Z, makes a name part of a longer word (#320),
 // and so does a combining mark, which belongs to the letter before it. A
 // lookbehind, not a negated class, keeps the case-insensitive match from
