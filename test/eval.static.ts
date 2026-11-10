@@ -66,10 +66,10 @@ describe("the eval workflow", () => {
   it("builds the private bucket's name from the account it assumed the role in", () => {
     const assume = steps[at(/assume-role-with-web-identity/u)]?.run ?? "";
     const mask = assume.indexOf('::add-mask::$account"');
-    const bucket = assume.indexOf('echo "BUCKET=grantlink-text-$account"');
+    const bucket = assume.indexOf('echo "bucket=grantlink-text-$account"');
     expect(mask).toBeGreaterThan(-1);
     expect(bucket).toBeGreaterThan(mask);
-    expect(assume.indexOf("GITHUB_ENV", bucket)).toBeGreaterThan(bucket);
+    expect(assume.indexOf("GITHUB_OUTPUT", bucket)).toBeGreaterThan(bucket);
     expect(readRepoFile("scripts/eval-snapshot.sh")).not.toContain(
       "PRIVATE_BUCKET_NAME",
     );
@@ -248,7 +248,7 @@ describe("the gate and the comment", () => {
     const assume = named("Assume the eval role")?.run ?? "";
     const mask = assume.search(/::add-mask::\$account\b/u);
     expect(mask).toBeGreaterThan(-1);
-    expect(mask).toBeLessThan(assume.indexOf("GITHUB_ENV"));
+    expect(mask).toBeLessThan(assume.indexOf("GITHUB_OUTPUT"));
   });
 });
 

@@ -6,7 +6,8 @@
 // must fail too when the STS reply lacks a field, where `jq -r` would print
 // `null` and succeed (#122). All three role steps are covered (#188). The
 // eval and conformance role steps stop before the network when their
-// secret is unset (#250).
+// secret is unset (#250). Each role step hands its credentials on as step
+// outputs, so only the steps that call AWS hold them (#259, #308).
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -458,36 +459,29 @@ describe.each([
     title: "the eval's role step",
     run: evalRole,
     extra: [`grantlink-text-${account}`],
-    to: "env",
   },
   {
     title: "the deploy's role step",
     run: script(deploy, "deploy", "Assume the deploy role"),
     extra: [],
-    // The deploy hands its credentials to the steps that call AWS as
-    // step outputs, so no other step holds them (#259).
-    to: "output",
   },
   // #188: the third copy of the step, which had neither fix.
   {
     title: "the conformance run's role step",
     run: conformanceRole,
     extra: [`grantlink-text-${account}`],
-    to: "env",
   },
-] as const)("$title", ({ run, extra, to }) => {
-  // Where the step writes the credentials, and where it must write none.
-  const written = (result: { env: string; output: string }) => result[to];
-  const other = (result: { env: string; output: string }) =>
-    to === "env" ? result.output : result.env;
+] as const)("$title", ({ run, extra }) => {
+  // Each step writes the credentials to its outputs, and nothing to
+  // $GITHUB_ENV, where every later step would hold them (#259, #308).
 
   // The values only: no test in the gate names the variables that hold a
   // key (code-and-tests.md), and the static tests read the names.
   it("writes the credentials STS gave it", () => {
     const result = assumeRole(run, stsReply());
     expect(result.status).toBe(0);
-    expect(other(result)).toBe("");
-    const values = written(result)
+    expect(result.env).toBe("");
+    const values = result.output
       .trimEnd()
       .split("\n")
       .map((line) => line.slice(line.indexOf("=") + 1));
@@ -502,8 +496,8 @@ describe.each([
   it.each(missingFields)("fails when the reply has no %s", (field) => {
     const result = assumeRole(run, stsReply(field));
     expect(result.status).not.toBe(0);
-    expect(written(result)).toBe("");
-    expect(other(result)).toBe("");
+    expect(result.output).toBe("");
+    expect(result.env).toBe("");
   });
 
   // #160: jq -e fails on a missing field, but says nothing on its own.
@@ -523,8 +517,8 @@ describe.each([
     (field, path) => {
       const result = assumeRole(run, stsReply(undefined, field));
       expect(result.status).not.toBe(0);
-      expect(written(result)).toBe("");
-      expect(other(result)).toBe("");
+      expect(result.output).toBe("");
+      expect(result.env).toBe("");
       expect(result.stderr).toMatch(namesPath(path));
     },
   );
@@ -541,8 +535,8 @@ describe.each([
     (_, oidc) => {
       const result = assumeRole(run, stsReply(), oidc);
       expect(result.status).not.toBe(0);
-      expect(written(result)).toBe("");
-      expect(other(result)).toBe("");
+      expect(result.output).toBe("");
+      expect(result.env).toBe("");
       expect(result.stderr).not.toContain("aws-called");
       expect(result.stderr).toMatch(/^::error::.*\.value\b/mu);
     },

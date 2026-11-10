@@ -122,11 +122,11 @@ describe("the run reads the funding text bucket", () => {
   it("masks the account id, then builds the bucket's name from it", () => {
     const run = assume?.run ?? "";
     const mask = run.search(/::add-mask::\$account\b/u);
-    const bucket = run.indexOf('echo "TEXT_BUCKET=grantlink-text-$account"');
+    const bucket = run.indexOf('echo "bucket=grantlink-text-$account"');
     expect(mask).toBeGreaterThan(-1);
-    expect(mask).toBeLessThan(run.indexOf("GITHUB_ENV"));
+    expect(mask).toBeLessThan(run.indexOf("GITHUB_OUTPUT"));
     expect(bucket).toBeGreaterThan(mask);
-    expect(run.indexOf("GITHUB_ENV", bucket)).toBeGreaterThan(bucket);
+    expect(run.indexOf("GITHUB_OUTPUT", bucket)).toBeGreaterThan(bucket);
   });
 
   it("masks the token and the credentials, and never traces the shell", () => {
