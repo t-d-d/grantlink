@@ -46,6 +46,14 @@ const MODULES: Readonly<Record<string, readonly string[]>> = {
 // The names a path may start with that stand for the global object.
 const GLOBAL_OBJECT = new Set(["globalThis", "global"]);
 
+// The objects that hold a clock or random source, such as `Math`,
+// `crypto`, `perf_hooks` or `globalThis`, as a path of one name.
+const HOLDERS: ReadonlySet<string> = new Set([
+  ...Object.keys(NON_DETERMINISTIC),
+  ...Object.values(MODULES).map((module) => module.join(".")),
+  ...GLOBAL_OBJECT,
+]);
+
 // A path read the way the code would read it from the globals, such as
 // `globalThis.Date`, `perf_hooks.performance` or `crypto.webcrypto`,
 // written the way NON_DETERMINISTIC keys it.
@@ -165,14 +173,17 @@ function identifierPath(
 }
 
 // The global path a name from a module stands for, or the module itself
-// when the name is null. Null for a module MODULES does not name.
+// when the name is null or `default`, which a built-in module exports as
+// itself. Null for a module MODULES does not name.
 function modulePath(
   source: string,
   name: string | null,
 ): readonly string[] | null {
   const module = MODULES[source.replace(/^node:/, "")];
   if (module === undefined) return null;
-  return name === null ? module : normalised([...module, name]);
+  return name === null || name === "default"
+    ? module
+    : normalised([...module, name]);
 }
 
 // The global path `export { name } from "module"` passes on, for a module
@@ -201,18 +212,13 @@ function opOf(path: readonly string[] | null): string | undefined {
     : undefined;
 }
 
-// The object a path names when it holds a clock or random source, such as
-// `Math`, `crypto`, `perf_hooks` or `globalThis`. Another module that gets
-// it may read the source from it, `M.random()`, and the rule does not
+// The object a path names when it is one of HOLDERS. Another module that
+// gets it may read the source from it, `M.random()`, and the rule does not
 // follow it there.
 function holderOf(path: readonly string[] | null): string | undefined {
   if (path?.length !== 1) return undefined;
   const [name = ""] = path;
-  return Object.hasOwn(NON_DETERMINISTIC, name) ||
-    Object.values(MODULES).some((module) => module.join(".") === name) ||
-    GLOBAL_OBJECT.has(name)
-    ? name
-    : undefined;
+  return HOLDERS.has(name) ? name : undefined;
 }
 
 // The module `export * from "module"` passes on when MODULES names it,
@@ -419,6 +425,21 @@ export const noNonDeterministicOutsideStep = createRule({
       path?.length === 1 && path[0] === "Date";
     const isDate = (callee: TSESTree.Node): boolean =>
       namesDate(pathOf(callee, context, new Set()));
+    // An object that holds a source, exported by default, `export default
+    // Math` or `export = c`. `Date` reports as a value passed on, and an
+    // alias whose own declaration is exported reports there.
+    const checkDefault = (value: TSESTree.Node): void => {
+      const path = pathOf(value, context, new Set());
+      const holder = holderOf(path);
+      if (holder === undefined || namesDate(path)) return;
+      const inner = unwrapped(value);
+      if (inner.type === AST_NODE_TYPES.Identifier) {
+        const variable = lookup(inner.name, context.sourceCode.getScope(inner));
+        const alias = variable === null ? null : aliasDeclarator(variable);
+        if (alias !== null && exportedDeclaration(alias.declarator)) return;
+      }
+      report(value, holder);
+    };
     // `Date` read as a value and passed on, such as `ids.map(Date)`.
     const checkDate = (node: TSESTree.Node, path: readonly string[] | null) => {
       if (namesDate(path) && passedOn(node, context)) report(node, "Date");
@@ -451,6 +472,12 @@ export const noNonDeterministicOutsideStep = createRule({
       ExportAllDeclaration(node) {
         const op = reexportedAll(node);
         if (op !== undefined) report(node, op);
+      },
+      ExportDefaultDeclaration(node) {
+        checkDefault(node.declaration);
+      },
+      TSExportAssignment(node) {
+        checkDefault(node.expression);
       },
       // A named import, or an alias of a member, read on its own, such as
       // `randomUUID()` after `import { randomUUID } from "node:crypto"`, or one

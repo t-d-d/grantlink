@@ -167,6 +167,10 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export * from "node:path";`,
         },
         {
+          name: "exports by default an object that holds no clock or random source",
+          code: `export default JSON;`,
+        },
+        {
           name: "passes on the types of a module that holds a random source",
           code: `export type * from "node:crypto";
           import type * as c from "node:crypto";
@@ -457,6 +461,71 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
             {
               messageId: "nonDeterministicOutsideStep",
               data: { op: "crypto" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "re-exports the default of crypto, which is the module itself",
+          code: `export { default as c } from "node:crypto";`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports crypto imported by the name default",
+          code: `import { default as c } from "node:crypto";
+          export { c };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports Math by default",
+          code: `export default Math;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default an alias of Math and a namespace import of crypto",
+          code: `const M = globalThis.Math;
+          export default M;
+          import * as c from "node:crypto";
+          export = c;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto" },
+              line: 4,
+            },
+          ],
+        },
+        {
+          name: "exports an alias of Math in its declaration and again by default, once",
+          code: `export const M = Math;
+          export default M;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
               line: 1,
             },
           ],
