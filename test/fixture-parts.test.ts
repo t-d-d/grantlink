@@ -259,6 +259,39 @@ describe("strayParts", () => {
       },
       "article/back/fn-group/fn (text)",
     ],
+    [
+      "a paragraph inside the title of a funding section, which the cutter reads in place of the bare text",
+      { back: '<sec sec-type="funding"><title><p>X</p></title>Somebody</sec>' },
+      "article/back/sec/title/p",
+    ],
+    [
+      "a contributor group inside the title of a funding section",
+      {
+        back:
+          '<sec sec-type="funding"><title>Funding <contrib-group><name>A</name></contrib-group></title>' +
+          "<p>Funded.</p></sec>",
+      },
+      "article/back/sec/title/contrib-group",
+    ],
+    [
+      "a paragraph inside the label of a funding footnote",
+      { back: '<fn fn-type="funding"><label><p>1</p></label>Somebody</fn>' },
+      "article/back/fn/label/p",
+    ],
+    [
+      "a second title in a funding section",
+      {
+        back: '<sec sec-type="funding"><title>Funding</title><title>Somebody</title><p>Funded.</p></sec>',
+      },
+      "article/back/sec/title",
+    ],
+    [
+      "a second label in a funding footnote",
+      {
+        back: '<fn fn-type="funding"><label>*</label><label>Somebody</label><p>Funded.</p></fn>',
+      },
+      "article/back/fn/label",
+    ],
   ])("names %s (#215)", (_what, parts, stray) => {
     expect(strayParts(paper(parts))).toEqual([stray]);
   });

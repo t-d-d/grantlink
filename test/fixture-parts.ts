@@ -8,12 +8,14 @@
 // Whether a section or footnote is a funding part is decided by the
 // definitions the cutter in src/europepmc/jats.ts exports, so the two agree
 // (#159). Inside a part it allows, the check names anything the cutter does
-// not read (#215). Two differences stay, where the check is stricter than
-// the cutter. The cutter finds a funding section nested in another section,
+// not read but one title and one label, each holding only its own text
+// (#215). Two differences stay, where the check is stricter than the
+// cutter. The cutter finds a funding section nested in another section,
 // but the check refuses the outer section, whose other parts can carry
 // names: a recording keeps only the funding section, moved up into the body
 // or the back. And in a part with no paragraphs the cutter reads the whole
-// text, but the check names any element there other than a label or title.
+// text, but the check names any element there other than a label, a title
+// or an empty paragraph.
 
 import { FUNDING_FOOTNOTE, isFundingSectionAt } from "../src/europepmc/jats.ts";
 
@@ -102,6 +104,26 @@ const isPart = (element: Element): boolean =>
   isFundingFootnote(element) ||
   element.name === "ack";
 
+// A heading holds only its own text, and a part has at most one of each. The
+// cutter skips a title, and a label in a part with paragraphs, so an element
+// or a second heading would keep text it does not read. A paragraph inside a
+// heading would also turn the cutter to the paragraphs, past the bare text
+// beside them.
+function strayInHeadings(part: Element, path: string): string[] {
+  const seen = new Set<string>();
+  return part.children
+    .filter((child) => child.name !== "p" && PART_CHILDREN.includes(child.name))
+    .flatMap((heading) => {
+      const headingPath = `${path}/${heading.name}`;
+      const repeated = seen.has(heading.name) ? [headingPath] : [];
+      seen.add(heading.name);
+      return [
+        ...repeated,
+        ...heading.children.map((child) => `${headingPath}/${child.name}`),
+      ];
+    });
+}
+
 function strayInPart(part: Element, path: string): string[] {
   const paragraphs = part.children.some(
     (child) => child.name === "p" && hasText(child),
@@ -111,6 +133,7 @@ function strayInPart(part: Element, path: string): string[] {
     ...part.children
       .filter((child) => !PART_CHILDREN.includes(child.name))
       .map((child) => `${path}/${child.name}`),
+    ...strayInHeadings(part, path),
   ];
 }
 
