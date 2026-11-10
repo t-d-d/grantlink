@@ -16,8 +16,11 @@ requests.
   `Retry-After` asks, or longer after each try with none. A request slower
   than five seconds halves the pace until Europe PMC is quick again.
 - The client waits at most a minute within one try. A `Retry-After`
-  longer than that ends the try, and the run's step waits instead, so a
-  long wait never holds a Lambda invocation open.
+  longer than that ends the try, and the run waits instead, so a long
+  wait never holds a Lambda invocation open.
+- After a refusal with a `Retry-After`, no request goes to Europe PMC
+  until that wait has passed. The run waits durably, not by retrying a
+  step, and a wait still owed is waited out just before the next request.
 - After five tries a request gives up. The run's step asks again after a
   longer wait, and after that the paper waits for the next run. A paper
   with no full text (a 4xx other than 429) is not asked for again in that
@@ -44,4 +47,4 @@ Whether the deployed run keeps to the pace across Lambda invocations rests
 on the client being made once per invocation and each batch ending with a
 wait, which is for review.
 
-History: #1
+History: #1, #143
