@@ -24,6 +24,9 @@ const report = (scores: Partial<Record<string, number>>): Report => ({
   missedA: [],
 });
 
+const s2 = { id: "s2", manifestSha256: "c".repeat(64) };
+const s3 = { id: "s3", manifestSha256: "d".repeat(64) };
+
 describe("the gate on a report", () => {
   it("passes a report for this fingerprint at or above every floor", () => {
     const result = gate(
@@ -58,6 +61,7 @@ describe("the pull request's comment", () => {
     const text = comment(report({ "recall-a": 0.96, spend: 0 }), {
       ...report({ "recall-a": 0.9, spend: 0 }),
       runUrl: "https://github.com/t-d-d/grantlink/actions/runs/99",
+      snapshot: null,
     });
     expect(text).toContain(
       "| Recall | Gold set A | 95% or more | 96.0% | 90.0% | go |",
@@ -224,12 +228,90 @@ describe("the pull request's comment", () => {
     );
   });
 
-  it("reads the run and the scores from a live report this code can read", () => {
-    const live = report({ spend: 0 });
+  it("reads the run, the snapshot and the scores from a live report this code can read", () => {
+    const live = { ...report({ spend: 0 }), snapshot: s2 };
     expect(readLive(JSON.stringify(live))).toEqual({
       runUrl: live.runUrl,
+      snapshot: "s2",
       rows: live.rows.map(({ id, score }) => ({ id, score })),
     });
+  });
+
+  it.each([
+    ["has no snapshot yet", null],
+    ["is from before reports named one", undefined],
+  ])("reads the snapshot as null when the live report %s", (_, snapshot) => {
+    const live = readLive(
+      JSON.stringify({ ...report({ spend: 0 }), snapshot }),
+      () => undefined,
+    );
+    expect(live).not.toBe("older-format");
+    if (live === "older-format") return;
+    expect(live.snapshot).toBeNull();
+  });
+
+  // #232: scores compare only while the text stays the same (evals.md), so
+  // a gap between two snapshots must not read as a regression.
+  it("says when the live scores come from another snapshot, and names both", () => {
+    const live = readLive(
+      JSON.stringify({
+        ...report({ "recall-a": 0.97, spend: 0 }),
+        snapshot: s2,
+      }),
+      () => undefined,
+    );
+    expect(live).not.toBe("older-format");
+    if (live === "older-format") return;
+    const text = comment(
+      { ...report({ "recall-a": 0.9, spend: 0 }), snapshot: s3 },
+      live,
+    );
+    expect(text).toContain(
+      "The live release was scored on snapshot s2 and this pull request on snapshot s3, so their scores do not compare.",
+    );
+    expect(text.indexOf("do not compare")).toBeLessThan(
+      text.indexOf("| Measure |"),
+    );
+  });
+
+  it("says when only one of the two was scored on a snapshot", () => {
+    const live = readLive(
+      JSON.stringify({ ...report({ spend: 0 }), snapshot: null }),
+      () => undefined,
+    );
+    expect(live).not.toBe("older-format");
+    if (live === "older-format") return;
+    const text = comment({ ...report({ spend: 0 }), snapshot: s3 }, live);
+    expect(text).toContain(
+      "The live release was scored on no snapshot and this pull request on snapshot s3, so their scores do not compare.",
+    );
+  });
+
+  // The id goes into the comment, so it keeps the strict report's bounds,
+  // as runUrl does.
+  it.each([
+    ["empty", ""],
+    ["longer than a report allows", "s".repeat(21)],
+  ])(
+    "treats a live report whose snapshot id is %s as one it cannot read",
+    (_, id) => {
+      const live = JSON.stringify({
+        ...report({ spend: 0 }),
+        snapshot: { ...s2, id },
+      });
+      expect(readLive(live, () => undefined)).toBe("older-format");
+    },
+  );
+
+  it("says nothing about snapshots when both were scored on the same one", () => {
+    const live = readLive(
+      JSON.stringify({ ...report({ spend: 0 }), snapshot: s3 }),
+      () => undefined,
+    );
+    expect(live).not.toBe("older-format");
+    if (live === "older-format") return;
+    const text = comment({ ...report({ spend: 0 }), snapshot: s3 }, live);
+    expect(text).not.toContain("do not compare");
   });
 
   it("treats a live report that is not JSON as one it cannot read", () => {
