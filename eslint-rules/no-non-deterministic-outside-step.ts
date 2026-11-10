@@ -495,6 +495,18 @@ function exportedDeclaration(declarator: TSESTree.VariableDeclarator): boolean {
   );
 }
 
+// True when a pattern a `Date` default fills may take a member that calls
+// it, `{ bind } = Date`, or one under a key the rule cannot name. The names
+// it binds then hold no path the rule reports, so the default reports.
+function callsThrough(pattern: TSESTree.Node): boolean {
+  if (pattern.type !== AST_NODE_TYPES.ObjectPattern) return false;
+  return pattern.properties.some((property) => {
+    if (property.type !== AST_NODE_TYPES.Property) return true;
+    const key = keyName(property.key, property.computed);
+    return key === null || CALLS_THROUGH.has(key);
+  });
+}
+
 // True when `Date`, read as a value, goes somewhere that may call it, such
 // as `ids.map(Date)` or `Reflect.construct(Date, [])`. Not when the code
 // calls or constructs it, which the call checks report with their
@@ -522,7 +534,11 @@ function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
     case AST_NODE_TYPES.UnaryExpression:
       return parent.operator !== "typeof";
     case AST_NODE_TYPES.AssignmentPattern:
-      return parent.right !== outer || !defaultFollowed(parent, resolver);
+      return (
+        parent.right !== outer ||
+        callsThrough(parent.left) ||
+        !defaultFollowed(parent, resolver)
+      );
     case AST_NODE_TYPES.VariableDeclarator: {
       if (parent.init !== outer) return true;
       if (parent.id.type === AST_NODE_TYPES.ObjectPattern) return false;

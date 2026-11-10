@@ -1196,6 +1196,13 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "passes Date on as a nested default that destructures a member calling it",
+          code: `async function run(ctx: any) { const { foo: { bind: b } = Date } = x; const f = b(null); }`,
+          errors: [
+            { messageId: "nonDeterministicOutsideStep", data: { op: "Date" } },
+          ],
+        },
+        {
           name: "exports Date given as the default of a destructured name, once at the name",
           code: `export const { foo: D = Date } = x;`,
           errors: [
