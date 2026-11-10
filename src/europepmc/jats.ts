@@ -219,11 +219,11 @@ const anyAttribute = (
 
 // The footnote types that mark a footnote as funding text. The check on
 // recorded fixtures expects these values too (#417).
-export const FUNDING_FOOTNOTE_TYPES: readonly string[] = [
+export const FUNDING_FOOTNOTE_TYPES: readonly string[] = Object.freeze([
   "financial-disclosure",
   "funding",
   "supported-by",
-];
+]);
 
 // Whether a footnote's type marks it as funding text.
 export const FUNDING_FOOTNOTE = (element: XmlElement): boolean =>
