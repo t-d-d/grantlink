@@ -4,7 +4,9 @@
 // failure inside `echo "x=$(cmd)"` does not stop a script, even under
 // `set -e`, so the step would succeed with an empty value. The role steps
 // must fail too when the STS reply lacks a field, where `jq -r` would print
-// `null` and succeed (#122). All three role steps are covered (#188).
+// `null` and succeed (#122). All three role steps are covered (#188). A
+// role step with its secret unset stops before it reaches the network
+// (#250).
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -96,6 +98,7 @@ function runStep(
   return {
     temp,
     status: result.status,
+    stdout: result.stdout,
     stderr: result.stderr,
     output: readFileSync(output, "utf8"),
     env: readFileSync(githubEnv, "utf8"),
@@ -461,4 +464,41 @@ describe.each([
       expect(stderr).toMatch(/^::error::.*\.value\b/mu);
     },
   );
+});
+
+// #250: the eval and conformance role steps stop with an error that points
+// at the README when their secret is empty, before curl or STS, rather than
+// fail later with an AWS error. The deploy role step has no such check: the
+// deploy job does not run when its secret is unset, which
+// test/deploy.static.ts holds.
+describe.each([
+  {
+    title: "the eval's role step",
+    run: script(evalWorkflow, "eval", "Assume the eval role"),
+  },
+  {
+    title: "the conformance run's role step",
+    run: script(
+      conformanceWorkflow,
+      "conformance",
+      "Assume the conformance role",
+    ),
+  },
+])("$title with its role secret unset", ({ run }) => {
+  it("fails with an error before it calls curl or STS, and writes nothing", () => {
+    const { status, stdout, stderr, env, output } = runStep(
+      run,
+      {
+        curl: "echo curl-called >&2\nexit 1",
+        aws: "echo aws-called >&2\nexit 1",
+      },
+      { ...roleEnv, ROLE: "" },
+    );
+    expect(status).not.toBe(0);
+    expect(`${stdout}${stderr}`).toMatch(/^::error::.*README/mu);
+    expect(stderr).not.toContain("curl-called");
+    expect(stderr).not.toContain("aws-called");
+    expect(env).toBe("");
+    expect(output).toBe("");
+  });
 });
