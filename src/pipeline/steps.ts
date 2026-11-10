@@ -70,26 +70,34 @@ export async function searchPage(
 
 // Logs the totals of the run's whole search once, before it is judged, so
 // how many results it skipped for a malformed PMCID can be read without
-// adding up its pages (#198).
+// adding up its pages (#198). When Europe PMC refuses a page, `refused` is
+// true, and when a page fails after its retries without a refusal,
+// `failed` is true. The totals are then those of the pages read before it
+// (#348).
 export function logSearchEnded(
   runId: string,
   found: number,
   skipped: number,
+  refused: boolean,
+  failed: boolean,
 ): void {
-  logger.info("search-ended", { runId, found, skipped });
+  logger.info("search-ended", { runId, found, skipped, refused, failed });
 }
 
 // Logs the totals of gold set A's search once each time a run searches
 // for the snapshot, before it is judged, as the run's search does (#279).
 // When Europe PMC refuses a page, `refused` is true and the totals are
 // those of the pages read before it, which are none when it refuses the
-// first (#307).
+// first (#307). When a page fails after its retries without a refusal,
+// `failed` is true, and the totals are again those of the pages before it
+// (#348).
 export function logGoldSearchEnded(
   runId: string,
   snapshotId: string,
   found: number,
   skipped: number,
   refused: boolean,
+  failed: boolean,
 ): void {
   logger.info("snapshot-search-ended", {
     runId,
@@ -97,6 +105,7 @@ export function logGoldSearchEnded(
     found,
     skipped,
     refused,
+    failed,
   });
 }
 
