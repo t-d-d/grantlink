@@ -472,9 +472,7 @@ function destructuredKey(
 }
 
 // A pattern's target without the default it may give, `{ now = f }`.
-export function withoutDefault(
-  value: TSESTree.Property["value"],
-): TSESTree.Node {
+export function withoutDefault(value: TSESTree.Node): TSESTree.Node {
   return value.type === AST_NODE_TYPES.AssignmentPattern ? value.left : value;
 }
 
