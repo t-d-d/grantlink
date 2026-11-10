@@ -426,7 +426,7 @@ describe("searching Europe PMC", () => {
       papers: [
         {
           pmcid: "PMC11",
-          title: "One title & more",
+          title: "One <i>title</i> & more",
           firstPublished: "2021-02-03",
         },
         { pmcid: "PMC12", title: "Two" },
@@ -619,6 +619,55 @@ describe("sampling gold set A", () => {
 });
 
 describe("a title as plain text", () => {
+  // Europe PMC's search reply sends a title's inline markup either way:
+  // some titles carry raw tags, others carry them encoded (#619).
+  it("keeps sup, sub, i and b as tags, whether they come raw or encoded", () => {
+    const shown =
+      "[<sup>18</sup>F]FCH in H<sub>2</sub>O, <i>in vivo</i> and <b>bold</b>";
+    expect(
+      plainTitle(
+        "[<sup>18</sup>F]FCH in H<sub>2</sub>O, <i>in vivo</i> and <b>bold</b>",
+      ),
+    ).toBe(shown);
+    expect(
+      plainTitle(
+        "[&lt;sup&gt;18&lt;/sup&gt;F]FCH in H&lt;sub&gt;2&lt;/sub&gt;O, &lt;i&gt;in vivo&lt;/i&gt; and &lt;b&gt;bold&lt;/b&gt;",
+      ),
+    ).toBe(shown);
+    expect(plainTitle("<SUP>18</SUP>F")).toBe("<sup>18</sup>F");
+  });
+
+  it("drops any other tag, and keeps an encoded sign as text", () => {
+    expect(plainTitle('One <span class="x">two</span><br/> three')).toBe(
+      "One two three",
+    );
+    expect(plainTitle("p &lt; 0.05 &amp; &lt;script&gt;")).toBe(
+      "p < 0.05 & <script>",
+    );
+  });
+
+  it("drops a tag left without its pair", () => {
+    expect(plainTitle("One <i>two")).toBe("One two");
+    expect(plainTitle("One</sup> two")).toBe("One two");
+  });
+
+  it("never cuts a title inside a tag", () => {
+    expect(plainTitle(`${"x".repeat(497)}<sup>18</sup>F`)).toBe(
+      "x".repeat(497),
+    );
+    expect(plainTitle(`${"x".repeat(490)}<sup>18</sup>F`)).toBe(
+      `${"x".repeat(490)}18`,
+    );
+    expect(plainTitle(`${"x".repeat(487)}<sup>18</sup>F`)).toBe(
+      `${"x".repeat(487)}<sup>18</sup>`,
+    );
+    for (let lead = 480; lead <= 500; lead += 1) {
+      const title = plainTitle(`${"x".repeat(lead)}&lt;sup&gt;18&lt;/sup&gt;F`);
+      expect(title.length).toBeLessThanOrEqual(500);
+      expect(title.replace(/<\/?sup>/gu, "")).not.toMatch(/[<>]/u);
+    }
+  });
+
   it("keeps a title of 500 characters whole", () => {
     const title = "€".repeat(500);
     expect(plainTitle(title)).toBe(title);
