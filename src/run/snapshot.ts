@@ -101,11 +101,25 @@ export async function takeSnapshot(
       const from: string = cursor;
       if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
       due = null;
-      const result = await ctx.step(
-        `snapshot-search-${String(page)}`,
-        async () => searchGoldA(deps, from),
+      const name = `snapshot-search-${String(page)}`;
+      const outcome = await ctx.step(
+        name,
+        async ({ attempt }) =>
+          readOrRefused(attempt, europePmcRetry, async () =>
+            searchGoldA(deps, from),
+          ),
         { retryStrategy: europePmcRetry },
       );
+      // A refused search loses the snapshot for this run, and leaves the
+      // wait Europe PMC asked for owed, which the run waits out before it
+      // ends (#236).
+      if ("refused" in outcome) {
+        return {
+          snapshot: { taken: false, reason: "failed" },
+          owed: owedAfter(`${name}-wait`, outcome),
+        };
+      }
+      const result = outcome.read;
       found.push(...result.pmcids);
       skipped += result.skipped;
       cursor = result.nextCursor;
