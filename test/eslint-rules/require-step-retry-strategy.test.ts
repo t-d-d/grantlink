@@ -1,6 +1,7 @@
 import { afterAll, describe, it } from "vitest";
 import { requireStepRetryStrategy } from "../../eslint-rules/require-step-retry-strategy.ts";
 import { ruleTester } from "../rule-tester.ts";
+import { WRAPPED_DURABLE_CALLS } from "./wrapped-durable-calls.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
 
@@ -23,8 +24,17 @@ describe("fitness: every step names its retry strategy (durable-execution.md)", 
         name: "is not a durable step",
         code: `wizard.step(2);`,
       },
+      ...WRAPPED_DURABLE_CALLS.map((shape) => ({
+        name: `passes a retry strategy to a step written as ${shape.name}`,
+        code: `await ${shape.call("step", `"fetch", async () => 1, { retryStrategy: paced }`)};`,
+      })),
     ],
     invalid: [
+      ...WRAPPED_DURABLE_CALLS.map((shape) => ({
+        name: `passes no options to a step written as ${shape.name}`,
+        code: `await ${shape.call("step", `"fetch", async () => 1`)};`,
+        errors: [{ messageId: "missing" as const }],
+      })),
       {
         name: "passes no options",
         code: `await ctx.step("fetch", async () => 1);`,

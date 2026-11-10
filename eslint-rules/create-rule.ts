@@ -36,20 +36,27 @@ export const DURABLE_METHODS = new Set([
   "createCallback",
 ]);
 
-// A method call `<receiver>.<name>(...)` whose name is in the set.
-export function isMethodCallIn(
+// A method call `<receiver>.<name>(...)` whose name is in the set, read
+// through the wrappers unwrapped takes off, on the call and on its callee:
+// `ctx?.step(...)`, `ctx.step!(...)`, `(ctx.step as F)(...)` and
+// `(ctx.step(...) as Promise<T>)` are all a step. It gives the member its
+// callee reads, or null for anything else.
+export function methodCallIn(
   node: TSESTree.Node,
   names: ReadonlySet<string>,
-): node is TSESTree.CallExpression & {
-  callee: TSESTree.MemberExpression;
-} {
-  return (
-    node.type === AST_NODE_TYPES.CallExpression &&
-    node.callee.type === AST_NODE_TYPES.MemberExpression &&
-    !node.callee.computed &&
-    node.callee.property.type === AST_NODE_TYPES.Identifier &&
-    names.has(node.callee.property.name)
-  );
+): TSESTree.MemberExpression | null {
+  const call = unwrapped(node);
+  if (call.type !== AST_NODE_TYPES.CallExpression) return null;
+  const callee = unwrapped(call.callee);
+  if (
+    callee.type !== AST_NODE_TYPES.MemberExpression ||
+    callee.computed ||
+    callee.property.type !== AST_NODE_TYPES.Identifier ||
+    !names.has(callee.property.name)
+  ) {
+    return null;
+  }
+  return callee;
 }
 
 // The operations that checkpoint their callback as a unit: a step, the
@@ -91,21 +98,25 @@ export const STEP_HELPERS: readonly StepHelper[] = [
 
 // The step helper a call calls, if its callee resolves to one: a named
 // import `<name>(...)`, or a namespace import `<ns>.<name>(...)` or
-// `<ns>["<name>"](...)`, either one reached through a local alias that is
-// never assigned again (importOf). It looks through type assertions,
-// non-null assertions, type arguments and optional chaining (unwrapped), on
-// the call, the callee and the namespace alike. A local function, an import
-// from another module or a computed key that is not a constant string is
-// not one. A re-export would hide the helper's module, so
-// no-step-helper-re-export refuses one.
+// `<ns>["<name>"](...)`, either one reached through an exact walk of local
+// aliases (walkAliases), since the helper's callbacks get a step's
+// allowances. A rule that refuses what a call may run, such as
+// no-nested-durable-operations, passes `walk: "any"` to take an inexact
+// walk too. It looks through type assertions, non-null assertions, type
+// arguments and optional chaining (unwrapped), on the call, the callee and
+// the namespace alike. A local function, an import from another module or a
+// computed key that is not a constant string is not one. A re-export would
+// hide the helper's module, so no-step-helper-re-export refuses one.
 export function stepHelperOf(
   node: TSESTree.Node,
   resolver: Resolver,
+  walk: "exact" | "any" = "exact",
 ): StepHelper | null {
   const call = unwrapped(node);
   if (call.type !== AST_NODE_TYPES.CallExpression) return null;
   const binding = bindingOf(call.callee, resolver);
   if (typeof binding?.name !== "string") return null;
+  if (walk === "exact" && !binding.exact) return null;
   return helperNamed(binding.module, binding.name);
 }
 
@@ -119,7 +130,7 @@ export function bindingOf(
   resolver: Resolver,
   seen: ReadonlySet<TSESLint.Scope.Variable> = new Set(),
   once = false,
-): { module: string; name: string | null } | null {
+): ImportBinding | null {
   const value = unwrapped(node);
   if (value.type === AST_NODE_TYPES.Identifier) {
     return importOf(value, resolver, seen, once);
@@ -174,51 +185,148 @@ function keyName(key: TSESTree.Node, computed: boolean): string | null {
     : null;
 }
 
-// What an identifier's binding imports from a relative module: a named
-// import, or the whole module (name null) for a namespace import. It
-// follows a local alias that is never assigned again, such as
-// `const ask = askEuropePmc`, `const ask = owed.askEuropePmc` or
+// The alias policy every rule follows. A local is an alias of the value it
+// is declared with when it has exactly one declaration, a const, let or var
+// declarator with an initialiser; a let or var counts as a const does. A
+// local declared more than once (`var ask = a; var ask = b;`), or declared
+// with no value and given one later (`let ask; ask = a;`), is not an alias,
+// and the walk ends at it. A later write does not end the walk, but makes it
+// inexact: the local may hold something else when it is read. A local read
+// once, as the next alias's initial value, holds what it held at that read,
+// so a write that can only run after the read does not count against it
+// (writtenBeforeRead, #437).
+//
+// Where what a name holds lets code off a check, only an exact walk counts:
+// stepHelperOf by default, since it gives a step helper's callbacks a step's
+// allowances, and no-step-helper-re-export when it lets a module export its
+// own helper. Where it only makes a rule refuse, an inexact walk counts too:
+// no-step-helper-re-export's refusals, and no-nested-durable-operations, for
+// a context and for a step helper (stepHelperOf with `walk: "any"`).
+export interface AliasWalk {
+  // The local the identifier names, then each local it aliases in turn.
+  // The last is where the walk ended.
+  chain: readonly TSESLint.Scope.Variable[];
+  // True when no local along the chain may be written before it is read.
+  readonly exact: boolean;
+}
+
+// Walk the chain of plain aliases from an identifier, such as
+// `const ask = askEuropePmc` or `let same = ctx`. It ends at a local that
+// aliases a name it cannot resolve. Null when the identifier itself does not
+// resolve, or the chain loops back on itself. `once` says the identifier
+// itself is read once, as another alias's initial value.
+export function walkAliases(
+  identifier: TSESTree.Identifier,
+  resolver: Resolver,
+  once = false,
+): AliasWalk | null {
+  const first = lookup(
+    identifier.name,
+    resolver.sourceCode.getScope(identifier),
+  );
+  if (first === null) return null;
+  const chain = [first];
+  // The identifier each local in the chain is read through.
+  const reads = [identifier];
+  for (let current = first; ;) {
+    const alias = aliasDeclarator(current);
+    const init =
+      alias?.declarator.init == null
+        ? undefined
+        : unwrapped(alias.declarator.init);
+    if (
+      alias?.declarator.id !== alias?.name ||
+      init?.type !== AST_NODE_TYPES.Identifier
+    ) {
+      break;
+    }
+    const next = lookup(init.name, resolver.sourceCode.getScope(init));
+    if (next === null) break;
+    if (chain.includes(next)) return null;
+    chain.push(next);
+    reads.push(init);
+    current = next;
+  }
+  return {
+    chain,
+    // Scanning every reference costs a walk, so only a rule that asks pays.
+    get exact() {
+      return !chain.some((variable, i) =>
+        i === 0 && !once
+          ? reassigned(variable)
+          : writtenBeforeRead(variable, reads[i] ?? identifier),
+      );
+    },
+  };
+}
+
+// The declarator a local is an alias through, under the policy above, and
+// the name it declares there.
+function aliasDeclarator(variable: TSESLint.Scope.Variable): {
+  declarator: TSESTree.VariableDeclarator;
+  name: TSESTree.Identifier;
+} | null {
+  const [def, ...more] = variable.defs;
+  if (
+    def?.type !== TSESLint.Scope.DefinitionType.Variable ||
+    more.length > 0 ||
+    def.node.init === null
+  ) {
+    return null;
+  }
+  return { declarator: def.node, name: def.name };
+}
+
+// What an import binding gives: a named import, or the whole module (name
+// null) for a namespace import. Exact as the walk that reached it is.
+export interface ImportBinding {
+  module: string;
+  name: string | null;
+  exact: boolean;
+}
+
+// What an identifier's binding imports from a relative module, reached
+// through any chain of aliases (walkAliases), such as `const ask =
+// askEuropePmc`, `const ask = owed.askEuropePmc` or
 // `const { askEuropePmc: ask } = owed`. Null for any other binding,
 // including a destructured name with a default, which may not be the
-// import. When `once` is set, the identifier is read once, as another
-// alias's initial value, so a write that can only run after that read
-// does not change what the alias holds (#437).
+// import.
 export function importOf(
   identifier: TSESTree.Identifier,
   resolver: Resolver,
   seen: ReadonlySet<TSESLint.Scope.Variable> = new Set(),
   once = false,
-): { module: string; name: string | null } | null {
-  const variable = lookup(
-    identifier.name,
-    resolver.sourceCode.getScope(identifier),
-  );
-  if (variable === null || seen.has(variable)) return null;
-  const def = variable.defs[0];
-  if (def?.type === TSESLint.Scope.DefinitionType.Variable) {
-    if (variable.defs.length !== 1) return null;
+): ImportBinding | null {
+  const walk = walkAliases(identifier, resolver, once);
+  const end = walk?.chain.at(-1);
+  if (walk === null || end === undefined || seen.has(end)) return null;
+  const declared = aliasDeclarator(end);
+  if (declared !== null) {
     // Resolve the alias before scanning for writes, so a local that holds
     // anything else costs no walk over its references.
     const alias = aliasOf(
-      def.node,
-      def.name,
+      declared.declarator,
+      declared.name,
       resolver,
-      new Set([...seen, variable]),
+      new Set([...seen, end]),
     );
-    if (alias === null) return null;
-    const writtenBefore = once
-      ? writtenBeforeRead(variable, identifier, def.node)
-      : reassigned(variable);
-    return writtenBefore ? null : alias;
+    return alias === null
+      ? null
+      : { ...alias, exact: alias.exact && walk.exact };
   }
+  const def = end.defs[0];
   if (def?.parent?.type !== AST_NODE_TYPES.ImportDeclaration) return null;
   const module = moduleOf(def.parent.source.value, resolver);
   if (module === null) return null;
   if (def.node.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
-    return { module, name: null };
+    return { module, name: null, exact: walk.exact };
   }
   if (def.node.type !== AST_NODE_TYPES.ImportSpecifier) return null;
-  return { module, name: exportedName(def.node.imported) };
+  return {
+    module,
+    name: exportedName(def.node.imported),
+    exact: walk.exact,
+  };
 }
 
 // True when anything but its declaration writes to the variable.
@@ -228,30 +336,31 @@ function reassigned(variable: TSESLint.Scope.Variable): boolean {
 
 // True when a write other than its declaration may run before this read of
 // the variable. A variable nothing writes again holds its first value
-// wherever it is read. Otherwise it counts none only when every such write
-// follows the read in the same function that declares the variable, and no
-// loop around the read lacks the declaration in its body. A write in a
-// nested function may run at any time, a read in a function the variable
-// outlives may run after any write, and a loop runs a later write before its
-// next read.
+// wherever it is read. Otherwise it counts none only when the variable is
+// an alias under the policy above, every such write follows the read in the
+// same function that declares the variable, and no loop around the read may
+// reach it without running the declaration first. A write in a nested
+// function may run at any time, a read in a function the variable outlives
+// may run after any write, and a loop runs a later write before its next
+// read.
 function writtenBeforeRead(
   variable: TSESLint.Scope.Variable,
   identifier: TSESTree.Identifier,
-  declarator: TSESTree.VariableDeclarator,
 ): boolean {
   const writes = variable.references.filter(
     (ref) => ref.isWrite() && !ref.init,
   );
   if (writes.length === 0) return false;
+  const declared = aliasDeclarator(variable);
   const read = variable.references.find((ref) => ref.identifier === identifier);
   const scope = variable.scope.variableScope;
-  if (read?.from.variableScope !== scope) return true;
+  if (declared === null || read?.from.variableScope !== scope) return true;
   return (
     writes.some(
       (ref) =>
         ref.from.variableScope !== scope ||
         ref.identifier.range[0] < identifier.range[1],
-    ) || inLoopWithout(identifier, declarator)
+    ) || inLoopWithout(identifier, declared.declarator)
   );
 }
 
@@ -286,16 +395,16 @@ function within(node: TSESTree.Node, outer: TSESTree.Node): boolean {
   return node.range[0] >= outer.range[0] && node.range[1] <= outer.range[1];
 }
 
-// What a declarator binds `name` to, when it aliases an import: the whole
-// of another identifier, a name read from a namespace import, or a name
-// destructured from one at the top of an object pattern. It reads through
-// the wrappers unwrapped takes off.
+// What a declarator binds `name` to, when it aliases an import through more
+// than a plain identifier, which walkAliases follows: a name read from a
+// namespace import, or a name destructured from one at the top of an object
+// pattern. It reads through the wrappers unwrapped takes off.
 function aliasOf(
   declarator: TSESTree.VariableDeclarator,
   name: TSESTree.Identifier,
   resolver: Resolver,
   seen: ReadonlySet<TSESLint.Scope.Variable>,
-): { module: string; name: string | null } | null {
+): ImportBinding | null {
   const { id } = declarator;
   if (declarator.init === null) return null;
   if (id === name) return bindingOf(declarator.init, resolver, seen, true);
@@ -319,11 +428,11 @@ function aliasOf(
 
 // The named import a member of a namespace import gives.
 function memberOf(
-  binding: { module: string; name: string | null } | null,
+  binding: ImportBinding | null,
   name: string | null,
-): { module: string; name: string } | null {
+): ImportBinding | null {
   if (binding?.name !== null || name === null) return null;
-  return { module: binding.module, name };
+  return { ...binding, name };
 }
 
 // The name an import or export specifier gives, as an identifier or a
@@ -392,8 +501,8 @@ export function insideCheckpointedCallback(
     return (
       (fn.type === AST_NODE_TYPES.ArrowFunctionExpression ||
         fn.type === AST_NODE_TYPES.FunctionExpression) &&
-      call !== undefined &&
-      ((isMethodCallIn(call, CHECKPOINTS_CALLBACK) &&
+      call?.type === AST_NODE_TYPES.CallExpression &&
+      ((methodCallIn(call, CHECKPOINTS_CALLBACK) !== null &&
         call.arguments.includes(fn)) ||
         isStepHelperCallback(call, fn, resolver))
     );

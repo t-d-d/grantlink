@@ -17,6 +17,9 @@ funding text or a name cannot slip into the table through a second writer.
 - The table is on demand and holds each paper's metadata, its extraction,
   its decision and the versions that made it. It holds no funding text and
   no names (personal-data.md).
+- Besides one row per paper, the table holds one item keyed
+  `latest-search`. It holds the id of the latest-started run whose search
+  completed, and no funding text and no names.
 - The bucket is private and encrypted, and has three prefixes: `cache/`
   for each paper's funding sections, `eval/` for the fixed eval snapshot,
   and `eval-reports/` for eval reports.
@@ -45,4 +48,8 @@ deployed bucket for the same, since a setting changed in the console does
 not show in the template. Tests are left out of the lint rule, because a
 conformance check reads the bucket with S3's own client.
 
-History: #6
+No check reads what the `latest-search` item holds. `recordSearch` in
+`src/store/table.ts` writes only its run id, so read any change that writes
+more there against the rule above.
+
+History: #6, #213
