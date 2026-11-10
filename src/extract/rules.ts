@@ -95,7 +95,10 @@ const ANY_CASE_NAMES = namesPattern(funder.names, true);
 // between words, such as Chinese, Japanese and Thai, write a name straight
 // against their own letters, so those letters do not join it (#337).
 const NO_WORD_SPACE = String.raw`[\p{scx=Han}\p{scx=Hira}\p{scx=Kana}\p{scx=Thai}\p{scx=Laoo}\p{scx=Khmr}\p{scx=Mymr}]`;
-const EDGE = String.raw`(?:(?!${NO_WORD_SPACE})[\p{L}\p{M}])`;
+// Gold set B's draw builds its centre-or-institute check on this edge, so
+// it reads a name where the rules do (#360).
+export const NAME_EDGE = String.raw`(?:(?!${NO_WORD_SPACE})[\p{L}\p{M}])`;
+const EDGE = NAME_EDGE;
 const funderName = new RegExp(`(?<!${EDGE})(?:${NAMES})(?!${EDGE})`, "iu");
 
 // Whether text names the funder. Gold set B's draw reads names with this
@@ -201,7 +204,9 @@ export function normalise(written: string): string {
     .toUpperCase();
 }
 
-function sentences(paragraph: string): string[] {
+// Splits a paragraph into sentences. Gold set B's draw reads sentences with
+// this split too, so its checks scan what the rules scan (#360).
+export function sentences(paragraph: string): string[] {
   // A full stop after a single capital, as in U.K., does not end one.
   return paragraph.split(/(?<=(?<!\b[A-Z])[.;!?])\s+(?=[A-Z(])/u);
 }

@@ -7,7 +7,10 @@ import { fundingSections } from "../../src/europepmc/jats.ts";
 import {
   findReferences,
   funder,
+  NAME_EDGE,
   namesFunder,
+  namesPattern,
+  sentences,
 } from "../../src/extract/rules.ts";
 import { sample } from "../../src/pipeline/snapshot.ts";
 
@@ -27,8 +30,10 @@ export const HARD_CASES = [
 
 export type HardCase = (typeof HARD_CASES)[number];
 
-const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-const NAME = `(?:${funder.names.map(escape).join("|")})`;
+// The funder's name as the rules read it: any dash, any run of whitespace,
+// either case, and the rules' own edge (#360). The words after it keep
+// their case, so the name carries its case in its own pattern.
+const NAME = `(?<!${NAME_EDGE})(?:${namesPattern(funder.names, true)})(?!${NAME_EDGE})`;
 const centre = new RegExp(
   `${NAME}(?:\\s+[A-Z][A-Za-z'&-]*){0,4}\\s+(?:Centre|Center|Institute|Unit)\\b`,
   "u",
@@ -50,10 +55,6 @@ const plain = (xml: string) =>
     .replace(/<[^>]*>/gu, " ")
     .replace(/\s+/gu, " ")
     .trim();
-
-function sentences(text: string): string[] {
-  return text.split(/(?<=(?<!\b[A-Z])[.;!?])\s+(?=[A-Z(])/u);
-}
 
 // Which hard cases a paper's full text shows, by these checks. They are a
 // guide for drawing the sample; the owner's labels decide.
