@@ -36,6 +36,14 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           }`,
         },
         {
+          name: "reads a wrapped clock and random source inside a step",
+          code: `async function run(ctx: any) {
+            const at = await ctx.step("at", async () => (Date as any).now());
+            const day = await ctx.step("day", async () => new (Date as any)());
+            const id = await ctx.step("id", async () => crypto!.randomUUID());
+          }`,
+        },
+        {
           name: "parses a fixed date",
           code: `const since = new Date("2020-01-01");`,
         },
@@ -154,6 +162,28 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
             {
               messageId: "nonDeterministicOutsideStep",
               data: { op: "crypto.randomUUID()" },
+            },
+          ],
+        },
+        {
+          name: "constructs the current date through as, satisfies and a non-null assertion on Date",
+          code: `async function run(ctx: any) {
+            const a = new (Date as any)();
+            const b = new (Date satisfies DateConstructor)();
+            const c = new Date!();
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "new Date()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "new Date()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "new Date()" },
             },
           ],
         },

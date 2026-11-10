@@ -66,10 +66,13 @@ export const noNonDeterministicOutsideStep = createRule({
       });
     };
     return {
+      // The callee is read through unwrapped too, so `new (Date as any)()`
+      // and `new Date!()` count.
       NewExpression(node) {
+        const callee = unwrapped(node.callee);
         if (
-          node.callee.type === AST_NODE_TYPES.Identifier &&
-          node.callee.name === "Date" &&
+          callee.type === AST_NODE_TYPES.Identifier &&
+          callee.name === "Date" &&
           node.arguments.length === 0
         ) {
           report(node, "new Date()");
