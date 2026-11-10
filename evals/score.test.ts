@@ -62,6 +62,9 @@ describe("telling a CRUK reference from another linked id", () => {
     "A21139\\",
     "PRCRPG-Nov21\\\\100001",
     "CRUK-C5759",
+    // A CRUK id the rules read, which only their shape check takes (#575).
+    "CRUK/12345",
+    "CRUK-Nov21/100001",
   ])("takes %s", (id) => {
     expect(crukReference(id)).toBe(true);
   });
@@ -94,6 +97,9 @@ describe("telling a CRUK reference from another linked id", () => {
     // A part before the last with no digit (#514).
     "CRUK-UCL-2023",
     "CRUK/SMITH/2",
+    // A year alone after CRUK, which the rules refuse since #514 (#575).
+    "CRUK/2019",
+    "CRUK-2019/12345",
   ])("refuses %s", (id) => {
     expect(crukReference(id)).toBe(false);
   });
