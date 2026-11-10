@@ -55,7 +55,8 @@ describe("fitness: data stays in London (hosting.md)", () => {
 // one a template declares (#243), nor a resource or an output an earlier
 // inline entry declares (#261), nor a parameter an earlier inline entry
 // declares (#297), nor a template's parameter beyond a Default it lacks
-// (#322), nor a parameter that shares its name with any resource (#323).
+// (#322), nor a parameter that shares its name with any resource (#323), nor a
+// resource that shares its name with a template's parameter (#359).
 describe("serverless.yml merges only what the static checks read", () => {
   it("lists the two templates, then only parameters, new inline resources and outputs", () => {
     expect(
