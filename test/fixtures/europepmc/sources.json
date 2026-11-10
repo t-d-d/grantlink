@@ -29,7 +29,7 @@
       "file": "PMC13401056.xml",
       "origin": "recorded from https://www.ebi.ac.uk/europepmc/webservices/rest/PMC13401056/fullTextXML",
       "licence": "CC-BY-4.0",
-      "names": ["Pellingrove", "Ashcombe-Tarrow"]
+      "names": []
     },
     {
       "file": "PMC13628515.xml",
@@ -41,14 +41,7 @@
       "file": "PMC13642255.xml",
       "origin": "recorded from https://www.ebi.ac.uk/europepmc/webservices/rest/PMC13642255/fullTextXML",
       "licence": "CC-BY-4.0",
-      "names": [
-        "Marrowdene",
-        "Philippa",
-        "Quenby-Hask",
-        "Ottoline",
-        "Barnaby Teasdrill",
-        "Teasdrill"
-      ]
+      "names": ["Barnaby Teasdrill", "Teasdrill"]
     },
     {
       "file": "PMC13664392.xml",

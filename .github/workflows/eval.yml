@@ -234,8 +234,12 @@ jobs:
           else
             node evals/check.ts comment report.json --no-live "$NO_LIVE" > comment.md
           fi
-          id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
-            --jq '.[] | select(.body | startswith("<!-- grantlink:eval -->")) | .id' | head -n 1)"
+          # All the ids first, then the first line, with no pipe: a reader
+          # that stops early sends gh SIGPIPE and fails the step (#257).
+          # --jq runs once per page, so it alone cannot pick the first.
+          ids="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            --jq '.[] | select(.body | startswith("<!-- grantlink:eval -->")) | .id')"
+          id="${ids%%$'\n'*}"
           if [ -n "$id" ]; then
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@comment.md >/dev/null
           else

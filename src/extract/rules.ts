@@ -54,12 +54,26 @@ export type Reference = z.infer<typeof referenceSchema>;
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 const DASH = `[-${DASHES}]`;
 
+// A letter as a class of its upper and lower case, for a pattern whose own
+// letters must keep their case and so cannot take the `i` flag. Any letter
+// folds, not only A to Z (#301). A case that is more than one character, as
+// "SS" is for "ß", is left out of the class. The `i` flag also folds a few
+// letters with no upper and lower case pair, such as "ς" with "σ" and "ſ"
+// with "s", which this does not (#321).
+const anyCaseLetter = (letter: string) => {
+  const cases = new Set(
+    [letter, letter.toUpperCase(), letter.toLowerCase()].filter((form) =>
+      /^.$/su.test(form),
+    ),
+  );
+  return cases.size === 1 ? letter : `[${[...cases].join("")}]`;
+};
+
 // The names as one pattern, built a character at a time from each raw name,
 // so only the name's own letters ever become any-case classes, never a
-// letter in an escape or a class such as \s (#271). The any-case form
-// matches in any case without the `i` flag, for a pattern whose own letters
-// must keep their case. Any run of whitespace may part the words of a name,
-// such as a no-break space, a line break or two spaces (#269).
+// letter in an escape or a class such as \s (#271). Any run of whitespace
+// may part the words of a name, such as a no-break space, a line break or
+// two spaces (#269).
 export function namesPattern(
   names: readonly string[],
   anyCase: boolean,
@@ -67,9 +81,7 @@ export function namesPattern(
   const char = (c: string) => {
     if (c === "-") return DASH;
     if (c === " ") return String.raw`\s+`;
-    if (anyCase && /[A-Za-z]/u.test(c)) {
-      return `[${c.toUpperCase()}${c.toLowerCase()}]`;
-    }
+    if (anyCase && /\p{L}/u.test(c)) return anyCaseLetter(c);
     return escape(c);
   };
   return names.map((name) => Array.from(name, char).join("")).join("|");
