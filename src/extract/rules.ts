@@ -8,7 +8,7 @@ import funderFile from "./funder.json" with { type: "json" };
 
 // Bump this whenever a pattern, or which references the rules keep,
 // changes, so every stored result says which rules made it.
-export const RULES_VERSION = "rules-7";
+export const RULES_VERSION = "rules-8";
 
 export const funder = z
   .object({
@@ -53,7 +53,6 @@ export type Reference = z.infer<typeof referenceSchema>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 const DASH = `[-${DASHES}]`;
-
 // A letter as a class of its upper and lower case, for a pattern whose own
 // letters must keep their case and so cannot take the `i` flag. Any letter
 // folds, not only A to Z (#301). A case that is more than one character, as
@@ -89,7 +88,12 @@ export function namesPattern(
 
 const NAMES = namesPattern(funder.names, false);
 const ANY_CASE_NAMES = namesPattern(funder.names, true);
-const funderName = new RegExp(`(?:^|[^A-Za-z])(?:${NAMES})(?![A-Za-z])`, "iu");
+// Any letter, not only A to Z, makes a name part of a longer word (#320),
+// and so does a combining mark, which belongs to the letter before it. A
+// lookbehind, not a negated class, keeps the case-insensitive match from
+// folding a letter onto a mark that is not one.
+const EDGE = String.raw`[\p{L}\p{M}]`;
+const funderName = new RegExp(`(?<!${EDGE})(?:${NAMES})(?!${EDGE})`, "iu");
 
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
@@ -138,7 +142,7 @@ const PATTERNS: Pattern[] = [
     // name, as in "Cancer Research UK (G123/45)".
     format: "Gn/n",
     pattern: new RegExp(
-      String.raw`(?<=(?:^|[^A-Za-z])(?:${ANY_CASE_NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}\b`,
+      String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}\b`,
       "gu",
     ),
     sentenceOnly: false,

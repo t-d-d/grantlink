@@ -124,6 +124,41 @@ describe("the rules", () => {
     ).toEqual([]);
   });
 
+  // A letter outside A to Z is still a letter, so a name it touches is part
+  // of a longer word and not the funder's (#320).
+  it("leaves a G number after a name with a non-ASCII letter before it", () => {
+    expect(findReferences(sections("Funded by ÉCRUK (G123/45)."))).toEqual([]);
+  });
+
+  it.each([
+    ["before", "Funded by ÉCRUK (A12345)."],
+    ["after", "Funded by CRUKé (A12345)."],
+  ])(
+    "leaves an A number when a non-ASCII letter is %s the funder's name",
+    (_, text) => {
+      expect(findReferences(sections(text))).toEqual([]);
+    },
+  );
+
+  // A letter written as a base letter and a combining accent is still a
+  // letter, and so is one the case-insensitive match folds onto a mark.
+  it.each([
+    ["an A number", "Funded by E\u0301CRUK (A12345)."],
+    ["a G number", "Funded by E\u0301CRUK (G123/45)."],
+    ["an A number after a Greek letter", "Funded by \u03b9CRUK (A12345)."],
+  ])(
+    "leaves %s when a letter with a combining accent or a folded case touches the name",
+    (_, text) => {
+      expect(findReferences(sections(text))).toEqual([]);
+    },
+  );
+
+  it("reads an A number when a non-ASCII mark that is not a letter touches the name", () => {
+    expect(
+      findReferences(sections("Funded by \u00abCRUK\u00bb (A12345).")),
+    ).toEqual([{ asWritten: "A12345", normalised: "A12345", format: "An" }]);
+  });
+
   it("leaves a lowercase g number", () => {
     expect(findReferences(sections("Cancer Research UK (g123/45)."))).toEqual(
       [],
