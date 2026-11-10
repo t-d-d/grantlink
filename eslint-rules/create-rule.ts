@@ -96,6 +96,10 @@ export const STEP_HELPERS: readonly StepHelper[] = [
   { module: "src/run/log-only.ts", name: "logOnly", callbacks: [2] },
 ];
 
+// Which alias walks may reach a step helper: only an exact one, or any,
+// under the alias policy at AliasWalk.
+export type HelperWalk = "exact" | "any";
+
 // The step helper a call calls, if its callee resolves to one: a named
 // import `<name>(...)`, or a namespace import `<ns>.<name>(...)` or
 // `<ns>["<name>"](...)`, either one reached through an exact walk of local
@@ -111,7 +115,7 @@ export const STEP_HELPERS: readonly StepHelper[] = [
 export function stepHelperOf(
   node: TSESTree.Node,
   resolver: Resolver,
-  walk: "exact" | "any" = "exact",
+  walk: HelperWalk = "exact",
 ): StepHelper | null {
   const call = unwrapped(node);
   if (call.type !== AST_NODE_TYPES.CallExpression) return null;
@@ -522,7 +526,7 @@ export function isStepHelperCallback(
   call: TSESTree.Node,
   fn: TSESTree.Node,
   resolver: Resolver,
-  walk: "exact" | "any" = "exact",
+  walk: HelperWalk = "exact",
 ): boolean {
   if (call.type !== AST_NODE_TYPES.CallExpression) return false;
   const helper = stepHelperOf(call, resolver, walk);
