@@ -151,6 +151,32 @@ describe("how it's run, on the page", () => {
     expect(modelAddsRow(rulesAlone)).not.toContain("not measured yet");
   });
 
+  it("leaves out a model with no score, and a spend not measured", () => {
+    const partial = renderRun(
+      makeRelease({
+        ...fields,
+        report: {
+          ...report,
+          candidates: [
+            {
+              ...candidate("anthropic/claude-haiku-5.5", 0, 0),
+              rows: rows({}),
+            },
+            {
+              ...candidate("anthropic/claude-sonnet-5.5", 0, 0),
+              rows: rows({ "model-adds": 0.02 }),
+            },
+          ],
+        },
+      }),
+    );
+    expect(partial).not.toContain("anthropic/claude-haiku-5.5");
+    expect(partial).toContain(
+      "anthropic/claude-sonnet-5.5</code> adds 2.0 points of recall on gold set B.",
+    );
+    expect(partial).not.toContain("per 1,000 papers");
+  });
+
   it("says rules ship alone when the eval scored no model", () => {
     expect(section).toContain("Rules ship alone");
     expect(section).toContain("calls no model");
