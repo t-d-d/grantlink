@@ -55,6 +55,15 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
       },
     ],
     invalid: [
+      {
+        name: "counts into an outer variable from a step's callback through the comma operator",
+        code: `async function run(ctx: any) {
+          let read = 0;
+          await ctx.step("count", (0, async () => { read += 1; }), { retryStrategy: r });
+        }`,
+        errors: [{ messageId: "closureVariableUsage" }],
+      },
+
       ...[
         [
           "asserted with as",
@@ -63,6 +72,10 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
         [
           "behind a non-null assertion",
           "(async () => { read += 1; return readPaper(); })!",
+        ],
+        [
+          "through the comma operator",
+          "(0, async () => { read += 1; return readPaper(); })",
         ],
       ].map(([what, callback]) => ({
         name: `counts into an outer variable from askEuropePmc's read ${String(what)}`,
@@ -77,6 +90,7 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
 
       ...[
         ["pushes through a non-null assertion", "found!.push(1);", "found"],
+        ["pushes through the comma operator", "(0, found).push(1);", "found"],
         [
           "pushes through a type assertion",
           "(found as number[]).push(1);",

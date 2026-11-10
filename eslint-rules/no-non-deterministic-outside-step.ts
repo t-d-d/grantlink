@@ -31,19 +31,18 @@ const NON_DETERMINISTIC: Readonly<Record<string, ReadonlySet<string>>> = {
 };
 
 // The read a member names, such as `Date.now`, and the identifier it reads
-// it from.
+// it from. The object is read through unwrapped, so `(Date as any).now()`,
+// `Math!.random()` and `(crypto satisfies Crypto).randomUUID()` count too.
 function memberOp(
   node: TSESTree.MemberExpression,
 ): { op: string; object: TSESTree.Identifier } | undefined {
   if (node.computed) return undefined;
-  if (node.object.type !== AST_NODE_TYPES.Identifier) return undefined;
+  const object = unwrapped(node.object);
+  if (object.type !== AST_NODE_TYPES.Identifier) return undefined;
   if (node.property.type !== AST_NODE_TYPES.Identifier) return undefined;
-  const allowed = NON_DETERMINISTIC[node.object.name];
+  const allowed = NON_DETERMINISTIC[object.name];
   return allowed?.has(node.property.name) === true
-    ? {
-        op: `${node.object.name}.${node.property.name}`,
-        object: node.object,
-      }
+    ? { op: `${object.name}.${node.property.name}`, object }
     : undefined;
 }
 
@@ -135,12 +134,15 @@ export const noNonDeterministicOutsideStep = createRule({
       });
     };
     return {
+      // The callee is read through unwrapped too, so `new (Date as any)()`
+      // and `new Date!()` count.
       NewExpression(node) {
+        const callee = unwrapped(node.callee);
         if (
-          node.callee.type === AST_NODE_TYPES.Identifier &&
-          node.callee.name === "Date" &&
+          callee.type === AST_NODE_TYPES.Identifier &&
+          callee.name === "Date" &&
           node.arguments.length === 0 &&
-          !declaredLocally(node.callee, context.sourceCode)
+          !declaredLocally(callee, context.sourceCode)
         ) {
           report(node, "new Date()");
         }
