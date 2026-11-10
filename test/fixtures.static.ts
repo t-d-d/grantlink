@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { isFundingSectionAt } from "../src/europepmc/jats.ts";
+import { FUNDING_METADATA, isFundingSectionAt } from "../src/europepmc/jats.ts";
 import { strayParts } from "./fixture-parts.ts";
 import { FIXTURES, RECORDED, fixture, sources } from "./fixtures.ts";
-import { repoFiles } from "./repo.ts";
+import { readRepoFile, repoFiles } from "./repo.ts";
 
 // Europe PMC's responses in the repo, which the repo being public makes
 // public too (#10).
@@ -57,6 +57,22 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
     "$file, recorded from a paper, keeps nothing outside its ids, licence and funding sections",
     (entry) => {
       expect(strayParts(fixture(entry.file))).toEqual([]);
+    },
+  );
+
+  // The check reads a funding group by the names the cutter reads it by, so
+  // when the cutter reads another element the check follows. Each name is
+  // written once, in the cutter, and never in the check, and the cutter
+  // reads by each, so the check allows no element the cutter has stopped
+  // reading (#305).
+  const cutter = readRepoFile("src/europepmc/jats.ts");
+  const check = readRepoFile("test/fixture-parts.ts");
+  it.each(Object.entries(FUNDING_METADATA))(
+    "%s (%s) is written once in the cutter, read by it, and not in the check",
+    (key, name) => {
+      expect(cutter.split(name)).toHaveLength(2);
+      expect(cutter).toContain(`FUNDING_METADATA.${key}`);
+      expect(check).not.toContain(name);
     },
   );
 
