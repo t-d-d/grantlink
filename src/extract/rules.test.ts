@@ -150,6 +150,30 @@ describe("the rules", () => {
     ).toEqual([]);
   });
 
+  // Every part after the CRUK but the last holds a digit, and no part is
+  // only a year (#514). The text is made up.
+  it.each([
+    "Funded by CRUK/SMITH/2.",
+    "Funded by CRUK (CRUK/2019).",
+    "Funded by CRUK (CRUK-2019).",
+    "Funded by CRUK (CRUK/12/2019).",
+    "Funded by CRUK (CRUK/AB12/SMITH/2).",
+  ])(
+    "leaves a CRUK- form with a part of no digit, or a part that is a year: %j",
+    (text) => {
+      expect(findReferences(sections(text))).toEqual([]);
+    },
+  );
+
+  it("reads a CRUK- form whose last part has no digit, or holds a year and more", () => {
+    expect(
+      findReferences(sections("Funded by CRUK (CRUK/12/AB, CRUK-2019A).")),
+    ).toEqual([
+      { asWritten: "CRUK/12/AB", normalised: "CRUK/12/AB", format: "CRUK-X" },
+      { asWritten: "CRUK-2019A", normalised: "CRUK-2019A", format: "CRUK-X" },
+    ]);
+  });
+
   it.each([
     "Cancer Research UK grant 12345-67.",
     "Cancer Research UK grant 12345/2.",

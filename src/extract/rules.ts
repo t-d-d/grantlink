@@ -15,6 +15,7 @@ export const RULES_VERSIONS: readonly Version[] = [
   { number: 10, issue: 368 },
   { number: 11, issue: 506 },
   { number: 12, issue: 510 },
+  { number: 13, issue: 514 },
 ];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
@@ -185,6 +186,11 @@ const coded = (suffix: string) =>
 const SUFFIX = "[A-Za-z0-9]{2,8}";
 const CAPITAL_SUFFIX = `[A-Z0-9]{2,8}|${MONTH_YEAR}`;
 
+// A CRUK- form's parts follow a hyphen or a slash, and a part that is a
+// year alone is none of them (#514).
+const CRUK_SEP = `(?:${DASH}|/)`;
+const NOT_YEAR = "(?!(?:19|20)\\d{2}(?![A-Z0-9]))";
+
 const SHAPES: readonly Shape[] = [
   {
     // Either letter may be written in lower case (#506).
@@ -201,8 +207,12 @@ const SHAPES: readonly Shape[] = [
     // after the CRUK, within what it matches, so a word such as CRUK-funded
     // or a run of names such as CRUK/MRC/EPSRC is not one. It comes after
     // the C/A pattern, so a C/A pair after CRUK/ is read as the pair alone.
+    // Every part after the CRUK but the last holds a digit, and no part is
+    // a year alone, so a name in capitals, as in CRUK/SMITH/2, or a year,
+    // as in CRUK/2019, is not one. A form that goes on past its fourth part
+    // is not read in part (#514).
     format: "CRUK-X",
-    shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:(?:${DASH}|/)[A-Z0-9]{1,8}){1,4}(?<=CRUK[A-Z0-9/${DASHES}-]*\d[A-Z0-9/${DASHES}-]*)`,
+    shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:${CRUK_SEP}${NOT_YEAR}(?=[A-Z0-9]*\d)[A-Z0-9]{1,8}){0,3}${CRUK_SEP}${NOT_YEAR}[A-Z0-9]{1,8}(?<=CRUK[A-Z0-9/${DASHES}-]*\d[A-Z0-9/${DASHES}-]*)(?!${CRUK_SEP}[A-Z0-9])`,
     sentenceOnly: false,
   },
   {
