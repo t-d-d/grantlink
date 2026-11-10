@@ -1,4 +1,4 @@
-import { afterAll, describe, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { noNonDeterministicOutsideStep } from "../../eslint-rules/no-non-deterministic-outside-step.ts";
 import { ruleTester } from "../rule-tester.ts";
 
@@ -567,25 +567,104 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
-          name: "says at an export that another module may read the source, and how to fix it",
+          name: "reports an alias of Math passed on by name at the export",
           code: `const M = Math;
           export { M };`,
           errors: [
             {
-              message:
-                "`Math` passes to another module, which may read it outside every step where this rule cannot see. Export a function that takes the value from a step instead, or add `// eslint-disable-next-line grantlink/no-non-deterministic-outside-step -- <why it is safe>`.",
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
               line: 2,
             },
           ],
         },
         {
-          name: "says at a read to move it inside a step",
+          name: "reports a call to the clock at the read",
           code: `const at = Date.now();`,
           errors: [
             {
-              message:
-                "`Date.now()` is outside every step, so a replay reads a new value. Move it inside `ctx.step(...)`, or add `// eslint-disable-next-line grantlink/no-non-deterministic-outside-step -- <why it is safe>`.",
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
               line: 1,
+            },
+          ],
+        },
+        {
+          name: "reports a clock read whose value is exported at the read, since the value and not the clock passes on",
+          code: `export const d = new Date();
+          export const t = Date();`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "new Date()" },
+              line: 1,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date()" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "reports the clock exported by default as an export",
+          code: `export default Date.now;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date.now" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "reports the clock exported by assignment as an export",
+          code: `export = Date.now;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date.now" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "reports Date exported by default as an export",
+          code: `export default Date;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "reports an alias of Date exported by default as an export",
+          code: `const D = Date;
+          export default D;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "reports an alias of the clock exported by default at its read and at the export",
+          code: `const now = Date.now;
+          export default now;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now" },
+              line: 1,
+            },
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date.now" },
+              line: 2,
             },
           ],
         },
@@ -1068,4 +1147,30 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
       ],
     },
   );
+});
+
+describe("no-non-deterministic-outside-step's messages", () => {
+  const { messages } = noNonDeterministicOutsideStep.meta;
+
+  it("tells a read to move inside a step", () => {
+    expect(messages.nonDeterministicOutsideStep).toContain(
+      "a replay reads a new value. Move it inside `ctx.step(...)`",
+    );
+    expect(messages.nonDeterministicOutsideStep).toContain(
+      "add `// eslint-disable-next-line grantlink/no-non-deterministic-outside-step -- <why it is safe>`",
+    );
+  });
+
+  it("tells an export that another module may read the source unseen, and how to fix it", () => {
+    expect(messages.exportedOutsideStep).toContain(
+      "passes to another module, which may read it outside every step where this rule cannot see",
+    );
+    expect(messages.exportedOutsideStep).toContain(
+      "Export a function that takes the value from a step instead",
+    );
+    expect(messages.exportedOutsideStep).toContain(
+      "add `// eslint-disable-next-line grantlink/no-non-deterministic-outside-step -- <why it is safe>`",
+    );
+    expect(messages.exportedOutsideStep).not.toContain("Move it inside");
+  });
 });

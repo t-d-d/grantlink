@@ -29,7 +29,9 @@ import type { Resolver } from "./create-rule.ts";
 // reports only at each call. An alias of `Date` itself, `const D = Date`,
 // reports only where it is used, `D()` or `ids.map(D)`, unless it is
 // exported, `export const D = Date`. Then it also reports where it is
-// declared, so `D()` in the same module gives a second report.
+// declared, so `D()` in the same module gives a second report. A report at
+// an export, which cannot move inside a step, says the source passes to
+// another module instead.
 const NON_DETERMINISTIC: Readonly<Record<string, ReadonlySet<string>>> = {
   Math: new Set(["random"]),
   Date: new Set(["now"]),
@@ -347,21 +349,33 @@ function exportsUnfollowed(
   );
 }
 
-// True when the node is the initial value of an alias that is exported,
-// `export const now = Date.now`, or `const D = Date` and then `export { D }`.
-// Its report stands for the export.
-function exportedInit(node: TSESTree.Node, resolver: Resolver): boolean {
+// True when a source read as a value passes to another module: the value
+// an export default or an export assignment passes on, `export default
+// Date.now`, or the initial value of an alias that is exported, `export const
+// now = Date.now`, or `const D = Date` and then `export { D }`. Its report
+// stands for the export. A call is never one, since `export const d = new
+// Date()` passes on the value it read and not the source.
+function exportedSource(node: TSESTree.Node, resolver: Resolver): boolean {
   const outer = outermost(node);
   const parent = outer.parent;
-  if (
-    parent?.type !== AST_NODE_TYPES.VariableDeclarator ||
-    parent.init !== outer ||
-    parent.id.type !== AST_NODE_TYPES.Identifier
-  ) {
-    return false;
+  switch (parent?.type) {
+    case AST_NODE_TYPES.ExportDefaultDeclaration:
+      return parent.declaration === outer;
+    case AST_NODE_TYPES.TSExportAssignment:
+      return parent.expression === outer;
+    case AST_NODE_TYPES.VariableDeclarator: {
+      if (
+        parent.init !== outer ||
+        parent.id.type !== AST_NODE_TYPES.Identifier
+      ) {
+        return false;
+      }
+      const [declared] = resolver.sourceCode.getDeclaredVariables(parent);
+      return declared !== undefined && exported(parent, declared);
+    }
+    default:
+      return false;
   }
-  const [declared] = resolver.sourceCode.getDeclaredVariables(parent);
-  return declared !== undefined && exported(parent, declared);
 }
 
 // True when a declarator sits in an exported declaration,
@@ -435,13 +449,12 @@ export const noNonDeterministicOutsideStep = createRule({
   },
   defaultOptions: [],
   create(context) {
-    // A report at an export, or at the initial value of an exported alias,
-    // says the source passes to another module, since it cannot move
-    // inside a step.
+    // A report at an export says the source passes to another module, since
+    // an export cannot move inside a step.
     const report = (
       node: TSESTree.Node,
       op: string,
-      atExport = exportedInit(node, context),
+      atExport: boolean,
     ): void => {
       if (insideCheckpointedCallback(node, context)) return;
       context.report({
@@ -452,15 +465,13 @@ export const noNonDeterministicOutsideStep = createRule({
         data: { op },
       });
     };
-    const reportExport = (node: TSESTree.Node, op: string): void => {
-      report(node, op, true);
-    };
     // A call reports through its callee, so `Date.now()` and a bare
     // `Math.random` passed as a value each report once.
     const check = (node: TSESTree.Node, path: readonly string[] | null) => {
       const op = opOf(path);
       if (op === undefined) return;
-      report(node, calledThrough(node) ? `${op}()` : op);
+      if (calledThrough(node)) report(node, `${op}()`, false);
+      else report(node, op, exportedSource(node, context));
     };
     const namesDate = (path: readonly string[] | null): boolean =>
       path?.length === 1 && path[0] === "Date";
@@ -479,22 +490,24 @@ export const noNonDeterministicOutsideStep = createRule({
         const alias = variable === null ? null : aliasDeclarator(variable);
         if (alias !== null && exportedDeclaration(alias.declarator)) return;
       }
-      reportExport(value, holder);
+      report(value, holder, true);
     };
     // `Date` read as a value and passed on, such as `ids.map(Date)`.
     const checkDate = (node: TSESTree.Node, path: readonly string[] | null) => {
-      if (namesDate(path) && passedOn(node, context)) report(node, "Date");
+      if (namesDate(path) && passedOn(node, context)) {
+        report(node, "Date", exportedSource(node, context));
+      }
     };
     return {
       NewExpression(node) {
         if (node.arguments.length === 0 && isDate(node.callee)) {
-          report(node, "new Date()");
+          report(node, "new Date()", false);
         }
       },
       // `Date()` without `new` returns the current time as a string, so it
       // reads the clock as `new Date()` does, with or without arguments.
       CallExpression(node) {
-        if (isDate(node.callee)) report(node, "Date()");
+        if (isDate(node.callee)) report(node, "Date()", false);
       },
       MemberExpression(node) {
         const path = pathOf(node, context, new Set());
@@ -507,12 +520,12 @@ export const noNonDeterministicOutsideStep = createRule({
       ExportSpecifier(node) {
         const path = reexported(node);
         const op = opOf(path) ?? holderOf(path);
-        if (op !== undefined) reportExport(node.local, op);
+        if (op !== undefined) report(node.local, op, true);
       },
       // Every name of such a module, `export * from "node:crypto"`.
       ExportAllDeclaration(node) {
         const op = reexportedAll(node);
-        if (op !== undefined) reportExport(node, op);
+        if (op !== undefined) report(node, op, true);
       },
       ExportDefaultDeclaration(node) {
         checkDefault(node.declaration);
@@ -529,7 +542,7 @@ export const noNonDeterministicOutsideStep = createRule({
         const passed = op ?? holderOf(path);
         if (passed === undefined) return;
         if (exportsUnfollowed(node, context, op !== undefined)) {
-          reportExport(node, passed);
+          report(node, passed, true);
           return;
         }
         if (op === undefined) return;
