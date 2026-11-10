@@ -249,6 +249,24 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "reads the clock past a type named Date, which shadows no value",
+          code: `type Date = string;
+          async function run(ctx: any) {
+            const a = Date();
+            const b = new Date();
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "new Date()" },
+            },
+          ],
+        },
+        {
           name: "passes a random source by reference",
           code: `const pick = items.sort(Math.random);`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],

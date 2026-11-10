@@ -1,9 +1,8 @@
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
-import type { TSESTree } from "@typescript-eslint/utils";
+import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
 import {
   createRule,
   insideCheckpointedCallback,
-  lookup,
   unwrapped,
 } from "./create-rule.ts";
 
@@ -58,18 +57,27 @@ export const noNonDeterministicOutsideStep = createRule({
   },
   defaultOptions: [],
   create(context) {
-    // A name `Date` that a local declaration shadows is not the clock. A
-    // global variable has no definitions, even when the config lists it.
-    const isGlobalDate = (
-      callee: TSESTree.Node,
-      at: TSESTree.Node,
-    ): boolean => {
+    // A name `Date` that a local value shadows is not the clock. The name is
+    // resolved through its own reference, which skips a type such as
+    // `type Date = string` that shadows no value. A global variable has no
+    // definitions, even when the config lists it.
+    const isGlobalDate = (callee: TSESTree.Node): boolean => {
       const name = unwrapped(callee);
       if (name.type !== AST_NODE_TYPES.Identifier || name.name !== "Date") {
         return false;
       }
-      const variable = lookup("Date", context.sourceCode.getScope(at));
-      return variable === null || variable.defs.length === 0;
+      for (
+        let scope: TSESLint.Scope.Scope | null =
+          context.sourceCode.getScope(name);
+        scope !== null;
+        scope = scope.upper
+      ) {
+        const ref = scope.references.find((r) => r.identifier === name);
+        if (ref !== undefined) {
+          return ref.resolved === null || ref.resolved.defs.length === 0;
+        }
+      }
+      return true;
     };
     const report = (node: TSESTree.Node, op: string): void => {
       if (insideCheckpointedCallback(node, context)) return;
@@ -84,12 +92,12 @@ export const noNonDeterministicOutsideStep = createRule({
       // `new Date!()` and `(Date as any)()` count. `Date()` without `new`
       // returns the current time as a string, so it reads the clock too.
       NewExpression(node) {
-        if (node.arguments.length === 0 && isGlobalDate(node.callee, node)) {
+        if (node.arguments.length === 0 && isGlobalDate(node.callee)) {
           report(node, "new Date()");
         }
       },
       CallExpression(node) {
-        if (isGlobalDate(node.callee, node)) report(node, "Date()");
+        if (isGlobalDate(node.callee)) report(node, "Date()");
       },
       // A call reports through its callee, so `Date.now()` and a bare
       // `Math.random` passed as a value each report once.
