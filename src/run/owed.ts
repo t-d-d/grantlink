@@ -22,8 +22,10 @@ export type Asked<T> = { read: T } | { owed: Owed };
 // checkpoints readOrRefused's result, whose shape runs in progress have
 // saved (docs/constraints/durable-execution.md). Its only await is the step
 // itself, so a caller's await of it is replay-safe. The durable lint rules
-// know it by name (STEP_HELPERS in eslint-rules/create-rule.ts), so a rename
-// or a change to its arguments changes that entry too.
+// know it by this module's path and its exported name (STEP_HELPERS in
+// eslint-rules/create-rule.ts), so a move, a rename or a change to its
+// arguments changes that entry too. A caller imports it by name, under any
+// local name.
 export async function askEuropePmc<T>(
   ctx: DurableContext,
   step: string,

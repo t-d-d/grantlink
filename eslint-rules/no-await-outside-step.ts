@@ -3,7 +3,7 @@ import {
   DURABLE_METHODS,
   insideCheckpointedCallback,
   isMethodCallIn,
-  isStepHelperCall,
+  stepHelperOf,
 } from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
@@ -38,17 +38,16 @@ export const noAwaitOutsideStep = createRule({
   },
   defaultOptions: [],
   create(context) {
-    const { sourceCode } = context;
     return {
       AwaitExpression(node) {
         if (isMethodCallIn(node.argument, DURABLE_METHODS)) return;
-        if (isStepHelperCall(node.argument)) return;
-        if (insideCheckpointedCallback(node, sourceCode)) return;
+        if (stepHelperOf(node.argument, context) !== null) return;
+        if (insideCheckpointedCallback(node, context)) return;
         context.report({ node, messageId: "awaitOutsideStep" });
       },
       ForOfStatement(node) {
         if (!node.await) return;
-        if (insideCheckpointedCallback(node, sourceCode)) return;
+        if (insideCheckpointedCallback(node, context)) return;
         context.report({ node, messageId: "awaitOutsideStep" });
       },
     };

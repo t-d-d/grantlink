@@ -19,7 +19,9 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
         },
         {
           name: "reads the clock inside askEuropePmc's read, which runs as its step",
-          code: `async function run(ctx: any) {
+          filename: "src/run/run.ts",
+          code: `import { askEuropePmc } from "./owed.ts";
+          async function run(ctx: any) {
             await askEuropePmc(ctx, "paper", "wait", r, async () => Date.now());
           }`,
         },
@@ -29,6 +31,15 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
         },
       ],
       invalid: [
+        {
+          name: "reads the clock in the read of a local function that shares askEuropePmc's name",
+          filename: "src/run/run.ts",
+          code: `function askEuropePmc(...args: unknown[]) { return args; }
+          async function run(ctx: any) {
+            await askEuropePmc(ctx, "paper", "wait", r, async () => Date.now());
+          }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
         {
           name: "reads the clock in the body",
           code: `async function run(ctx: any) {
@@ -61,7 +72,8 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
         },
         {
           name: "reads the clock in askEuropePmc's step name, which the body evaluates",
-          code: 'async function run(ctx: any) { await askEuropePmc(ctx, `at-${Date.now()}`, "wait", r, async () => 1); }',
+          filename: "src/run/run.ts",
+          code: 'import { askEuropePmc } from "./owed.ts"; async function run(ctx: any) { await askEuropePmc(ctx, `at-${Date.now()}`, "wait", r, async () => 1); }',
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
         },
         {

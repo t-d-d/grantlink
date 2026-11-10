@@ -5,7 +5,7 @@ import {
   createRule,
   DURABLE_METHODS,
   isMethodCallIn,
-  isStepHelperCall,
+  stepHelperOf,
   lookup,
 } from "./create-rule.ts";
 
@@ -68,7 +68,8 @@ export const noNestedDurableOperations = createRule({
     // one.
     const contextOf = (node: TSESTree.CallExpression): TSESTree.Node | null => {
       if (isMethodCallIn(node, DURABLE_METHODS)) return node.callee.object;
-      if (isStepHelperCall(node)) return node.arguments[0] ?? null;
+      if (stepHelperOf(node, context) !== null)
+        return node.arguments[0] ?? null;
       return null;
     };
     return {

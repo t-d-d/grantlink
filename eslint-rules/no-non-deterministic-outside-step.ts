@@ -50,9 +50,8 @@ export const noNonDeterministicOutsideStep = createRule({
   },
   defaultOptions: [],
   create(context) {
-    const { sourceCode } = context;
     const report = (node: TSESTree.Node, op: string): void => {
-      if (insideCheckpointedCallback(node, sourceCode)) return;
+      if (insideCheckpointedCallback(node, context)) return;
       context.report({
         node,
         messageId: "nonDeterministicOutsideStep",
