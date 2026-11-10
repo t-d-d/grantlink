@@ -54,6 +54,14 @@ const MODULES: Readonly<Record<string, readonly string[]>> = {
 // The names a path may start with that stand for the global object.
 const GLOBAL_OBJECT = new Set(["globalThis", "global"]);
 
+// The objects that hold a clock or random source, such as `Math`,
+// `crypto`, `perf_hooks` or `globalThis`, as a path of one name.
+const HOLDERS: ReadonlySet<string> = new Set([
+  ...Object.keys(NON_DETERMINISTIC),
+  ...Object.values(MODULES).map((module) => module.join(".")),
+  ...GLOBAL_OBJECT,
+]);
+
 // A path read the way the code would read it from the globals, such as
 // `globalThis.Date`, `perf_hooks.performance` or `crypto.webcrypto`,
 // written the way NON_DETERMINISTIC keys it.
@@ -173,14 +181,17 @@ function identifierPath(
 }
 
 // The global path a name from a module stands for, or the module itself
-// when the name is null. Null for a module MODULES does not name.
+// when the name is null or `default`, which a built-in module exports as
+// itself. Null for a module MODULES does not name.
 function modulePath(
   source: string,
   name: string | null,
 ): readonly string[] | null {
   const module = MODULES[source.replace(/^node:/, "")];
   if (module === undefined) return null;
-  return name === null ? module : normalised([...module, name]);
+  return name === null || name === "default"
+    ? module
+    : normalised([...module, name]);
 }
 
 // The global path `export { name } from "module"` passes on, for a module
@@ -207,6 +218,25 @@ function opOf(path: readonly string[] | null): string | undefined {
   return NON_DETERMINISTIC[object]?.has(property) === true
     ? `${object}.${property}`
     : undefined;
+}
+
+// The object a path names when it is one of HOLDERS. Another module that
+// gets it may read the source from it, `M.random()`, and the rule does not
+// follow it there.
+function holderOf(path: readonly string[] | null): string | undefined {
+  if (path?.length !== 1) return undefined;
+  const [name = ""] = path;
+  return HOLDERS.has(name) ? name : undefined;
+}
+
+// The module `export * from "module"` passes on when MODULES names it,
+// written as its global path, such as `crypto`. Undefined for any other
+// module, or for `export type * from "module"`, which passes on no value.
+function reexportedAll(
+  declaration: TSESTree.ExportAllDeclaration,
+): string | undefined {
+  if (declaration.exportKind === "type") return undefined;
+  return holderOf(modulePath(declaration.source.value, null));
 }
 
 // True when the identifier is read as a value, rather than declared, used
@@ -277,12 +307,15 @@ function exported(
 // or the local of an export, `export { random }`, unless that binding's own
 // export already reports. The rule does not follow a relative import, so the
 // caller there goes unchecked. A plain alias, `export const D = Date`, is
-// left to its initial value, which reports. A type-only export passes on no
+// left to its initial value when that reports, as a source passed on does,
+// and reported at the binding when it does not, as an object that holds a
+// source, `export const M = Math`, does not. A type-only export passes on no
 // value, and `export { x } from "..."` names another module's binding, which
 // reexported checks.
 function exportsUnfollowed(
   identifier: TSESTree.Identifier,
   resolver: Resolver,
+  initReports: boolean,
 ): boolean {
   const variable = lookup(
     identifier.name,
@@ -292,7 +325,11 @@ function exportsUnfollowed(
   const alias = aliasDeclarator(variable);
   const parent = identifier.parent;
   if (parent.type !== AST_NODE_TYPES.ExportSpecifier) {
-    return alias?.name === identifier && exportedPattern(alias.declarator);
+    return (
+      alias?.name === identifier &&
+      exportedDeclaration(alias.declarator) &&
+      (alias.declarator.id !== alias.name || !initReports)
+    );
   }
   const declaration = parent.parent;
   if (
@@ -305,15 +342,15 @@ function exportsUnfollowed(
   }
   return (
     alias === null ||
-    (alias.declarator.id !== alias.name && !exportedPattern(alias.declarator))
+    ((alias.declarator.id !== alias.name || !initReports) &&
+      !exportedDeclaration(alias.declarator))
   );
 }
 
-// True when a declarator destructures in an exported declaration,
-// `export const { now } = Date`.
-function exportedPattern(declarator: TSESTree.VariableDeclarator): boolean {
+// True when a declarator sits in an exported declaration,
+// `export const { now } = Date` or `export const M = Math`.
+function exportedDeclaration(declarator: TSESTree.VariableDeclarator): boolean {
   return (
-    declarator.id.type === AST_NODE_TYPES.ObjectPattern &&
     declarator.parent.parent.type === AST_NODE_TYPES.ExportNamedDeclaration
   );
 }
@@ -396,6 +433,21 @@ export const noNonDeterministicOutsideStep = createRule({
       path?.length === 1 && path[0] === "Date";
     const isDate = (callee: TSESTree.Node): boolean =>
       namesDate(pathOf(callee, context, new Set()));
+    // An object that holds a source, exported by default, `export default
+    // Math` or `export = c`. `Date` reports as a value passed on, and an
+    // alias whose own declaration is exported reports there.
+    const checkDefault = (value: TSESTree.Node): void => {
+      const path = pathOf(value, context, new Set());
+      const holder = holderOf(path);
+      if (holder === undefined || namesDate(path)) return;
+      const inner = unwrapped(value);
+      if (inner.type === AST_NODE_TYPES.Identifier) {
+        const variable = lookup(inner.name, context.sourceCode.getScope(inner));
+        const alias = variable === null ? null : aliasDeclarator(variable);
+        if (alias !== null && exportedDeclaration(alias.declarator)) return;
+      }
+      report(value, holder);
+    };
     // `Date` read as a value and passed on, such as `ids.map(Date)`.
     const checkDate = (node: TSESTree.Node, path: readonly string[] | null) => {
       if (namesDate(path) && passedOn(node, context)) report(node, "Date");
@@ -417,10 +469,23 @@ export const noNonDeterministicOutsideStep = createRule({
         checkDate(node, path);
       },
       // A name passed on from a module that holds a clock or random source,
-      // `export { randomUUID } from "node:crypto"`.
+      // `export { randomUUID } from "node:crypto"`, or an object that holds
+      // one, `export { webcrypto } from "node:crypto"`.
       ExportSpecifier(node) {
-        const op = opOf(reexported(node));
+        const path = reexported(node);
+        const op = opOf(path) ?? holderOf(path);
         if (op !== undefined) report(node.local, op);
+      },
+      // Every name of such a module, `export * from "node:crypto"`.
+      ExportAllDeclaration(node) {
+        const op = reexportedAll(node);
+        if (op !== undefined) report(node, op);
+      },
+      ExportDefaultDeclaration(node) {
+        checkDefault(node.declaration);
+      },
+      TSExportAssignment(node) {
+        checkDefault(node.expression);
       },
       // A named import, or an alias of a member, read on its own, such as
       // `randomUUID()` after `import { randomUUID } from "node:crypto"`, or one
@@ -428,11 +493,13 @@ export const noNonDeterministicOutsideStep = createRule({
       Identifier(node) {
         const path = pathOf(node, context, new Set());
         const op = opOf(path) ?? (namesDate(path) ? "Date" : undefined);
-        if (op === undefined) return;
-        if (exportsUnfollowed(node, context)) {
-          report(node, op);
+        const passed = op ?? holderOf(path);
+        if (passed === undefined) return;
+        if (exportsUnfollowed(node, context, op !== undefined)) {
+          report(node, passed);
           return;
         }
+        if (op === undefined) return;
         if (!isRead(node, context)) return;
         check(node, path);
         checkDate(node, path);
