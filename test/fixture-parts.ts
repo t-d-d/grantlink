@@ -12,7 +12,9 @@
 // (#215). Inside the funding metadata it names anything the cutter does not
 // read: a funding group may hold its funding statements and award groups,
 // and an award group its funding sources and award ids, so a principal award
-// recipient or investigator, which names people, is named (#275). Three
+// recipient or investigator, which names people, is named (#275). The check
+// takes those names from the cutter too, so it follows when the cutter reads
+// another (#305). Three
 // differences stay, where the check is stricter than the cutter. The cutter
 // finds a funding section nested in another section, but the check refuses
 // the outer section, whose other parts can carry names: a recording keeps
@@ -27,7 +29,11 @@
 // keeps, the check names each attribute it does not expect, or whose value
 // it does not expect (#304). It names the attribute, never its value.
 
-import { FUNDING_FOOTNOTE, isFundingSectionAt } from "../src/europepmc/jats.ts";
+import {
+  FUNDING_FOOTNOTE,
+  FUNDING_METADATA,
+  isFundingSectionAt,
+} from "../src/europepmc/jats.ts";
 
 interface Attribute {
   name: string;
@@ -51,6 +57,11 @@ interface Element {
 
 const FOOTNOTE = new RegExp(FUNDING_FOOTNOTE, "u");
 
+// The funding metadata the cutter reads, by the names it reads them by, and
+// where a funding group stands in a recorded full text (#305).
+const { group, statement, award, source, id } = FUNDING_METADATA;
+const GROUP = `article/front/article-meta/${group}`;
+
 const isFundingSection = (element: Element): boolean =>
   element.name === "sec" && element.funding;
 const isFundingFootnote = (element: Element): boolean =>
@@ -64,12 +75,10 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
   article: (child) => ["front", "body", "back"].includes(child.name),
   "article/front": (child) => child.name === "article-meta",
   "article/front/article-meta": (child) =>
-    ["article-id", "permissions", "funding-group"].includes(child.name),
+    ["article-id", "permissions", group].includes(child.name),
   "article/front/article-meta/permissions": (child) => child.name === "license",
-  "article/front/article-meta/funding-group": (child) =>
-    ["funding-statement", "award-group"].includes(child.name),
-  "article/front/article-meta/funding-group/award-group": (child) =>
-    ["funding-source", "award-id"].includes(child.name),
+  [GROUP]: (child) => child.name === statement || child.name === award,
+  [`${GROUP}/${award}`]: (child) => child.name === source || child.name === id,
   "article/body": isFundingSection,
   "article/back": (child) =>
     child.name === "ack" ||
@@ -309,15 +318,13 @@ function strayInPart(part: Element, path: string): string[] {
 
 // What the cutter reads whole inside a funding group: each funding
 // statement, and each funding source and award id in an award group. Any
-// element inside one is read with it, but a comment is dropped unread, so a
-// comment with text is named (#275).
-const READ_WHOLE = new Set(
-  [
-    "funding-group/funding-statement",
-    "funding-group/award-group/funding-source",
-    "funding-group/award-group/award-id",
-  ].map((path) => `article/front/article-meta/${path}`),
-);
+// element inside one is read with it, but a comment or a processing
+// instruction is dropped unread, so one with text is named (#275, #336).
+const READ_WHOLE = new Set([
+  `${GROUP}/${statement}`,
+  `${GROUP}/${award}/${source}`,
+  `${GROUP}/${award}/${id}`,
+]);
 
 function stray(element: Element, path: string): string[] {
   if (isPart(element)) return strayInPart(element, path);
