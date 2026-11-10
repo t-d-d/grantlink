@@ -1,5 +1,9 @@
 import type { DurableContext } from "@aws/durable-execution-sdk-js";
-import { checkWholeSearch, type Deps } from "../pipeline/steps.ts";
+import {
+  checkWholeSearch,
+  logGoldSearchEnded,
+  type Deps,
+} from "../pipeline/steps.ts";
 import {
   sample,
   searchGoldA,
@@ -9,8 +13,7 @@ import {
   type Entry,
   type Taken,
 } from "../pipeline/snapshot.ts";
-import { readOrRefused, type Read } from "../pipeline/refused.ts";
-import { owedAfter, type Owed } from "./owed.ts";
+import { askEuropePmc, type Asked, type Owed } from "./owed.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 
 // Takes the eval snapshot named in the deps' gold, once
@@ -44,40 +47,42 @@ async function takeBatch(
   for (const pmcid of pmcids) {
     if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
     due = null;
-    let outcome: Read<Taken> | undefined;
+    let asked: Asked<Taken>;
     try {
-      outcome = await ctx.step(
+      // eslint-disable-next-line grantlink/no-await-outside-step -- askEuropePmc's only await is its step
+      asked = await askEuropePmc(
+        ctx,
         `gold-${set}-${pmcid}`,
-        async ({ attempt }) =>
-          readOrRefused(attempt, paperRetry, async () =>
-            snapshotPaper(deps, pmcid, set),
-          ),
-        { retryStrategy: paperRetry },
+        `gold-${set}-${pmcid}-wait`,
+        paperRetry,
+        async () => snapshotPaper(deps, pmcid, set),
       );
     } catch {
-      outcome = undefined;
+      asked = { owed: null };
     }
-    if (outcome !== undefined && "read" in outcome) {
-      if (outcome.read.kept) entries.push(outcome.read.entry);
+    if ("read" in asked) {
+      if (asked.read.kept) entries.push(asked.read.entry);
       else if (set === "B") break;
       continue;
     }
     failed += 1;
     // As in a run's batch: nothing more goes to Europe PMC until the wait
     // it asked for has passed.
-    due = owedAfter(`gold-${set}-${pmcid}-wait`, outcome);
+    due = asked.owed;
     if (set === "B") break;
   }
   return { entries, failed, owed: due };
 }
 
 // `owed` is a wait the run's last refusal left, which the snapshot waits
-// out before it first asks Europe PMC. It returns whatever wait is still
-// owed when it ends, which the run waits out before it ends, so no run
-// started after it asks Europe PMC too soon.
+// out before it first asks Europe PMC, and `runId` names the run in its
+// logs. It returns whatever wait is still owed when it ends, which the run
+// waits out before it ends, so no run started after it asks Europe PMC too
+// soon.
 export async function takeSnapshot(
   ctx: DurableContext,
   deps: Deps,
+  runId: string,
   owed: Owed,
 ): Promise<{ snapshot: SnapshotSummary; owed: Owed }> {
   const done = await ctx.step(
@@ -102,32 +107,42 @@ export async function takeSnapshot(
       if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
       due = null;
       const name = `snapshot-search-${String(page)}`;
-      const outcome = await ctx.step(
+      // eslint-disable-next-line grantlink/no-await-outside-step -- askEuropePmc's only await is its step
+      const asked = await askEuropePmc(
+        ctx,
         name,
-        async ({ attempt }) =>
-          readOrRefused(attempt, europePmcRetry, async () =>
-            searchGoldA(deps, from),
-          ),
-        { retryStrategy: europePmcRetry },
+        `${name}-wait`,
+        europePmcRetry,
+        async () => searchGoldA(deps, from),
       );
       // A refused search loses the snapshot for this run, and leaves the
       // wait Europe PMC asked for owed, which the run waits out before it
       // ends (#236).
-      if ("refused" in outcome) {
+      if ("owed" in asked) {
         return {
           snapshot: {
             taken: false,
             reason: "Europe PMC refused gold set A's search",
           },
-          owed: owedAfter(`${name}-wait`, outcome),
+          owed: asked.owed,
         };
       }
-      const result = outcome.read;
+      const result = asked.read;
       found.push(...result.pmcids);
       skipped += result.skipped;
       cursor = result.nextCursor;
       page += 1;
     }
+    // Logged before the check, so a search that fails it still says how
+    // many results it skipped.
+    await ctx.step(
+      "snapshot-search-ended",
+      async () => {
+        logGoldSearchEnded(runId, deps.gold.snapshotId, found.length, skipped);
+        return Promise.resolve();
+      },
+      { retryStrategy: storeRetry },
+    );
     checkWholeSearch(found.length, skipped);
     candidates = sample(found, goldA.seed);
   }
