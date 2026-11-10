@@ -27,6 +27,16 @@ describe("fitness: no durable operation inside its own context's operation (dura
           });
         }`,
       },
+      {
+        name: "uses a local declared twice, which is no alias of either value",
+        code: `async function run(ctx: any, other: any) {
+          var same = ctx;
+          var same = other;
+          await ctx.runInChildContext("paper", async () => {
+            await same.wait("pause", { seconds: 1 });
+          });
+        }`,
+      },
     ],
     invalid: [
       ...[
@@ -198,6 +208,50 @@ describe("fitness: no durable operation inside its own context's operation (dura
           const same = ctx;
           await ctx.runInChildContext("paper", async () => {
             await same.wait("pause", { seconds: 1 });
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
+        name: "reaches the same context through an alias with a non-null assertion",
+        code: `async function run(ctx: any) {
+          const same = ctx!;
+          await ctx.runInChildContext("paper", async () => {
+            await same.wait("pause", { seconds: 1 });
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
+        name: "reaches the same context through a let alias",
+        code: `async function run(ctx: any) {
+          let same = ctx;
+          await ctx.runInChildContext("paper", async () => {
+            await same.wait("pause", { seconds: 1 });
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
+        name: "reaches the same context through an alias that is written again later",
+        code: `async function run(ctx: any, other: any) {
+          let same = ctx;
+          await ctx.runInChildContext("paper", async () => {
+            await same.wait("pause", { seconds: 1 });
+          });
+          same = other;
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
+        name: "asks Europe PMC through an alias that is written again later on the same context inside a child context",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        let ask = askEuropePmc;
+        ask = other;
+        async function run(ctx: any) {
+          await ctx.runInChildContext("paper", async () => {
+            await ask(ctx, "fetch", "wait", r, async () => 1);
           });
         }`,
         errors: [{ messageId: "sameContextUsage" }],
