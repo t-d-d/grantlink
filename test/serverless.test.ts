@@ -144,7 +144,7 @@ describe("what serverless.yml's resources hold that the static checks do not rea
   });
 });
 
-describe("inline resources that change what a template or osls declares (#166)", () => {
+describe("inline resources that change what a template, osls or an earlier inline entry declares (#166, #261)", () => {
   it("finds an inline entry that changes a template's resource", () => {
     expect(
       unread([
