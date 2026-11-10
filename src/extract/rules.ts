@@ -8,7 +8,7 @@ import funderFile from "./funder.json" with { type: "json" };
 
 // Bump this whenever a pattern, or which references the rules keep,
 // changes, so every stored result says which rules made it.
-export const RULES_VERSION = "rules-7";
+export const RULES_VERSION = "rules-8";
 
 export const funder = z
   .object({
@@ -53,32 +53,47 @@ export type Reference = z.infer<typeof referenceSchema>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 const DASH = `[-${DASHES}]`;
-// Turns each letter of escaped text into a class of its upper and lower
-// case, for a pattern whose own letters must keep their case and so cannot
-// take the `i` flag. Any letter folds, not only A to Z (#301). It takes
-// text, not a pattern: an escape such as \s would become \[sS]. A case that
-// is more than one character, as "SS" is for "ß", is left out of the class.
-// The `i` flag also folds a few letters with no upper and lower case pair,
-// such as "ς" with "σ" and "ſ" with "s", which this does not (#321).
-const anyCase = (text: string) =>
-  text.replace(/\p{L}/gu, (letter) => {
-    const cases = new Set(
-      [letter, letter.toUpperCase(), letter.toLowerCase()].filter((form) =>
-        /^.$/su.test(form),
-      ),
-    );
-    return cases.size === 1 ? letter : `[${[...cases].join("")}]`;
-  });
-// Any run of whitespace may part the words of a name, such as a no-break
-// space, a line break or two spaces (#269). The classes go in after the
-// any-case pass, so the letter in \s is not changed.
-const namePattern = (name: string) =>
-  name.replace(/-/gu, DASH).replace(/ /gu, String.raw`\s+`);
-const NAMES = funder.names.map((name) => namePattern(escape(name))).join("|");
-const ANY_CASE_NAMES = funder.names
-  .map((name) => namePattern(anyCase(escape(name))))
-  .join("|");
-const funderName = new RegExp(`(?:^|[^A-Za-z])(?:${NAMES})(?![A-Za-z])`, "iu");
+// A letter as a class of its upper and lower case, for a pattern whose own
+// letters must keep their case and so cannot take the `i` flag. Any letter
+// folds, not only A to Z (#301). A case that is more than one character, as
+// "SS" is for "ß", is left out of the class. The `i` flag also folds a few
+// letters with no upper and lower case pair, such as "ς" with "σ" and "ſ"
+// with "s", which this does not (#321).
+const anyCaseLetter = (letter: string) => {
+  const cases = new Set(
+    [letter, letter.toUpperCase(), letter.toLowerCase()].filter((form) =>
+      /^.$/su.test(form),
+    ),
+  );
+  return cases.size === 1 ? letter : `[${[...cases].join("")}]`;
+};
+
+// The names as one pattern, built a character at a time from each raw name,
+// so only the name's own letters ever become any-case classes, never a
+// letter in an escape or a class such as \s (#271). Any run of whitespace
+// may part the words of a name, such as a no-break space, a line break or
+// two spaces (#269).
+export function namesPattern(
+  names: readonly string[],
+  anyCase: boolean,
+): string {
+  const char = (c: string) => {
+    if (c === "-") return DASH;
+    if (c === " ") return String.raw`\s+`;
+    if (anyCase && /\p{L}/u.test(c)) return anyCaseLetter(c);
+    return escape(c);
+  };
+  return names.map((name) => Array.from(name, char).join("")).join("|");
+}
+
+const NAMES = namesPattern(funder.names, false);
+const ANY_CASE_NAMES = namesPattern(funder.names, true);
+// Any letter, not only A to Z, makes a name part of a longer word (#320),
+// and so does a combining mark, which belongs to the letter before it. A
+// lookbehind, not a negated class, keeps the case-insensitive match from
+// folding a letter onto a mark that is not one.
+const EDGE = String.raw`[\p{L}\p{M}]`;
+const funderName = new RegExp(`(?<!${EDGE})(?:${NAMES})(?!${EDGE})`, "iu");
 
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
@@ -127,7 +142,7 @@ const PATTERNS: Pattern[] = [
     // name, as in "Cancer Research UK (G123/45)".
     format: "Gn/n",
     pattern: new RegExp(
-      String.raw`(?<=(?:^|[^A-Za-z])(?:${ANY_CASE_NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}\b`,
+      String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}\b`,
       "gu",
     ),
     sentenceOnly: false,
