@@ -1,4 +1,5 @@
-import { posix, relative, sep } from "node:path";
+import { posix, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { AST_NODE_TYPES, ESLintUtils } from "@typescript-eslint/utils";
 import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
 
@@ -167,7 +168,15 @@ export function lookup(
   return null;
 }
 
-// The file's path from the directory ESLint runs in, with forward slashes.
+// The repo's root: the directory that holds eslint.config.js and this
+// folder of rules.
+const root = fileURLToPath(new URL("..", import.meta.url));
+
+// The file's path from the repo's root, with forward slashes, wherever
+// ESLint runs. A relative filename is relative to the directory ESLint runs
+// in, so it is resolved from there first.
 export function repoPath(context: { filename: string; cwd: string }): string {
-  return relative(context.cwd, context.filename).split(sep).join("/");
+  return relative(root, resolve(context.cwd, context.filename))
+    .split(sep)
+    .join("/");
 }

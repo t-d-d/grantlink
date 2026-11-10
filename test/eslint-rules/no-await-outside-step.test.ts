@@ -1,5 +1,7 @@
+import { join } from "node:path";
 import { afterAll, describe, it } from "vitest";
 import { noAwaitOutsideStep } from "../../eslint-rules/no-await-outside-step.ts";
+import { root } from "../repo.ts";
 import { ruleTester } from "../rule-tester.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
@@ -167,5 +169,36 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         errors: [{ messageId: "awaitOutsideStep" }],
       },
     ],
+  });
+
+  // ESLint run from src/ names the file run/run.ts. The rule still knows
+  // askEuropePmc from src/run/owed.ts.
+  describe("run from src/", () => {
+    ruleTester({ afterAll, describe, it }, { cwd: join(root, "src") }).run(
+      "no-await-outside-step",
+      noAwaitOutsideStep,
+      {
+        valid: [
+          {
+            name: "awaits askEuropePmc, whose only await is its step",
+            filename: "run/run.ts",
+            code: `import { askEuropePmc } from "./owed.ts";
+          async function run(ctx: any) {
+            await askEuropePmc(ctx, "paper", "wait", r, async () => readPaper());
+          }`,
+          },
+        ],
+        invalid: [
+          {
+            name: "awaits I/O directly in a durable body",
+            filename: "run/run.ts",
+            code: `async function run(ctx: any) {
+            await fetchPaper();
+          }`,
+            errors: [{ messageId: "awaitOutsideStep" }],
+          },
+        ],
+      },
+    );
   });
 });
