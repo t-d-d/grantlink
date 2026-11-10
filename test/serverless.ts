@@ -252,6 +252,21 @@ export function unreadResources(
   const inlineParameters = new Map<string, string>();
   const inlineResources = new Map<string, string>();
   const inlineOutputs = new Map<string, string>();
+  // Who declares `id`: a template, osls or an inline entry, or nobody.
+  const declarer = (
+    id: string,
+    declared: readonly string[],
+    generated: (id: string) => boolean,
+    inline: ReadonlyMap<string, string>,
+  ): string | undefined => {
+    if (declared.includes(id)) return "a template declares";
+    if (generated(id)) return "osls generates";
+    const earlier = inline.get(id);
+    return earlier === undefined ? undefined : `${earlier} declares`;
+  };
+  // osls generates resources and outputs, not parameters.
+  const byOsls = (id: string): boolean =>
+    oslsGenerates(id, elsewhere.functions);
   const head = files.flatMap((file, index): string[] =>
     resources[index] === file
       ? []
@@ -283,19 +298,12 @@ export function unreadResources(
         generated: (id: string) => boolean,
       ): string[] =>
         Object.keys(isPlain(section) ? section : {}).flatMap((id): string[] => {
-          if (declared.includes(id))
-            return [`${at} changes ${what}${id}, which a template declares`];
-          if (generated(id))
-            return [`${at} changes ${what}${id}, which osls generates`];
-          const earlier = inline.get(id);
-          if (earlier !== undefined)
-            return [`${at} changes ${what}${id}, which ${earlier} declares`];
+          const by = declarer(id, declared, generated, inline);
+          if (by !== undefined)
+            return [`${at} changes ${what}${id}, which ${by}`];
           inline.set(id, at);
           return [];
         });
-      // osls generates resources and outputs, not parameters.
-      const byOsls = (id: string): boolean =>
-        oslsGenerates(id, elsewhere.functions);
       // An inline parameter may set a template's parameter, as serverless.yml
       // sets the dns stack's values as defaults, so only an earlier inline
       // entry's parameter counts.
@@ -335,20 +343,10 @@ export function unreadResources(
   // (#323). Any inline entry's resource counts, earlier or later, since
   // CloudFormation reads the merged stack as a whole.
   const clashes = [...inlineParameters].flatMap(([id, at]): string[] => {
-    if (elsewhere.declared.includes(id))
-      return [
-        `${at} declares the parameter ${id}, which a template declares as a resource`,
-      ];
-    if (oslsGenerates(id, elsewhere.functions))
-      return [
-        `${at} declares the parameter ${id}, which osls generates as a resource`,
-      ];
-    const resourceAt = inlineResources.get(id);
-    return resourceAt === undefined
+    const by = declarer(id, elsewhere.declared, byOsls, inlineResources);
+    return by === undefined
       ? []
-      : [
-          `${at} declares the parameter ${id}, which ${resourceAt} declares as a resource`,
-        ];
+      : [`${at} declares the parameter ${id}, which ${by} as a resource`];
   });
   return [...head, ...rest, ...clashes];
 }
