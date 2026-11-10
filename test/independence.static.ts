@@ -31,6 +31,18 @@ describe("fitness: every view carries the independence notice (independence.md)"
   });
 });
 
+// On a phone a reader may see only the headline and the count, so the
+// first screen says the page is independent too, as well as the footer
+// (#588). Nothing may come between the headline and that line.
+describe("the first screen says the page is independent (#588)", () => {
+  it("puts the independence line straight after the headline", () => {
+    const html = readRepoFile("site/index.html");
+    const afterHeadline = /<\/h1>\s*(<p\b[^>]*>[\s\S]*?<\/p>)/u.exec(html);
+    expect(afterHeadline).not.toBeNull();
+    expect(textOf(afterHeadline?.[1] ?? "")).toMatch(NOTICE);
+  });
+});
+
 describe("fitness: no CRUK logo or styling (independence.md)", () => {
   it("ships no image that names CRUK", () => {
     const named = repoFiles().filter((path) =>
