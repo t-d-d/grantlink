@@ -6,6 +6,7 @@ import {
   checkWholeSearch,
   logGoldPaperFailed,
   logGoldSearchEnded,
+  logSnapshotFailed,
   type Deps,
   type KnownSnapshotFailure,
 } from "../pipeline/steps.ts";
@@ -53,17 +54,25 @@ const BATCH = 50;
 
 // Takes a batch of gold papers, first waiting out any wait an earlier
 // refusal left `owed`, as a run's batch does. A gold set B batch stops at
-// its first paper that fails or is not kept, since the snapshot is lost
-// then and asking Europe PMC about the rest would be wasted.
+// its first paper that fails, since the snapshot is lost then and asking
+// Europe PMC about the rest would be wasted, and names that paper in
+// `stopped`. A gold set B paper is always kept once read (#399), so one
+// that is not kept is a fault, and stops the batch the same way.
 async function takeBatch(
   ctx: DurableContext,
   deps: Deps,
   pmcids: string[],
   set: "A" | "B",
   owed: Owed,
-): Promise<{ entries: Entry[]; failed: number; owed: Owed }> {
+): Promise<{
+  entries: Entry[];
+  failed: number;
+  owed: Owed;
+  stopped: string | null;
+}> {
   const entries: Entry[] = [];
   let failed = 0;
+  let stopped: string | null = null;
   let due = owed;
   for (const pmcid of pmcids) {
     if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
@@ -88,7 +97,10 @@ async function takeBatch(
     }
     if ("read" in asked) {
       if (asked.read.kept) entries.push(asked.read.entry);
-      else if (set === "B") break;
+      else if (set === "B") {
+        stopped = pmcid;
+        break;
+      }
       continue;
     }
     failed += 1;
@@ -99,9 +111,12 @@ async function takeBatch(
     // As in a run's batch: nothing more goes to Europe PMC until the wait
     // it asked for has passed.
     due = asked.owed;
-    if (set === "B") break;
+    if (set === "B") {
+      stopped = pmcid;
+      break;
+    }
   }
-  return { entries, failed, owed: due };
+  return { entries, failed, owed: due, stopped };
 }
 
 // `owed` is a wait the run's last refusal left, which the snapshot waits
@@ -189,8 +204,12 @@ export async function takeSnapshot(
     if (failed !== null) failedAs("search-failed", failed.error);
     // A refused search loses the snapshot for this run, and leaves the
     // wait Europe PMC asked for owed, which the run waits out before it
-    // ends (#236).
+    // ends (#236). The run logs it as a failure, as it does one the
+    // snapshot throws (#399).
     if (refused !== null) {
+      await logOnly(ctx, "snapshot-not-taken", () => {
+        logSnapshotFailed(runId, "search-refused");
+      });
       return {
         snapshot: {
           taken: false,
@@ -240,6 +259,14 @@ export async function takeSnapshot(
     );
     due = outcome.owed;
     if (outcome.failed > 0 || outcome.entries.length < batch.length) {
+      const { stopped } = outcome;
+      await logOnly(ctx, "snapshot-not-taken", () => {
+        logSnapshotFailed(
+          runId,
+          "gold-paper-failed",
+          stopped === null ? undefined : { pmcid: stopped, set: "B" },
+        );
+      });
       return {
         snapshot: {
           taken: false,

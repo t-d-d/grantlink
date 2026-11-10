@@ -72,7 +72,10 @@ export type Taken = { kept: true; entry: Entry } | { kept: false };
 
 // Reads one gold paper afresh into cache/, and writes its funding sections
 // under eval/ once. A gold set A paper Europe PMC links to none of the
-// funder's grants, or one with no funding text, is passed over. Its grants
+// funder's grants, or one with no funding text or awards, is passed over,
+// and its sample walks on to the next. A gold set B paper is always kept,
+// even with empty sections, since its label is scored against what the
+// rules find in it, which may be nothing (#399). A gold set A paper's grants
 // are read first, so a paper with none costs no full text. A grant id the
 // manifest cannot hold, such as one with a space, is left out, or the
 // manifest would refuse the whole snapshot.
@@ -93,7 +96,11 @@ export async function snapshotPaper(
   }
   const sections = fundingSections(await deps.europePmc.fullText(pmcid));
   await deps.text.putFundingText(pmcid, sections);
-  if (sections.text.length === 0 && sections.awards.length === 0) {
+  if (
+    set === "A" &&
+    sections.text.length === 0 &&
+    sections.awards.length === 0
+  ) {
     logger.info("snapshot-passed-over", { pmcid });
     return { kept: false };
   }

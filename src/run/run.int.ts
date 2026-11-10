@@ -1102,6 +1102,8 @@ describe("the eval snapshot (evals.md)", () => {
     expect(logged("snapshot-search-ended")).toEqual([
       expect.objectContaining({ found: 0, skipped: 0, refused: true }),
     ]);
+    // A refused search loses the snapshot as surely as a failed one (#399).
+    expect(snapshotFailedFields()).toEqual({ reason: "search-refused" });
   });
 
   // A failed snapshot-search-ended step leaves the search's own reason in
@@ -1117,7 +1119,7 @@ describe("the eval snapshot (evals.md)", () => {
       expect(snapshotFailedFields()).toEqual({ reason: "malformed-search" });
     });
 
-    it("ends with Europe PMC's refusal, not a failure, when it refuses the search", async () => {
+    it("ends with Europe PMC's refusal, not the step's error, when it refuses the search", async () => {
       failToLog("snapshot-search-ended");
       const fake = fakeDeps({
         goldSearch: () => reply("", 429, { "Retry-After": "300" }),
@@ -1130,7 +1132,7 @@ describe("the eval snapshot (evals.md)", () => {
         taken: false,
         reason: "Europe PMC refused gold set A's search",
       });
-      expect(logged("snapshot-failed")).toEqual([]);
+      expect(snapshotFailedFields()).toEqual({ reason: "search-refused" });
       // The wait the refusal asked for is still owed, and waited out
       // before the run ends (#236).
       const retried = retryDelays("snapshot-search-0").reduce(
@@ -1320,5 +1322,12 @@ describe("a paper that fails logs why (#378)", () => {
         tries: 3,
       }),
     ]);
+    // The snapshot is lost, and its line names the paper that lost it
+    // (#399).
+    expect(snapshotFailedFields()).toEqual({
+      reason: "gold-paper-failed",
+      pmcid: "PMC0000098",
+      set: "B",
+    });
   });
 });

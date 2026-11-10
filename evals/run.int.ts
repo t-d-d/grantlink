@@ -20,14 +20,19 @@ import {
 // bucket is.
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
-function snapshotDir(papers: Record<string, string[]>) {
+function snapshotDir(
+  papers: Record<string, string[]>,
+  setB: readonly string[] = [],
+) {
   const dir = mkdtempSync(join(tmpdir(), "grantlink-eval-"));
   mkdirSync(join(dir, "eval/papers"), { recursive: true });
   mkdirSync(join(dir, "eval/s1"), { recursive: true });
   const entries = Object.entries(papers).map(([pmcid, text]) => {
     const body = JSON.stringify({ pmcid, text, awards: [] });
     writeFileSync(join(dir, `eval/papers/${pmcid}.json`), body);
-    return { pmcid, set: "A", sha256: sha(body), grants: ["A11111"] };
+    return setB.includes(pmcid)
+      ? { pmcid, set: "B", sha256: sha(body), grants: [] }
+      : { pmcid, set: "A", sha256: sha(body), grants: ["A11111"] };
   });
   const manifest = JSON.stringify({
     id: "s1",
@@ -104,6 +109,26 @@ describe("the eval runner", () => {
     expect(readFileSync(join(dir, "eval/s1/manifest.json"), "utf8")).toContain(
       "PMC1",
     );
+  });
+});
+
+// The snapshot keeps a gold set B paper with no funding text or awards,
+// so its label, of no references, scores what the rules find in it (#399).
+describe("a gold set B paper with empty funding sections", () => {
+  it("is read from the snapshot and scored", async () => {
+    const { dir, manifestSha256 } = snapshotDir({ PMC4: [] }, ["PMC4"]);
+    const texts = loadSnapshot(dir, { id: "s1", manifestSha256 });
+    expect(texts.get("PMC4")).toEqual({ text: [], awards: [] });
+    const result = await evaluate({
+      texts,
+      goldA: [],
+      goldB: [{ pmcid: "PMC4", references: [] }],
+      models: [],
+      propose: () => Promise.reject(new Error("no model")),
+    });
+    const row = (id: string) => result.rows.find((r) => r.id === id);
+    expect(row("precision-b")).toMatchObject({ score: 1, n: 1 });
+    expect(row("recall-b")).toMatchObject({ score: 1, n: 1 });
   });
 });
 

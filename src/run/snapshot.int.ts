@@ -137,17 +137,25 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
     expect(ended).toBeGreaterThanOrEqual(notBefore);
   });
 
-  it("asks Europe PMC nothing more once one labelled paper has no funding text", async () => {
+  it("keeps a labelled paper with no funding text or awards, and goes on to the rest (#399)", async () => {
     const { fake, asked } = failingFirstLabelled(() =>
       Promise.resolve("<article></article>"),
     );
     const { status, result } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
-    expect(result?.snapshot).toEqual({
-      taken: false,
-      reason: "a gold set B paper could not be read",
+    expect(result?.snapshot).toMatchObject({
+      taken: true,
+      papers: 2 + LABELLED.length,
     });
-    expect(asked).toEqual([LABELLED[0]]);
-    expect(fake.text.has(manifestKey(fake))).toBe(false);
+    expect(asked).toEqual(LABELLED);
+    const manifest = JSON.parse(String(fake.text.get(manifestKey(fake)))) as {
+      papers: { pmcid: string; set: string }[];
+    };
+    expect(manifest.papers).toContainEqual(
+      expect.objectContaining({ pmcid: LABELLED[0], set: "B" }),
+    );
+    expect(
+      JSON.parse(String(fake.text.get(snapshotKeys.paper(LABELLED[0] ?? "")))),
+    ).toEqual({ pmcid: LABELLED[0], text: [], awards: [] });
   });
 });
