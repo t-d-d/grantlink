@@ -98,6 +98,12 @@ const NO_WORD_SPACE = String.raw`[\p{scx=Han}\p{scx=Hira}\p{scx=Kana}\p{scx=Thai
 const EDGE = String.raw`(?:(?!${NO_WORD_SPACE})[\p{L}\p{M}])`;
 const funderName = new RegExp(`(?<!${EDGE})(?:${NAMES})(?!${EDGE})`, "iu");
 
+// The funder's name in either case, between the edges above, as a pattern
+// for one whose own letters keep their case. Gold set B's draw builds its
+// centre-or-institute check on it, so it reads a name where the rules do
+// (#360).
+export const ANY_CASE_FUNDER_NAME = `(?<!${EDGE})(?:${ANY_CASE_NAMES})(?!${EDGE})`;
+
 // Whether text names the funder. Gold set B's draw reads names with this
 // too, so its hard cases match what the rules read (#338).
 export const namesFunder = (text: string): boolean => funderName.test(text);
@@ -202,7 +208,9 @@ export function normalise(written: string): string {
     .toUpperCase();
 }
 
-function sentences(paragraph: string): string[] {
+// Splits a paragraph into sentences. Gold set B's draw reads sentences with
+// this split too, so its checks scan what the rules scan (#360).
+export function sentences(paragraph: string): string[] {
   // A full stop after a single capital, as in U.K., does not end one.
   return paragraph.split(/(?<=(?<!\b[A-Z])[.;!?])\s+(?=[A-Z(])/u);
 }

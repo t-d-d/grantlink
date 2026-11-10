@@ -5,10 +5,20 @@ import {
   namesPattern,
   referenceSchema,
   RULES_VERSION,
+  sentences,
 } from "./rules.ts";
 
 // Every reference here is made up in the shape of one the PRD (#1) quotes.
 const sections = (...text: string[]) => ({ text, awards: [] });
+
+describe("the sentence split", () => {
+  // Gold set B's draw reads sentences with this split too (#360).
+  it("ends a sentence at a stop before a capital, but not after a single capital", () => {
+    expect(
+      sentences("Funded by the U.K. trust. Thanks to all; (see notes)."),
+    ).toEqual(["Funded by the U.K. trust.", "Thanks to all;", "(see notes)."]);
+  });
+});
 
 describe("the rules", () => {
   it("has a version, recorded with every result", () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   EuropePmcError,
   LARGEST_PAGE_SIZE,
@@ -63,6 +63,40 @@ describe("the hard-case checks", () => {
       ack: "We thank the Cancer Research UK Manchester Institute core facilities for their support.",
     });
     expect(hardCases(xml)).toContain("centre-or-institute");
+  });
+
+  it("finds a centre or institute named with a Unicode hyphen (#360)", () => {
+    const ack =
+      "We thank the CR\u2010UK Manchester Institute core facilities for their support.";
+    expect(namesFunder(ack)).toBe(true);
+    expect(hardCases(paper({ ack }))).toContain("centre-or-institute");
+  });
+
+  it("finds no centre or institute where a non-ASCII letter joins the name (#360)", () => {
+    const ack =
+      "We thank the \u00c9CRUK Manchester Institute core facilities for their support.";
+    expect(namesFunder(ack)).toBe(false);
+    expect(hardCases(paper({ ack }))).not.toContain("centre-or-institute");
+  });
+
+  it("reads the sentences the rules' own split gives (#360)", async () => {
+    // With a split that keeps the paragraph whole, the funding word in the
+    // second sentence sits beside the mention, so it is no affiliation.
+    vi.resetModules();
+    vi.doMock("../../src/extract/rules.ts", async (original) => ({
+      ...(await original<typeof import("../../src/extract/rules.ts")>()),
+      sentences: (paragraph: string) => [paragraph],
+    }));
+    try {
+      const fresh = await import("./draw.ts");
+      const ack =
+        "One author is based at the CRUK Beatson Institute. The Example Trust funded this work.";
+      expect(hardCases(paper({ ack }))).toContain("affiliation-only");
+      expect(fresh.hardCases(paper({ ack }))).not.toContain("affiliation-only");
+    } finally {
+      vi.doUnmock("../../src/extract/rules.ts");
+      vi.resetModules();
+    }
   });
 
   it("finds an affiliation only, where no mention is about funding", () => {
