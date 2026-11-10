@@ -283,7 +283,7 @@ describe("a paper Europe PMC has since linked to a grant", () => {
       JSON.parse(fake.site.files?.["found.json"] ?? "{}"),
     );
     expect(data.papers.map((paper) => paper.pmcid)).not.toContain("PMC0000002");
-    expect(data.counts.papers).toBe(7);
+    expect(data.counts.papers).toBe(before.papers - 1);
     // The table keeps the paper and what was read from it.
     expect(fake.table.rows.get("PMC0000002")).toMatchObject({
       status: "processed",
