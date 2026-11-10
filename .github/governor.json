@@ -94,7 +94,7 @@
     }
   },
   "hooks": { "enabled": false },
-  "waits": { "enabled": false },
+  "waits": { "enabled": true, "issue": 460 },
   "signOff": {},
   "sessionRules": {},
   "issueReviews": { "enabled": false }
