@@ -623,10 +623,14 @@ function exportsName(
 }
 
 // True when a declarator exports a name that carries the value a pattern
-// takes. For an object that holds a source, destructured into a pattern
-// with a rest, `const { foo, ...m } = Math`, that is the rest's own name,
-// unless the pattern also takes a member that calls through. Otherwise it
-// is any name the declarator declares.
+// takes. A pattern that takes a member that calls through, `const { bind } =
+// Date`, or, for an object that holds a source, copies a rest, `const { foo,
+// ...m } = Math`, carries it in the names under those members and in the
+// rest. Those count whether exported by name, `export { bind }`, or by
+// default, `export default bind`, since nothing reports at that export.
+// Another name the pattern takes, `export { foo }`, does not carry it. Any
+// other pattern, or a plain alias, carries it in any name the declarator
+// declares, and an alias exported by default reports at the export instead.
 function exportsPassed(
   declarator: TSESTree.VariableDeclarator,
   pattern: TSESTree.Node,
@@ -634,38 +638,55 @@ function exportsPassed(
   holder: boolean,
 ): boolean {
   if (
-    holder &&
-    pattern.type === AST_NODE_TYPES.ObjectPattern &&
-    copiesRest(pattern) &&
-    !callsThrough(pattern)
+    pattern.type !== AST_NODE_TYPES.ObjectPattern ||
+    !(callsThrough(pattern) || (holder && copiesRest(pattern)))
   ) {
-    return exportsRest(declarator, pattern, resolver);
+    return exportsName(declarator, resolver);
   }
-  return exportsName(declarator, resolver);
-}
-
-// True when a declarator exports the name a pattern's rest declares,
-// `export const { Math: { ...m } } = globalThis`, `export { m }` later, or
-// `export default m` or `export = m`.
-// Another name the declarator exports, `export { foo }` after `const { foo,
-// Math: { ...m } } = globalThis`, does not carry the rest.
-function exportsRest(
-  declarator: TSESTree.VariableDeclarator,
-  pattern: TSESTree.ObjectPattern,
-  resolver: Resolver,
-): boolean {
-  const rests = new Set<TSESTree.Node>(
-    pattern.properties.flatMap((property) =>
-      property.type === AST_NODE_TYPES.RestElement ? [property.argument] : [],
-    ),
+  const carriers = new Set<TSESTree.Node>(
+    pattern.properties.flatMap((property) => {
+      if (property.type === AST_NODE_TYPES.RestElement) {
+        return holder ? declaredIn(property.argument) : [];
+      }
+      const key = keyName(property.key, property.computed);
+      return key === null || CALLS_THROUGH.has(key)
+        ? declaredIn(property.value)
+        : [];
+    }),
   );
   return resolver.sourceCode
     .getDeclaredVariables(declarator)
     .some(
       (declared) =>
-        declared.identifiers.some((identifier) => rests.has(identifier)) &&
+        declared.identifiers.some((identifier) => carriers.has(identifier)) &&
         (exported(declarator, declared) || exportedByDefault(declared)),
     );
+}
+
+// The identifiers a pattern declares, `b` and `c` in `{ a: b, ...c }`.
+function declaredIn(pattern: TSESTree.Node): TSESTree.Node[] {
+  switch (pattern.type) {
+    case AST_NODE_TYPES.Identifier:
+      return [pattern];
+    case AST_NODE_TYPES.AssignmentPattern:
+      return declaredIn(pattern.left);
+    case AST_NODE_TYPES.RestElement:
+      return declaredIn(pattern.argument);
+    case AST_NODE_TYPES.ArrayPattern:
+      return pattern.elements.flatMap((element) =>
+        element === null ? [] : declaredIn(element),
+      );
+    case AST_NODE_TYPES.ObjectPattern:
+      return pattern.properties.flatMap((property) =>
+        declaredIn(
+          property.type === AST_NODE_TYPES.RestElement
+            ? property.argument
+            : property.value,
+        ),
+      );
+    default:
+      return [];
+  }
 }
 
 // True when a variable is exported by default, `export default m`, or by
@@ -961,7 +982,11 @@ export const noNonDeterministicOutsideStep = createRule({
             if (op !== undefined) {
               report(property.key, op, false);
             } else if (keys.some(namesDate) && callsThrough(inner)) {
-              report(property.key, "Date", false);
+              report(
+                property.key,
+                "Date",
+                exportsPassed(node, inner, context, false),
+              );
             } else if (copiesRest(inner)) {
               const holder = keys
                 .map(holderOf)
