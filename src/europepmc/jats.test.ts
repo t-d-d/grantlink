@@ -939,6 +939,48 @@ describe("keeping funding notes and footnotes (#505)", () => {
     },
   );
 
+  // A title of punctuation alone normalises to nothing, as the funding
+  // titles are matched, so it names nothing either (#614).
+  const punctuationTitles = [
+    ["an asterisk", "<title>*</title>"],
+    ["a dash between spaces", "<title> - </title>"],
+    ["labelled and a full stop", "<label>1</label><title>.</title>"],
+  ];
+
+  it.each(punctuationTitles)(
+    "keeps a subsection of a funding section whose title is %s (#614)",
+    (_what, title) => {
+      expect(
+        fundingSections(
+          "<article><body><sec><title>Funding</title><p>a</p>" +
+            `<sec>${title}<p>b</p></sec>` +
+            "</sec></body></article>",
+        ).text,
+      ).toEqual(["a", "b"]);
+    },
+  );
+
+  it.each(punctuationTitles)(
+    "keeps a subsection of a funding note whose title is %s (#614)",
+    (_what, title) => {
+      expect(
+        back(
+          `<notes notes-type="funding"><p>a</p><sec>${title}<p>b</p></sec></notes>`,
+        ).text,
+      ).toEqual(["a", "b"]);
+    },
+  );
+
+  it.each(punctuationTitles)(
+    "reads a note whose title is %s as untitled (#614)",
+    (_what, title) => {
+      expect(
+        back(`<notes>${title}<p>Funded by Cancer Research UK.</p></notes>`)
+          .text,
+      ).toEqual(["Funded by Cancer Research UK."]);
+    },
+  );
+
   // A section's type counts as its title, so a section typed as something
   // other than funding is left out of a funding note, and one typed as
   // funding is kept (#563).

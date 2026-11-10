@@ -11,6 +11,7 @@ import {
   memberName,
   unwrapped,
   walkAliases,
+  withoutDefault,
 } from "./create-rule.ts";
 import type { Resolver } from "./create-rule.ts";
 
@@ -238,11 +239,6 @@ function eachProperty(
     }
   }
   return false;
-}
-
-// A pattern's target without the default it may give, `{ now = f }`.
-function withoutDefault(value: TSESTree.Property["value"]): TSESTree.Node {
-  return value.type === AST_NODE_TYPES.AssignmentPattern ? value.left : value;
 }
 
 // The global path a name destructured from an object pattern reads, from
@@ -764,7 +760,10 @@ export const noNonDeterministicOutsideStep = createRule({
       // A pattern that reads a source to destructure from it, `const {
       // now: { call } } = Date`, reports at that key, since the name it
       // declares reads no source itself. So does one that destructures a
-      // member that calls `Date` from it, `{ Date: { bind } } = globalThis`.
+      // member that calls `Date` from it, `{ Date: { bind } } = globalThis`,
+      // or copies the rest of an object that holds a source,
+      // `{ Math: { ...m } } = globalThis`, since the name the rest declares
+      // carries the source on unseen.
       // Destructuring that member straight from `Date`, or from a default
       // `Date`, reports at `Date`, as passedOn says.
       VariableDeclarator(node) {
@@ -784,6 +783,11 @@ export const noNonDeterministicOutsideStep = createRule({
               report(property.key, op, false);
             } else if (keys.some(namesDate) && callsThrough(inner)) {
               report(property.key, "Date", false);
+            } else if (copiesRest(inner)) {
+              const holder = keys
+                .map(holderOf)
+                .find((found) => found !== undefined);
+              if (holder !== undefined) report(property.key, holder, false);
             }
             return false;
           },
