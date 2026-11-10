@@ -480,6 +480,102 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.rejected).toBe(0);
   });
 
+  it("rejects a name joined to a number by a hyphen or a slash, and initials before a number (#467)", async () => {
+    // A name has a lower-case letter, wherever it is joined, and capitals
+    // before a number pass only as a prefix the rules read. The text is made
+    // up.
+    const written = ["Smith-Jones 2", "Example/A12345", "JO 12345"];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(
+      [`Funded by Cancer Research UK (${written.join(", ")}).`],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(written.length);
+  });
+
+  it("rejects a lower-case letter outside a month in title case (#467)", async () => {
+    // A month counts only in title case, written onto a code or after its
+    // hyphen. The text is made up.
+    const written = [
+      "ctrqqr/100010",
+      "CTRQQRmar21/100010",
+      "ABCDEF-xyzw/100001",
+      "Mar21/100010",
+    ];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(
+      [`Funded by Cancer Research UK (${written.join(", ")}).`],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(written.length);
+  });
+
+  it("keeps every shape the rules read, months in title case among them (#467)", async () => {
+    // One reference in each of the rules' formats, with each prefix set
+    // apart from its number too. A G number counts only straight after the
+    // funder's name. The text is made up.
+    const written = [
+      "G123/45",
+      "C1234/A56789",
+      "C 2345/A 67890",
+      "DRCMDPA/100010",
+      "CTRQQR-2021/100010",
+      "ABCDEF-Mar21/100010",
+      "ABCDEF- Mar21 / 100020",
+      "ABCDEF-XYZW/100001",
+      "CTRQQRMar21/100010",
+      "CTRQQRMar2021/100010",
+      "FC001234",
+      "FC 002345",
+      "CC1234",
+      "CC 2345",
+      "RT1234",
+      "RT 2345",
+      "A12345",
+      "A 23456",
+    ];
+    const paragraph = `Funded by Cancer Research UK (${written.join(", ")}).`;
+    const read = findReferences({ text: [paragraph], awards: [] });
+    expect(read.map(({ asWritten }) => asWritten).sort()).toEqual(
+      [...written].sort(),
+    );
+    expect(new Set(read.map(({ format }) => format))).toEqual(
+      new Set([
+        "Gn/n",
+        "Cn/An",
+        "CODE/n",
+        "CODE-YYYY/n",
+        "CODE-MonYY/n",
+        "CODE-X/n",
+        "CODEMonYY/n",
+        "CODEMonYYYY/n",
+        "FCn",
+        "CCn",
+        "RTn",
+        "An",
+      ]),
+    );
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences([paragraph], {
+      model: haiku,
+      key: "k",
+      fetch,
+    });
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(written);
+    expect(result.status === "read" && result.rejected).toBe(0);
+  });
+
   it("rejects a word of capitals before a separator when it is not a code's place", async () => {
     // A name in capitals is not a code unless it starts the reference, and
     // a suffix follows only a code and its hyphen. The text is made up.

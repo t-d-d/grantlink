@@ -41,7 +41,8 @@ export const referenceSchema = z
     // Only the characters a reference is made of. These include letters and
     // spaces, so this alone does not keep out a name: the rules' patterns
     // match no name, and the model pass refuses a reply that carries a word
-    // set apart by spaces (#413).
+    // set apart by spaces (#413), or a lower-case letter outside a month in
+    // a code (#467).
     asWritten: z
       .string()
       .min(1)
@@ -141,7 +142,8 @@ interface Pattern {
   sentenceOnly: boolean;
 }
 
-const MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
+// The model pass reads a month in a code with this too (#467).
+export const MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
 
 const PATTERNS: Pattern[] = [
   {
