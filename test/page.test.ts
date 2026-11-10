@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foreignLoads, loadsOf, textOf } from "./page.ts";
+import { NOTICE, footerOf, foreignLoads, loadsOf, textOf } from "./page.ts";
 
 const page = new URL("https://grantlink.uk/");
 
@@ -57,5 +57,40 @@ describe("reading a page's words", () => {
     expect(
       textOf("<p>One\n  <b>two</b></p><style>p{}</style><script>x</script>"),
     ).toBe("One two");
+  });
+});
+
+// The notice belongs in the footer (independence.md). Since #588 the same
+// words also sit under the headline, so the live check reads the footer
+// alone (#590).
+describe("reading a page's footer", () => {
+  const notice =
+    "grantlink is an independent demonstration on public data from Europe PMC. It is not affiliated with or endorsed by Cancer Research UK.";
+
+  it("finds the notice in the footer", () => {
+    const html = `<main><h1>grantlink</h1></main><footer class="x"><p>${notice}</p></footer>`;
+    expect(textOf(footerOf(html))).toMatch(NOTICE);
+  });
+
+  it("misses the notice when only the line under the headline has it", () => {
+    const html = `<main><h1>grantlink</h1><p>${notice}</p></main><footer><p>Data from Europe PMC.</p></footer>`;
+    expect(textOf(html)).toMatch(NOTICE);
+    expect(textOf(footerOf(html))).not.toMatch(NOTICE);
+  });
+
+  it("finds nothing on a page with no footer", () => {
+    expect(footerOf(`<main><p>${notice}</p></main>`)).toBe("");
+  });
+
+  it("skips a footer that is commented out or inside a script", () => {
+    const html = `<!-- <footer><p>${notice}</p></footer> -->
+      <script>const f = "<footer>${notice}</footer>";</script>
+      <footer><p>Data from Europe PMC.</p></footer>`;
+    expect(textOf(footerOf(html))).not.toMatch(NOTICE);
+  });
+
+  it("skips an element whose name only starts with footer", () => {
+    const html = `<footer-note><p>${notice}</p></footer-note><footer><p>Data from Europe PMC.</p></footer>`;
+    expect(textOf(footerOf(html))).not.toMatch(NOTICE);
   });
 });

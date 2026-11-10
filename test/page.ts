@@ -23,6 +23,18 @@ export function textOf(html: string): string {
     .trim();
 }
 
+// The markup of the page's <footer> elements, where the notice belongs
+// (independence.md), or "" when the page has none. A footer in a comment
+// or a script is not one the reader sees, so it does not count.
+export function footerOf(html: string): string {
+  const shown = html
+    .replace(/<!--[\s\S]*?-->/gu, " ")
+    .replace(/<(script|style)\b[\s\S]*?<\/\1>/giu, " ");
+  return [...shown.matchAll(/<footer(?=[\s/>])[^>]*>([\s\S]*?)<\/footer>/giu)]
+    .map(([, inner = ""]) => inner)
+    .join(" ");
+}
+
 // Every URL the page makes the browser fetch by itself: scripts, styles,
 // images, fonts, frames and media, in markup or in CSS. A link a reader
 // follows by choice, an <a href>, is not a load.
