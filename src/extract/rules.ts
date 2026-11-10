@@ -154,6 +154,11 @@ interface Shape {
   // What must come before and after it in the text, beyond its edges.
   before?: string;
   after?: string;
+  // Whether the model pass keeps a reply of this shape only where the
+  // rules' own pattern reads that reply, and no more or less, in the text.
+  // A form with a prefix and up to four parts may run on past a reply, as
+  // CRUK/12/2019 does past CRUK/12 (#561).
+  readWhole?: true;
   // A short number such as an A number is common, so it counts only in a
   // sentence that names the funder.
   sentenceOnly: boolean;
@@ -216,6 +221,7 @@ const SHAPES: readonly Shape[] = [
     // the C/A pattern, so a C/A pair after CRUK/ is read as the pair alone.
     format: "CRUK-X",
     shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:(?:${DASH}|/)[A-Z0-9]{1,8}){1,4}(?<=CRUK[A-Z0-9/${DASHES}-]*\d[A-Z0-9/${DASHES}-]*)`,
+    readWhole: true,
     sentenceOnly: false,
   },
   {
@@ -303,11 +309,10 @@ const BARE_SUFFIX = String.raw`${DASH}\d{2}`;
 // five to seven, with or without its suffix.
 const BARE_REPLY = new RegExp(String.raw`^\d+(?:${BARE_SUFFIX})?$`, "u");
 
-// A reference as written, between the edges above. The model pass checks
-// its references with this, so the two passes cannot draw a reference's
-// edges differently (#384). A bare number of any length counts only where
-// the text does not go on past it, as the rules read one (#567).
-export const wholeReference = (reference: string): RegExp =>
+// A reference as written, between the edges above. A bare number of any
+// length counts only where the text does not go on past it, as the rules
+// read one (#567).
+const wholeReference = (reference: string): RegExp =>
   new RegExp(
     `${START}${escape(reference)}${END}${BARE_REPLY.test(reference) ? NUMBER_AFTER : ""}`,
     "u",
@@ -324,6 +329,38 @@ const READ_SHAPE = new RegExp(
 );
 export const hasReferenceShape = (reference: string): boolean =>
   READ_SHAPE.test(reference);
+
+const READ_WHOLE = SHAPES.flatMap(
+  ({ shape, modelShape, before, after, readWhole }) =>
+    readWhole === true
+      ? [
+          {
+            shape: new RegExp(`^(?:${modelShape ?? shape})$`, "u"),
+            pattern: new RegExp(
+              `${before ?? START}${shape}${END}${after ?? ""}`,
+              "gu",
+            ),
+          },
+        ]
+      : [],
+);
+
+// Whether a paragraph gives a reference as written whole, between the edges
+// above. The model pass checks its references with this, so the two passes
+// cannot draw a reference's edges differently (#384). A reference of a shape
+// the rules read whole, such as a CRUK- form, counts only where the rules'
+// pattern reads just that reference (#561). Any other counts between the
+// edges above, as wholeReference reads it.
+export function readsWhole(paragraph: string, reference: string): boolean {
+  const whole = READ_WHOLE.find(({ shape }) => shape.test(reference));
+  if (whole !== undefined) {
+    return Array.from(
+      paragraph.matchAll(whole.pattern),
+      ([match]) => match,
+    ).includes(reference);
+  }
+  return wholeReference(reference).test(paragraph);
+}
 
 const UNICODE_DASH = new RegExp(`[${DASHES}]`, "gu");
 
