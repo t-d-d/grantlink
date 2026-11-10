@@ -25,6 +25,15 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           }`,
         },
         {
+          name: "tests Date without calling it: typeof and equality",
+          code: `function f(x: any) {
+            const a = typeof Date === "function";
+            const b = x.constructor === Date;
+            const c = Date !== x;
+            return [a, b, c];
+          }`,
+        },
+        {
           name: "passes Date as a value inside a step",
           code: `async function run(ctx: any) {
             await ctx.step("at", async () => ids.map(Date), { retryStrategy: r });
@@ -196,10 +205,42 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           const f = ids.map(globalThis.Date);
           const g = ids.map(Date as any);
           const h = { make: Date };`,
-          errors: Array.from({ length: 8 }, () => ({
+          errors: Array.from({ length: 8 }, (_, i) => ({
             messageId: "nonDeterministicOutsideStep" as const,
             data: { op: "Date" },
+            line: i + 1,
           })),
+        },
+        {
+          name: "reads a member of Date under a key it cannot name, which may be call",
+          code: `function f(k: string) {
+            return Date[k](null);
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports an alias of Date, which another module may call",
+          code: `export const D = Date;
+          const E = Date;
+          export { E };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
         },
         {
           name: "passes Date as a value through an alias, at the use and not the alias",

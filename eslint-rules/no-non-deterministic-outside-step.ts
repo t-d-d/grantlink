@@ -191,14 +191,21 @@ function isRead(identifier: TSESTree.Identifier, resolver: Resolver): boolean {
     );
 }
 
-// True when the node is the function a call calls, read through the
-// wrappers unwrapped takes off, so `Date.now!()`, `(Date.now as F)()` and
-// `(0, Date.now)()` are each a call.
-function calledThrough(node: TSESTree.Node): boolean {
+// The outermost node that only wraps this one in the layers unwrapped
+// takes off, such as `(Date.now as F)` or `(0, Date)`.
+function outermost(node: TSESTree.Node): TSESTree.Node {
   let outer = node;
   while (outer.parent !== undefined && unwrapped(outer.parent) === node) {
     outer = outer.parent;
   }
+  return outer;
+}
+
+// True when the node is the function a call calls, read through the
+// wrappers unwrapped takes off, so `Date.now!()`, `(Date.now as F)()` and
+// `(0, Date.now)()` are each a call.
+function calledThrough(node: TSESTree.Node): boolean {
+  const outer = outermost(node);
   return (
     outer.parent?.type === AST_NODE_TYPES.CallExpression &&
     outer.parent.callee === outer
@@ -209,17 +216,34 @@ function calledThrough(node: TSESTree.Node): boolean {
 // `Date()` does, and `Date.bind(null)` returns a function that does.
 const CALLS_THROUGH = new Set(["call", "apply", "bind"]);
 
+// The operators that test `Date` without calling it, `x instanceof Date`
+// and `x.constructor === Date`.
+const TESTS_ONLY = new Set(["instanceof", "===", "!==", "==", "!="]);
+
+// True when an alias's declaration is exported, `export const D = Date`,
+// or the alias is, `export { D }`: another module may call it, and the rule
+// does not follow reads there.
+function exported(
+  declarator: TSESTree.VariableDeclarator,
+  variable: TSESLint.Scope.Variable,
+): boolean {
+  return (
+    declarator.parent.parent.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+    variable.references.some(
+      (ref) => ref.identifier.parent.type === AST_NODE_TYPES.ExportSpecifier,
+    )
+  );
+}
+
 // True when `Date`, read as a value, goes somewhere that may call it, such
 // as `ids.map(Date)` or `Reflect.construct(Date, [])`. Not when the code
 // calls or constructs it, which the call checks report with their
 // arguments in view, reads a member that does not call it, `Date.UTC(...)`,
-// tests `x instanceof Date`, or declares an alias, `const D = Date`, whose
-// own reads the rule follows.
+// tests `x instanceof Date` or `typeof Date`, or declares an alias,
+// `const D = Date`, whose own reads the rule follows. A member under a key
+// the rule cannot name, `Date[k]`, may be `call`, so it counts.
 function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
-  let outer = node;
-  while (outer.parent !== undefined && unwrapped(outer.parent) === node) {
-    outer = outer.parent;
-  }
+  const outer = outermost(node);
   const parent = outer.parent;
   switch (parent?.type) {
     case AST_NODE_TYPES.CallExpression:
@@ -228,10 +252,15 @@ function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
     case AST_NODE_TYPES.MemberExpression: {
       if (parent.object !== outer) return true;
       const name = memberName(parent);
-      return name !== null && CALLS_THROUGH.has(name);
+      return name === null || CALLS_THROUGH.has(name);
     }
     case AST_NODE_TYPES.BinaryExpression:
-      return !(parent.operator === "instanceof" && parent.right === outer);
+      return !(
+        TESTS_ONLY.has(parent.operator) &&
+        (parent.right === outer || parent.operator !== "instanceof")
+      );
+    case AST_NODE_TYPES.UnaryExpression:
+      return parent.operator !== "typeof";
     case AST_NODE_TYPES.VariableDeclarator: {
       if (parent.init !== outer) return true;
       if (parent.id.type === AST_NODE_TYPES.ObjectPattern) return false;
@@ -240,7 +269,8 @@ function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
       return (
         more.length > 0 ||
         declared === undefined ||
-        aliasDeclarator(declared) === null
+        aliasDeclarator(declared) === null ||
+        exported(parent, declared)
       );
     }
     default:
@@ -307,6 +337,7 @@ export const noNonDeterministicOutsideStep = createRule({
       // `randomUUID()` after `import { randomUUID } from "node:crypto"`.
       Identifier(node) {
         const path = pathOf(node, context, new Set());
+        if (opOf(path) === undefined && !namesDate(path)) return;
         if (!isRead(node, context)) return;
         check(node, path);
         checkDate(node, path);
