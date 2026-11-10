@@ -32,8 +32,9 @@
 import {
   FUNDING_FOOTNOTE,
   FUNDING_METADATA,
-  isFundingSectionAt,
+  isFundingSection as isFundingSectionElement,
 } from "../src/europepmc/jats.ts";
+import { parseXml, type XmlElement } from "../src/europepmc/xml.ts";
 
 interface Attribute {
   name: string;
@@ -43,8 +44,8 @@ interface Attribute {
 interface Element {
   name: string;
   attributes: Attribute[];
-  // Whether its opening tag holds text that is not an attribute, or its
-  // closing tag holds any text.
+  // Whether its opening tag holds text that is not an attribute in quotes,
+  // or its closing tag holds any text.
   malformed: boolean;
   children: Element[];
   text: boolean;
@@ -54,8 +55,6 @@ interface Element {
   // Whether the cutter reads the element as a funding section or footnote.
   funding: boolean;
 }
-
-const FOOTNOTE = new RegExp(FUNDING_FOOTNOTE, "u");
 
 // The funding metadata the cutter reads, by the names it reads them by, and
 // where a funding group stands in a recorded full text (#305).
@@ -88,93 +87,54 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
   "article/back/fn-group": isFundingFootnote,
 };
 
-const ATTRIBUTE = /\s+([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/uy;
-
-// The attributes in an opening tag, after its name, and whether anything
-// else is there.
-function attributesOf(tag: string): {
-  attributes: Attribute[];
-  malformed: boolean;
-} {
-  ATTRIBUTE.lastIndex = 0;
-  const attributes: Attribute[] = [];
-  // A sticky pattern goes back to the start when it fails, so the end of
-  // the last attribute is kept apart.
-  let end = 0;
-  for (let match = ATTRIBUTE.exec(tag); match; match = ATTRIBUTE.exec(tag)) {
-    const [, name = "", double, single] = match;
-    attributes.push({ name, value: double ?? single ?? "" });
-    end = ATTRIBUTE.lastIndex;
-  }
-  return { attributes, malformed: tag.slice(end).trim() !== "" };
-}
-
-// The XML's elements as a tree, under a root with no name. Declarations are
-// dropped. A processing instruction ends at its own ?>, as in the pattern
-// that finds a funding section, so a > inside it does not end it. CDATA and
-// comments count as text, since a comment can hold a cut part kept by
-// mistake. So does what a processing instruction holds after its target,
-// other than the XML declaration's before the root, and what one holds that
-// never ends with ?> (#303).
+// The XML's elements as a tree, under a root with no name, read through the
+// parser the cutter reads with (#343). The check reads the tree as parsed,
+// before the cutter's care with tags that do not balance, so nothing the
+// cutter would drop from a broken element is hidden from it. Declarations
+// are dropped. CDATA and comments count as text, since a comment can hold a
+// cut part kept by mistake. So does what a processing instruction holds
+// after its target, other than the XML declaration's before the root, and
+// what one holds that never ends with ?>, which the parser reads as text
+// (#303).
 function parse(xml: string): Element {
-  const root: Element = {
-    name: "",
-    attributes: [],
-    malformed: false,
-    children: [],
-    text: false,
-    unread: false,
-    funding: false,
-  };
-  const stack = [root];
-  const tokens =
-    /<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<[?!][^>]*>|<(\/?)([^\s/>]+)([^>]*?)(\/?)>|[^<]+/gu;
-  for (const match of xml.matchAll(tokens)) {
-    const [whole, close, name, attributes = "", empty] = match;
-    const parent = stack.at(-1) ?? root;
-    if (name === undefined) {
-      const instruction = /^<\?([^\s?>]*)([\s\S]*?)\??>$/u.exec(whole);
-      if (instruction !== null) {
-        const [, target = "", data = ""] = instruction;
-        const declaration =
-          target.toLowerCase() === "xml" &&
-          parent === root &&
-          root.children.length === 0;
-        if (!declaration && data.trim() !== "") {
-          parent.text = true;
-          parent.unread = true;
+  const convert = (node: XmlElement, root: boolean): Element => {
+    const element: Element = {
+      name: node.name,
+      attributes: node.attributes,
+      malformed: node.malformed,
+      children: [],
+      text: false,
+      unread: false,
+      funding:
+        (node.name === "sec" && isFundingSectionElement(node)) ||
+        (node.name === "fn" && FUNDING_FOOTNOTE(node)),
+    };
+    for (const child of node.children) {
+      switch (child.kind) {
+        case "element":
+          element.children.push(convert(child, false));
+          break;
+        case "instruction": {
+          const declaration =
+            child.target.toLowerCase() === "xml" &&
+            root &&
+            element.children.length === 0;
+          if (!declaration && child.data.trim() !== "") {
+            element.text = true;
+            element.unread = true;
+          }
+          break;
         }
-      } else if (/^(?:<!\[CDATA\[|<!--|[^<])/u.test(whole)) {
-        const text = whole.replace(/^(?:<!\[CDATA\[|<!--)|(?:\]\]|--)>$/gu, "");
-        if (text.trim() !== "") {
-          parent.text = true;
-          if (whole.startsWith("<!--")) parent.unread = true;
-        }
+        default:
+          if (child.text.trim() !== "") {
+            element.text = true;
+            if (child.kind === "comment") element.unread = true;
+          }
       }
-    } else if (close === "/") {
-      // A closing tag holds nothing but white space, so any text there is
-      // named as the element's own.
-      const closed = stack.pop();
-      if (closed !== undefined && attributes.trim() !== "") {
-        closed.malformed = true;
-      }
-    } else {
-      const funding =
-        (name === "sec" && isFundingSectionAt(xml, match.index)) ||
-        (name === "fn" && FOOTNOTE.test(attributes));
-      const element = {
-        name,
-        ...attributesOf(attributes),
-        children: [],
-        text: false,
-        unread: false,
-        funding,
-      };
-      parent.children.push(element);
-      if (empty !== "/") stack.push(element);
     }
-  }
-  return root;
+    return element;
+  };
+  return convert(parseXml(xml), true);
 }
 
 // What a funding part may hold: its paragraphs, which the cutter reads, and

@@ -667,6 +667,34 @@ describe("strayParts", () => {
     ).toEqual([]);
   });
 
+  // The check reads the same tree as the cutter, through the same XML
+  // parser (#343).
+  it.each([
+    [
+      "the inline markup in a funding title, not the section (#240)",
+      {
+        body: "<body><sec><title><bold>Funding</bold></title><p>Funded.</p></sec></body>",
+      },
+      "article/body/sec/title/bold",
+    ],
+    [
+      "the attribute before the type of a funding footnote whose value holds a >, not the footnote (#288)",
+      {
+        back: '<fn-group><fn title="a>b" fn-type="funding"><p>Funded.</p></fn></fn-group>',
+      },
+      "article/back/fn-group/fn@title",
+    ],
+    [
+      "the sec-meta of a funding section whose closing tag has white space before its > (#292)",
+      {
+        body: "<body><sec><sec-meta><kwd>k</kwd></sec-meta ><title>Funding</title><p>Funded.</p></sec></body>",
+      },
+      "article/body/sec/sec-meta",
+    ],
+  ])("names %s", (_what, parts, stray) => {
+    expect(strayParts(paper(parts))).toEqual([stray]);
+  });
+
   it("names a root that is not an article", () => {
     expect(strayParts("<book><p>B</p></book>")).toEqual(["book"]);
   });

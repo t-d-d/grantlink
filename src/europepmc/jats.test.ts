@@ -627,3 +627,138 @@ describe("reading an element by an attribute (#217)", () => {
     expect(footnotes(xml)).toEqual([]);
   });
 });
+
+// The cases the regular expressions misread, which the XML parser reads by
+// design (#343).
+describe("reading JATS through an XML parser (#343)", () => {
+  const body = (section: string) =>
+    `<article><body><sec><title>Results</title><p>Body text.</p></sec>${section}</body></article>`;
+
+  it.each([
+    [
+      "<sec><title><italic>Acknowledgements</italic></title><p>Grant A1.</p></sec>",
+    ],
+    ["<sec><title><bold>Funding</bold></title><p>Grant A1.</p></sec>"],
+  ])(
+    "finds a funding title wrapped in inline markup, in %s (#240)",
+    (section) => {
+      expect(fundingSections(body(section)).text).toEqual(["Grant A1."]);
+    },
+  );
+
+  it("keeps no text from a sec-meta whose closing tag has white space before its > (#286, #290, #292)", () => {
+    const sections = fundingSections(
+      body(
+        "<sec><sec-meta><contrib-group><contrib><name><surname>Authorname</surname></name></contrib></contrib-group></sec-meta ><title>Funding</title><p>Grant A1.</p></sec>",
+      ),
+    );
+    expect(sections.text).toEqual(["Grant A1."]);
+    expect(JSON.stringify(sections)).not.toContain("Authorname");
+  });
+
+  it("finds a funding section whose sec-meta closes with white space before its > (#292)", () => {
+    expect(
+      fundingSections(
+        body(
+          "<sec><sec-meta><kwd-group><kwd>k</kwd></kwd-group></sec-meta ><title>Funding</title><p>Grant A1.</p></sec>",
+        ),
+      ).text,
+    ).toEqual(["Grant A1."]);
+  });
+
+  it("finds a funding section whose label closes with white space before its > (#286, #290)", () => {
+    const xml =
+      "<sec><label>1</label ><title>Funding</title><p>Grant A1.</p></sec>";
+    expect(fundingSections(body(xml)).text).toEqual(["Grant A1."]);
+    expect(isFundingSectionAt(xml, 0)).toBe(true);
+  });
+
+  it("keeps no title words when the title closes with white space before its > (#286)", () => {
+    expect(
+      fundingSections(
+        body(
+          '<sec sec-type="funding"><title>Funding statement</title >Grant A1.</sec>',
+        ),
+      ).text,
+    ).toEqual(["Grant A1."]);
+    expect(
+      fundingSections(body("<sec><title>Funding</title >Grant A1.</sec>")).text,
+    ).toEqual(["Grant A1."]);
+  });
+
+  it("reads sec-type only as a whole attribute, in either kind of quotes (#287)", () => {
+    expect(
+      fundingSections(body(`<sec sec-type='funding'><p>Grant A1.</p></sec>`))
+        .text,
+    ).toEqual(["Grant A1."]);
+    expect(
+      fundingSections(
+        body(
+          `<sec data-sec-type="funding"><p>Made-up text.</p></sec>` +
+            `<sec title='sec-type="funding"'><p>Made-up text.</p></sec>`,
+        ),
+      ).text,
+    ).toEqual([]);
+  });
+
+  it("reads an id or a rid only as a whole attribute (#287)", () => {
+    expect(
+      fundingSections(
+        `<article><front><article-meta><funding-group><award-group>` +
+          `<funding-source id="fs1">Cancer Research UK</funding-source>` +
+          `<funding-source title=" id='fs1'" id="fs2">Example Trust</funding-source>` +
+          `<award-id title=" rid='fs2'" rid="fs1">67890</award-id>` +
+          `</award-group></funding-group></article-meta></front></article>`,
+      ).awards,
+    ).toEqual([{ sources: ["Cancer Research UK"], ids: ["67890"] }]);
+  });
+
+  it("reads an opening tag whole when a quoted value holds a > (#288)", () => {
+    expect(
+      fundingSections(
+        `<article><back><fn-group><fn title="a>b" fn-type="funding"><p>Grant A1.</p></fn></fn-group></back></article>`,
+      ).text,
+    ).toEqual(["Grant A1."]);
+    expect(
+      fundingSections(
+        body(`<sec title="a>b" sec-type="funding"><p>Grant A1.</p></sec>`),
+      ).text,
+    ).toEqual(["Grant A1."]);
+  });
+
+  it.each([
+    ["label", "<label>1"],
+    ["sec-meta", "<sec-meta><kwd>k</kwd>"],
+  ])(
+    "does not run an unclosed %s on to a later section's title (#289)",
+    (_name, open) => {
+      const xml = `<sec>${open}<title>Methods</title><p>Body text.</p></sec><sec><label>2</label><title>Funding</title><p>Grant A1.</p></sec>`;
+      expect(isFundingSectionAt(xml, 0)).toBe(false);
+      expect(isFundingSectionAt(xml, xml.lastIndexOf("<sec>"))).toBe(true);
+      const sections = fundingSections(body(xml));
+      expect(sections.text).toEqual(["Grant A1."]);
+      expect(JSON.stringify(sections)).not.toContain("Body text");
+    },
+  );
+
+  it("strips a title in any case (#292)", () => {
+    expect(
+      fundingSections(
+        "<article><back><ack><sec><TITLE>Thanks</TITLE>Grant A1.</sec></ack></back></article>",
+      ).text,
+    ).toEqual(["Grant A1."]);
+  });
+
+  it("resolves no entity and reads no DTD", () => {
+    const dtd = new URL("../../package.json", import.meta.url).href;
+    const sections = fundingSections(
+      `<?xml version="1.0"?>\n<!DOCTYPE article SYSTEM "${dtd}" [\n` +
+        `<!ENTITY inside "Expanded text">\n<!ENTITY outside SYSTEM "${dtd}">\n]>\n` +
+        `<article><back><ack><p>Grant A1 &inside; &outside;.</p></ack></back></article>`,
+    );
+    expect(sections.text).toEqual(["Grant A1 &inside; &outside;."]);
+    const kept = JSON.stringify(sections);
+    expect(kept).not.toContain("Expanded");
+    expect(kept).not.toContain("grantlink");
+  });
+});

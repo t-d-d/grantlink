@@ -1,8 +1,20 @@
 import type { FundingSections } from "../extract/rules.ts";
+import {
+  attribute,
+  descendants,
+  fragment,
+  outermost,
+  readXml,
+  serialize,
+  type XmlElement,
+  type XmlNode,
+} from "./xml.ts";
 
 // Cuts a paper's full text, in JATS XML as Europe PMC serves it, down to its
 // funding statement, its acknowledgements and its funding metadata. Nothing
 // else of the paper is kept: not the abstract, the body or the author list.
+// The XML is read through a parser into a tree (#343), so a tag is read as
+// XML reads it, whatever its spacing, quotes or nesting.
 
 const ENTITIES: Record<string, string> = {
   amp: "&",
@@ -29,156 +41,74 @@ function decode(text: string): string {
   );
 }
 
-function plain(xml: string): string {
-  return decode(xml.replace(/<[^>]*>/gu, " "))
+// The text of these nodes, with each element's tags read as a space, so the
+// words either side of one stay apart. A comment is dropped unread, and a
+// processing instruction reads as a space. An element that fails the test
+// reads as a space, with all it holds.
+function words(
+  nodes: XmlNode[],
+  keep: (element: XmlElement) => boolean = () => true,
+): string {
+  return nodes
+    .map((node) => {
+      switch (node.kind) {
+        case "text":
+          return decode(node.text);
+        case "cdata":
+          return node.text;
+        case "comment":
+          return "";
+        case "instruction":
+          return " ";
+        case "element":
+          return keep(node) ? ` ${words(node.children, keep)} ` : " ";
+      }
+    })
+    .join("");
+}
+
+function plain(
+  nodes: XmlNode[],
+  keep?: (element: XmlElement) => boolean,
+): string {
+  return words(nodes, keep)
     .replace(/\s+/gu, " ")
     .replace(/\s+([.,;:)])/gu, "$1")
     .replace(/\(\s+/gu, "(")
     .trim();
 }
 
-// What ends a tag's name: whitespace, a slash or the tag's close. \b would
-// let "fn" match <fn-group> and "title" match <title-group>, since a hyphen
-// ends a word (#210, #216).
-const NAME_END = String.raw`(?=[\s/>])`;
+// A tag's name as JATS writes it. A section's own parts match in any case,
+// as they always have here (#292).
+const named =
+  (name: string) =>
+  (element: XmlElement): boolean =>
+    element.name === name;
+const namedInAnyCase =
+  (name: string) =>
+  (element: XmlNode | undefined): element is XmlElement =>
+    element?.kind === "element" && element.name.toLowerCase() === name;
+const isTitle = namedInAnyCase("title");
+const isLabel = namedInAnyCase("label");
+const isSecMeta = namedInAnyCase("sec-meta");
+const isSection = namedInAnyCase("sec");
 
-// A tag name as a pattern that matches only that name, so a name holding a
-// regular expression character such as a dot reads as written (#217).
-const literal = (name: string): string =>
-  name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-
-// Drops comments and turns each CDATA section into escaped text, so that a
-// tag written inside either is not read as markup.
-function markup(xml: string): string {
-  return xml
-    .replace(/<!--[\s\S]*?-->/gu, "")
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gu, (_whole, text: string) =>
-      text
-        .replace(/&/gu, "&amp;")
-        .replace(/</gu, "&lt;")
-        .replace(/>/gu, "&gt;"),
-    );
-}
-
-// Every element with this name, in the order its opening tags come, with the
-// attributes in its opening tag, where its content starts and where it ends.
-// JATS nests some elements, such as a paragraph in a list item in a
-// paragraph, so each element ends at the closing tag that balances its
-// opening tag, and the elements inside it are part of it (#189).
-//
-// An element whose tags do not balance is read with care, since which
-// closing tag is missing cannot be told (#263). Then its own closing tag,
-// or the closing tag of an element inside it, is missing, and balancing
-// would end it, and any element it sits in, at a later closing tag: in
-// another element after it, or in the one around it. So an element that is
-// never closed, and every element opened inside one, holds no element of
-// its name: it ends at the next opening or closing tag of its name, and one
-// with none after it is dropped, so a broken element never takes in the
-// rest of the paper. A missing closing tag elsewhere does not change how an
-// element is read, and nor does a closing tag too many, which only ends an
-// element sooner. A self-closing element is empty, and is neither a
-// boundary nor ends one (#195). Tags match in any case if caseless is set.
-interface Span {
-  index: number;
-  tag: string;
-  start: number;
-  end: number;
-}
-
-function spans(xml: string, name: string, caseless = false): Span[] {
-  const tags = [
-    ...xml.matchAll(
-      new RegExp(
-        `<(/?)${literal(name)}${NAME_END}([^>]*)>`,
-        caseless ? "giu" : "gu",
-      ),
-    ),
-  ].map((tag) => {
-    const [whole, closing, rest = ""] = tag;
-    return {
-      index: tag.index,
-      tag: rest,
-      start: tag.index + whole.length,
-      kind: rest.endsWith("/") ? "empty" : closing ? "close" : "open",
-    };
-  });
-  // Where the next tag that is not self-closing starts, after each tag.
-  const next: number[] = [];
-  let after = -1;
-  for (let i = tags.length - 1; i >= 0; i -= 1) {
-    next[i] = after;
-    const tag = tags[i];
-    if (tag !== undefined && tag.kind !== "empty") after = tag.index;
-  }
-  const found: (Span & { parent: Span | undefined; next: number })[] = [];
-  const open: (typeof found)[number][] = [];
-  tags.forEach(({ kind, ...tag }, i) => {
-    if (kind === "empty") {
-      found.push({ ...tag, end: tag.start, parent: undefined, next: -1 });
-    } else if (kind === "open") {
-      const element = {
-        ...tag,
-        end: -1,
-        parent: open.at(-1),
-        next: next[i] ?? -1,
-      };
-      found.push(element);
-      open.push(element);
-    } else {
-      const element = open.pop();
-      if (element !== undefined) element.end = tag.index;
-    }
-  });
-  // An element is read with care if it is never closed, or if it was opened
-  // inside one read with care. A parent comes before its children.
-  const careful = new Set<number>();
-  return found.map(({ parent, next: boundary, ...span }) => {
-    if (
-      span.end === -1 ||
-      (parent !== undefined && careful.has(parent.index))
-    ) {
-      careful.add(span.index);
-      return { ...span, end: boundary };
-    }
-    return span;
-  });
-}
-
-// Every outermost element with this name, as its inner XML, with the
-// attributes in its opening tag. One inside another it keeps is read as part
-// of that one.
-function tagged(
+// Every outermost element with this name, as its inner XML, written back
+// out. One inside another it keeps is read as part of that one.
+export function elements(
   xml: string,
   name: string,
-  attributes = "",
-): { tag: string; inner: string }[] {
-  const wanted = new RegExp(attributes, "u");
-  const found: { tag: string; inner: string }[] = [];
-  let until = 0;
-  for (const { index, tag, start, end } of spans(xml, name)) {
-    if (index < until || !wanted.test(tag)) continue;
-    // One that never ends holds the rest of the XML, and is dropped.
-    if (end === -1) break;
-    found.push({ tag, inner: xml.slice(start, end) });
-    until = end;
-  }
-  return found;
+  test: (element: XmlElement) => boolean = () => true,
+): string[] {
+  return outermost(
+    readXml(xml),
+    (element) => element.name === name && test(element),
+  ).map(({ children }) => serialize(children));
 }
 
-// Every outermost element with this name, as its inner XML.
-export function elements(xml: string, name: string, attributes = ""): string[] {
-  return tagged(xml, name, attributes).map(({ inner }) => inner);
-}
-
-// An attribute's value split at white space, in either kind of quotes.
-function attribute(tag: string, name: string): string[] {
-  const match = new RegExp(
-    `\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`,
-    "u",
-  ).exec(tag);
-  const value = match?.[1] ?? match?.[2] ?? "";
-  return value.split(/\s+/u).filter((part) => part !== "");
-}
+// An attribute's value split at white space.
+const valuesOf = (element: XmlElement, name: string): string[] =>
+  (attribute(element, name) ?? "").split(/\s+/u).filter((part) => part !== "");
 
 // The funding metadata the cutter reads, by element name. In each funding
 // group it reads every funding statement whole, and in each award group every
@@ -197,31 +127,31 @@ export const FUNDING_METADATA = {
 // whose rid names sources in its group goes to those sources alone. Any
 // other id goes to every source in the group, which then does not say whose
 // it is (#128).
-function awardsOf(group: string): FundingSections["awards"] {
-  const sources = tagged(group, FUNDING_METADATA.source).map(
-    ({ tag, inner }) => ({
-      ids: attribute(tag, "id"),
-      name: plain(inner),
+function awardsOf(group: XmlElement): FundingSections["awards"] {
+  const sources = outermost(group, named(FUNDING_METADATA.source)).map(
+    (source) => ({
+      ids: valuesOf(source, "id"),
+      name: plain(source.children),
     }),
   );
   const all = sources.map(({ name }) => name).filter((name) => name !== "");
   const untied: string[] = [];
   const tied = new Map<string, { sources: string[]; ids: string[] }>();
-  for (const { tag, inner } of tagged(group, FUNDING_METADATA.id)) {
-    const id = plain(inner);
+  for (const award of outermost(group, named(FUNDING_METADATA.id))) {
+    const id = plain(award.children);
     if (id === "") continue;
-    const rid = attribute(tag, "rid");
-    const named = sources
+    const rid = valuesOf(award, "rid");
+    const sourcesNamed = sources
       .filter((source) => source.ids.some((sourceId) => rid.includes(sourceId)))
       .map(({ name }) => name);
-    if (named.length === 0) {
+    if (sourcesNamed.length === 0) {
       untied.push(id);
       continue;
     }
-    const key = JSON.stringify(named);
-    const award = tied.get(key) ?? { sources: named, ids: [] };
-    award.ids.push(id);
-    tied.set(key, award);
+    const key = JSON.stringify(sourcesNamed);
+    const tiedAward = tied.get(key) ?? { sources: sourcesNamed, ids: [] };
+    tiedAward.ids.push(id);
+    tied.set(key, tiedAward);
   }
   const awards = [...tied.values()];
   // An award group that names nothing, such as a self-closing one, gives no
@@ -232,156 +162,127 @@ function awardsOf(group: string): FundingSections["awards"] {
     : awards;
 }
 
-// A section's title. A self-closing title is only itself (#221).
-const TITLE = new RegExp(
-  String.raw`<title${NAME_END}(?:[^>]*\/>|[^>]*>[\s\S]*?<\/title>)`,
-  "gu",
-);
-
-// A <sec-meta>, whole. It can name people, such as in a contributor's <bio>,
-// so none of its text is kept, wherever it stands in a part: in an <ack>, in
-// a section inside one, or in a subsection of a funding section (#229). A
-// self-closing one is only itself. One that is never closed runs to the end
-// of the part, since where its names end cannot be told.
-const SEC_META_WHOLE = new RegExp(
-  String.raw`<sec-meta${NAME_END}(?:[^>]*\/>|[^>]*>[\s\S]*?(?:<\/sec-meta\s*>|$))`,
-  "giu",
-);
-
-// The paragraphs of a section, or its whole text less its title if it has
+// The paragraphs of a part, or its whole text less its titles if it has
 // none. A self-closing paragraph is empty, so it does not count. A
-// self-closing title strips only itself (#221). Any <sec-meta> is dropped
-// first, and leaves a space, so the words either side of it stay apart
-// (#229).
-function paragraphs(part: string): string[] {
-  const section = part.replace(SEC_META_WHOLE, " ");
-  const found = elements(section, "p")
-    .map(plain)
+// <sec-meta> can name people, such as in a contributor's <bio>, so none of
+// its text is kept, wherever it stands in a part: in an <ack>, in a section
+// inside one, or in a subsection of a funding section (#229).
+function paragraphs(part: XmlNode[]): string[] {
+  const root = fragment(part);
+  const kept = (element: XmlElement): boolean => !isSecMeta(element);
+  const found = outermost(
+    root,
+    (element) => !kept(element) || element.name === "p",
+  )
+    .filter(kept)
+    .map((paragraph) => plain(paragraph.children, kept))
     .filter((paragraph) => paragraph !== "");
   if (found.length > 0) return found;
-  return [plain(section.replace(TITLE, ""))];
+  return [plain(part, (element) => kept(element) && !isTitle(element))];
 }
 
 // What counts as a funding part, read here by the cutter and by the check on
 // recorded fixtures (test/fixture-parts.ts), so the two agree (#159).
 
-// A pattern for the attributes of an opening tag, after its name, that holds
-// this attribute with one of these values. It steps over each attribute
-// before it whole, so it matches only a whole attribute, never part of a
-// longer name such as x-fn-type or text inside another attribute's value
-// (#217).
-function wholeAttribute(name: string, values: string): string {
-  const quoted = String.raw`(?:"[^"]*"|'[^']*')`;
-  return String.raw`^(?:\s+[^\s=]+\s*=\s*${quoted})*\s+${name}\s*=\s*(?:"(?:${values})"|'(?:${values})')`;
+// Whether a footnote's type marks it as funding text.
+export const FUNDING_FOOTNOTE = (element: XmlElement): boolean =>
+  ["financial-disclosure", "funding", "supported-by"].includes(
+    attribute(element, "fn-type") ?? "",
+  );
+
+// What sits between a section's opening tag, its sec-meta, its label and its
+// title without hiding the section: white space, comments and processing
+// instructions (#230).
+const isGap = (node: XmlNode | undefined): boolean =>
+  node !== undefined &&
+  (node.kind === "comment" ||
+    node.kind === "instruction" ||
+    ((node.kind === "text" || node.kind === "cdata") &&
+      node.text.trim() === ""));
+
+const FUNDING_TYPE = /^(?:funding|ack|acknowledge?ments?)$/iu;
+
+// A title that names a funding section. Europe PMC often marks
+// acknowledgements up as a section rather than an <ack>, and one journal
+// titles its funding section Support. Support must be the whole title, so a
+// body section such as Support vector machines is not kept. Which other
+// titles count is #239.
+const FUNDING_TITLE =
+  /^(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*$)/iu;
+
+// What a funding section holds after its heading, or undefined if the
+// element is not one. A section is found by its type or by its title, and
+// may open with a <sec-meta> and then a label before its title. Its
+// <sec-meta> is not part of what it holds, since it can name people (#222).
+// A self-closing section is empty, and a self-closing title names nothing,
+// so neither makes a funding section (#221). The title is read as text, so
+// inline markup around its words does not hide it (#240).
+function fundingContent(section: XmlElement): XmlNode[] | undefined {
+  if (!isSection(section) || section.empty) return undefined;
+  const children = section.children;
+  let at = 0;
+  const skipGaps = () => {
+    while (isGap(children[at])) at += 1;
+  };
+  skipGaps();
+  if (isSecMeta(children[at])) {
+    at += 1;
+    skipGaps();
+  }
+  if (FUNDING_TYPE.test(attribute(section, "sec-type") ?? "")) {
+    return children.slice(at);
+  }
+  if (isLabel(children[at])) {
+    at += 1;
+    skipGaps();
+  }
+  const title = children[at];
+  if (!isTitle(title) || title.empty) return undefined;
+  return FUNDING_TITLE.test(plain(title.children))
+    ? children.slice(at + 1)
+    : undefined;
 }
 
-// The attribute that marks a footnote as funding text.
-export const FUNDING_FOOTNOTE = wholeAttribute(
-  "fn-type",
-  "financial-disclosure|funding|supported-by",
-);
+// Whether the element is a funding section.
+export const isFundingSection = (element: XmlElement): boolean =>
+  fundingContent(element) !== undefined;
 
-// The start of a funding or acknowledgements section, found by its type or by
-// its title. Europe PMC often marks acknowledgements up as a section rather
-// than an <ack>, and one journal titles its funding section Support. Support
-// must be the whole title, so a body section such as Support vector machines
-// is not kept. A tag matches only by its whole name, so <sec-meta> is not a
-// section and <title-group> is not a title (#216). A label ends at its own
-// closing tag, so a labelled section is not taken for the labelled funding
-// section after it. A self-closing label is only itself, so it neither hides
-// the funding title after it nor runs on to a later label's closing tag
-// (#227). A self-closing section is empty, and a self-closing title names
-// nothing, so neither starts a funding section: (?<!\/)> keeps each tag from
-// closing itself (#221). A section may open with a <sec-meta>, which is read
-// as a label is: to its own closing tag, or only itself when self-closing
-// (#227). A <sec-meta> is part of the match whether the section is found by
-// its type or its title, so it is not kept, since it can name people (#222).
-// Between a section's opening tag, its sec-meta, its label and its title may
-// sit white space, comments and processing instructions, and so may they
-// inside the title before the words that name it, so neither hides a
-// section. The cutter has dropped the comments by then, but the check on
-// recorded fixtures reads the raw XML (#230). Each comment or instruction
-// ends at its own close, so one cannot run on past a title into another.
-const GAP = String.raw`(?:\s|<!--(?:(?!-->)[\s\S])*-->|<\?(?:(?!\?>)[\s\S])*\?>)*`;
-const leading = (name: string) =>
-  String.raw`(?:<${name}${NAME_END}(?:[^>]*\/>|[^>]*(?<!\/)>(?:(?!<\/${name}>)[\s\S])*<\/${name}>)${GAP})?`;
-const SEC_META = leading("sec-meta");
-const FUNDING_SECTION_START = String.raw`<sec${NAME_END}(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*(?<!\/)>${GAP}${SEC_META}|[^>]*(?<!\/)>${GAP}${SEC_META}${leading("label")}<title${NAME_END}[^>]*(?<!\/)>${GAP}(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
-
-const FUNDING_SECTION_AT = new RegExp(FUNDING_SECTION_START, "iuy");
-
-// Whether the section that opens at this index of the XML is a funding
-// section.
+// Whether the section whose opening tag starts at this index of the XML is a
+// funding section.
 export function isFundingSectionAt(xml: string, index: number): boolean {
-  FUNDING_SECTION_AT.lastIndex = index;
-  return FUNDING_SECTION_AT.test(xml);
-}
-
-// Every funding section, wherever it is. The match starts at the section's
-// own opening tag, so one nested in another section is found too.
-const FUNDING_SECTION = new RegExp(FUNDING_SECTION_START, "giu");
-
-// The tags no section runs across: those of the parts of an article, and of
-// an appendix. A section never closed in the body cannot reach a funding
-// section in the back matter (#263).
-const PART_TAG =
-  /<\/?(?:front|body|back|floats-group|app-group|app|sub-article|response)(?=[\s/>])[^>]*>/giu;
-
-// Every section in the XML, by where its opening tag starts. Each part is
-// balanced apart from the others.
-function sectionsOf(xml: string): Map<number, Span> {
-  const bounds = [
-    0,
-    ...[...xml.matchAll(PART_TAG)].map(({ index }) => index),
-    xml.length,
-  ];
-  const sections = new Map<number, Span>();
-  bounds.slice(1).forEach((to, i) => {
-    const from = bounds[i] ?? 0;
-    // Tags match in any case, as the pattern that finds the section does.
-    for (const { index, tag, start, end } of spans(
-      xml.slice(from, to),
-      "sec",
-      true,
-    )) {
-      sections.set(from + index, {
-        index: from + index,
-        tag,
-        start: from + start,
-        end: end === -1 ? -1 : from + end,
-      });
-    }
-  });
-  return sections;
-}
-
-function fundingBodySections(xml: string): string[] {
-  const sections = sectionsOf(xml);
-  return [...xml.matchAll(FUNDING_SECTION)].flatMap((match) => {
-    const start = match.index + match[0].length;
-    const end = sections.get(match.index)?.end ?? -1;
-    if (end < start) return [];
-    // A match found by its title starts part way through the title, so the
-    // rest of the title is dropped.
-    return [xml.slice(start, end).replace(/^[^<]*<\/title>/u, "")];
-  });
+  for (const element of descendants(readXml(xml))) {
+    if (element.start === index) return isFundingSection(element);
+  }
+  return false;
 }
 
 export function fundingSections(paper: string): FundingSections {
-  const xml = markup(paper);
-  const groups = elements(xml, FUNDING_METADATA.group);
+  const tree = readXml(paper);
+  const groups = outermost(tree, named(FUNDING_METADATA.group));
   const statements = groups.flatMap((group) =>
-    elements(group, FUNDING_METADATA.statement).map(plain),
+    outermost(group, named(FUNDING_METADATA.statement)).map((statement) =>
+      plain(statement.children),
+    ),
   );
   const awards = groups.flatMap((group) =>
-    elements(group, FUNDING_METADATA.award).flatMap(awardsOf),
+    outermost(group, named(FUNDING_METADATA.award)).flatMap(awardsOf),
   );
-  const sections = fundingBodySections(xml);
+  // Every funding section, wherever it is, so one nested in another section
+  // is found too.
+  const sections = [...descendants(tree)].flatMap((element) => {
+    const content = fundingContent(element);
+    return content === undefined ? [] : [content];
+  });
   const text = [
     ...statements,
     ...sections.flatMap(paragraphs),
-    ...elements(xml, "ack").flatMap(paragraphs),
-    ...elements(xml, "fn", FUNDING_FOOTNOTE).flatMap(paragraphs),
+    ...outermost(tree, named("ack")).flatMap(({ children }) =>
+      paragraphs(children),
+    ),
+    ...outermost(
+      tree,
+      (element) => element.name === "fn" && FUNDING_FOOTNOTE(element),
+    ).flatMap(({ children }) => paragraphs(children)),
   ].filter((paragraph) => paragraph !== "");
   return { text: [...new Set(text)], awards };
 }
