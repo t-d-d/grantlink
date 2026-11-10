@@ -205,6 +205,41 @@ describe("the rules", () => {
     ]);
   });
 
+  // The dedupe once saw only the references found so far, so it hung on
+  // the order of the award groups (#241).
+  it.each([
+    ["the bare number comes first", ["12345"], ["A12345"]],
+    ["the lettered number comes first", ["A12345"], ["12345"]],
+  ])(
+    "lists a bare number once when another award group gives it with its A, when %s",
+    (_order, first, second) => {
+      expect(
+        findReferences({
+          text: ["Funded by grant 12345."],
+          awards: [
+            { sources: ["Cancer Research UK"], ids: first },
+            { sources: ["Cancer Research UK"], ids: second },
+          ],
+        }),
+      ).toEqual([{ asWritten: "A12345", normalised: "A12345", format: "An" }]);
+    },
+  );
+
+  it.each([
+    ["the bare number comes first", ["12345", "A12345"]],
+    ["the lettered number comes first", ["A12345", "12345"]],
+  ])(
+    "lists a bare number once when the same award group gives it with its A, when %s",
+    (_order, ids) => {
+      expect(
+        findReferences({
+          text: ["Funded by grant 12345."],
+          awards: [{ sources: ["Cancer Research UK"], ids }],
+        }),
+      ).toEqual([{ asWritten: "A12345", normalised: "A12345", format: "An" }]);
+    },
+  );
+
   it("returns only references the table accepts, whatever space follows a hyphen", () => {
     const found = findReferences(
       sections("Cancer Research UK (ABCDEF-\u00a0Nov21/100001)."),
