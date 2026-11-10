@@ -101,15 +101,27 @@ async function readBatch(
       continue;
     }
     failed += 1;
-    const { failed: failure } = asked;
-    await ctx.step(
-      `failed-${pmcid}`,
-      async () => markFailed(deps, pmcid, failure),
-      { retryStrategy: storeRetry },
-    );
+    const { failed: failure, owed: left } = asked;
+    try {
+      await ctx.step(
+        `failed-${pmcid}`,
+        async () => markFailed(deps, pmcid, failure),
+        { retryStrategy: storeRetry },
+      );
+    } catch (error) {
+      // A mark that fails after its retries ends the run, so the run waits
+      // out the wait this paper's refusal left before it throws, and a run
+      // started after it never asks Europe PMC too soon (#412). An error the
+      // SDK raises for itself is thrown as it is.
+      if (!(error instanceof DurableOperationError) || left === null) {
+        throw error;
+      }
+      await ctx.wait(left.name, { seconds: left.seconds });
+      throw error;
+    }
     // Europe PMC asked the run to wait before it asks again, so whatever
     // asks it next waits first (docs/constraints/europe-pmc.md).
-    due = asked.owed;
+    due = left;
   }
   return { read, failed, owed: due };
 }
@@ -220,12 +232,27 @@ export function makeRun(deps: Deps) {
     if (found === 0) {
       published = { published: false, reason: "the search found nothing" };
     } else {
-      await ctx.step("searched", async () => recordSearch(deps, runId), {
-        retryStrategy: storeRetry,
-      });
-      published = await ctx.step("publish", async () => publish(deps, runId), {
-        retryStrategy: storeRetry,
-      });
+      // Neither step asks Europe PMC, so neither waits on a wait still owed
+      // (#179). But a failure in either ends the run, so the run waits that
+      // out before it throws, and a run started after it never asks Europe
+      // PMC too soon (#412). An error the SDK raises for itself is thrown as
+      // it is.
+      try {
+        await ctx.step("searched", async () => recordSearch(deps, runId), {
+          retryStrategy: storeRetry,
+        });
+        published = await ctx.step(
+          "publish",
+          async () => publish(deps, runId),
+          { retryStrategy: storeRetry },
+        );
+      } catch (error) {
+        if (!(error instanceof DurableOperationError) || owed === null) {
+          throw error;
+        }
+        await ctx.wait(owed.name, { seconds: owed.seconds });
+        throw error;
+      }
     }
 
     // The eval snapshot, once, after the page is published, so the page
