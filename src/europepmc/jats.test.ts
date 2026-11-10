@@ -152,6 +152,16 @@ describe("cutting a paper to its funding sections", () => {
       [
         '<sec sec-type="ack"><sec-meta><contrib-group><contrib><bio><p>Authorname</p></bio></contrib></contrib-group></sec-meta><p>Grant A1.</p></sec>',
       ],
+      // A comment or a processing instruction between the tags that open a
+      // section does not hide it (#230).
+      ["<sec><!-- x --><title>Funding</title><p>Grant A1.</p></sec>"],
+      ["<sec><?pi x?><title>Funding</title><p>Grant A1.</p></sec>"],
+      [
+        "<sec><label>5.</label><?pi x?><!-- x --><title>Acknowledgements</title><p>Grant A1.</p></sec>",
+      ],
+      [
+        '<sec sec-type="funding"><?pi x?><sec-meta><contrib-group><contrib><name><surname>Authorname</surname></name></contrib></contrib-group></sec-meta><?pi x?><title>Funding</title>Grant A1.</sec>',
+      ],
     ])("in %s", (section) => {
       const sections = fundingSections(paper(section));
       expect(sections.text).toEqual(["Grant A1."]);
@@ -176,6 +186,16 @@ describe("cutting a paper to its funding sections", () => {
         fundingSections(
           paper(
             "<sec><sec-meta><kwd-group><kwd>Funding</kwd></kwd-group></sec-meta><title>Methods</title><p>Method.</p></sec>",
+          ),
+        ).text,
+      ).toEqual([]);
+    });
+
+    it("nor a body section whose comment holds another section's title", () => {
+      expect(
+        fundingSections(
+          paper(
+            "<sec><!-- a --><title>Methods</title><p>Method.</p><!-- b --><title>Funding</title></sec>",
           ),
         ).text,
       ).toEqual([]);
