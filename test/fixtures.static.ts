@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { FUNDING_METADATA, isFundingSectionAt } from "../src/europepmc/jats.ts";
+import { FUNDING_METADATA, isFundingSection } from "../src/europepmc/jats.ts";
+import { descendants, parseXml } from "../src/europepmc/xml.ts";
 import { strayParts } from "./fixture-parts.ts";
 import { FIXTURES, RECORDED, fixture, sources } from "./fixtures.ts";
 import { readRepoFile, repoFiles } from "./repo.ts";
@@ -43,9 +44,20 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
     const text = fixture(entry.file);
     expect(text).not.toMatch(/<abstract\b/u);
     // Every section, nested ones too, is one the cutter reads as funding
-    // (#159).
+    // (#159). Each <sec tag must open an element the parser reads, so one
+    // inside a comment or CDATA counts against the fixture too.
+    const elements = new Map(
+      [...descendants(parseXml(text))].map((element) => [
+        element.start,
+        element,
+      ]),
+    );
     for (const section of text.matchAll(/<sec\b[^>]*>/gu)) {
-      expect(isFundingSectionAt(text, section.index), section[0]).toBe(true);
+      const element = elements.get(section.index);
+      expect(
+        element !== undefined && isFundingSection(element),
+        section[0],
+      ).toBe(true);
     }
   });
 

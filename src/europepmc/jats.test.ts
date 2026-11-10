@@ -1,14 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { findReferences } from "../extract/rules.ts";
-import {
-  elements,
-  FUNDING_TITLES,
-  FUNDING_FOOTNOTE,
-  fundingSections,
-  isFundingSectionAt,
-  normaliseTitle,
-} from "./jats.ts";
+import { FUNDING_TITLES, fundingSections, normaliseTitle } from "./jats.ts";
 
 const fixture = (pmcid: string) =>
   readFileSync(
@@ -577,8 +570,11 @@ describe("cutting a paper to its funding sections", () => {
     "does not run a self-closing %s on to a later section's (#227)",
     (_name, empty, full) => {
       const xml = `<sec>${empty}<title>Methods</title><p>Body text.</p></sec><sec>${full}<title>Funding</title><p>Grant A1.</p></sec>`;
-      expect(isFundingSectionAt(xml, 0)).toBe(false);
-      expect(isFundingSectionAt(xml, xml.lastIndexOf("<sec>"))).toBe(true);
+      const sections = fundingSections(
+        `<article><body>${xml}</body></article>`,
+      );
+      expect(sections.text).toEqual(["Grant A1."]);
+      expect(JSON.stringify(sections)).not.toContain("Body text");
     },
   );
 
@@ -654,56 +650,54 @@ describe("cutting a paper to its funding sections", () => {
   });
 });
 
+// The cutter reads an <ack> and a funding footnote by name, so these read
+// each through what the cutter keeps.
 describe("reading an element by its name", () => {
+  const acks = (xml: string) =>
+    fundingSections(`<article><back>${xml}</back></article>`).text;
+
   it("matches only the whole name, not a longer name it begins", () => {
-    const xml =
-      '<fn-group><fn id="a"><p>one</p></fn></fn-group><award-group><award>two</award></award-group>';
-    expect(elements(xml, "fn")).toEqual(["<p>one</p>"]);
-    expect(elements(xml, "award")).toEqual(["two"]);
+    expect(
+      acks(
+        '<fn-group fn-type="funding"><p>one</p></fn-group><ack-x>two</ack-x><ack>three</ack>',
+      ),
+    ).toEqual(["three"]);
   });
 
   it("matches an element with no attributes or with whitespace after its name", () => {
-    expect(elements("<fn>a</fn><fn\n>b</fn>", "fn")).toEqual(["a", "b"]);
+    expect(acks("<ack>a</ack><ack\n>b</ack>")).toEqual(["a", "b"]);
   });
 
   it("reads a self-closing element by its whole name too", () => {
-    expect(elements("<fn-group/><fn/><fn>x</fn>", "fn")).toEqual(["", "x"]);
+    expect(acks("<ack-x/><ack/><ack>x</ack>")).toEqual(["x"]);
   });
 
   // XML allows white space before a closing tag's > (#217).
   it("ends an element at a closing tag with white space before its >", () => {
-    expect(elements("<fn>a</fn ><fn>b</fn\n>", "fn")).toEqual(["a", "b"]);
+    expect(acks("<ack>a</ack ><ack>b</ack\n>")).toEqual(["a", "b"]);
   });
 
   it("ends an unbalanced element at the next tag of its name, with white space before its > (#263)", () => {
-    expect(elements("<fn>a<fn>b</fn >c<fn>d</fn >", "fn")).toEqual([
-      "a",
-      "b",
-      "d",
-    ]);
+    expect(acks("<ack>a<ack>b</ack >c<ack>d</ack >")).toEqual(["a", "b", "d"]);
   });
 
   it("reads a well-formed element whole when one after it is never closed", () => {
-    expect(elements("<fn>a<fn>b</fn>c</fn><fn>d", "fn")).toEqual([
-      "a<fn>b</fn>c",
-    ]);
+    expect(acks("<ack>a<ack>b</ack>c</ack><ack>d")).toEqual(["a b c"]);
   });
 
   it("reads elements inside elements of the same name only when the tags balance", () => {
-    expect(elements("<fn>a<fn>b</fn>c</fn><fn>d</fn>", "fn")).toEqual([
-      "a<fn>b</fn>c",
+    expect(acks("<ack>a<ack>b</ack>c</ack><ack>d</ack>")).toEqual([
+      "a b c",
       "d",
-    ]);
-  });
-  it("reads a name with a regular expression character as written (#217)", () => {
-    expect(elements("<aXb>x</aXb><a.b>y</a.b ><a.b>z<a.b/>", "a.b")).toEqual([
-      "y",
     ]);
   });
 });
 
 describe("reading an element by an attribute (#217)", () => {
-  const footnotes = (xml: string) => elements(xml, "fn", FUNDING_FOOTNOTE);
+  const footnotes = (xml: string) =>
+    fundingSections(
+      `<article><back><fn-group>${xml}</fn-group></back></article>`,
+    ).text;
 
   it.each([
     ['<fn fn-type="funding">a</fn>'],
@@ -767,7 +761,6 @@ describe("reading JATS through an XML parser (#343)", () => {
     const xml =
       "<sec><label>1</label ><title>Funding</title><p>Grant A1.</p></sec>";
     expect(fundingSections(body(xml)).text).toEqual(["Grant A1."]);
-    expect(isFundingSectionAt(xml, 0)).toBe(true);
   });
 
   it("keeps no title words when the title closes with white space before its > (#286)", () => {
@@ -830,8 +823,6 @@ describe("reading JATS through an XML parser (#343)", () => {
     "does not run an unclosed %s on to a later section's title (#289)",
     (_name, open) => {
       const xml = `<sec>${open}<title>Methods</title><p>Body text.</p></sec><sec><label>2</label><title>Funding</title><p>Grant A1.</p></sec>`;
-      expect(isFundingSectionAt(xml, 0)).toBe(false);
-      expect(isFundingSectionAt(xml, xml.lastIndexOf("<sec>"))).toBe(true);
       const sections = fundingSections(body(xml));
       expect(sections.text).toEqual(["Grant A1."]);
       expect(JSON.stringify(sections)).not.toContain("Body text");
@@ -843,7 +834,7 @@ describe("reading JATS through an XML parser (#343)", () => {
     ["a closing tag with white space before its >", "<label>1</label >"],
   ])("finds a funding section by its < after %s (#386)", (_after, before) => {
     const xml = `<body>${before}<sec sec-type="funding"><p>A1.</p></sec></body>`;
-    expect(isFundingSectionAt(xml, xml.indexOf("<sec"))).toBe(true);
+    expect(fundingSections(`<article>${xml}</article>`).text).toEqual(["A1."]);
   });
 
   it("strips a title in any case (#292)", () => {
@@ -870,12 +861,6 @@ describe("reading JATS through an XML parser (#343)", () => {
     ["article", "<article><back><ack><p>Grant A1.</p></ack></back>"],
   ])("keeps the funding parts when the %s is never closed", (_name, xml) => {
     expect(fundingSections(xml).text).toEqual(["Grant A1."]);
-  });
-
-  it("writes an attribute value that holds a double quote back out in single quotes", () => {
-    expect(elements(`<fn><p title='a"b'>x</p></fn>`, "fn")).toEqual([
-      `<p title='a"b'>x</p>`,
-    ]);
   });
 
   it("resolves no entity and reads no DTD", () => {
