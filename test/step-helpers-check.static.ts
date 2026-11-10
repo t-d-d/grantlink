@@ -93,4 +93,27 @@ describe("callbackMismatches", () => {
       "help's parameter 1 (log) has a type the check cannot read",
     ]);
   });
+
+  it("reports a rest parameter of functions, listed or not", () => {
+    const source = `export function help(ctx: unknown, ...fns: Array<() => void>) {}`;
+    const problem =
+      "help's parameter 1 (fns) is a rest parameter of functions, which the table cannot list";
+    expect(callbackMismatches(source, "help", [])).toEqual([problem]);
+    expect(callbackMismatches(source, "help", [1])).toEqual([problem]);
+  });
+
+  it("passes a rest parameter that holds no function", () => {
+    const source = `export function help(ctx: unknown, ...steps: string[]) {}`;
+    expect(callbackMismatches(source, "help", [])).toEqual([]);
+  });
+
+  it("reports a rest parameter whose element type does not resolve", () => {
+    const source = [
+      `import type { Log } from "./no-such-module.ts";`,
+      "export function help(ctx: unknown, ...logs: Log[]) {}",
+    ].join("\n");
+    expect(callbackMismatches(source, "help", [])).toEqual([
+      "help's parameter 1 (logs) has a type the check cannot read",
+    ]);
+  });
 });
