@@ -304,8 +304,10 @@ export function fakeDeps(options: FakeOptions = {}) {
       hasSnapshot(id) {
         return Promise.resolve(text.has(`eval/${id}/manifest.json`));
       },
-      putSnapshotPaper(pmcid, body) {
-        return Promise.resolve(putOnce(`eval/papers/${pmcid}.json`, body));
+      putSnapshotPaper(id, pmcid, body) {
+        return Promise.resolve(
+          putOnce(`eval/${id}/papers/${pmcid}.json`, body),
+        );
       },
       putManifest(id, body) {
         return Promise.resolve(putOnce(`eval/${id}/manifest.json`, body));

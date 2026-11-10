@@ -184,12 +184,35 @@ function memoryS3() {
 }
 
 describe("the eval snapshot in the funding text bucket", () => {
-  it("writes a paper's text under eval/papers/ once, and keeps the first copy", async () => {
+  it("writes a paper's text under its snapshot's own id once, and keeps the first copy", async () => {
     const { client, objects } = memoryS3();
     const bucket = textBucket("b", client);
-    expect(await bucket.putSnapshotPaper("PMC11", "first")).toBe("first");
-    expect(await bucket.putSnapshotPaper("PMC11", "second")).toBe("first");
-    expect(objects.get("eval/papers/PMC11.json")).toBe("first");
+    expect(await bucket.putSnapshotPaper("s3", "PMC11", "first")).toBe("first");
+    expect(await bucket.putSnapshotPaper("s3", "PMC11", "second")).toBe(
+      "first",
+    );
+    expect(objects.get("eval/s3/papers/PMC11.json")).toBe("first");
+  });
+
+  // Each snapshot cuts its own text (#502), so a cutter fix reaches a paper
+  // an earlier snapshot holds.
+  it("writes a fresh copy of a paper an earlier snapshot holds under a new snapshot id", async () => {
+    const { client, objects } = memoryS3();
+    const bucket = textBucket("b", client);
+    await bucket.putSnapshotPaper("s2", "PMC11", "old cut");
+    expect(await bucket.putSnapshotPaper("s3", "PMC11", "new cut")).toBe(
+      "new cut",
+    );
+    expect(objects.get("eval/s2/papers/PMC11.json")).toBe("old cut");
+    expect(objects.get("eval/s3/papers/PMC11.json")).toBe("new cut");
+  });
+
+  it("refuses a paper's text under a key that is not a snapshot id", async () => {
+    const { client } = memoryS3();
+    const bucket = textBucket("b", client);
+    await expect(
+      bucket.putSnapshotPaper("../cache", "PMC11", "x"),
+    ).rejects.toThrow("not a snapshot id");
   });
 
   it("writes a snapshot's manifest once, and knows whether it exists", async () => {
@@ -205,7 +228,7 @@ describe("the eval snapshot in the funding text bucket", () => {
   it("refuses a key that is not a PMCID or a snapshot id", async () => {
     const { client, objects } = memoryS3();
     const bucket = textBucket("b", client);
-    await expect(bucket.putSnapshotPaper("../x", "")).rejects.toThrow();
+    await expect(bucket.putSnapshotPaper("s3", "../x", "")).rejects.toThrow();
     await expect(bucket.putManifest("../x", "")).rejects.toThrow();
     expect(objects.size).toBe(0);
   });

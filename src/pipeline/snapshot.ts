@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { LARGEST_PAGE_SIZE } from "../europepmc/client.ts";
 import { fundingSections } from "../europepmc/jats.ts";
 import { GRANT, manifest, type Manifest } from "../../evals/gold.ts";
+import { crukReference, printedGrants } from "../../evals/score.ts";
 import { logger } from "../log.ts";
 import type { Deps } from "./steps.ts";
 
@@ -74,14 +75,19 @@ export type Taken =
   { kept: true; entry: Entry; empty: boolean } | { kept: false };
 
 // Reads one gold paper afresh into cache/, and writes its funding sections
-// under eval/ once. A gold set A paper Europe PMC links to none of the
-// funder's grants, or one with no funding text or awards, is passed over,
-// and its sample walks on to the next. A gold set B paper is always kept,
-// even with empty sections, since its label is scored against what the
-// rules find in it, which may be nothing (#399). A gold set A paper's grants
-// are read first, so a paper with none costs no full text. A grant id the
-// manifest cannot hold, such as one with a space, is left out, or the
-// manifest would refuse the whole snapshot.
+// under the snapshot's own id once. A gold set A paper Europe PMC links to
+// none of the funder's grants in a CRUK reference form, one whose full text
+// prints none of them, or one with no funding text or awards, is passed
+// over, and its sample walks on to the next. A kept gold set A paper's
+// answers are the linked grants its whole article prints, less its
+// reference list, not only its funding sections, so a cutter that dropped
+// text cannot shrink the answers with it (#502, #503). A funder registry id
+// is never an answer. A gold set B paper is always kept, even with empty
+// sections, since its label is scored against what the rules find in it,
+// which may be nothing (#399). A gold set A paper's grants are read first,
+// so a paper with none costs no full text. A grant id the manifest cannot
+// hold, such as one with a space, is left out, or the manifest would refuse
+// the whole snapshot.
 export async function snapshotPaper(
   deps: Deps,
   pmcid: string,
@@ -90,28 +96,33 @@ export async function snapshotPaper(
   const grants =
     set === "A"
       ? (await deps.europePmc.grants(pmcid)).filter(
-          (grant) => GRANT.safeParse(grant).success,
+          // crukReference refuses a Crossref Funder Registry id, such as
+          // CRUK's own, which Europe PMC sometimes lists as a grant (#502).
+          (grant) => GRANT.safeParse(grant).success && crukReference(grant),
         )
       : [];
   if (set === "A" && grants.length === 0) {
     logger.info("snapshot-passed-over", { pmcid });
     return { kept: false };
   }
-  const sections = fundingSections(await deps.europePmc.fullText(pmcid));
+  const article = await deps.europePmc.fullText(pmcid);
+  const sections = fundingSections(article);
   await deps.text.putFundingText(pmcid, sections);
   const empty = sections.text.length === 0 && sections.awards.length === 0;
-  if (set === "A" && empty) {
+  const answers = set === "A" ? printedGrants(grants, article) : [];
+  if (set === "A" && (empty || answers.length === 0)) {
     logger.info("snapshot-passed-over", { pmcid });
     return { kept: false };
   }
   const stored = await deps.text.putSnapshotPaper(
+    deps.gold.snapshotId,
     pmcid,
     JSON.stringify({ pmcid, ...sections }),
   );
-  logger.info("snapshot-paper", { pmcid, grants: grants.length });
+  logger.info("snapshot-paper", { pmcid, grants: answers.length });
   return {
     kept: true,
-    entry: { pmcid, set, sha256: sha256(stored), grants },
+    entry: { pmcid, set, sha256: sha256(stored), grants: answers },
     empty,
   };
 }
