@@ -55,7 +55,7 @@ describe("the eval workflow", () => {
     const run = named("Run the eval");
     expect(run?.run ?? "").not.toMatch(/secrets\./u);
     const fromSecrets = Object.entries(run?.env ?? {}).filter(([, value]) =>
-      /secrets\./u.test(value),
+      value.includes("secrets."),
     );
     expect(fromSecrets).toHaveLength(1);
   });
