@@ -347,6 +347,23 @@ function exportsUnfollowed(
   );
 }
 
+// True when the node is the initial value of an alias that is exported,
+// `export const now = Date.now`, or `const D = Date` and then `export { D }`.
+// Its report stands for the export.
+function exportedInit(node: TSESTree.Node, resolver: Resolver): boolean {
+  const outer = outermost(node);
+  const parent = outer.parent;
+  if (
+    parent?.type !== AST_NODE_TYPES.VariableDeclarator ||
+    parent.init !== outer ||
+    parent.id.type !== AST_NODE_TYPES.Identifier
+  ) {
+    return false;
+  }
+  const [declared] = resolver.sourceCode.getDeclaredVariables(parent);
+  return declared !== undefined && exported(parent, declared);
+}
+
 // True when a declarator sits in an exported declaration,
 // `export const { now } = Date` or `export const M = Math`.
 function exportedDeclaration(declarator: TSESTree.VariableDeclarator): boolean {
@@ -410,17 +427,33 @@ export const noNonDeterministicOutsideStep = createRule({
     messages: {
       nonDeterministicOutsideStep:
         "`{{op}}` is outside every step, so a replay reads a new value. Move it inside `ctx.step(...)`, or add `// eslint-disable-next-line grantlink/no-non-deterministic-outside-step -- <why it is safe>`.",
+      // An export cannot move inside a step, so its report says how to
+      // stop passing the source on.
+      exportedOutsideStep:
+        "`{{op}}` passes to another module, which may read it outside every step where this rule cannot see. Export a function that takes the value from a step instead, or add `// eslint-disable-next-line grantlink/no-non-deterministic-outside-step -- <why it is safe>`.",
     },
   },
   defaultOptions: [],
   create(context) {
-    const report = (node: TSESTree.Node, op: string): void => {
+    // A report at an export, or at the initial value of an exported alias,
+    // says the source passes to another module, since it cannot move
+    // inside a step.
+    const report = (
+      node: TSESTree.Node,
+      op: string,
+      atExport = exportedInit(node, context),
+    ): void => {
       if (insideCheckpointedCallback(node, context)) return;
       context.report({
         node,
-        messageId: "nonDeterministicOutsideStep",
+        messageId: atExport
+          ? "exportedOutsideStep"
+          : "nonDeterministicOutsideStep",
         data: { op },
       });
+    };
+    const reportExport = (node: TSESTree.Node, op: string): void => {
+      report(node, op, true);
     };
     // A call reports through its callee, so `Date.now()` and a bare
     // `Math.random` passed as a value each report once.
@@ -446,7 +479,7 @@ export const noNonDeterministicOutsideStep = createRule({
         const alias = variable === null ? null : aliasDeclarator(variable);
         if (alias !== null && exportedDeclaration(alias.declarator)) return;
       }
-      report(value, holder);
+      reportExport(value, holder);
     };
     // `Date` read as a value and passed on, such as `ids.map(Date)`.
     const checkDate = (node: TSESTree.Node, path: readonly string[] | null) => {
@@ -474,12 +507,12 @@ export const noNonDeterministicOutsideStep = createRule({
       ExportSpecifier(node) {
         const path = reexported(node);
         const op = opOf(path) ?? holderOf(path);
-        if (op !== undefined) report(node.local, op);
+        if (op !== undefined) reportExport(node.local, op);
       },
       // Every name of such a module, `export * from "node:crypto"`.
       ExportAllDeclaration(node) {
         const op = reexportedAll(node);
-        if (op !== undefined) report(node, op);
+        if (op !== undefined) reportExport(node, op);
       },
       ExportDefaultDeclaration(node) {
         checkDefault(node.declaration);
@@ -496,7 +529,7 @@ export const noNonDeterministicOutsideStep = createRule({
         const passed = op ?? holderOf(path);
         if (passed === undefined) return;
         if (exportsUnfollowed(node, context, op !== undefined)) {
-          report(node, passed);
+          reportExport(node, passed);
           return;
         }
         if (op === undefined) return;
