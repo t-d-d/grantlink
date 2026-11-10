@@ -105,10 +105,7 @@ function tagged(
     const close = next.exec(xml);
     if (close !== null) {
       found.push({ tag: opening, inner: xml.slice(start, close.index) });
-      return [
-        ...found,
-        ...tagged(xml.slice(next.lastIndex), name, attributes),
-      ];
+      return [...found, ...tagged(xml.slice(next.lastIndex), name, attributes)];
     }
   }
   return found;

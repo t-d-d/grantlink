@@ -248,7 +248,7 @@ describe("cutting a paper to its funding sections", () => {
   it("runs an unbalanced funding section to the next closing tag with white space before its > (#217)", () => {
     expect(
       fundingSections(
-        "<article><body><sec sec-type=\"funding\"><p>Grant A1.</p><sec><title>Sub</title></sec ><p>Body text.</p></body></article>",
+        '<article><body><sec sec-type="funding"><p>Grant A1.</p><sec><title>Sub</title></sec ><p>Body text.</p></body></article>',
       ).text,
     ).toEqual(["Grant A1."]);
   });
@@ -427,7 +427,7 @@ describe("reading an element by an attribute (#217)", () => {
     ['<fn x-fn-type="funding">a</fn>'],
     ['<fn fn-type="other">a</fn>'],
     [`<fn title='fn-type="funding"'>a</fn>`],
-    ['<fn title="x fn-type=\'funding\'">a</fn>'],
+    ["<fn title=\"x fn-type='funding'\">a</fn>"],
   ])("does not read an attribute look-alike in %s", (xml) => {
     expect(footnotes(xml)).toEqual([]);
   });
