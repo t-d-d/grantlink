@@ -1,8 +1,10 @@
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
-import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
+import { TSESLint } from "@typescript-eslint/utils";
+import type { TSESTree } from "@typescript-eslint/utils";
 import {
   createRule,
   insideCheckpointedCallback,
+  lookup,
   unwrapped,
 } from "./create-rule.ts";
 
@@ -28,17 +30,83 @@ const NON_DETERMINISTIC: Readonly<Record<string, ReadonlySet<string>>> = {
   ]),
 };
 
-// The object is read through unwrapped, so `(Date as any).now()`,
+// The read a member names, such as `Date.now`, and the identifier it reads
+// it from. The object is read through unwrapped, so `(Date as any).now()`,
 // `Math!.random()` and `(crypto satisfies Crypto).randomUUID()` count too.
-function memberOp(node: TSESTree.MemberExpression): string | undefined {
+function memberOp(
+  node: TSESTree.MemberExpression,
+): { op: string; object: TSESTree.Identifier } | undefined {
   if (node.computed) return undefined;
   const object = unwrapped(node.object);
   if (object.type !== AST_NODE_TYPES.Identifier) return undefined;
   if (node.property.type !== AST_NODE_TYPES.Identifier) return undefined;
   const allowed = NON_DETERMINISTIC[object.name];
   return allowed?.has(node.property.name) === true
-    ? `${object.name}.${node.property.name}`
+    ? { op: `${object.name}.${node.property.name}`, object }
     : undefined;
+}
+
+// The Node modules that export the same reads under the global's name, so
+// `import crypto from "node:crypto"` or `import { performance } from
+// "node:perf_hooks"` binds the source the rule refuses, not a stand-in.
+const SAME_SOURCE: Readonly<Record<string, ReadonlySet<string>>> = {
+  crypto: new Set(["crypto", "node:crypto"]),
+  performance: new Set(["perf_hooks", "node:perf_hooks"]),
+};
+
+// True when the identifier names a value the file declares in place of the
+// global, such as a parameter or a class called `Math`. A global the config
+// declares has no definition in the file. A type, an interface, an ambient
+// `declare` and a type-only import declare no value, and an import from a
+// module in SAME_SOURCE is the same source, so none of them shadows it.
+function declaredLocally(
+  identifier: TSESTree.Identifier,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): boolean {
+  const variable = lookup(identifier.name, sourceCode.getScope(identifier));
+  return variable?.defs.some((def) => shadows(identifier.name, def)) ?? false;
+}
+
+function shadows(name: string, def: TSESLint.Scope.Definition): boolean {
+  switch (def.type) {
+    case TSESLint.Scope.DefinitionType.Type:
+    case TSESLint.Scope.DefinitionType.ImplicitGlobalVariable:
+      return false;
+    case TSESLint.Scope.DefinitionType.ImportBinding: {
+      const declaration = def.parent;
+      if (declaration.type !== AST_NODE_TYPES.ImportDeclaration) return true;
+      if (declaration.importKind === "type") return false;
+      if (
+        def.node.type === AST_NODE_TYPES.ImportSpecifier &&
+        def.node.importKind === "type"
+      ) {
+        return false;
+      }
+      return !(SAME_SOURCE[name]?.has(declaration.source.value) ?? false);
+    }
+    case TSESLint.Scope.DefinitionType.Variable:
+      return !def.parent.declare;
+    case TSESLint.Scope.DefinitionType.ClassName:
+    case TSESLint.Scope.DefinitionType.FunctionName:
+    case TSESLint.Scope.DefinitionType.TSModuleName:
+      return !("declare" in def.node && def.node.declare);
+    default:
+      return true;
+  }
+}
+
+// True when the node is the function a call calls, read through the
+// wrappers unwrapped takes off, so `Date.now!()`, `(Date.now as F)()` and
+// `(0, Date.now)()` are each a call.
+function calledThrough(node: TSESTree.Node): boolean {
+  let outer = node;
+  while (outer.parent !== undefined && unwrapped(outer.parent) === node) {
+    outer = outer.parent;
+  }
+  return (
+    outer.parent?.type === AST_NODE_TYPES.CallExpression &&
+    outer.parent.callee === outer
+  );
 }
 
 export const noNonDeterministicOutsideStep = createRule({
@@ -57,28 +125,6 @@ export const noNonDeterministicOutsideStep = createRule({
   },
   defaultOptions: [],
   create(context) {
-    // A name `Date` that a local value shadows is not the clock. The name is
-    // resolved through its own reference, which skips a type such as
-    // `type Date = string` that shadows no value. A global variable has no
-    // definitions, even when the config lists it.
-    const isGlobalDate = (callee: TSESTree.Node): boolean => {
-      const name = unwrapped(callee);
-      if (name.type !== AST_NODE_TYPES.Identifier || name.name !== "Date") {
-        return false;
-      }
-      for (
-        let scope: TSESLint.Scope.Scope | null =
-          context.sourceCode.getScope(name);
-        scope !== null;
-        scope = scope.upper
-      ) {
-        const ref = scope.references.find((r) => r.identifier === name);
-        if (ref !== undefined) {
-          return ref.resolved === null || ref.resolved.defs.length === 0;
-        }
-      }
-      return true;
-    };
     const report = (node: TSESTree.Node, op: string): void => {
       if (insideCheckpointedCallback(node, context)) return;
       context.report({
@@ -86,6 +132,14 @@ export const noNonDeterministicOutsideStep = createRule({
         messageId: "nonDeterministicOutsideStep",
         data: { op },
       });
+    };
+    const isGlobalDate = (callee: TSESTree.Node): boolean => {
+      const name = unwrapped(callee);
+      return (
+        name.type === AST_NODE_TYPES.Identifier &&
+        name.name === "Date" &&
+        !declaredLocally(name, context.sourceCode)
+      );
     };
     return {
       // The callee is read through unwrapped too, so `new (Date as any)()`,
@@ -100,14 +154,13 @@ export const noNonDeterministicOutsideStep = createRule({
         if (isGlobalDate(node.callee)) report(node, "Date()");
       },
       // A call reports through its callee, so `Date.now()` and a bare
-      // `Math.random` passed as a value each report once.
+      // `Math.random` passed as a value each report once. A local that
+      // shadows the global, such as a parameter named `Math`, is not read.
       MemberExpression(node) {
-        const op = memberOp(node);
-        if (op === undefined) return;
-        const called =
-          node.parent.type === AST_NODE_TYPES.CallExpression &&
-          node.parent.callee === node;
-        report(node, called ? `${op}()` : op);
+        const read = memberOp(node);
+        if (read === undefined) return;
+        if (declaredLocally(read.object, context.sourceCode)) return;
+        report(node, calledThrough(node) ? `${read.op}()` : read.op);
       },
     };
   },
