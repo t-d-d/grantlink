@@ -663,6 +663,174 @@ describe("cutting a paper to its funding sections", () => {
   });
 });
 
+// Europe PMC often prints the funding statement in a back-matter note or a
+// footnote with no funding type (#505). The cutter keeps one that is about
+// funding: by its type, by its title, or, when it has neither, by naming
+// the funder. It keeps no other note or footnote.
+describe("keeping funding notes and footnotes (#505)", () => {
+  const back = (xml: string) =>
+    fundingSections(`<article><back>${xml}</back></article>`);
+
+  it("passes a CRUK grant in a back-matter note to the rules", () => {
+    const sections = back(
+      '<notes notes-type="funding-information"><title>Funding</title>' +
+        "<p>This work was funded by Cancer Research UK (C1234/A56789).</p></notes>",
+    );
+    expect(sections.text).toEqual([
+      "This work was funded by Cancer Research UK (C1234/A56789).",
+    ]);
+    expect(
+      findReferences(sections).map(({ normalised }) => normalised),
+    ).toEqual(["C1234/A56789"]);
+  });
+
+  it("passes a CRUK grant in an untyped, untitled footnote to the rules", () => {
+    const sections = back(
+      "<fn-group><fn><p>Supported by a CRUK award (C1234/A56789).</p></fn></fn-group>",
+    );
+    expect(sections.text).toEqual([
+      "Supported by a CRUK award (C1234/A56789).",
+    ]);
+    expect(
+      findReferences(sections).map(({ normalised }) => normalised),
+    ).toEqual(["C1234/A56789"]);
+  });
+
+  it.each([
+    [
+      '<notes notes-type="funding"><title>Funding information</title><p>a</p></notes>',
+    ],
+    ['<notes notes-type="funding-information"><p>a</p></notes>'],
+    ['<notes notes-type="financial-disclosure"><p>a</p></notes>'],
+    ["<notes><title>Funding</title><p>a</p></notes>"],
+    [
+      "<notes><label>1</label><title>Sources of funding</title><p>a</p></notes>",
+    ],
+    ['<fn-group><fn fn-type="funding-information"><p>a</p></fn></fn-group>'],
+    ["<fn-group><fn><title>Funding</title><p>a</p></fn></fn-group>"],
+  ])("keeps the note marked as funding by its type or title in %s", (xml) => {
+    expect(back(xml).text).toEqual(["a"]);
+  });
+
+  it("keeps a funding note nested in a note that is not about funding", () => {
+    expect(
+      back(
+        "<notes><title>Declarations</title>" +
+          "<notes><title>Consent for publication</title><p>b</p></notes>" +
+          '<notes notes-type="funding"><title>Funding</title><p>a</p></notes>' +
+          "</notes>",
+      ).text,
+    ).toEqual(["a"]);
+  });
+
+  it.each([
+    [
+      "author contributions",
+      '<notes notes-type="author-contribution"><title>Author contributions</title><p>Authorname wrote it.</p></notes>',
+    ],
+    [
+      "competing interests that name the funder",
+      '<notes notes-type="COI-statement"><title>Competing interests</title><p>Authorname holds a Cancer Research UK grant.</p></notes>',
+    ],
+    [
+      "a titled note that names the funder",
+      "<notes><title>Data availability</title><p>Data from the CRUK biobank.</p></notes>",
+    ],
+    [
+      "a typed footnote that names the funder",
+      '<fn-group><fn fn-type="conflict"><p>Authorname holds a CRUK grant.</p></fn></fn-group>',
+    ],
+    [
+      "an untitled note that does not name the funder",
+      "<notes><p>Data are available on request.</p></notes>",
+    ],
+    [
+      "an untyped footnote that does not name the funder",
+      "<fn-group><fn><p>Authorname and Authorname contributed equally.</p></fn></fn-group>",
+    ],
+    [
+      "an untitled note whose only mention of the funder is in a section it holds",
+      "<notes><p>Other notes.</p><sec><title>Methods</title><p>CRUK biobank.</p></sec></notes>",
+    ],
+  ])("leaves out %s", (_what, xml) => {
+    const sections = back(xml);
+    expect(sections.text).toEqual([]);
+    expect(JSON.stringify(sections)).not.toContain("Authorname");
+  });
+  // An author note holds a correspondence address, a present address or a
+  // note of equal contribution, so naming the funder there is an address.
+  // A typed funding footnote there is still kept, as before.
+  it("leaves out an author note that names the funder, but keeps a typed funding one", () => {
+    const sections = fundingSections(
+      "<article><front><article-meta><author-notes>" +
+        "<fn><p>Present address: Authorname, CRUK Institute.</p></fn>" +
+        '<fn fn-type="financial-disclosure"><p>a</p></fn>' +
+        "</author-notes></article-meta></front></article>",
+    );
+    expect(sections.text).toEqual(["a"]);
+  });
+
+  // A self-closing title names nothing, as in a section (#221), so the note
+  // is read as one with no title.
+  it("reads a note whose title is self-closing as untitled", () => {
+    expect(
+      back("<notes><title/><p>Funded by Cancer Research UK.</p></notes>").text,
+    ).toEqual(["Funded by Cancer Research UK."]);
+  });
+
+  // A footnote inside a funding note is read, or left out, on its own, as a
+  // nested note is.
+  it("leaves out a footnote that is not about funding inside a funding note", () => {
+    const sections = back(
+      '<notes notes-type="funding"><p>a</p>' +
+        '<fn-group><fn fn-type="conflict"><p>Authorname consults.</p></fn></fn-group>' +
+        "</notes>",
+    );
+    expect(sections.text).toEqual(["a"]);
+    expect(JSON.stringify(sections)).not.toContain("Authorname");
+  });
+
+  it("reads the sections of a funding note", () => {
+    expect(
+      back(
+        '<notes notes-type="funding-information"><sec><p>a</p></sec></notes>',
+      ).text,
+    ).toEqual(["a"]);
+  });
+
+  it("reads a note with an empty type by the funder's name", () => {
+    expect(
+      back('<notes notes-type=""><p>Funded by Cancer Research UK.</p></notes>')
+        .text,
+    ).toEqual(["Funded by Cancer Research UK."]);
+  });
+
+  // A footnote is read by the funder's name only in a footnote group, where
+  // papers print funding notes. A table footnote, an author's footnote or a
+  // contributor's names the funder as a place or a trial, not as funding.
+  it.each([
+    [
+      "a table footnote",
+      "<body><sec><table-wrap><table-wrap-foot><fn><p>Authorname's CRUK trial.</p></fn></table-wrap-foot></table-wrap></sec></body>",
+    ],
+    [
+      "a contributor's footnote",
+      "<front><article-meta><contrib-group><fn><p>Authorname, CRUK Institute.</p></fn></contrib-group></article-meta></front>",
+    ],
+  ])("leaves out %s that names the funder", (_what, xml) => {
+    const sections = fundingSections(`<article>${xml}</article>`);
+    expect(sections.text).toEqual([]);
+  });
+
+  it("reads a footnote group's footnote by the funder's name in the body too", () => {
+    expect(
+      fundingSections(
+        "<article><body><sec><fn-group><fn><p>Funded by CRUK.</p></fn></fn-group></sec></body></article>",
+      ).text,
+    ).toEqual(["Funded by CRUK."]);
+  });
+});
+
 // The cutter reads an <ack> and a funding footnote by name, so these read
 // each through what the cutter keeps.
 describe("reading an element by its name", () => {

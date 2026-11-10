@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  FUNDING_FOOTNOTE_TYPES,
+  FUNDING_NOTE_TYPES,
   FUNDING_METADATA,
   FUNDING_SECTION_TYPE,
   isFundingSection,
@@ -95,12 +95,12 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
     },
   );
 
-  // The check expects the sec-type and fn-type values the cutter matches a
-  // funding part by, so when the cutter reads another type the check
+  // The check expects the sec-type, fn-type and notes-type values the
+  // cutter matches a funding part by, so when the cutter reads another type the check
   // follows. The cutter reads each attribute in one place, matches it
   // there through the values it exports, and the check copies none of them
   // (#417).
-  it.each(["sec-type", "fn-type"])(
+  it.each(["sec-type", "fn-type", "notes-type"])(
     "the cutter reads %s in one place",
     (name) => {
       expect(cutter.split(`"${name}"`)).toHaveLength(2);
@@ -111,12 +111,12 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
     expect(check).toContain("FUNDING_SECTION_TYPE");
     expect(check).not.toContain(FUNDING_SECTION_TYPE.source);
   });
-  it("the cutter matches fn-type through the list it exports", () => {
-    expect(cutter).toContain("FUNDING_FOOTNOTE_TYPES.includes(");
-    expect(check).toContain("FUNDING_FOOTNOTE_TYPES");
+  it("the cutter matches fn-type and notes-type through the list it exports", () => {
+    expect(cutter).toContain("FUNDING_NOTE_TYPES.includes(");
+    expect(check).toContain("FUNDING_NOTE_TYPES");
   });
-  it.each(FUNDING_FOOTNOTE_TYPES)(
-    "the check does not copy fn-type %s",
+  it.each(FUNDING_NOTE_TYPES)(
+    "the check does not copy the note type %s",
     (type) => {
       expect(check).not.toContain(`"${type}"`);
     },
