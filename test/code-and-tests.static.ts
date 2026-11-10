@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 import { readRepoFile, repoFiles } from "./repo.ts";
 import { tiers } from "./tiers.ts";
 
@@ -75,5 +76,18 @@ describe("fitness: tests sit in their tier (code-and-tests.md)", () => {
     expect(projects).toEqual(
       tiers.filter((tier) => tier.inGate).map((tier) => tier.name),
     );
+  });
+
+  // Nothing in the gate reads history past HEAD: the fingerprint reads
+  // HEAD's trees, and its tests build their own repositories (#185).
+  it("checks out only HEAD in CI", () => {
+    const gate = parse(readRepoFile(".github/workflows/gate.yml")) as {
+      jobs: Record<string, { steps: { uses?: string; with?: object }[] }>;
+    };
+    const checkout = gate.jobs.gate?.steps.find((step) =>
+      step.uses?.startsWith("actions/checkout@"),
+    );
+    expect(checkout).toBeDefined();
+    expect(checkout?.with ?? {}).not.toHaveProperty("fetch-depth");
   });
 });
