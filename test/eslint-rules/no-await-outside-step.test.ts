@@ -284,6 +284,36 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
           });
         }`,
       },
+      {
+        name: "awaits I/O inside askEuropePmc's read, through a chain of plain locals each written after the next reads it",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        let first: any = askEuropePmc;
+        const ask = first;
+        first = null;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
+        name: "awaits I/O inside askEuropePmc's read, through an alias read from a namespace var a function declares inside a loop",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          for (const id of ids) {
+            await ctx.runInChildContext(id, async (child: any) => {
+              var o: any = owed;
+              const ask = o.askEuropePmc;
+              o = null;
+              await ask(child, id, "wait", r, async () => {
+                return await readPaper();
+              });
+            });
+          }
+        }`,
+      },
       ...WRAPPED_DURABLE_CALLS.map((shape) => ({
         name: `awaits a step written as ${shape.name}, and I/O inside it`,
         code: `async function run(ctx: any) {

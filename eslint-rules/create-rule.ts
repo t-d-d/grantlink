@@ -207,6 +207,8 @@ export interface AliasWalk {
   // The last is where the walk ended.
   chain: readonly TSESLint.Scope.Variable[];
   // True when no local along the chain may be written before it is read.
+  // The first is read where the identifier sits only when the walk was
+  // asked with `once`; otherwise any write to it counts.
   readonly exact: boolean;
 }
 
@@ -329,9 +331,16 @@ export function importOf(
   };
 }
 
+// The references that write to the variable, other than its declaration.
+function writesOf(
+  variable: TSESLint.Scope.Variable,
+): TSESLint.Scope.Reference[] {
+  return variable.references.filter((ref) => ref.isWrite() && !ref.init);
+}
+
 // True when anything but its declaration writes to the variable.
 function reassigned(variable: TSESLint.Scope.Variable): boolean {
-  return variable.references.some((ref) => ref.isWrite() && !ref.init);
+  return writesOf(variable).length > 0;
 }
 
 // True when a write other than its declaration may run before this read of
@@ -347,9 +356,7 @@ function writtenBeforeRead(
   variable: TSESLint.Scope.Variable,
   identifier: TSESTree.Identifier,
 ): boolean {
-  const writes = variable.references.filter(
-    (ref) => ref.isWrite() && !ref.init,
-  );
+  const writes = writesOf(variable);
   if (writes.length === 0) return false;
   const declared = aliasDeclarator(variable);
   const read = variable.references.find((ref) => ref.identifier === identifier);
@@ -360,21 +367,24 @@ function writtenBeforeRead(
       (ref) =>
         ref.from.variableScope !== scope ||
         ref.identifier.range[0] < identifier.range[1],
-    ) || inLoopWithout(identifier, declared.declarator)
+    ) || inLoopWithout(identifier, declared.declarator, scope.block)
   );
 }
 
-// True when a loop around the node may reach it without running the
-// declarator first on that pass: the declarator is not in the loop's body,
-// or it declares a var, which a pass may skip or run after the read and
-// which keeps its value from the pass before.
+// True when a loop around the node, inside the function or program that
+// declares the variable, may reach it without running the declarator first
+// on that pass: the declarator is not in the loop's body, or it declares a
+// var, which a pass may skip or run after the read and which keeps its
+// value from the pass before. A loop outside that function calls it afresh
+// on each pass, with a fresh var.
 function inLoopWithout(
   node: TSESTree.Node,
   declarator: TSESTree.VariableDeclarator,
+  boundary: TSESTree.Node,
 ): boolean {
   const scoped = declarator.parent.kind !== "var";
   // ESLint gives the program a null parent, so the walk stops on either.
-  for (let n = node.parent; n; n = n.parent) {
+  for (let n = node.parent; n && n !== boundary; n = n.parent) {
     switch (n.type) {
       case AST_NODE_TYPES.ForStatement:
       case AST_NODE_TYPES.ForInStatement:
