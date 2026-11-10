@@ -662,8 +662,8 @@ describe("fitness: no invented references (model-calls.md)", () => {
   });
 
   it("rejects a piece of a CRUK- form the text goes on past, as the rules read none (#561)", async () => {
-    // The rules read a CRUK- form whole or not at all, so a reply that
-    // stops before another part of it is refused. The text is made up.
+    // The rules read each of these forms whole, so a reply that stops
+    // before another part of it is refused. The text is made up.
     const { fetch } = fakeOpenRouter(
       answer(
         ["CRUK/12", "CRUK/AB12", "CRUK-12"].map((asWritten) => ({
@@ -684,14 +684,38 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.rejected).toBe(3);
   });
 
-  it("keeps a CRUK- form the text ends, or follows with what is no part of it (#561)", async () => {
+  it("rejects the back of a CRUK- form whose prefix the rules read with it (#561)", async () => {
     // The text is made up.
-    const written = ["CRUK/12/034", "CRUK-12", "CRUK/34"];
+    const { fetch } = fakeOpenRouter(
+      answer([{ asWritten: "CRUK-12", confidence: 0.9 }]),
+    );
+    const result = await proposeReferences(["Funded by CRUK (ABC-CRUK-12)."], {
+      model: haiku,
+      key: "k",
+      fetch,
+    });
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(1);
+  });
+
+  it("keeps a CRUK- form just where the rules read it, at their limits too (#561)", async () => {
+    // What follows is no part the rules read: a part in lower case, a part
+    // too long, or a fifth part. The text is made up.
+    const written = [
+      "CRUK/12/034",
+      "CRUK-12",
+      "CRUK/34",
+      "CRUK/56",
+      "CRUK/1/2/3/4",
+    ];
     const { fetch } = fakeOpenRouter(
       answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
     );
     const result = await proposeReferences(
-      ["Funded by CRUK (CRUK/12/034; CRUK-12, CRUK/34/abc)."],
+      [
+        "Funded by CRUK (CRUK/12/034; CRUK-12, CRUK/34/abc).",
+        "Funded by CRUK (CRUK/56/ABCDEFGHIJ, CRUK/1/2/3/4/5).",
+      ],
       { model: haiku, key: "k", fetch },
     );
     expect(

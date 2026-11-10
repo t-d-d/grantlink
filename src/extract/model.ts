@@ -4,7 +4,7 @@ import {
   hasReferenceShape,
   normalise,
   referenceSchema,
-  wholeReference,
+  readsWhole,
 } from "./rules.ts";
 import { latest, type Version } from "./versions.ts";
 
@@ -190,8 +190,7 @@ const plainSpaces = (text: string) => text.replace(/\s/gu, " ");
 // on combining marks, underscores, letters outside the Basic Multilingual
 // Plane and numbers that are not decimal digits (#339, #369, #384).
 function givesWhole(text: readonly string[], reference: string): boolean {
-  const whole = wholeReference(reference);
-  return text.some((paragraph) => whole.test(paragraph));
+  return text.some((paragraph) => readsWhole(paragraph, reference));
 }
 
 // Keeps a reference only if the text gives it whole as written, it is made
