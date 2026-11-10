@@ -167,8 +167,10 @@ function readAnswer(body: unknown): Answer | undefined {
 const plainSpaces = (text: string) => text.replace(/\s/gu, " ");
 
 // Whether the paragraph gives the reference whole: not cut out of a longer
-// run of letters and digits, as "A5678" is out of "A56789".
-const alnum = /[\p{L}\p{N}]/u;
+// run of letters and digits, as "A5678" is out of "A56789". A combining mark
+// belongs to the letter before it, so one joined to a reference makes it part
+// of a longer word too, as the rules read it (#339, #369).
+const joined = /[\p{L}\p{M}\p{N}]/u;
 function givesWhole(paragraph: string, reference: string): boolean {
   for (
     let at = paragraph.indexOf(reference);
@@ -177,7 +179,7 @@ function givesWhole(paragraph: string, reference: string): boolean {
   ) {
     const before = paragraph[at - 1] ?? "";
     const after = paragraph[at + reference.length] ?? "";
-    if (!alnum.test(before) && !alnum.test(after)) return true;
+    if (!joined.test(before) && !joined.test(after)) return true;
   }
   return false;
 }
