@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { findReferences } from "../extract/rules.ts";
-import { elements, fundingSections } from "./jats.ts";
+import { elements, FUNDING_FOOTNOTE, fundingSections } from "./jats.ts";
 
 const fixture = (pmcid: string) =>
   readFileSync(
@@ -245,6 +245,14 @@ describe("cutting a paper to its funding sections", () => {
     ).toEqual(["Grant A1.", "Grant <p>B2.", "Grant A2."]);
   });
 
+  it("runs an unbalanced funding section to the next closing tag with white space before its > (#217)", () => {
+    expect(
+      fundingSections(
+        '<article><body><sec sec-type="funding"><p>Grant A1.</p><sec><title>Sub</title></sec ><p>Body text.</p></body></article>',
+      ).text,
+    ).toEqual(["Grant A1."]);
+  });
+
   it("keeps a paragraph whose closing tag is missing", () => {
     expect(
       fundingSections(
@@ -387,5 +395,45 @@ describe("reading an element by its name", () => {
 
   it("reads a self-closing element by its whole name too", () => {
     expect(elements("<fn-group/><fn/><fn>x</fn>", "fn")).toEqual(["", "x"]);
+  });
+
+  // XML allows white space before a closing tag's > (#217).
+  it("ends an element at a closing tag with white space before its >", () => {
+    expect(elements("<fn>a</fn ><fn>b</fn\n>", "fn")).toEqual(["a", "b"]);
+  });
+
+  it("ends an unbalanced element at the next closing tag with white space before its >", () => {
+    expect(elements("<fn>a<fn>b</fn >c<fn>d</fn>", "fn")).toEqual([
+      "a<fn>b",
+      "d",
+    ]);
+  });
+  it("reads a name with a regular expression character as written (#217)", () => {
+    expect(elements("<aXb>x</aXb><a.b>y</a.b ><a.b>z<a.b/>", "a.b")).toEqual([
+      "y",
+    ]);
+  });
+});
+
+describe("reading an element by an attribute (#217)", () => {
+  const footnotes = (xml: string) => elements(xml, "fn", FUNDING_FOOTNOTE);
+
+  it.each([
+    ['<fn fn-type="funding">a</fn>'],
+    ['<fn id="n1" fn-type="supported-by">a</fn>'],
+    ["<fn fn-type='financial-disclosure'>a</fn>"],
+    ['<fn\nfn-type = "funding">a</fn>'],
+  ])("reads the whole attribute in %s", (xml) => {
+    expect(footnotes(xml)).toEqual(["a"]);
+  });
+
+  it.each([
+    ['<fn xfn-type="funding">a</fn>'],
+    ['<fn x-fn-type="funding">a</fn>'],
+    ['<fn fn-type="other">a</fn>'],
+    [`<fn title='fn-type="funding"'>a</fn>`],
+    ["<fn title=\"x fn-type='funding'\">a</fn>"],
+  ])("does not read an attribute look-alike in %s", (xml) => {
+    expect(footnotes(xml)).toEqual([]);
   });
 });
