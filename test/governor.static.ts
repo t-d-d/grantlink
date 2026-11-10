@@ -129,3 +129,35 @@ describe("governor merges pull requests its review passes", () => {
     expect(skill).toMatch(/no\s+edit\s+to\s+the\s+description\s+can\s+make/iu);
   });
 });
+
+// A ticket whose body starts with `Blocked until:` is held, but its sidebar
+// shows no blocker. With `waits.issue` set, governor links each waiting
+// ticket as blocked by the wait ticket, so the sidebar shows the hold
+// (#461). Governor's own sessions are told how to make a ticket wait; a
+// session a person starts reads CLAUDE.md, so it names the same ticket.
+describe("governor shows a waiting ticket's hold in its sidebar", () => {
+  const waits = z
+    .object({
+      waits: z.object({
+        enabled: z.boolean().optional(),
+        issue: z.number().int().positive().optional(),
+      }),
+    })
+    .parse(JSON.parse(readRepoFile(".github/governor.json"))).waits;
+
+  it("has waits on, naming the wait ticket", () => {
+    expect(waits.enabled).not.toBe(false);
+    expect(waits.issue).toBeDefined();
+  });
+
+  it("tells sessions in CLAUDE.md how to make a ticket wait, naming the same ticket", () => {
+    const line = /^- .*`Blocked until: YYYY-MM-DD`.*$/mu.exec(
+      readRepoFile("CLAUDE.md"),
+    )?.[0];
+    expect(line, "CLAUDE.md's line on waiting").toBeDefined();
+    const named = [...(line ?? "").matchAll(/#(\d+)/gu)].map(([, n]) =>
+      Number(n),
+    );
+    expect(named).toEqual([waits.issue]);
+  });
+});
