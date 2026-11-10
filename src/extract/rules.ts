@@ -63,8 +63,8 @@ const NAMES = funder.names
 export const anyCase = (pattern: string) =>
   pattern.replace(/\p{L}/gu, (letter) => {
     const cases = new Set(
-      [letter, letter.toUpperCase(), letter.toLowerCase()].filter(
-        (form) => [...form].length === 1,
+      [letter, letter.toUpperCase(), letter.toLowerCase()].filter((form) =>
+        /^.$/su.test(form),
       ),
     );
     return cases.size === 1 ? letter : `[${[...cases].join("")}]`;
