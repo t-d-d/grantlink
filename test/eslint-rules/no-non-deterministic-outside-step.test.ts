@@ -554,6 +554,28 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "exports a copy of globalThis made through a rest",
+          code: `export const { ...g } = globalThis;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "globalThis" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest",
+          code: `export const { ...m } = Math;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
           name: "exports an alias of globalThis, which holds every source",
           code: `const g = globalThis;
           export { g };`,

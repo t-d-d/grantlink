@@ -474,7 +474,9 @@ function exportsUnfollowed(
 // True when a source read as a value passes to another module: the value
 // an export default or an export assignment passes on, `export default
 // Date.now`, or the initial value of an alias that is exported, `export const
-// now = Date.now`, or `const D = Date` and then `export { D }`. Its report
+// now = Date.now`, or `const D = Date` and then `export { D }`, or a copy
+// an exported declaration makes through a rest, `export const { ...m } =
+// Math`. Its report
 // stands for the export. A call is never one, since `export const d = new
 // Date()` passes on the value it read and not the source.
 function exportedSource(node: TSESTree.Node, resolver: Resolver): boolean {
@@ -486,12 +488,11 @@ function exportedSource(node: TSESTree.Node, resolver: Resolver): boolean {
     case AST_NODE_TYPES.TSExportAssignment:
       return parent.expression === outer;
     case AST_NODE_TYPES.VariableDeclarator: {
-      if (
-        parent.init !== outer ||
-        parent.id.type !== AST_NODE_TYPES.Identifier
-      ) {
-        return false;
+      if (parent.init !== outer) return false;
+      if (parent.id.type === AST_NODE_TYPES.ObjectPattern) {
+        return copiesRest(parent.id) && exportedDeclaration(parent);
       }
+      if (parent.id.type !== AST_NODE_TYPES.Identifier) return false;
       const [declared] = resolver.sourceCode.getDeclaredVariables(parent);
       return declared !== undefined && exported(parent, declared);
     }
