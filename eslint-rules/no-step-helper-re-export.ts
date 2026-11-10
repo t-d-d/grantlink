@@ -25,8 +25,9 @@ import {
 // as a constant or as the default, and `export { askEuropePmc as ask }`,
 // `export const ask = askEuropePmc` or `export default askEuropePmc` in
 // owed.ts itself, directly or through a chain of local aliases such as
-// `const ask = askEuropePmc; export { ask }`. A type-only export carries no
-// function, so it passes.
+// `const ask = askEuropePmc; export { ask }`, even when askEuropePmc is
+// itself an alias of an import. A type-only export carries no function, so
+// it passes.
 export const noStepHelperReExport = createRule({
   name: "no-step-helper-re-export",
   meta: {
@@ -76,14 +77,16 @@ export const noStepHelperReExport = createRule({
       const value = unwrapped(exported);
       if (value.type === AST_NODE_TYPES.Identifier) {
         const binding = importOf(value, context);
-        if (binding === null) {
-          return localHelper(value) === null ? null : here;
-        }
         const passes =
-          binding.name === null
+          binding !== null &&
+          (binding.name === null
             ? holdsStepHelper(binding.module)
-            : helperNamed(binding.module, binding.name) !== null;
-        return passes ? binding.module : null;
+            : helperNamed(binding.module, binding.name) !== null);
+        if (passes) return binding.module;
+        // A chain that ends at an import that is not a helper may still
+        // pass through this module's own helper on the way (#517), as in
+        // `import { impl } ...; const askEuropePmc = impl`.
+        return localHelper(value) === null ? null : here;
       }
       const binding = bindingOf(value, context);
       if (typeof binding?.name !== "string") return null;
