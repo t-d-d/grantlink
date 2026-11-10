@@ -121,9 +121,7 @@ describe("the rules", () => {
   // A letter outside A to Z is still a letter, so a name it touches is part
   // of a longer word and not the funder's (#320).
   it("leaves a G number after a name with a non-ASCII letter before it", () => {
-    expect(findReferences(sections("Funded by ÉCRUK (G123/45)."))).toEqual(
-      [],
-    );
+    expect(findReferences(sections("Funded by ÉCRUK (G123/45)."))).toEqual([]);
   });
 
   it.each([
