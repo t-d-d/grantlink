@@ -34,6 +34,10 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           }`,
         },
         {
+          name: "calls a member of Date destructured from a nested pattern that reads no clock",
+          code: `async function run(ctx: any) { const { Date: { UTC } } = globalThis; const t = UTC(2020, 0, 1); }`,
+        },
+        {
           name: "passes Date as a value inside a step",
           code: `async function run(ctx: any) {
             await ctx.step("at", async () => ids.map(Date), { retryStrategy: r });
@@ -370,6 +374,17 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
             {
               messageId: "nonDeterministicOutsideStep",
               data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports webcrypto destructured from a nested pattern under another name",
+          code: `export const { crypto: { webcrypto: w } } = globalThis;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto" },
               line: 1,
             },
           ],
@@ -1008,6 +1023,26 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           name: "draws random from a global declared in declare global",
           code: `declare global { var crypto: { randomUUID(): string } } async function run(ctx: any) { const id = crypto.randomUUID(); }`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "reads the clock destructured from a nested pattern",
+          code: `async function run(ctx: any) { const { Date: { now } } = globalThis; now(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+            },
+          ],
+        },
+        {
+          name: "draws random destructured from a nested pattern with a default",
+          code: `async function run(ctx: any) { const { Math: { random: r } = Math } = globalThis; const n = r(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
         },
         {
           name: "reads the clock destructured from Date with a default",
