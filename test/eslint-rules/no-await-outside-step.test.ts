@@ -10,6 +10,23 @@ const tester = ruleTester({ afterAll, describe, it });
 describe("fitness: no bare await in a durable body (durable-execution.md)", () => {
   tester.run("no-await-outside-step", noAwaitOutsideStep, {
     valid: [
+      ...[
+        ["asserted with as", "(async () => { await fetchPaper(); }) as any"],
+        [
+          "checked with satisfies",
+          "(async () => { await fetchPaper(); }) satisfies F",
+        ],
+        [
+          "behind a non-null assertion",
+          "(async function () { await fetchPaper(); })!",
+        ],
+      ].map(([what, callback]) => ({
+        name: `awaits inside a step's callback ${String(what)}`,
+        code: `async function run(ctx: any) {
+          await ctx.step("fetch", ${String(callback)}, { retryStrategy: r });
+        }`,
+      })),
+
       ...WRAPPED_STEP_HELPERS.map((shape) => ({
         name: `awaits I/O inside askEuropePmc's read, reached through ${shape.name}`,
         filename: "src/run/run.ts",

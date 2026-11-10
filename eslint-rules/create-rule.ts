@@ -319,16 +319,42 @@ export function insideCheckpointedCallback(
 ): boolean {
   const ancestors = resolver.sourceCode.getAncestors(node);
   return ancestors.some((fn, i) => {
-    const call = ancestors[i - 1];
+    if (
+      fn.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+      fn.type !== AST_NODE_TYPES.FunctionExpression
+    ) {
+      return false;
+    }
+    const at = outermostWrapper(ancestors, i);
+    const argument = ancestors[at];
+    const call = ancestors[at - 1];
     return (
-      (fn.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-        fn.type === AST_NODE_TYPES.FunctionExpression) &&
+      argument !== undefined &&
       call !== undefined &&
       ((isMethodCallIn(call, CHECKPOINTS_CALLBACK) &&
-        call.arguments.includes(fn)) ||
-        isStepHelperCallback(call, fn, resolver))
+        call.arguments.includes(argument)) ||
+        isStepHelperCallback(call, argument, resolver))
     );
   });
+}
+
+// The index of the outermost ancestor that only wraps ancestors[at] in the
+// layers unwrapped takes off, such as `(async () => {...}) as F`, or `at`
+// itself when nothing wraps it. The ancestors run from the root down.
+export function outermostWrapper(
+  ancestors: readonly TSESTree.Node[],
+  at: number,
+): number {
+  const inner = ancestors[at];
+  let outer = at;
+  for (
+    let parent = ancestors[outer - 1];
+    parent !== undefined && unwrapped(parent) === inner;
+    parent = ancestors[outer - 1]
+  ) {
+    outer -= 1;
+  }
+  return outer;
 }
 
 // Resolve a name from a scope outward. Null means an implicit global or a

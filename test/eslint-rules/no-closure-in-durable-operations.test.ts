@@ -42,6 +42,58 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
       },
     ],
     invalid: [
+      ...[
+        ["pushes through a non-null assertion", "found!.push(1);", "found"],
+        [
+          "pushes through a type assertion",
+          "(found as number[]).push(1);",
+          "found",
+        ],
+        [
+          "pushes through satisfies",
+          "(found satisfies number[]).push(1);",
+          "found",
+        ],
+        [
+          "counts into an outer object through a non-null assertion",
+          "totals!.papers += 1;",
+          "totals",
+        ],
+        [
+          "assigns an outer variable through a non-null assertion",
+          "count! = 1;",
+          "count",
+        ],
+        [
+          "deletes from an outer object through a type assertion",
+          "delete (totals as any).papers;",
+          "totals",
+        ],
+      ].map(([what, write, name]) => ({
+        name: `${String(what)} inside a step`,
+        code: `async function run(ctx: any, found: number[], totals: any) {
+          let count: number | undefined;
+          await ctx.step("count", async () => {
+            ${String(write)}
+          }, { retryStrategy: r });
+        }`,
+        errors: [
+          { messageId: "closureVariableUsage" as const, data: { name } },
+        ],
+      })),
+      ...[
+        ["asserted with as", "(async () => { read += 1; }) as any"],
+        ["checked with satisfies", "(async () => { read += 1; }) satisfies F"],
+        ["behind a non-null assertion", "(async () => { read += 1; })!"],
+      ].map(([what, callback]) => ({
+        name: `counts into an outer variable from a step's callback ${String(what)}`,
+        code: `async function run(ctx: any) {
+          let read = 0;
+          await ctx.step("count", ${String(callback)}, { retryStrategy: r });
+        }`,
+        errors: [{ messageId: "closureVariableUsage" as const }],
+      })),
+
       ...WRAPPED_STEP_HELPERS.map((shape) => ({
         name: `counts into an outer variable from askEuropePmc's read, reached through ${shape.name}`,
         filename: "src/run/run.ts",

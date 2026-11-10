@@ -7,6 +7,7 @@ import {
   isMethodCallIn,
   stepHelperOf,
   lookup,
+  unwrapped,
 } from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
@@ -15,9 +16,10 @@ import {
 // same context replays out of step with the parent's checkpoints. Nest
 // through `runInChildContext` and use the child it hands you. The rule
 // follows `const` aliases, so `const same = ctx` is the same context, and
-// resolves by binding, so a shadowing parameter is a different one. A step
-// helper such as askEuropePmc counts as an operation on the context it is
-// given first.
+// resolves by binding, so a shadowing parameter is a different one. It reads
+// the context through the wrappers unwrapped takes off, so `ctx!.step` and
+// `(ctx as Context).step` use ctx. A step helper such as askEuropePmc counts
+// as an operation on the context it is given first.
 function aliasRoot(variable: TSESLint.Scope.Variable): TSESLint.Scope.Variable {
   const seen = new Set<TSESLint.Scope.Variable>();
   let current = variable;
@@ -58,8 +60,9 @@ export const noNestedDurableOperations = createRule({
     const { sourceCode } = context;
     const stack: (TSESLint.Scope.Variable | null)[] = [];
     const receiverRoot = (
-      receiver: TSESTree.Node,
+      node: TSESTree.Node,
     ): TSESLint.Scope.Variable | null => {
+      const receiver = unwrapped(node);
       if (receiver.type !== AST_NODE_TYPES.Identifier) return null;
       const variable = lookup(receiver.name, sourceCode.getScope(receiver));
       return variable === null ? null : aliasRoot(variable);

@@ -5,6 +5,8 @@ import {
   isMethodCallIn,
   isStepHelperCallback,
   lookup,
+  outermostWrapper,
+  unwrapped,
 } from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
@@ -64,10 +66,13 @@ function isLiteralWrapper(node: TSESTree.Node): boolean {
   );
 }
 
+// The variable a write lands in, through members and the wrappers unwrapped
+// takes off: `found` in `found!.push(1)`, `(found as T[]).push(1)` and
+// `totals!.papers += 1`.
 function rootIdentifier(node: TSESTree.Node): TSESTree.Identifier | undefined {
-  let current = node;
+  let current = unwrapped(node);
   while (current.type === AST_NODE_TYPES.MemberExpression)
-    current = current.object;
+    current = unwrapped(current.object);
   return current.type === AST_NODE_TYPES.Identifier ? current : undefined;
 }
 
@@ -127,16 +132,23 @@ export const noClosureInDurableOperations = createRule({
     // a write inside nested callbacks reports once. A callback is a function
     // passed to a durable operation directly, or inside an array or object
     // literal argument, as parallel's branches are, or an argument a step
-    // helper such as askEuropePmc runs inside its step.
+    // helper such as askEuropePmc runs inside its step. A wrapper such as
+    // `(async () => {...}) as F` around the function does not hide it.
     const innermostCallback = (node: TSESTree.Node): Callback | undefined => {
       const ancestors = sourceCode.getAncestors(node);
       for (let i = ancestors.length - 1; i >= 0; i--) {
         const fn = ancestors[i];
         if (fn === undefined || !isCallback(fn)) continue;
-        const call = ancestors[i - 1];
-        if (call !== undefined && isStepHelperCallback(call, fn, context))
+        const at = outermostWrapper(ancestors, i);
+        const argument = ancestors[at];
+        const call = ancestors[at - 1];
+        if (
+          argument !== undefined &&
+          call !== undefined &&
+          isStepHelperCallback(call, argument, context)
+        )
           return fn;
-        let j = i - 1;
+        let j = at - 1;
         let parent = ancestors[j];
         while (parent !== undefined && isLiteralWrapper(parent)) {
           j -= 1;

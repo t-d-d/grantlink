@@ -28,6 +28,25 @@ describe("fitness: no durable operation inside its own context's operation (dura
       },
     ],
     invalid: [
+      {
+        name: "waits on the same context inside a step, both reached through a non-null assertion",
+        code: `async function run(ctx: any) {
+          await ctx!.step("outer", async () => {
+            await ctx!.wait("pause", { seconds: 1 });
+          }, { retryStrategy: r });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
+        name: "calls a step on the same context, asserted with as, inside a step",
+        code: `async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await (ctx as Context).step("inner", async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+
       ...WRAPPED_STEP_HELPERS.map((shape) => ({
         name: `asks Europe PMC through ${shape.name} on the same context inside a step`,
         filename: "src/run/run.ts",
