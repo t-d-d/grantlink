@@ -68,6 +68,10 @@ describe("telling a CRUK reference from another linked id", () => {
     // The longest and shortest runs of capitals the rules read (#634).
     "ABCD/100010",
     "ABCDEFGHIJKL-2021/100010",
+    // A month with a four-digit year, as the rules read one, with or
+    // without a hyphen before it (#634).
+    "ABCDEFApr2020\\100001",
+    "ABCDEF-Apr2020/100001",
   ])("takes %s", (id) => {
     expect(crukReference(id)).toBe(true);
   });
