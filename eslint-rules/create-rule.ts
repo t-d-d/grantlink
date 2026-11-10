@@ -216,7 +216,9 @@ function keyName(key: TSESTree.Node, computed: boolean): string | null {
 // a context and for a step helper (stepHelperOf with `walk: "any"`),
 // no-closure-in-durable-operations, for a step helper's callbacks
 // (isStepHelperCallback with `walk: "any"`), and
-// no-non-deterministic-outside-step, for a clock or random source.
+// no-non-deterministic-outside-step, for a clock or random source. A name
+// destructured with a default makes the import binding inexact (importOf),
+// though this walk stays exact.
 export interface AliasWalk {
   // The local the identifier names, then each local it aliases in turn.
   // The last is where the walk ended.
@@ -295,7 +297,8 @@ export function aliasDeclarator(variable: TSESLint.Scope.Variable): {
 }
 
 // What an import binding gives: a named import, or the whole module (name
-// null) for a namespace import. Exact as the walk that reached it is.
+// null) for a namespace import. Exact as the walk that reached it is, and
+// inexact when a name along the way is destructured with a default.
 export interface ImportBinding {
   module: string;
   name: string | null;
@@ -305,9 +308,9 @@ export interface ImportBinding {
 // What an identifier's binding imports from a relative module, reached
 // through any chain of aliases (walkAliases), such as `const ask =
 // askEuropePmc`, `const ask = owed.askEuropePmc` or
-// `const { askEuropePmc: ask } = owed`. Null for any other binding,
-// including a destructured name with a default, which may not be the
-// import.
+// `const { askEuropePmc: ask } = owed`. A destructured name with a
+// default, `const { askEuropePmc: ask = other } = owed`, may not be the
+// import, so it comes back inexact. Null for any other binding.
 export function importOf(
   identifier: TSESTree.Identifier,
   resolver: Resolver,
@@ -423,7 +426,8 @@ function within(node: TSESTree.Node, outer: TSESTree.Node): boolean {
 // What a declarator binds `name` to, when it aliases an import through more
 // than a plain identifier, which walkAliases follows: a name read from a
 // namespace import, or a name destructured from one at the top of an object
-// pattern. It reads through the wrappers unwrapped takes off.
+// pattern, with or without a default. It reads through the wrappers unwrapped
+// takes off.
 function aliasOf(
   declarator: TSESTree.VariableDeclarator,
   name: TSESTree.Identifier,
@@ -440,9 +444,13 @@ function aliasOf(
   ) {
     return null;
   }
-  const key = destructuredKey(id, name, "exact");
+  const key = destructuredKey(id, name, "with-default");
   if (key === null) return null;
-  return memberOf(importOf(init, resolver, seen, true), key);
+  const member = memberOf(importOf(init, resolver, seen, true), key);
+  // A name with a default may hold the default instead, so it binds the
+  // member only inexactly: a rule that asks for an exact walk refuses it.
+  const withDefault = name.parent.type === AST_NODE_TYPES.AssignmentPattern;
+  return member === null || !withDefault ? member : { ...member, exact: false };
 }
 
 // The constant key an object pattern destructures `name` from, at its top
