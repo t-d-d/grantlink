@@ -8,7 +8,7 @@ import funderFile from "./funder.json" with { type: "json" };
 
 // Bump this whenever a pattern changes, so every stored result says which
 // rules made it.
-export const RULES_VERSION = "rules-4";
+export const RULES_VERSION = "rules-5";
 
 export const funder = z
   .object({
@@ -48,7 +48,14 @@ export const referenceSchema = z
 export type Reference = z.infer<typeof referenceSchema>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-const NAMES = funder.names.map(escape).join("|");
+// A hyphen in a name may be written as a Unicode hyphen or dash (U+2010 to
+// U+2015), as in a reference (#201). The class holds the characters
+// themselves, not \u escapes, so the any-case pass below finds no letter
+// in it.
+const NAME_DASH = `[-${String.fromCodePoint(0x2010)}-${String.fromCodePoint(0x2015)}]`;
+const NAMES = funder.names
+  .map((name) => escape(name).replace(/-/gu, NAME_DASH))
+  .join("|");
 // The names again, matching in any case without the `i` flag, for a pattern
 // whose own letters must keep their case.
 const ANY_CASE_NAMES = NAMES.replace(
