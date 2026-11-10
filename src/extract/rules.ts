@@ -8,7 +8,7 @@ import funderFile from "./funder.json" with { type: "json" };
 
 // Bump this whenever a pattern, or which references the rules keep,
 // changes, so every stored result says which rules made it.
-export const RULES_VERSION = "rules-6";
+export const RULES_VERSION = "rules-7";
 
 export const funder = z
   .object({
@@ -35,7 +35,7 @@ export const referenceSchema = z
       .string()
       .min(1)
       .max(48)
-      .regex(/^[A-Za-z0-9 /\\∖\u2010-\u2015-]+$/u),
+      .regex(/^[A-Za-z0-9 /\\∖\u2010-\u2015\u2212-]+$/u),
     normalised: z
       .string()
       .min(1)
@@ -49,11 +49,14 @@ export type Reference = z.infer<typeof referenceSchema>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 // A hyphen, in a name or a reference, may be written as a Unicode hyphen or
-// dash (U+2010 to U+2015) (#201). The class holds the characters themselves,
-// not \u escapes, so the any-case pass below finds no letter in it.
-const DASH = `[-${String.fromCodePoint(0x2010)}-${String.fromCodePoint(0x2015)}]`;
+// dash (U+2010 to U+2015) (#201) or as the minus sign (U+2212) (#269). A
+// space in a name may be a no-break space (U+00A0) (#269). The classes hold
+// the characters themselves, not \u escapes, so the any-case pass below
+// finds no letter in them.
+const DASH = `[-${String.fromCodePoint(0x2010)}-${String.fromCodePoint(0x2015)}${String.fromCodePoint(0x2212)}]`;
+const SPACE = `[ ${String.fromCodePoint(0xa0)}]`;
 const NAMES = funder.names
-  .map((name) => escape(name).replace(/-/gu, DASH))
+  .map((name) => escape(name).replace(/-/gu, DASH).replace(/ /gu, SPACE))
   .join("|");
 // The names again, matching in any case without the `i` flag, for a pattern
 // whose own letters must keep their case.
@@ -144,7 +147,7 @@ function normalise(written: string): string {
   return written
     .replace(/\s+/gu, "")
     .replace(/[\\∖]/gu, "/")
-    .replace(/[\u2010-\u2015]/gu, "-")
+    .replace(/[\u2010-\u2015\u2212]/gu, "-")
     .toUpperCase();
 }
 

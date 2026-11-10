@@ -22,6 +22,8 @@ describe("the rules", () => {
     ["G123/45", "G123/45", "Gn/n"],
     ["ABCDEF- Nov21/100001", "ABCDEF-NOV21/100001", "CODE-MonYY/n"],
     ["ABCDEF\u2010Nov21/100001", "ABCDEF-NOV21/100001", "CODE-MonYY/n"],
+    // The minus sign in place of a hyphen (#269).
+    ["ABCDEF\u2212Nov21/100001", "ABCDEF-NOV21/100001", "CODE-MonYY/n"],
     ["ABCDEFApr2020\\100001", "ABCDEFAPR2020/100001", "CODEMonYYYY/n"],
     ["ABCDEFNov21/100001", "ABCDEFNOV21/100001", "CODEMonYY/n"],
   ])("reads %s as %s", (written, normalised, format) => {
@@ -55,6 +57,32 @@ describe("the rules", () => {
       ).toEqual([{ asWritten: "A12345", normalised: "A12345", format: "An" }]);
     },
   );
+
+  // The minus sign in place of the hyphen in the funder's name (#269).
+  it("reads an A number after CR-UK written with a minus sign", () => {
+    expect(findReferences(sections("Funded by CR\u2212UK (A12345)."))).toEqual([
+      { asWritten: "A12345", normalised: "A12345", format: "An" },
+    ]);
+  });
+
+  // A no-break space between two words of the funder's name (#269).
+  it.each([
+    "Cancer\u00a0Research UK",
+    "Cancer Research\u00a0UK",
+    "Cancer\u00a0Research\u00a0U.K.",
+  ])("reads an A number after %j", (name) => {
+    expect(findReferences(sections(`Funded by ${name} (A12345).`))).toEqual([
+      { asWritten: "A12345", normalised: "A12345", format: "An" },
+    ]);
+  });
+
+  it("reads a G number in brackets after a funder name with a no-break space", () => {
+    expect(
+      findReferences(sections("Funded by cancer research\u00a0uk (G123/45).")),
+    ).toEqual([
+      { asWritten: "G123/45", normalised: "G123/45", format: "Gn/n" },
+    ]);
+  });
 
   it("reads a G number in brackets after CR-UK written with a Unicode hyphen", () => {
     expect(findReferences(sections("Funded by cr\u2010uk (G123/45)."))).toEqual(
@@ -260,6 +288,16 @@ describe("the rules", () => {
     const found = findReferences(
       sections("Cancer Research UK (ABCDEF-\u00a0Nov21/100001)."),
     );
+    for (const reference of found) {
+      expect(referenceSchema.safeParse(reference).success).toBe(true);
+    }
+  });
+
+  it("returns only references the table accepts when a minus sign stands for a hyphen", () => {
+    const found = findReferences(
+      sections("Cancer Research UK (ABCDEF\u2212Nov21/100001)."),
+    );
+    expect(found).toHaveLength(1);
     for (const reference of found) {
       expect(referenceSchema.safeParse(reference).success).toBe(true);
     }
