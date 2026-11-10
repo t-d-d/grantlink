@@ -68,7 +68,7 @@ export const noNestedDurableOperations = createRule({
     // one.
     const contextOf = (node: TSESTree.CallExpression): TSESTree.Node | null => {
       const operation = methodCallIn(node, DURABLE_METHODS);
-      if (operation !== null) return operation.callee.object;
+      if (operation !== null) return operation.object;
       if (stepHelperOf(node, context) !== null)
         return node.arguments[0] ?? null;
       return null;

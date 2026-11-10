@@ -178,7 +178,7 @@ export const noClosureInDurableOperations = createRule({
       },
       CallExpression(node) {
         const mutation = methodCallIn(node, MUTATORS);
-        if (mutation !== null) check(mutation.callee.object);
+        if (mutation !== null) check(mutation.object);
       },
     };
   },

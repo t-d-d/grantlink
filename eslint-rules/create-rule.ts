@@ -39,12 +39,12 @@ export const DURABLE_METHODS = new Set([
 // A method call `<receiver>.<name>(...)` whose name is in the set, read
 // through the wrappers unwrapped takes off, on the call and on its callee:
 // `ctx?.step(...)`, `ctx.step!(...)`, `(ctx.step as F)(...)` and
-// `(ctx.step(...) as Promise<T>)` are all a step. It gives the call and
-// the member its callee reads, or null for anything else.
+// `(ctx.step(...) as Promise<T>)` are all a step. It gives the member its
+// callee reads, or null for anything else.
 export function methodCallIn(
   node: TSESTree.Node,
   names: ReadonlySet<string>,
-): { call: TSESTree.CallExpression; callee: TSESTree.MemberExpression } | null {
+): TSESTree.MemberExpression | null {
   const call = unwrapped(node);
   if (call.type !== AST_NODE_TYPES.CallExpression) return null;
   const callee = unwrapped(call.callee);
@@ -56,7 +56,7 @@ export function methodCallIn(
   ) {
     return null;
   }
-  return { call, callee };
+  return callee;
 }
 
 // The expression a TypeScript wrapper or an optional chain holds, with
