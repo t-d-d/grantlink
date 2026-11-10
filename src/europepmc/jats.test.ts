@@ -200,6 +200,9 @@ describe("cutting a paper to its funding sections", () => {
       [
         '<sec sec-type="funding"><sec><sec><p>Made-up text.</p></sec></sec><p>Grant A1.</p></sec>',
       ],
+      [
+        '<SEC sec-type="funding"><SEC><p>Made-up text.</p></SEC><p>Grant A1.</p></SEC>',
+      ],
     ])("keeps the paragraphs after a subsection in %s", (section) => {
       const sections = fundingSections(
         paper(
@@ -213,7 +216,7 @@ describe("cutting a paper to its funding sections", () => {
       expect(kept).not.toContain("Authorname");
     });
 
-    it("runs a section with an unclosed subsection only to the next closing tag", () => {
+    it("runs a funding section with no closing tag only to the next closing tag", () => {
       const sections = fundingSections(
         paper(
           '<sec sec-type="funding"><sec><p>Grant A1.</p></sec><sec><title>Discussion</title><p>Body text.</p></sec>',

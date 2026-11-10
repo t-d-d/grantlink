@@ -215,9 +215,10 @@ const FUNDING_SECTION = new RegExp(FUNDING_SECTION_START, "giu");
 // Where the element whose content starts at this index ends: at the closing
 // tag that balances its opening tag, so a subsection's closing tag does not
 // end it (#189). One that is never balanced ends at the next closing tag of
-// its name, as in tagged, and one with none after it is dropped.
+// its name, as in tagged, and one with none after it is dropped. Tags match
+// in any case, as the pattern that finds the section does.
 function closeOf(xml: string, name: string, from: number): number {
-  const tags = new RegExp(`<(/?)${name}${NAME_END}([^>]*)>`, "gu");
+  const tags = new RegExp(`<(/?)${name}${NAME_END}([^>]*)>`, "giu");
   tags.lastIndex = from;
   let depth = 1;
   for (let tag = tags.exec(xml); tag !== null; tag = tags.exec(xml)) {
@@ -226,7 +227,9 @@ function closeOf(xml: string, name: string, from: number): number {
     depth += closing ? -1 : 1;
     if (depth === 0) return tag.index;
   }
-  return xml.indexOf(`</${name}>`, from);
+  const next = new RegExp(`</${name}>`, "giu");
+  next.lastIndex = from;
+  return next.exec(xml)?.index ?? -1;
 }
 
 function fundingBodySections(xml: string): string[] {
