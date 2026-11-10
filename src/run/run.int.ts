@@ -755,12 +755,14 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
     "fails only once a refusal on its last paper has been waited out, when %s fails after its retries (#412)",
     async (method) => {
       const { fake, seen } = await refusingLast();
-      const failing = () => Promise.reject(new Error("S3 answered 503"));
+      const answered =
+        method === "publish" ? "S3 answered 503" : "DynamoDB answered 503";
+      const failing = () => Promise.reject(new Error(answered));
       if (method === "publish") fake.deps.site.publish = failing;
       else fake.deps.table.recordSearch = failing;
       const { status, error, ended, retryDelays } = await runWith(fake);
       expect(status).toBe("FAILED");
-      expect(error).toContain("S3 answered 503");
+      expect(error).toContain(answered);
       expect(
         retryDelays(method === "publish" ? "publish" : "searched"),
       ).not.toEqual([]);
@@ -768,6 +770,16 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
       expect(ended).toBeGreaterThanOrEqual(seen.notBefore);
     },
   );
+
+  it("fails when publish fails after its retries and no refusal left a wait owed (#412)", async () => {
+    const fake = fakeDeps();
+    fake.deps.text.hasSnapshot = () => Promise.resolve(true);
+    fake.deps.site.publish = () => Promise.reject(new Error("S3 answered 503"));
+    const { status, error, retryDelays } = await runWith(fake);
+    expect(status).toBe("FAILED");
+    expect(error).toContain("S3 answered 503");
+    expect(retryDelays("publish")).not.toEqual([]);
+  });
 
   it("fails only once a refusal on its last paper has been waited out, when marking that paper failed fails after its retries (#412)", async () => {
     const { fake, seen, last } = await refusingLast();
