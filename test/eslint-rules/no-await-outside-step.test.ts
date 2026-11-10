@@ -248,6 +248,30 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
           }
         }`,
       },
+      {
+        name: "awaits I/O inside askEuropePmc's read, through an alias read inside a function from a namespace local never written",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const o = owed;
+        async function run(ctx: any) {
+          const ask = o.askEuropePmc;
+          await ask(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
+        name: "awaits I/O inside askEuropePmc's read, through an alias destructured inside a function from a namespace local never written",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const o = owed;
+        async function run(ctx: any) {
+          const { askEuropePmc: ask } = o;
+          await ask(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
     ],
     invalid: [
       {
@@ -442,6 +466,36 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
             const ask = o.askEuropePmc;
             await ask(ctx, "paper", "wait", r, async () => 1);
             o = null;
+          }
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits an alias read in a loop from a namespace var the loop declares after the read",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          for (const id of ids) {
+            const ask = o.askEuropePmc;
+            await ask(ctx, id, "wait", r, async () => 1);
+            var o: any = owed;
+            o = other;
+          }
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits an alias read in a loop from a namespace var the loop declares only on some passes",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          for (const id of ids) {
+            if (id === first) {
+              var o: any = owed;
+            }
+            const ask = o.askEuropePmc;
+            await ask(ctx, id, "wait", r, async () => 1);
+            o = other;
           }
         }`,
         errors: [{ messageId: "awaitOutsideStep" }],
