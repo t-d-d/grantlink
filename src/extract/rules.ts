@@ -34,7 +34,10 @@ const DASHES = `${String.fromCodePoint(0x2010)}-${String.fromCodePoint(0x2015)}$
 
 export const referenceSchema = z
   .object({
-    // Only the characters a reference is made of, so a name cannot pass.
+    // Only the characters a reference is made of. These include letters and
+    // spaces, so this alone does not keep out a name: the rules' patterns
+    // match no name, and the model pass refuses a reply that carries a word
+    // (#413).
     asWritten: z
       .string()
       .min(1)

@@ -413,6 +413,47 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.references).toEqual([]);
     expect(result.status === "read" && result.rejected).toBe(1);
   });
+
+  it("rejects a name joined to a reference, and a word followed by a number (#413)", async () => {
+    // Each reply is in the text whole, holds a digit and is made of the
+    // characters a reference is made of, but carries a word. The text is
+    // made up.
+    const { fetch } = fakeOpenRouter(
+      answer([
+        { asWritten: "Jo Example A12345", confidence: 0.9 },
+        { asWritten: "Example A12345", confidence: 0.9 },
+        { asWritten: "Grant 2", confidence: 0.9 },
+        { asWritten: "JO A12345", confidence: 0.9 },
+      ]),
+    );
+    const result = await proposeReferences(
+      [
+        "Cancer Research UK funded Jo Example A12345 under Grant 2.",
+        "JO A12345 is a second, made-up case.",
+      ],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(4);
+  });
+
+  it("keeps a reference whose prefix of one or two capitals stands apart from its number", async () => {
+    // The rules read these shapes too, as "C 1234" and "FC 001234". The
+    // text is made up.
+    const written = ["C 1234/A 56789", "FC 001234", "A 12345"];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(
+      [`Funded by Cancer Research UK (${written.join(", ")}).`],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(written);
+    expect(result.status === "read" && result.rejected).toBe(0);
+  });
 });
 
 describe("fitness: no lost papers (model-calls.md)", () => {

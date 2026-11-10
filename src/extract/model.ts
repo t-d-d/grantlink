@@ -6,9 +6,9 @@ import { funder, normalise, referenceSchema, wholeReference } from "./rules.ts";
 // only module that calls OpenRouter or names a model id. Every request names
 // Anthropic as its only provider with fallbacks off, and sends only the
 // funding text, marked as data. Every reference in the reply must appear in
-// that text as written, and is normalised only after that check. Nothing it
-// returns carries the text, so nothing it returns can carry a name
-// (docs/constraints/personal-data.md).
+// that text as written, and is normalised only after that check. A reply
+// that carries a word, such as a name, is rejected, so what it returns is
+// shaped as references and not as text (docs/constraints/personal-data.md).
 
 // The candidates the eval scores beside the rules alone (#329). Each id is
 // set here once. The eval imports them; nothing else names one.
@@ -21,7 +21,7 @@ export type ModelId = (typeof MODELS)[number];
 
 // Bump this whenever the prompt, or how a reply is read, changes, so every
 // stored result says which prompt made it.
-export const PROMPT_VERSION = "prompt-2";
+export const PROMPT_VERSION = "prompt-3";
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -176,10 +176,26 @@ function givesWhole(text: readonly string[], reference: string): boolean {
   return text.some((paragraph) => whole.test(paragraph));
 }
 
+// A word of letters alone, between spaces, is not part of a reference,
+// unless it is a prefix of one or two capitals set apart from its number,
+// as in "C 1234" or "FC 001234", which the rules read too. So a name or a
+// word joined to a reference, as in "Jo Example A12345" or "Grant 2", is
+// refused (#413).
+function carriesWord(reference: string): boolean {
+  const words = reference.split(" ");
+  return words.some(
+    (word, at) =>
+      /^[A-Za-z]+$/u.test(word) &&
+      !(/^[A-Z]{1,2}$/u.test(word) && /^\d/u.test(words[at + 1] ?? "")),
+  );
+}
+
 // Keeps a reference only if the text gives it whole as written, it is made
-// of the characters a reference is made of, and it holds a digit, as every
-// reference does, so a name cannot pass. Any space in it reads as a plain
-// one, as in the text. The check runs before the reference is normalised.
+// of the characters a reference is made of, it holds a digit, as every
+// reference does, and it carries no word, such as a name. The characters
+// alone would let a name through, since they include letters and spaces.
+// Any space in it reads as a plain one, as in the text. The check runs
+// before the reference is normalised.
 function check(
   given: Answer["references"],
   text: readonly string[],
@@ -194,6 +210,7 @@ function check(
     if (
       !written.success ||
       !/\d/u.test(asWritten) ||
+      carriesWord(asWritten) ||
       !givesWhole(source, asWritten)
     ) {
       rejected += 1;
