@@ -445,6 +445,56 @@ describe("strayParts", () => {
     ).toEqual(["article/back/sec"]);
   });
 
+  it.each(["toString", "constructor", "valueOf", "__proto__"])(
+    "names an attribute called %s, which every object has (#304)",
+    (name) => {
+      expect(
+        strayParts(
+          paper({
+            back: `<sec sec-type="funding"><p ${name}="Somebody">Funded.</p></sec>`,
+          }),
+        ),
+      ).toEqual([`article/back/sec/p@${name}`]);
+    },
+  );
+
+  it("names text in a closing tag (#304)", () => {
+    expect(
+      strayParts(
+        paper({
+          back: '<sec sec-type="funding"><p>Funded.</p Somebody></sec>',
+        }),
+      ),
+    ).toEqual(["article/back/sec/p (attributes)"]);
+  });
+
+  it("names a creativecommons.org link that is not to a licence (#304)", () => {
+    expect(
+      strayParts(
+        paper({
+          meta: '<permissions><license><p><ext-link xlink:href="https://creativecommons.org/Somebody">L</ext-link></p></license></permissions>',
+        }),
+      ),
+    ).toEqual([
+      "article/front/article-meta/permissions/license/p/ext-link@xlink:href",
+    ]);
+  });
+
+  it("passes links to the licences", () => {
+    const links = [
+      "https://creativecommons.org/licenses/by/4.0/",
+      "http://creativecommons.org/licenses/by-nc-nd/3.0/us/legalcode",
+      "https://creativecommons.org/publicdomain/zero/1.0/",
+    ];
+    expect(
+      strayParts(
+        paper({
+          meta: `<permissions><license>${links.map((link) => `<p><ext-link xlink:href="${link}">L</ext-link></p>`).join("")}</license></permissions>`,
+        }),
+      ),
+    ).toEqual([]);
+  });
+
   it("names a root that is not an article", () => {
     expect(strayParts("<book><p>B</p></book>")).toEqual(["book"]);
   });

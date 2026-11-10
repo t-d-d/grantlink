@@ -32,7 +32,8 @@ interface Attribute {
 interface Element {
   name: string;
   attributes: Attribute[];
-  // Whether its opening tag holds text that is not an attribute.
+  // Whether its opening tag holds text that is not an attribute, or its
+  // closing tag holds any text.
   malformed: boolean;
   children: Element[];
   text: boolean;
@@ -66,21 +67,23 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
   "article/back/fn-group": isFundingFootnote,
 };
 
+const ATTRIBUTE = /\s+([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/uy;
+
 // The attributes in an opening tag, after its name, and whether anything
 // else is there.
 function attributesOf(tag: string): {
   attributes: Attribute[];
   malformed: boolean;
 } {
-  const attribute = /\s+([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/uy;
+  ATTRIBUTE.lastIndex = 0;
   const attributes: Attribute[] = [];
   // A sticky pattern goes back to the start when it fails, so the end of
   // the last attribute is kept apart.
   let end = 0;
-  for (let match = attribute.exec(tag); match; match = attribute.exec(tag)) {
+  for (let match = ATTRIBUTE.exec(tag); match; match = ATTRIBUTE.exec(tag)) {
     const [, name = "", double, single] = match;
     attributes.push({ name, value: double ?? single ?? "" });
-    end = attribute.lastIndex;
+    end = ATTRIBUTE.lastIndex;
   }
   return { attributes, malformed: tag.slice(end).trim() !== "" };
 }
@@ -115,7 +118,12 @@ function parse(xml: string): Element {
         }
       }
     } else if (close === "/") {
-      stack.pop();
+      // A closing tag holds nothing but white space, so any text there is
+      // named as the element's own.
+      const closed = stack.pop();
+      if (closed !== undefined && attributes.trim() !== "") {
+        closed.malformed = true;
+      }
     } else {
       const funding =
         (name === "sec" && isFundingSectionAt(xml, match.index)) ||
@@ -199,42 +207,48 @@ const oneOf =
 // the recorded papers carry, and for the types the cutter matches on, the
 // values it reads. Any other attribute or value is named. A new recording
 // that carries another adds it here, where review sees it.
-const ATTRIBUTES: Record<string, (value: string) => boolean> = {
-  "article-type": oneOf(
-    "research-article",
-    "review-article",
-    "systematic-review",
-    "letter",
-    "brief-report",
-    "case-report",
-    "editorial",
-  ),
-  "dtd-version": (value) => /^\d+(?:\.\d+)*$/u.test(value),
-  "xml:lang": (value) => /^[a-z]{2}$/u.test(value),
-  "xmlns:xlink": oneOf("http://www.w3.org/1999/xlink"),
-  "xmlns:ali": oneOf("http://www.niso.org/schemas/ali/1.0/"),
-  "pub-id-type": oneOf("pmcid", "pmid", "pmc", "doi", "publisher-id"),
-  "specific-use": oneOf("FundRef", "textmining"),
-  "content-type": oneOf("ccbylicense"),
-  start_date: (value) => /^\d{4}-\d{2}-\d{2}$/u.test(value),
-  "ext-link-type": oneOf("uri", "doi"),
-  "xlink:href": (value) =>
-    /^https?:\/\/creativecommons\.org\/[\w./-]*$/u.test(value),
-  "institution-id-type": oneOf("DOI", "FundRef", "ROR", "Ringgold", "ISNI"),
-  "name-style": oneOf("western", "eastern", "given-only", "islensk"),
-  id: (value) => ID.test(value),
-  rid: (value) => value.split(/\s+/u).every((id) => ID.test(id)),
-  // As the cutter reads them, in src/europepmc/jats.ts.
-  "sec-type": (value) => /^(?:funding|ack|acknowledge?ments?)$/iu.test(value),
-  "fn-type": oneOf("financial-disclosure", "funding", "supported-by"),
-};
+const ATTRIBUTES = new Map<string, (value: string) => boolean>(
+  Object.entries({
+    "article-type": oneOf(
+      "research-article",
+      "review-article",
+      "systematic-review",
+      "letter",
+      "brief-report",
+      "case-report",
+      "editorial",
+    ),
+    "dtd-version": (value) => /^\d+(?:\.\d+)*$/u.test(value),
+    "xml:lang": (value) => /^[a-z]{2}$/u.test(value),
+    "xmlns:xlink": oneOf("http://www.w3.org/1999/xlink"),
+    "xmlns:ali": oneOf("http://www.niso.org/schemas/ali/1.0/"),
+    "pub-id-type": oneOf("pmcid", "pmid", "pmc", "doi", "publisher-id"),
+    "specific-use": oneOf("FundRef", "textmining"),
+    "content-type": oneOf("ccbylicense"),
+    start_date: (value) => /^\d{4}-\d{2}-\d{2}$/u.test(value),
+    "ext-link-type": oneOf("uri", "doi"),
+    // A licence or a public domain tool, in a version and maybe a
+    // jurisdiction, or its legal code.
+    "xlink:href": (value) =>
+      /^https?:\/\/creativecommons\.org\/(?:licenses\/[a-z-]+|publicdomain\/(?:zero|mark))\/\d\.\d(?:\/[a-z]{2})?(?:\/legalcode(?:\.[a-z]{2})?)?\/?$/u.test(
+        value,
+      ),
+    "institution-id-type": oneOf("DOI", "FundRef", "ROR", "Ringgold", "ISNI"),
+    "name-style": oneOf("western", "eastern", "given-only", "islensk"),
+    id: (value) => ID.test(value),
+    rid: (value) => value.split(/\s+/u).every((id) => ID.test(id)),
+    // As the cutter reads them, in src/europepmc/jats.ts.
+    "sec-type": (value) => /^(?:funding|ack|acknowledge?ments?)$/iu.test(value),
+    "fn-type": oneOf("financial-disclosure", "funding", "supported-by"),
+  }),
+);
 
 // The element's own attributes that the check does not expect.
 function strayAttributes(element: Element, path: string): string[] {
   return [
     ...(element.malformed ? [`${path} (attributes)`] : []),
     ...element.attributes
-      .filter(({ name, value }) => !(ATTRIBUTES[name]?.(value) ?? false))
+      .filter(({ name, value }) => !(ATTRIBUTES.get(name)?.(value) ?? false))
       .map(({ name }) => `${path}@${name}`),
   ];
 }
