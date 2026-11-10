@@ -214,6 +214,44 @@ describe("fitness: requests back off (europe-pmc.md)", () => {
     await expect(client.fullText("PMC1")).rejects.toThrow(/404/u);
     expect(requests).toHaveLength(1);
   });
+
+  it.each([400, 404, 410])(
+    "cancels the body of a %i reply it does not retry, so its connection goes back to the pool (#426)",
+    async (status) => {
+      let cancelled = false;
+      const { client } = harness(
+        () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              cancel() {
+                cancelled = true;
+              },
+            }),
+            { status },
+          ),
+      );
+      await expect(client.fullText("PMC1")).rejects.toThrow(EuropePmcError);
+      expect(cancelled).toBe(true);
+    },
+  );
+
+  it("still says what Europe PMC answered when the body it cancels has broken off (#426)", async () => {
+    const { client } = harness(
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.error(new Error("connection reset"));
+            },
+          }),
+          { status: 404 },
+        ),
+    );
+    await expect(client.fullText("PMC1")).rejects.toMatchObject({
+      name: "EuropePmcError",
+      last: 404,
+    });
+  });
 });
 
 describe("fitness: each request names the service (europe-pmc.md)", () => {
