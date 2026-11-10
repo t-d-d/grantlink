@@ -36,7 +36,10 @@ import type { Resolver } from "./create-rule.ts";
 // used, `D()` or `ids.map(D)`, unless it is exported, `export const D =
 // Date`. Then it also reports where it is declared, so `D()` in the same
 // module gives a second report. A report at an export, which cannot move
-// inside a step, says the source passes to another module instead.
+// inside a step, says the source passes to another module instead. An
+// object that holds a source, such as `Math`, `crypto` or `globalThis`,
+// reports where it is passed on, `helper(Math)` or `return crypto`, since
+// the code that gets it may read the source unseen.
 const NON_DETERMINISTIC: Readonly<Record<string, ReadonlySet<string>>> = {
   Math: new Set(["random"]),
   Date: new Set(["now"]),
@@ -505,14 +508,43 @@ function exportedDeclaration(declarator: TSESTree.VariableDeclarator): boolean {
   );
 }
 
+// True when two paths name the same global, such as a destructured name
+// the rule follows to its default, `{ foo: M = Math }`, and that default.
+function samePath(
+  a: readonly string[] | null,
+  b: readonly string[] | null,
+): boolean {
+  return a !== null && b !== null && a.join(".") === b.join(".");
+}
+
+// True when a pattern ends in a rest, `{ a, ...rest }`, which copies the
+// object's other members.
+function copiesRest(pattern: TSESTree.ObjectPattern): boolean {
+  return pattern.properties.some(
+    (property) => property.type === AST_NODE_TYPES.RestElement,
+  );
+}
+
 // True when `Date`, read as a value, goes somewhere that may call it, such
 // as `ids.map(Date)` or `Reflect.construct(Date, [])`. Not when the code
 // calls or constructs it, which the call checks report with their
 // arguments in view, reads a member that does not call it, `Date.UTC(...)`,
-// tests `x instanceof Date` or `typeof Date`, or declares an alias,
+// tests it, `x instanceof Date`, `typeof Date`, `"now" in Date`,
+// `if (Date)`, `!Date` or `Date && f()`, or declares an alias,
 // `const D = Date`, whose own reads the rule follows. A member under a key
 // the rule cannot name, `Date[k]`, may be `call`, so it counts.
-function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
+//
+// With `holder` set, it asks the same of an object that holds a source,
+// such as `helper(Math)`, `{ m: Math }` or `return crypto`, which the code
+// that gets it may read the source from unseen. The rest of a pattern,
+// `const { ...rest } = c`, copies its members, so it counts. An export by
+// default and an alias whose declaration is exported are left to
+// checkDefault and exportsUnfollowed, which report those.
+function passedOn(
+  node: TSESTree.Node,
+  resolver: Resolver,
+  holder = false,
+): boolean {
   const outer = outermost(node);
   const parent = outer.parent;
   switch (parent?.type) {
@@ -525,17 +557,28 @@ function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
       return name === null || CALLS_THROUGH.has(name);
     }
     case AST_NODE_TYPES.BinaryExpression:
+      if (parent.operator === "in") return parent.right !== outer;
       return !(
         TESTS_ONLY.has(parent.operator) &&
         (parent.right === outer || parent.operator !== "instanceof")
       );
     case AST_NODE_TYPES.UnaryExpression:
-      return parent.operator !== "typeof";
+      return parent.operator !== "typeof" && parent.operator !== "!";
+    case AST_NODE_TYPES.IfStatement:
+    case AST_NODE_TYPES.ConditionalExpression:
+    case AST_NODE_TYPES.WhileStatement:
+    case AST_NODE_TYPES.DoWhileStatement:
+    case AST_NODE_TYPES.ForStatement:
+      return parent.test !== outer;
+    // `Date && f()` gives `Date` only when it is falsy.
+    case AST_NODE_TYPES.LogicalExpression:
+      return !(parent.operator === "&&" && parent.left === outer);
     // A default of a nested pattern in a declaration the rule follows,
     // `const { foo: { bind } = Date } = globalThis`, calls it only through
-    // a member the pattern destructures. A name's own default, `const {
-    // foo: D = Date } = x`, reports where the name is used, as an alias of
-    // `Date` does, when the rule follows the name to it. Anywhere else, such
+    // a member the pattern destructures, and a holder passes on only
+    // through a rest. A name's own default, `const { foo: D = Date } = x` or
+    // `const { foo: M = Math } = x`, reports where the name is used, as an
+    // alias does, when the rule follows the name to it. Anywhere else, such
     // as a parameter's default or an assignment, the rule does not follow
     // the names it gives, so it counts as passed on.
     case AST_NODE_TYPES.AssignmentPattern:
@@ -543,13 +586,16 @@ function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
         return true;
       }
       return parent.left.type === AST_NODE_TYPES.ObjectPattern
-        ? callsThrough(parent.left)
+        ? callsThrough(parent.left) || (holder && copiesRest(parent.left))
         : parent.left.type !== AST_NODE_TYPES.Identifier ||
-            !namesDate(pathOf(parent.left, resolver, new Set()));
+            !samePath(
+              pathOf(parent.left, resolver, new Set()),
+              pathOf(outer, resolver, new Set()),
+            );
     case AST_NODE_TYPES.VariableDeclarator: {
       if (parent.init !== outer) return true;
       if (parent.id.type === AST_NODE_TYPES.ObjectPattern) {
-        return callsThrough(parent.id);
+        return callsThrough(parent.id) || (holder && copiesRest(parent.id));
       }
       const [declared, ...more] =
         resolver.sourceCode.getDeclaredVariables(parent);
@@ -557,9 +603,12 @@ function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
         more.length > 0 ||
         declared === undefined ||
         aliasDeclarator(declared) === null ||
-        exported(parent, declared)
+        (!holder && exported(parent, declared))
       );
     }
+    case AST_NODE_TYPES.ExportDefaultDeclaration:
+    case AST_NODE_TYPES.TSExportAssignment:
+      return !holder;
     default:
       return true;
   }
@@ -650,10 +699,17 @@ export const noNonDeterministicOutsideStep = createRule({
       }
       report(value, holder, true);
     };
-    // `Date` read as a value and passed on, such as `ids.map(Date)`.
-    const checkDate = (node: TSESTree.Node, path: readonly string[] | null) => {
-      if (namesDate(path) && passedOn(node, context)) {
-        report(node, "Date", exportedSource(node, context));
+    // `Date`, or an object that holds a source, read as a value and passed
+    // on, such as `ids.map(Date)`, `helper(Math)` or
+    // `{ c: globalThis.crypto }`.
+    const checkPassed = (
+      node: TSESTree.Node,
+      path: readonly string[] | null,
+    ) => {
+      const date = namesDate(path);
+      const passed = date ? "Date" : holderOf(path);
+      if (passed !== undefined && passedOn(node, context, !date)) {
+        report(node, passed, exportedSource(node, context));
       }
     };
     return {
@@ -670,7 +726,7 @@ export const noNonDeterministicOutsideStep = createRule({
       MemberExpression(node) {
         const path = pathOf(node, context, new Set());
         check(node, path);
-        checkDate(node, path);
+        checkPassed(node, path);
       },
       // A name passed on from a module that holds a clock or random source,
       // `export { randomUUID } from "node:crypto"`, or an object that holds
@@ -731,10 +787,9 @@ export const noNonDeterministicOutsideStep = createRule({
           report(node, passed, true);
           return;
         }
-        if (op === undefined) return;
         if (!isRead(node, context)) return;
         check(node, path);
-        checkDate(node, path);
+        checkPassed(node, path);
       },
     };
   },
