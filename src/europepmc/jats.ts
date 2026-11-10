@@ -174,10 +174,23 @@ const TITLE = new RegExp(
   "gu",
 );
 
+// A <sec-meta>, whole. It can name people, such as in a contributor's <bio>,
+// so none of its text is kept, wherever it stands in a part: in an <ack>, in
+// a section inside one, or in a subsection of a funding section (#229). A
+// self-closing one is only itself. One that is never closed runs to the end
+// of the part, since where its names end cannot be told.
+const SEC_META_WHOLE = new RegExp(
+  String.raw`<sec-meta${NAME_END}(?:[^>]*\/>|[^>]*>[\s\S]*?(?:<\/sec-meta\s*>|$))`,
+  "giu",
+);
+
 // The paragraphs of a section, or its whole text less its title if it has
 // none. A self-closing paragraph is empty, so it does not count. A
-// self-closing title strips only itself (#221).
-function paragraphs(section: string): string[] {
+// self-closing title strips only itself (#221). Any <sec-meta> is dropped
+// first, and leaves a space, so the words either side of it stay apart
+// (#229).
+function paragraphs(part: string): string[] {
+  const section = part.replace(SEC_META_WHOLE, " ");
   const found = elements(section, "p")
     .map(plain)
     .filter((paragraph) => paragraph !== "");
@@ -211,21 +224,25 @@ export const FUNDING_FOOTNOTE = wholeAttribute(
 // is not kept. A tag matches only by its whole name, so <sec-meta> is not a
 // section and <title-group> is not a title (#216). A label ends at its own
 // closing tag, so a labelled section is not taken for the labelled funding
-// section after it. A self-closing section is empty, and a self-closing
-// title names nothing, so neither starts a funding section: (?<!\/)> keeps
-// each tag from closing itself (#221). A section may open with a <sec-meta>,
-// which ends at its own closing tag as a label does. It is part of the match
-// whether the section is found by its type or its title, so it is not kept,
-// since it can name people (#222). Between a section's opening tag, its
-// sec-meta, its label and its title may sit white space, comments and
-// processing instructions, and so may they inside the title before the
-// words that name it, so neither hides a section. The cutter has dropped the
-// comments by then, but the check on recorded fixtures reads the raw XML
-// (#230). Each comment or instruction ends at its own close, so one cannot
-// run on past a title into another.
+// section after it. A self-closing label is only itself, so it neither hides
+// the funding title after it nor runs on to a later label's closing tag
+// (#227). A self-closing section is empty, and a self-closing title names
+// nothing, so neither starts a funding section: (?<!\/)> keeps each tag from
+// closing itself (#221). A section may open with a <sec-meta>, which is read
+// as a label is: to its own closing tag, or only itself when self-closing
+// (#227). A <sec-meta> is part of the match whether the section is found by
+// its type or its title, so it is not kept, since it can name people (#222).
+// Between a section's opening tag, its sec-meta, its label and its title may
+// sit white space, comments and processing instructions, and so may they
+// inside the title before the words that name it, so neither hides a
+// section. The cutter has dropped the comments by then, but the check on
+// recorded fixtures reads the raw XML (#230). Each comment or instruction
+// ends at its own close, so one cannot run on past a title into another.
 const GAP = String.raw`(?:\s|<!--(?:(?!-->)[\s\S])*-->|<\?(?:(?!\?>)[\s\S])*\?>)*`;
-const SEC_META = String.raw`(?:<sec-meta${NAME_END}(?:[^>]*\/>|[^>]*>(?:(?!<\/sec-meta>)[\s\S])*<\/sec-meta>)${GAP})?`;
-const FUNDING_SECTION_START = String.raw`<sec${NAME_END}(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*(?<!\/)>${GAP}${SEC_META}|[^>]*(?<!\/)>${GAP}${SEC_META}(?:<label${NAME_END}[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>${GAP})?<title${NAME_END}[^>]*(?<!\/)>${GAP}(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
+const leading = (name: string) =>
+  String.raw`(?:<${name}${NAME_END}(?:[^>]*\/>|[^>]*(?<!\/)>(?:(?!<\/${name}>)[\s\S])*<\/${name}>)${GAP})?`;
+const SEC_META = leading("sec-meta");
+const FUNDING_SECTION_START = String.raw`<sec${NAME_END}(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*(?<!\/)>${GAP}${SEC_META}|[^>]*(?<!\/)>${GAP}${SEC_META}${leading("label")}<title${NAME_END}[^>]*(?<!\/)>${GAP}(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
 
 const FUNDING_SECTION_AT = new RegExp(FUNDING_SECTION_START, "iuy");
 

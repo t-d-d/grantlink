@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { findReferences } from "../extract/rules.ts";
-import { elements, FUNDING_FOOTNOTE, fundingSections } from "./jats.ts";
+import {
+  elements,
+  FUNDING_FOOTNOTE,
+  fundingSections,
+  isFundingSectionAt,
+} from "./jats.ts";
 
 const fixture = (pmcid: string) =>
   readFileSync(
@@ -371,6 +376,67 @@ describe("cutting a paper to its funding sections", () => {
         `<article><back><ack><title/>Funded by grant A1.<sec><title>X</title></sec></ack></back></article>`,
       ).text,
     ).toEqual(["Funded by grant A1."]);
+  });
+
+  it("takes a section with a self-closing label before its funding title (#227)", () => {
+    expect(
+      fundingSections(
+        `<article><body><sec><label/><title>Funding</title><p>Grant A1.</p></sec></body></article>`,
+      ).text,
+    ).toEqual(["Grant A1."]);
+  });
+
+  it.each([
+    ["label", "<label/>", "<label>2</label>"],
+    ["sec-meta", "<sec-meta/>", "<sec-meta><kwd>k</kwd></sec-meta>"],
+  ])(
+    "does not run a self-closing %s on to a later section's (#227)",
+    (_name, empty, full) => {
+      const xml = `<sec>${empty}<title>Methods</title><p>Body text.</p></sec><sec>${full}<title>Funding</title><p>Grant A1.</p></sec>`;
+      expect(isFundingSectionAt(xml, 0)).toBe(false);
+      expect(isFundingSectionAt(xml, xml.lastIndexOf("<sec>"))).toBe(true);
+    },
+  );
+
+  // A <sec-meta> can name people, so the cutter keeps none of its text,
+  // wherever in a funding part it stands (#229).
+  it.each([
+    [
+      "<ack><sec><sec-meta><contrib-group><contrib><bio><p>Authorname.</p></bio></contrib></contrib-group></sec-meta><title>Funding</title><p>Grant A1.</p></sec></ack>",
+    ],
+    [
+      "<ack><sec><sec-meta><contrib-group><contrib><bio><p>Authorname.</p></bio></contrib></contrib-group></sec-meta><title>Thanks</title><p>Grant A1.</p></sec></ack>",
+    ],
+    [
+      "<ack><sec-meta><contrib-group><contrib><bio><p>Authorname.</p></bio></contrib></contrib-group></sec-meta><p>Grant A1.</p></ack>",
+    ],
+    [
+      "<ack><sec><SEC-META><bio>Authorname.</bio></SEC-META><title>Thanks</title>Grant A1.</sec></ack>",
+    ],
+    [
+      '<sec sec-type="funding"><title>Funding</title><sec><sec-meta><contrib-group><contrib><bio><p>Authorname.</p></bio></contrib></contrib-group></sec-meta><title>Thanks</title><p>Grant A1.</p></sec></sec>',
+    ],
+    ["<ack><sec><sec-meta/><title>Thanks</title><p>Grant A1.</p></sec></ack>"],
+  ])("keeps no text from a sec-meta inside a funding part, in %s", (part) => {
+    const sections = fundingSections(`<article><back>${part}</back></article>`);
+    expect(sections.text).toEqual(["Grant A1."]);
+    expect(JSON.stringify(sections)).not.toContain("Authorname");
+  });
+
+  it("keeps no text after a sec-meta that is never closed (#229)", () => {
+    const sections = fundingSections(
+      `<article><back><ack><p>Grant A1.</p><sec-meta><contrib-group><contrib><bio><p>Authorname.</p></bio></contrib></contrib-group><p>Grant B2.</p></ack></back></article>`,
+    );
+    expect(sections.text).toEqual(["Grant A1."]);
+    expect(JSON.stringify(sections)).not.toContain("Authorname");
+  });
+
+  it("keeps the words either side of a dropped sec-meta apart (#229)", () => {
+    expect(
+      fundingSections(
+        `<article><back><ack>Grant C1234<sec-meta/>A5678.</ack></back></article>`,
+      ).text,
+    ).toEqual(["Grant C1234 A5678."]);
   });
 
   describe("matches a section, label or title tag only by its whole name (#216)", () => {

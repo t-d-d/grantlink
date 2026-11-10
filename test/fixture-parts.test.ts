@@ -95,6 +95,22 @@ describe("strayParts", () => {
       "article/body/sec/sec-meta",
     ],
     [
+      "a section inside the acknowledgements, which takes in any sec-meta it opens with (#229)",
+      {
+        back:
+          "<ack><sec><sec-meta><contrib-group><contrib><bio><p>B</p></bio></contrib></contrib-group></sec-meta>" +
+          "<title>Funding</title><p>G</p></sec></ack>",
+      },
+      "article/back/ack/sec",
+    ],
+    [
+      "a sec-meta in the acknowledgements (#229)",
+      {
+        back: "<ack><sec-meta><contrib-group><contrib><bio><p>B</p></bio></contrib></contrib-group></sec-meta><p>G</p></ack>",
+      },
+      "article/back/ack/sec-meta",
+    ],
+    [
       "the author list",
       {
         meta: "<contrib-group><contrib><name>A</name></contrib></contrib-group>",
