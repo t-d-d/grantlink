@@ -6,7 +6,8 @@ import {
   DURABLE_METHODS,
   methodCallIn,
   stepHelperOf,
-  lookup,
+  unwrapped,
+  walkAliases,
 } from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
@@ -14,30 +15,12 @@ import {
 // A durable operation called on a context inside another operation on the
 // same context replays out of step with the parent's checkpoints. Nest
 // through `runInChildContext` and use the child it hands you. The rule
-// follows `const` aliases, so `const same = ctx` is the same context, and
-// resolves by binding, so a shadowing parameter is a different one. A step
-// helper such as askEuropePmc counts as an operation on the context it is
-// given first.
-function aliasRoot(variable: TSESLint.Scope.Variable): TSESLint.Scope.Variable {
-  const seen = new Set<TSESLint.Scope.Variable>();
-  let current = variable;
-  while (!seen.has(current)) {
-    seen.add(current);
-    const [def, ...more] = current.defs;
-    if (def === undefined || more.length > 0) return current;
-    if (
-      def.type !== TSESLint.Scope.DefinitionType.Variable ||
-      def.parent.kind !== "const"
-    )
-      return current;
-    const init = def.node.init;
-    if (init?.type !== AST_NODE_TYPES.Identifier) return current;
-    const next = lookup(init.name, current.scope);
-    if (next === null) return current;
-    current = next;
-  }
-  return current;
-}
+// follows aliases as walkAliases does, so `const same = ctx` or
+// `let same = ctx` is the same context, even if it is written again later,
+// and resolves by binding, so a shadowing parameter is a different one. It
+// reads the context through the wrappers unwrapped takes off, so `ctx!.step`
+// and `(ctx as Context).step` use ctx. A step helper such as askEuropePmc
+// counts as an operation on the context it is given first.
 
 export const noNestedDurableOperations = createRule({
   name: "no-nested-durable-operations",
@@ -58,18 +41,18 @@ export const noNestedDurableOperations = createRule({
     const { sourceCode } = context;
     const stack: (TSESLint.Scope.Variable | null)[] = [];
     const receiverRoot = (
-      receiver: TSESTree.Node,
+      node: TSESTree.Node,
     ): TSESLint.Scope.Variable | null => {
+      const receiver = unwrapped(node);
       if (receiver.type !== AST_NODE_TYPES.Identifier) return null;
-      const variable = lookup(receiver.name, sourceCode.getScope(receiver));
-      return variable === null ? null : aliasRoot(variable);
+      return walkAliases(receiver, context)?.chain.at(-1) ?? null;
     };
     // The context a durable operation or a step helper uses, if the call is
     // one.
     const contextOf = (node: TSESTree.CallExpression): TSESTree.Node | null => {
       const operation = methodCallIn(node, DURABLE_METHODS);
       if (operation !== null) return operation.object;
-      if (stepHelperOf(node, context) !== null)
+      if (stepHelperOf(node, context, "any") !== null)
         return node.arguments[0] ?? null;
       return null;
     };
