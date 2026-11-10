@@ -83,9 +83,9 @@ export function sameGrant(found: string, expected: string): boolean {
 // digits, with or without its A; a Crick core funding number; a newer
 // reference of letters, sometimes with a year or a month, then a slash and
 // a number; or one that starts with CRUK and has a letter or a digit after
-// it. A C part alone names a programme, and another funder's reference or a
-// word, the bare abbreviation CRUK among them, is not CRUK's, so none of
-// those is an answer.
+// it. A C part alone names a programme, and another funder's reference, a
+// word or the bare abbreviation CRUK is not CRUK's, so none of those is an
+// answer.
 const CRUK_FORMS = [
   /^C\d+\/A\d+$/u,
   /^A?\d{4,6}$/u,
