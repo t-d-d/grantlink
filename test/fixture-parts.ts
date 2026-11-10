@@ -35,6 +35,7 @@ import {
   FUNDING_METADATA,
   FUNDING_SECTION_TYPE,
   isFundingSection as isFundingSectionElement,
+  isSecMetaName,
 } from "../src/europepmc/jats.ts";
 import { parseXml, type XmlElement } from "../src/europepmc/xml.ts";
 
@@ -268,12 +269,6 @@ function strayAttributesWithin(
   ];
 }
 
-// The cutter drops every <sec-meta> in a part, in any case, wherever it
-// stands, so what one inside a paragraph holds is kept without being read.
-// It is named whole (#416).
-const isSecMeta = (element: Element): boolean =>
-  element.name.toLowerCase() === "sec-meta";
-
 function strayInPart(part: Element, path: string): string[] {
   const paragraphs = part.children.some(
     (child) => child.name === "p" && hasText(child),
@@ -285,8 +280,13 @@ function strayInPart(part: Element, path: string): string[] {
       const childPath = `${path}/${child.name}`;
       if (!PART_CHILDREN.includes(child.name)) return [childPath];
       // A heading's children are named whole by strayInHeadings.
+      // The cutter drops every <sec-meta> in a part, wherever it stands, so
+      // what one inside a paragraph holds is kept without being read. It is
+      // named whole (#416), by the cutter's own name test (#472).
       return child.name === "p"
-        ? strayAttributesWithin(child, childPath, isSecMeta)
+        ? strayAttributesWithin(child, childPath, (element) =>
+            isSecMetaName(element.name),
+          )
         : strayAttributes(child, childPath);
     }),
     ...strayInHeadings(part, path),

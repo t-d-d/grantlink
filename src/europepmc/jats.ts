@@ -89,7 +89,15 @@ const namedInAnyCase =
     element?.kind === "element" && element.name.toLowerCase() === name;
 const isTitle = namedInAnyCase("title");
 const isLabel = namedInAnyCase("label");
-const isSecMeta = namedInAnyCase("sec-meta");
+// A section's <sec-meta> can name people (#222), so the cutter drops every
+// one it reads, matched by this name in any case. The check on recorded
+// fixtures (test/fixture-parts.ts) names one by this test too, so the two
+// agree (#472).
+const SEC_META = "sec-meta";
+export const isSecMetaName = (name: string): boolean =>
+  name.toLowerCase() === SEC_META;
+const isSecMeta = (element: XmlNode | undefined): element is XmlElement =>
+  element?.kind === "element" && isSecMetaName(element.name);
 const isSection = namedInAnyCase("sec");
 
 // An attribute's value split at white space.
@@ -115,7 +123,7 @@ export const FUNDING_METADATA = {
 // its words.
 const READ_BY_NAME = new Set<string>([
   "sec",
-  "sec-meta",
+  SEC_META,
   "label",
   "title",
   "p",

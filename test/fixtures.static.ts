@@ -122,6 +122,21 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
     },
   );
 
+  // The check names a sec-meta by the test the cutter drops one by, so when
+  // the cutter changes what it drops as a sec-meta the check follows. The
+  // name is written once in the cutter, and never in the check (#472).
+  it("the cutter writes the sec-meta name once, and the check does not copy it", () => {
+    // Written in any quotes and any case, so a copy in a template literal
+    // or in capitals is caught too.
+    expect(cutter.match(/["'`]sec-meta["'`]/giu)).toHaveLength(1);
+    expect(cutter).toMatch(
+      /^const isSecMeta = [^;]*\bisSecMetaName\(element\.name\);$/mu,
+    );
+    expect(check).toContain("isSecMetaName(");
+    expect(check).not.toMatch(/["'`]sec-meta["'`]/iu);
+    expect(check).not.toMatch(/\bconst isSecMeta\b/u);
+  });
+
   // The licence a recorded paper carries, in its own licence element, is
   // the one its entry lists.
   it.each(RECORDED)("$file carries the licence it is listed under", (entry) => {

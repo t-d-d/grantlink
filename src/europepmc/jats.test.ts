@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { findReferences } from "../extract/rules.ts";
-import { FUNDING_TITLES, fundingSections, normaliseTitle } from "./jats.ts";
+import {
+  FUNDING_TITLES,
+  fundingSections,
+  isSecMetaName,
+  normaliseTitle,
+} from "./jats.ts";
 
 const fixture = (pmcid: string) =>
   readFileSync(
@@ -699,6 +704,19 @@ describe("reading an element by its name", () => {
       "d",
     ]);
   });
+});
+
+describe("naming a sec-meta (#472)", () => {
+  it.each(["sec-meta", "SEC-META", "Sec-Meta"])("names %s", (name) => {
+    expect(isSecMetaName(name)).toBe(true);
+  });
+
+  it.each(["sec", "meta", "sec-metadata", "x-sec-meta", ""])(
+    "does not name %j",
+    (name) => {
+      expect(isSecMetaName(name)).toBe(false);
+    },
+  );
 });
 
 describe("reading an element by an attribute (#217)", () => {
