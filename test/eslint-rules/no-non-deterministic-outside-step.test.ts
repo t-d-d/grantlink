@@ -1,4 +1,4 @@
-import { afterAll, describe, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { noNonDeterministicOutsideStep } from "../../eslint-rules/no-non-deterministic-outside-step.ts";
 import { ruleTester } from "../rule-tester.ts";
 
@@ -32,6 +32,10 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
             const c = Date !== x;
             return [a, b, c];
           }`,
+        },
+        {
+          name: "calls a member of Date destructured from a nested pattern that reads no clock",
+          code: `async function run(ctx: any) { const { Date: { UTC } } = globalThis; const t = UTC(2020, 0, 1); }`,
         },
         {
           name: "passes Date as a value inside a step",
@@ -264,7 +268,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export { randomUUID };`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "crypto.randomUUID" },
               line: 2,
             },
@@ -275,7 +279,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export { randomUUID } from "node:crypto";`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "crypto.randomUUID" },
               line: 1,
             },
@@ -287,7 +291,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export { now as clock };`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Date.now" },
               line: 1,
             },
@@ -298,7 +302,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export const { now } = Date;`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Date.now" },
               line: 1,
             },
@@ -310,7 +314,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export { random };`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Math.random" },
               line: 2,
             },
@@ -321,7 +325,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export const { Date: D } = globalThis;`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Date" },
               line: 1,
             },
@@ -333,7 +337,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export { clock as now };`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "performance.now" },
               line: 2,
             },
@@ -345,7 +349,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export { M };`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Math" },
               line: 2,
             },
@@ -357,7 +361,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export { M as N };`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Math" },
               line: 1,
             },
@@ -368,8 +372,19 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export const M = Math;`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports webcrypto destructured from a nested pattern under another name",
+          code: `export const { crypto: { webcrypto: w } } = globalThis;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "crypto" },
               line: 1,
             },
           ],
@@ -379,7 +394,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export const { Math: M } = globalThis;`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Math" },
               line: 1,
             },
@@ -391,7 +406,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export { g };`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "globalThis" },
               line: 2,
             },
@@ -403,7 +418,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export { c as random };`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "crypto" },
               line: 2,
             },
@@ -415,7 +430,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export { performance };`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "performance" },
               line: 2,
             },
@@ -426,7 +441,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export * from "node:crypto";`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "crypto" },
               line: 1,
             },
@@ -437,7 +452,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export * as c from "crypto";`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "crypto" },
               line: 1,
             },
@@ -448,7 +463,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export * from "node:perf_hooks";`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "perf_hooks" },
               line: 1,
             },
@@ -459,7 +474,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export { webcrypto } from "node:crypto";`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "crypto" },
               line: 1,
             },
@@ -470,7 +485,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export { default as c } from "node:crypto";`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "crypto" },
               line: 1,
             },
@@ -482,7 +497,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export { c };`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "crypto" },
               line: 2,
             },
@@ -493,7 +508,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export default Math;`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Math" },
               line: 1,
             },
@@ -507,12 +522,12 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export = c;`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Math" },
               line: 2,
             },
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "crypto" },
               line: 4,
             },
@@ -524,7 +539,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export default M;`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Math" },
               line: 1,
             },
@@ -537,13 +552,133 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export { E };`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Date" },
               line: 1,
             },
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports an alias of the clock, in its declaration and by name, as an export",
+          code: `export const now = Date.now;
+          const clock = performance.now;
+          export { clock };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date.now" },
+              line: 1,
+            },
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "performance.now" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "reports an alias of Math passed on by name at the export",
+          code: `const M = Math;
+          export { M };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "reports a call to the clock at the read",
+          code: `const at = Date.now();`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "reports a clock read whose value is exported at the read, since the value and not the clock passes on",
+          code: `export const d = new Date();
+          export const t = Date();`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "new Date()" },
+              line: 1,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date()" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "reports the clock exported by default as an export",
+          code: `export default Date.now;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date.now" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "reports the clock exported by assignment as an export",
+          code: `export = Date.now;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date.now" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "reports Date exported by default as an export",
+          code: `export default Date;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "reports an alias of Date exported by default as an export",
+          code: `const D = Date;
+          export default D;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "reports an alias of the clock exported by default at its read and at the export",
+          code: `const now = Date.now;
+          export default now;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now" },
+              line: 1,
+            },
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date.now" },
               line: 2,
             },
           ],
@@ -1010,6 +1145,26 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
         },
         {
+          name: "reads the clock destructured from a nested pattern",
+          code: `async function run(ctx: any) { const { Date: { now } } = globalThis; now(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+            },
+          ],
+        },
+        {
+          name: "draws random destructured from a nested pattern with a default",
+          code: `async function run(ctx: any) { const { Math: { random: r } = Math } = globalThis; const n = r(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
+        },
+        {
           name: "reads the clock destructured from Date with a default",
           code: `async function run(ctx: any) { const { now = () => 0 } = Date; const at = now(); }`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
@@ -1027,4 +1182,30 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
       ],
     },
   );
+});
+
+describe("no-non-deterministic-outside-step's messages", () => {
+  const { messages } = noNonDeterministicOutsideStep.meta;
+
+  it("tells a read to move inside a step", () => {
+    expect(messages.nonDeterministicOutsideStep).toContain(
+      "a replay reads a new value. Move it inside `ctx.step(...)`",
+    );
+    expect(messages.nonDeterministicOutsideStep).toContain(
+      "add `// eslint-disable-next-line grantlink/no-non-deterministic-outside-step -- <why it is safe>`",
+    );
+  });
+
+  it("tells an export that another module may read the source unseen, and how to fix it", () => {
+    expect(messages.exportedOutsideStep).toContain(
+      "passes to another module, which may read it outside every step where this rule cannot see",
+    );
+    expect(messages.exportedOutsideStep).toContain(
+      "Export a function that takes the value from a step instead",
+    );
+    expect(messages.exportedOutsideStep).toContain(
+      "add `// eslint-disable-next-line grantlink/no-non-deterministic-outside-step -- <why it is safe>`",
+    );
+    expect(messages.exportedOutsideStep).not.toContain("Move it inside");
+  });
 });
