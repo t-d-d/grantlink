@@ -158,6 +158,8 @@ describe("the rules", () => {
     "Funded by CRUK (CRUK-2019).",
     "Funded by CRUK (CRUK/12/2019).",
     "Funded by CRUK (CRUK/AB12/SMITH/2).",
+    // A form that goes on past its fourth part is not read in part.
+    "Funded by CRUK (CRUK/12/34/56/78/90).",
   ])(
     "leaves a CRUK- form with a part of no digit, or a part that is a year: %j",
     (text) => {

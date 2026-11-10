@@ -212,7 +212,8 @@ const SHAPES: readonly Shape[] = [
     // as in CRUK/2019, is not one. A form that goes on past its fourth part
     // is not read in part (#514).
     format: "CRUK-X",
-    shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:${CRUK_SEP}${NOT_YEAR}(?=[A-Z0-9]*\d)[A-Z0-9]{1,8}){0,3}${CRUK_SEP}${NOT_YEAR}[A-Z0-9]{1,8}(?<=CRUK[A-Z0-9/${DASHES}-]*\d[A-Z0-9/${DASHES}-]*)(?!${CRUK_SEP}[A-Z0-9])`,
+    shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:${CRUK_SEP}${NOT_YEAR}(?=[A-Z0-9]*\d)[A-Z0-9]{1,8}){0,3}${CRUK_SEP}${NOT_YEAR}[A-Z0-9]{1,8}(?<=CRUK[A-Z0-9/${DASHES}-]*\d[A-Z0-9/${DASHES}-]*)`,
+    after: `(?!${CRUK_SEP}[A-Z0-9])`,
     sentenceOnly: false,
   },
   {
