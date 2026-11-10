@@ -295,6 +295,52 @@ describe("inline resources that change what a template, osls or an earlier inlin
     ]);
   });
 
+  // The other direction (#359): a resource named as a template's parameter.
+  it("finds an inline resource named as a template's parameter", () => {
+    expect(
+      unread([...known, { Resources: { CertificateArn: { Type: "T" } } }]),
+    ).toEqual([
+      "entry 3 declares the resource CertificateArn, which a template declares as a parameter",
+    ]);
+  });
+
+  it("finds a template's resource named as a template's parameter", () => {
+    expect(
+      unreadResources(known, TEMPLATES, {
+        ...stack,
+        declared: [...stack.declared, "DomainName"],
+      }),
+    ).toEqual([
+      "a template declares the resource DomainName, which a template declares as a parameter",
+    ]);
+  });
+
+  it("finds a resource osls generates named as a template's parameter", () => {
+    expect(
+      unreadResources(known, TEMPLATES, {
+        ...stack,
+        parameters: {
+          ...stack.parameters,
+          ServerlessDeploymentBucket: ["Type"],
+        },
+      }),
+    ).toEqual([
+      "osls generates the resource ServerlessDeploymentBucket, which a template declares as a parameter",
+    ]);
+  });
+
+  it("names a resource that shares its name with a template's parameter and an inline one only once", () => {
+    expect(
+      unread([
+        ...known,
+        { Parameters: { CertificateArn: { Default: "a" } } },
+        { Resources: { CertificateArn: { Type: "T" } } },
+      ]),
+    ).toEqual([
+      "entry 3 declares the parameter CertificateArn, which entry 4 declares as a resource",
+    ]);
+  });
+
   it("passes an inline parameter that sets a template's default, as serverless.yml does", () => {
     expect(
       unread([...known, { Parameters: { CertificateArn: { Default: "a" } } }]),

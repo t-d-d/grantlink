@@ -276,7 +276,8 @@ export function mergeKeysIn(value: unknown): string[] {
 // (#261), or a parameter an earlier inline entry declares (#297), or change a
 // template's parameter beyond giving it a Default it lacks (#322), or hold a
 // section that is not a map, which osls would merge over the whole section.
-// No inline parameter may share its name with any resource (#323).
+// No inline parameter may share its name with any resource (#323), and no
+// resource may share its name with a template's parameter (#359).
 // It may use no variable but the cf and env ones.
 // Entries count from 1.
 export function unreadResources(
@@ -396,5 +397,17 @@ export function unreadResources(
       ? []
       : [`${at} declares the parameter ${id}, which ${by} as a resource`];
   });
-  return [...head, ...rest, ...clashes];
+  // Nor may any resource share its name with a template's parameter (#359).
+  // An inline entry that sets that parameter's Default is named above.
+  const resourceClashes = Object.keys(elsewhere.parameters)
+    .filter((id) => !inlineParameters.has(id))
+    .flatMap((id): string[] => {
+      const by = declarer(id, elsewhere.declared, byOsls, inlineResources);
+      return by === undefined
+        ? []
+        : [
+            `${by} the resource ${id}, which a template declares as a parameter`,
+          ];
+    });
+  return [...head, ...rest, ...clashes, ...resourceClashes];
 }
