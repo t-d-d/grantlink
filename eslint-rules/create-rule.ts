@@ -74,38 +74,89 @@ export const STEP_HELPERS: readonly StepHelper[] = [
   { module: "src/run/log-only.ts", name: "logOnly", callbacks: [2] },
 ];
 
-// The step helper a call `<name>(...)` calls, if `<name>` resolves to a
-// named import of one. A local function, a namespace import or an import
-// from another module is not one.
+// The step helper a call calls, if its callee resolves to one: a named
+// import `<name>(...)`, or a namespace import `<ns>.<name>(...)` or
+// `<ns>["<name>"](...)`. A local function, an import from another module or
+// a computed key that is not a string is not one. A re-export would hide the
+// helper's module, so no-step-helper-re-export refuses one.
 export function stepHelperOf(
   node: TSESTree.Node,
   resolver: Resolver,
 ): StepHelper | null {
-  if (
-    node.type !== AST_NODE_TYPES.CallExpression ||
-    node.callee.type !== AST_NODE_TYPES.Identifier
-  ) {
-    return null;
-  }
+  if (node.type !== AST_NODE_TYPES.CallExpression) return null;
   const { callee } = node;
-  const variable = lookup(callee.name, resolver.sourceCode.getScope(callee));
-  const def = variable?.defs[0];
-  if (
-    def?.node.type !== AST_NODE_TYPES.ImportSpecifier ||
-    def.parent?.type !== AST_NODE_TYPES.ImportDeclaration
-  ) {
-    return null;
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    const binding = importOf(callee, resolver);
+    if (typeof binding?.name !== "string") return null;
+    return helperNamed(binding.module, binding.name);
   }
-  const { imported } = def.node;
-  const name =
-    imported.type === AST_NODE_TYPES.Identifier
-      ? imported.name
-      : imported.value;
-  const source = def.parent.source.value;
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    callee.object.type === AST_NODE_TYPES.Identifier
+  ) {
+    const name = memberName(callee);
+    if (name === null) return null;
+    const binding = importOf(callee.object, resolver);
+    if (binding?.name !== null) return null;
+    return helperNamed(binding.module, name);
+  }
+  return null;
+}
+
+// The name a member expression reads: `a.b` or `a["b"]`.
+function memberName(node: TSESTree.MemberExpression): string | null {
+  if (!node.computed) {
+    return node.property.type === AST_NODE_TYPES.Identifier
+      ? node.property.name
+      : null;
+  }
+  return node.property.type === AST_NODE_TYPES.Literal &&
+    typeof node.property.value === "string"
+    ? node.property.value
+    : null;
+}
+
+// What an identifier's binding imports from a relative module: a named
+// import, or the whole module (name null) for a namespace import. Null for
+// any other binding.
+export function importOf(
+  identifier: TSESTree.Identifier,
+  resolver: Resolver,
+): { module: string; name: string | null } | null {
+  const variable = lookup(
+    identifier.name,
+    resolver.sourceCode.getScope(identifier),
+  );
+  const def = variable?.defs[0];
+  if (def?.parent?.type !== AST_NODE_TYPES.ImportDeclaration) return null;
+  const module = moduleOf(def.parent.source.value, resolver);
+  if (module === null) return null;
+  if (def.node.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+    return { module, name: null };
+  }
+  if (def.node.type !== AST_NODE_TYPES.ImportSpecifier) return null;
+  return { module, name: exportedName(def.node.imported) };
+}
+
+// The name an import or export specifier gives, as an identifier or a
+// string.
+export function exportedName(
+  node: TSESTree.Identifier | TSESTree.StringLiteral,
+): string {
+  return node.type === AST_NODE_TYPES.Identifier ? node.name : node.value;
+}
+
+// The repo path, without its extension, of the module a relative import in
+// this file names. Null for a package.
+export function moduleOf(source: string, resolver: Resolver): string | null {
   if (!source.startsWith(".")) return null;
-  const module = withoutExtension(
+  return withoutExtension(
     posix.normalize(posix.join(posix.dirname(repoPath(resolver)), source)),
   );
+}
+
+// The step helper a module exports under a name.
+export function helperNamed(module: string, name: string): StepHelper | null {
   return (
     STEP_HELPERS.find(
       (helper) =>
@@ -114,10 +165,17 @@ export function stepHelperOf(
   );
 }
 
+// True when a module exports any step helper.
+export function holdsStepHelper(module: string): boolean {
+  return STEP_HELPERS.some(
+    (helper) => withoutExtension(helper.module) === module,
+  );
+}
+
 // A module path without its .ts or .js extension. The bundler resolution in
 // tsconfig.base.json lets an import name owed.ts as "./owed", "./owed.js" or
 // "./owed.ts", and all three are the same module.
-function withoutExtension(path: string): string {
+export function withoutExtension(path: string): string {
   return path.replace(/\.[cm]?[jt]s$/, "");
 }
 
