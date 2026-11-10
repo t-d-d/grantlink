@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { goldA, goldB, pinned } from "../../evals/gold.ts";
 
 // The run's tests pass small gold sets in through its deps. This checks the
@@ -9,6 +9,7 @@ vi.stubEnv("TABLE_NAME", "table");
 vi.stubEnv("TEXT_BUCKET", "text");
 vi.stubEnv("SITE_BUCKET", "site");
 vi.stubEnv("CODE_VERSION", "test");
+afterAll(() => vi.unstubAllEnvs());
 
 describe("the handler's gold sets", () => {
   it("are the repo's own, with the pinned snapshot id", async () => {

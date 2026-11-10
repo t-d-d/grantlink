@@ -15,9 +15,9 @@ import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 
 // Takes the eval snapshot named in the deps' gold, once
 // (docs/constraints/evals.md). A run calls this after it publishes, so the
-// page never waits on it. Gold set A comes from the papers the repo lists,
-// or before there are any, from a sample drawn with the recorded query and
-// seed. Gold set B's papers come from its labels.
+// page never waits on it. Gold set A comes from the papers the gold lists,
+// or before there are any, from a sample drawn with its query and seed.
+// Gold set B's papers come from its labels.
 
 export type SnapshotSummary =
   | { taken: true; papers: number; manifestSha256: string }

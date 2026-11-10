@@ -1,22 +1,27 @@
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
 import { LocalDurableTestRunner } from "@aws/durable-execution-sdk-js-testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { FAKE_GOLD, fakeDeps } from "../../test/fakes.ts";
+import { snapshotKeys } from "../../evals/gold.ts";
+import { fakeDeps } from "../../test/fakes.ts";
 import { EuropePmcError } from "../europepmc/client.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
 // The snapshot with a gold set B of its own, passed in through the run's
-// deps, so these tests never read the repo's labels.
+// deps, so these tests never read the repo's labels. Its three papers are
+// recorded fixtures the run reads first in its own search, as a labelled
+// paper may be, and none is in gold set A's sample.
 
-const LABELLED = FAKE_GOLD.goldB.papers.map((paper) => paper.pmcid);
+const LABELLED = ["PMC13628515", "PMC13642255", "PMC13664392"];
 
 const goldB = (pmcids: string[]) => ({
-  about: "papers from the fixtures",
+  about: "a test's own gold set B",
   papers: pmcids.map((pmcid) => ({ pmcid, references: [] })),
 });
 
+const labelledDeps = () => fakeDeps({ gold: { goldB: goldB(LABELLED) } });
+
 const manifestKey = (fake: ReturnType<typeof fakeDeps>) =>
-  `eval/${fake.deps.gold.snapshotId}/manifest.json`;
+  snapshotKeys.manifest(fake.deps.gold.snapshotId);
 
 beforeAll(() =>
   LocalDurableTestRunner.setupTestEnvironment({ skipTime: true }),
@@ -39,9 +44,10 @@ async function runWith(fake: ReturnType<typeof fakeDeps>) {
 
 // Europe PMC answering the first labelled paper's full text with `first`
 // once the snapshot starts, and recording every gold set B paper the
-// snapshot asks about.
+// snapshot asks about. The run reads the same papers first, as it finds
+// them in its own search.
 function failingFirstLabelled(first: () => Promise<string>) {
-  const fake = fakeDeps();
+  const fake = labelledDeps();
   const real = fake.deps.europePmc;
   let snapshot = false;
   const hasSnapshot = fake.deps.text.hasSnapshot.bind(fake.deps.text);
@@ -65,7 +71,7 @@ function failingFirstLabelled(first: () => Promise<string>) {
 
 describe("gold set B in the eval snapshot (evals.md)", () => {
   it("keeps every labelled paper when each can be read", async () => {
-    const fake = fakeDeps();
+    const fake = labelledDeps();
     const { status, result } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
     expect(result?.snapshot).toMatchObject({
@@ -76,8 +82,7 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
   });
 
   it("leaves the snapshot for the next run when a labelled paper cannot be read", async () => {
-    // The fake Europe PMC holds no full text for PMC0000009, and answers
-    // 503.
+    // PMC0000009 has no fixture, so the fake Europe PMC answers 503.
     const fake = fakeDeps({
       gold: { goldB: goldB([...LABELLED.slice(0, 1), "PMC0000009"]) },
     });
