@@ -330,10 +330,10 @@ describe("rendering the page", () => {
       expect(shown("<I>Upper</I> case")).toBe("<i>Upper</i> case");
     });
 
-    it("nests the tags it shows, and closes any left open", () => {
+    it("nests the tags it shows, and drops any left without its pair, as plainTitle does (#639)", () => {
       expect(shown("<i>a <sup>b</sup> c</i>")).toBe("<i>a <sup>b</sup> c</i>");
-      expect(shown("<i>open <b>both")).toBe("<i>open <b>both</b></i>");
-      expect(shown("<i>a <b>b</i> c</b>")).toBe("<i>a <b>b</b></i> c");
+      expect(shown("<i>open <b>both")).toBe("open both");
+      expect(shown("<i>a <b>b</i> c</b>")).toBe("a <b>b c</b>");
     });
 
     it("drops a closing tag with nothing open, rather than show it", () => {

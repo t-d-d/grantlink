@@ -2,6 +2,7 @@ import { shownScore } from "../../evals/floors.ts";
 import { verdict } from "../../evals/report.ts";
 import type { Found } from "./found.ts";
 import type { Release } from "./release.ts";
+import { paired, titleParts } from "../title.ts";
 
 // Builds the page from the template in site/index.html and what a run
 // found. The findings take the place of the not-yet-run notice, between
@@ -26,40 +27,12 @@ type Reference = Found["papers"][number]["references"][number];
 // Europe PMC's titles may carry a little inline markup, such as the
 // <sup>18</sup> of [18F] (#606). Those few tags are shown as formatting,
 // when they carry no attribute, and everything else in a title is escaped.
-// A tag is shown only inside its pair: one left open is closed at the end of
-// the title, and a closing tag with nothing open is dropped, so a title's
-// markup never reaches past the title.
-const INLINE = /<(\/?)(sup|sub|i|b)>/giu;
-
-const titleHtml = (title: string) => {
-  const open: string[] = [];
-  let html = "";
-  let from = 0;
-  for (const match of title.matchAll(INLINE)) {
-    html += escape(title.slice(from, match.index));
-    from = match.index + match[0].length;
-    const tag = (match[2] ?? "").toLowerCase();
-    if (match[1] === "") {
-      open.push(tag);
-      html += `<${tag}>`;
-    } else if (open.includes(tag)) {
-      // Closing an outer tag closes any opened inside it first.
-      let closed: string | undefined;
-      while ((closed = open.pop()) !== undefined) {
-        html += `</${closed}>`;
-        if (closed === tag) break;
-      }
-    }
-  }
-  html += escape(title.slice(from));
-  return (
-    html +
-    open
-      .reverse()
-      .map((tag) => `</${tag}>`)
-      .join("")
-  );
-};
+// src/title.ts reads the tags and pairs them, so a title's markup never
+// reaches past the title (#639).
+const titleHtml = (title: string) =>
+  paired(titleParts(title))
+    .map((part) => ("tag" in part ? part.tag : escape(part.text)))
+    .join("");
 
 const number = (n: number) => n.toLocaleString("en-GB");
 
