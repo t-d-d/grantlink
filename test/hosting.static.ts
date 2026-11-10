@@ -52,7 +52,8 @@ describe("fitness: data stays in London (hosting.md)", () => {
 // so serverless.yml may hold neither (#142). An inline entry may only add
 // resources and outputs, and may use only the cf and env variables (#166).
 // The deploy reads the stack's outputs, so an inline entry may not replace
-// one a template declares (#243).
+// one a template declares (#243), nor a resource or an output an earlier
+// inline entry declares (#261).
 describe("serverless.yml merges only what the static checks read", () => {
   it("lists the two templates, then only parameters, new inline resources and outputs", () => {
     expect(
