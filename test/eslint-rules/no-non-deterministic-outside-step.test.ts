@@ -46,6 +46,21 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           name: "parses a fixed date",
           code: `const since = new Date("2020-01-01");`,
         },
+        {
+          name: "calls random on a parameter that shadows Math",
+          code: `function f(Math: Rng) { return Math.random(); }`,
+        },
+        {
+          name: "calls now on, and constructs, a local that shadows Date",
+          code: `class Date { static now() { return 0; } }
+          const at = Date.now();
+          const today = new Date();`,
+        },
+        {
+          name: "draws from a local that shadows crypto",
+          code: `const crypto = fixedSource();
+          const id = crypto.randomUUID();`,
+        },
       ],
       invalid: [
         {
@@ -101,7 +116,63 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
         {
           name: "passes a random source by reference",
           code: `const pick = items.sort(Math.random);`,
-          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random" },
+            },
+          ],
+        },
+        {
+          name: "calls the clock plainly, which reports a call",
+          code: `const at = Date.now();`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+            },
+          ],
+        },
+        {
+          name: "calls the clock through a non-null assertion, a type assertion and the comma operator",
+          code: `const a = Date.now!();
+          const b = (Date.now as any)();
+          const c = (<any>Math.random)();
+          const d = (0, crypto.randomUUID)();
+          const e = Date.now?.();`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto.randomUUID()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+            },
+          ],
+        },
+        {
+          name: "reads the global Math beside a function whose parameter shadows it",
+          code: `function f(Math: Rng) { return Math.random(); }
+          const n = Math.random();`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
         },
       ],
     },

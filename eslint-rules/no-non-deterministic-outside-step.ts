@@ -1,6 +1,12 @@
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import type { TSESTree } from "@typescript-eslint/utils";
-import { createRule, insideCheckpointedCallback } from "./create-rule.ts";
+import type { TSESLint } from "@typescript-eslint/utils";
+import {
+  createRule,
+  insideCheckpointedCallback,
+  lookup,
+  unwrapped,
+} from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
 //
@@ -34,6 +40,31 @@ function memberOp(node: TSESTree.MemberExpression): string | undefined {
     : undefined;
 }
 
+// True when the identifier names something the file declares, such as a
+// parameter or a class called `Math`, rather than the global. A global the
+// config declares has no definition in the file.
+function declaredLocally(
+  identifier: TSESTree.Identifier,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): boolean {
+  const variable = lookup(identifier.name, sourceCode.getScope(identifier));
+  return (variable?.defs.length ?? 0) > 0;
+}
+
+// True when the node is the function a call calls, read through the
+// wrappers unwrapped takes off, so `Date.now!()`, `(Date.now as F)()` and
+// `(0, Date.now)()` are each a call.
+function calledThrough(node: TSESTree.Node): boolean {
+  let outer = node;
+  while (outer.parent !== undefined && unwrapped(outer.parent) === node) {
+    outer = outer.parent;
+  }
+  return (
+    outer.parent?.type === AST_NODE_TYPES.CallExpression &&
+    outer.parent.callee === outer
+  );
+}
+
 export const noNonDeterministicOutsideStep = createRule({
   name: "no-non-deterministic-outside-step",
   meta: {
@@ -63,20 +94,25 @@ export const noNonDeterministicOutsideStep = createRule({
         if (
           node.callee.type === AST_NODE_TYPES.Identifier &&
           node.callee.name === "Date" &&
-          node.arguments.length === 0
+          node.arguments.length === 0 &&
+          !declaredLocally(node.callee, context.sourceCode)
         ) {
           report(node, "new Date()");
         }
       },
       // A call reports through its callee, so `Date.now()` and a bare
-      // `Math.random` passed as a value each report once.
+      // `Math.random` passed as a value each report once. A local that
+      // shadows the global, such as a parameter named `Math`, is not read.
       MemberExpression(node) {
         const op = memberOp(node);
         if (op === undefined) return;
-        const called =
-          node.parent.type === AST_NODE_TYPES.CallExpression &&
-          node.parent.callee === node;
-        report(node, called ? `${op}()` : op);
+        if (
+          node.object.type === AST_NODE_TYPES.Identifier &&
+          declaredLocally(node.object, context.sourceCode)
+        ) {
+          return;
+        }
+        report(node, calledThrough(node) ? `${op}()` : op);
       },
     };
   },
