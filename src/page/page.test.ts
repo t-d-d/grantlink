@@ -290,6 +290,14 @@ describe("rendering the page", () => {
     );
   });
 
+  it("counts the papers as a gap in linking, not a failure (#588)", () => {
+    const html = renderFound(summarise(rows, run));
+    expect(html).toContain(
+      "papers that name Cancer Research UK as a funder but are not yet linked to one of its grants in Europe PMC",
+    );
+    expect(html).not.toContain("linked to none of its grants");
+  });
+
   it("says what each reference format means, including a bare number", () => {
     const html = renderFound(summarise(rows, run));
     expect(html).toContain("Cn/An is the older");
