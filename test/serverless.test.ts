@@ -5,6 +5,7 @@ import {
   mergeKeysIn,
   mergeOver,
   strayVariablesIn,
+  templateParameterFields,
   unreadResources,
 } from "./serverless.ts";
 
@@ -293,6 +294,19 @@ describe("inline resources that change what a template, osls or an earlier inlin
         "entry 3 changes the parameter CertificateArn, which a template declares",
       ],
     );
+  });
+
+  it("reads a template parameter's fields as osls merges the templates, so a Default an earlier template sets counts (#322)", () => {
+    expect(
+      templateParameterFields([
+        { Parameters: { DomainName: { Type: "String", Default: "a" } } },
+        { Parameters: { DomainName: { Description: "d" }, Other: {} } },
+        {},
+      ]),
+    ).toEqual({
+      DomainName: ["Type", "Default", "Description"],
+      Other: [],
+    });
   });
 
   it("passes a resource of its own, such as FirstRunRole", () => {

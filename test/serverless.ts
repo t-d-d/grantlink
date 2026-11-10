@@ -61,6 +61,24 @@ export interface DeclaredElsewhere {
   functions: readonly string[];
 }
 
+// The fields of each parameter the templates declare. osls merges the
+// templates field by field, so a Default an earlier template sets still
+// counts when a later one declares the same parameter without it (#322).
+export function templateParameterFields(
+  templates: readonly { Parameters?: Record<string, unknown> }[],
+): Record<string, string[]> {
+  const merged = templates.reduce<Plain>(
+    (fields, template) => mergeOver(fields, template.Parameters ?? {}),
+    {},
+  );
+  return Object.fromEntries(
+    Object.entries(merged).map(([id, fields]) => [
+      id,
+      isPlain(fields) ? Object.keys(fields) : [],
+    ]),
+  );
+}
+
 // Each way an inline parameter changes a template's parameter beyond giving
 // it a Default it lacks. osls merges the entry over the template's
 // parameter field by field, so a Type, an AllowedValues or a second Default
@@ -322,12 +340,11 @@ export function unreadResources(
       // nothing else (#322). An earlier inline entry's parameter counts too.
       const templateParameters = Object.entries(
         isPlain(entry.Parameters) ? entry.Parameters : {},
-      ).flatMap(([id, value]): string[] => {
-        const fields = Object.hasOwn(elsewhere.parameters, id)
-          ? elsewhere.parameters[id]
-          : undefined;
-        return fields === undefined ? [] : changedFields(at, id, fields, value);
-      });
+      ).flatMap(([id, value]): string[] =>
+        Object.hasOwn(elsewhere.parameters, id)
+          ? changedFields(at, id, elsewhere.parameters[id] ?? [], value)
+          : [],
+      );
       const changedParameters = changes(
         entry.Parameters,
         [],

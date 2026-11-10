@@ -1,7 +1,7 @@
 import { parse } from "yaml";
 import { readTemplate, type Template } from "./cfn.ts";
 import { readRepoFile } from "./repo.ts";
-import { mergeOver } from "./serverless.ts";
+import { mergeOver, templateParameterFields } from "./serverless.ts";
 
 // The app stack: serverless.yml, and the CloudFormation template it takes
 // its resources from (#4, #17).
@@ -44,13 +44,7 @@ const templates = TEMPLATES.map(readTemplate);
 export const DECLARED_ELSEWHERE = {
   declared: templates.flatMap((template) => Object.keys(template.Resources)),
   outputs: templates.flatMap((template) => Object.keys(template.Outputs ?? {})),
-  parameters: Object.fromEntries(
-    templates.flatMap((template) =>
-      Object.entries(template.Parameters ?? {}).map(
-        ([id, fields]) => [id, Object.keys(fields)] as const,
-      ),
-    ),
-  ),
+  parameters: templateParameterFields(templates),
   functions: Object.keys(serverless.functions ?? {}),
 };
 
