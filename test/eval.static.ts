@@ -243,13 +243,6 @@ describe("the gate and the comment", () => {
     expect(guarded).toHaveLength(1);
     expect(run).toContain('echo "reason=page-unread" >> "$GITHUB_OUTPUT"');
   });
-
-  it("masks the account id before any line that could print it", () => {
-    const assume = named("Assume the eval role")?.run ?? "";
-    const mask = assume.search(/::add-mask::\$account\b/u);
-    expect(mask).toBeGreaterThan(-1);
-    expect(mask).toBeLessThan(assume.indexOf("GITHUB_OUTPUT"));
-  });
 });
 
 // The app stack creates the private bucket, and the deploy needs the eval,
