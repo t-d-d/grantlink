@@ -46,7 +46,7 @@ export type NoLive = z.infer<typeof noLive>;
 
 const NO_LIVE: Record<NoLive | OlderFormat, string> = {
   "older-format":
-    "The live release's report is in a format this pull request's code cannot read, most likely an older one, so there is nothing to compare with.",
+    "The live release's report is in a format this pull request's code cannot read, so there is nothing to compare with. The eval job's log says why.",
   "no-deploy":
     "No deploy of main has run yet, so there is nothing to compare with.",
   "page-unread":

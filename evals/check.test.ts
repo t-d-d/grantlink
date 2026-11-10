@@ -222,6 +222,9 @@ describe("the pull request's comment", () => {
     expect(text).toContain(
       "The live release's report is in a format this pull request's code cannot read",
     );
+    // Newer code can file a report this code cannot read too, so the
+    // reason does not guess which it is (#186).
+    expect(text).not.toMatch(/older/i);
   });
 
   it("reads the run and the scores from a live report this code can read", () => {
