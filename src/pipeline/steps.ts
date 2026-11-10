@@ -110,6 +110,24 @@ export function logGoldSearchEnded(
   });
 }
 
+// How many gold set B papers the snapshot kept with no funding text or
+// awards although their label lists references, and which. The snapshot
+// keeps them, so the eval scores each as a miss, but empty sections for
+// such a paper more likely mean the cutter misread its full text (#405).
+// The line carries ids and a count only (docs/constraints/personal-data.md).
+export function logGoldBEmpty(
+  runId: string,
+  snapshotId: string,
+  pmcids: readonly string[],
+): void {
+  logger.info("snapshot-b-empty", {
+    runId,
+    snapshotId,
+    count: pmcids.length,
+    pmcids: pmcids.join(","),
+  });
+}
+
 // Why a snapshot failed, as one of a fixed set of reasons. A log line
 // carries ids and counts (docs/constraints/personal-data.md), so the line
 // logs the reason, never the message the snapshot threw, which a store's or

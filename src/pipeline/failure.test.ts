@@ -59,9 +59,9 @@ describe("readOrFailed", () => {
       { why: "waiting" },
     ],
     [
-      "a reply whose body timed out as it was read",
+      "a timeout that is not Europe PMC's, such as the table's, as a fault",
       new DOMException("The operation timed out.", "TimeoutError"),
-      { why: "timeout" },
+      { why: "code" },
     ],
     ["a fault in the code", new Error("the table refused"), { why: "code" }],
   ])(

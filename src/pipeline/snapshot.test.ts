@@ -107,11 +107,18 @@ describe("taking one gold paper", () => {
         sha256: expect.any(String) as string,
         grants: [],
       },
+      empty: true,
     });
     expect(JSON.parse(stored.get("PMC11") ?? "null")).toEqual({
       pmcid: "PMC11",
       text: [],
       awards: [],
     });
+  });
+
+  it("says a gold set B paper with funding text is not empty (#405)", async () => {
+    const { deps } = paperDeps([]);
+    const taken = await snapshotPaper(deps, "PMC11", "B");
+    expect(taken).toMatchObject({ kept: true, empty: false });
   });
 });

@@ -1,4 +1,14 @@
-import { posix, relative, resolve, sep } from "node:path";
+import { realpathSync } from "node:fs";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  posix,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AST_NODE_TYPES,
@@ -26,20 +36,27 @@ export const DURABLE_METHODS = new Set([
   "createCallback",
 ]);
 
-// A method call `<receiver>.<name>(...)` whose name is in the set.
-export function isMethodCallIn(
+// A method call `<receiver>.<name>(...)` whose name is in the set, read
+// through the wrappers unwrapped takes off, on the call and on its callee:
+// `ctx?.step(...)`, `ctx.step!(...)`, `(ctx.step as F)(...)` and
+// `(ctx.step(...) as Promise<T>)` are all a step. It gives the member its
+// callee reads, or null for anything else.
+export function methodCallIn(
   node: TSESTree.Node,
   names: ReadonlySet<string>,
-): node is TSESTree.CallExpression & {
-  callee: TSESTree.MemberExpression;
-} {
-  return (
-    node.type === AST_NODE_TYPES.CallExpression &&
-    node.callee.type === AST_NODE_TYPES.MemberExpression &&
-    !node.callee.computed &&
-    node.callee.property.type === AST_NODE_TYPES.Identifier &&
-    names.has(node.callee.property.name)
-  );
+): TSESTree.MemberExpression | null {
+  const call = unwrapped(node);
+  if (call.type !== AST_NODE_TYPES.CallExpression) return null;
+  const callee = unwrapped(call.callee);
+  if (
+    callee.type !== AST_NODE_TYPES.MemberExpression ||
+    callee.computed ||
+    callee.property.type !== AST_NODE_TYPES.Identifier ||
+    !names.has(callee.property.name)
+  ) {
+    return null;
+  }
+  return callee;
 }
 
 // The operations that checkpoint their callback as a unit: a step, the
@@ -82,32 +99,63 @@ export const STEP_HELPERS: readonly StepHelper[] = [
 // The step helper a call calls, if its callee resolves to one: a named
 // import `<name>(...)`, or a namespace import `<ns>.<name>(...)` or
 // `<ns>["<name>"](...)`, either one reached through a local alias that is
-// never assigned again (importOf). A local function, an import from another
-// module or a computed key that is not a constant string is not one. A
-// re-export would hide the helper's module, so no-step-helper-re-export
-// refuses one.
+// never assigned again (importOf). It looks through type assertions,
+// non-null assertions, type arguments and optional chaining (unwrapped), on
+// the call, the callee and the namespace alike. A local function, an import
+// from another module or a computed key that is not a constant string is
+// not one. A re-export would hide the helper's module, so
+// no-step-helper-re-export refuses one.
 export function stepHelperOf(
   node: TSESTree.Node,
   resolver: Resolver,
 ): StepHelper | null {
-  if (node.type !== AST_NODE_TYPES.CallExpression) return null;
-  const { callee } = node;
-  if (callee.type === AST_NODE_TYPES.Identifier) {
-    const binding = importOf(callee, resolver);
-    if (typeof binding?.name !== "string") return null;
-    return helperNamed(binding.module, binding.name);
+  const call = unwrapped(node);
+  if (call.type !== AST_NODE_TYPES.CallExpression) return null;
+  const binding = bindingOf(call.callee, resolver);
+  if (typeof binding?.name !== "string") return null;
+  return helperNamed(binding.module, binding.name);
+}
+
+// What an expression reads from a relative module, through the wrappers
+// unwrapped takes off: an identifier's import (importOf), or a name read
+// from a namespace import `<ns>.<name>` or `<ns>["<name>"]`. Null for
+// anything else.
+export function bindingOf(
+  node: TSESTree.Node,
+  resolver: Resolver,
+  seen: ReadonlySet<TSESLint.Scope.Variable> = new Set(),
+): { module: string; name: string | null } | null {
+  const value = unwrapped(node);
+  if (value.type === AST_NODE_TYPES.Identifier) {
+    return importOf(value, resolver, seen);
   }
-  if (
-    callee.type === AST_NODE_TYPES.MemberExpression &&
-    callee.object.type === AST_NODE_TYPES.Identifier
-  ) {
-    const name = memberName(callee);
-    if (name === null) return null;
-    const binding = importOf(callee.object, resolver);
-    if (binding?.name !== null) return null;
-    return helperNamed(binding.module, name);
+  if (value.type !== AST_NODE_TYPES.MemberExpression) return null;
+  const object = unwrapped(value.object);
+  const name = memberName(value);
+  if (object.type !== AST_NODE_TYPES.Identifier || name === null) return null;
+  return memberOf(importOf(object, resolver, seen), name);
+}
+
+// The expression a TypeScript wrapper or an optional chain holds, with
+// every such layer taken off: `x as T`, `<T>x`, `x satisfies T`, `x!`,
+// `x<T>` and the chain around `a?.b` or `a?.()`. None of them changes which
+// function a name holds, so the rules read through them.
+export function unwrapped(node: TSESTree.Node): TSESTree.Node {
+  let current = node;
+  for (;;) {
+    switch (current.type) {
+      case AST_NODE_TYPES.TSAsExpression:
+      case AST_NODE_TYPES.TSTypeAssertion:
+      case AST_NODE_TYPES.TSSatisfiesExpression:
+      case AST_NODE_TYPES.TSNonNullExpression:
+      case AST_NODE_TYPES.TSInstantiationExpression:
+      case AST_NODE_TYPES.ChainExpression:
+        current = current.expression;
+        break;
+      default:
+        return current;
+    }
   }
-  return null;
 }
 
 // The name a member expression reads: `a.b`, `a["b"]` or a template key
@@ -178,27 +226,18 @@ function reassigned(variable: TSESLint.Scope.Variable): boolean {
 
 // What a declarator binds `name` to, when it aliases an import: the whole
 // of another identifier, a name read from a namespace import, or a name
-// destructured from one at the top of an object pattern.
+// destructured from one at the top of an object pattern. It reads through
+// the wrappers unwrapped takes off.
 function aliasOf(
   declarator: TSESTree.VariableDeclarator,
   name: TSESTree.Identifier,
   resolver: Resolver,
   seen: ReadonlySet<TSESLint.Scope.Variable>,
 ): { module: string; name: string | null } | null {
-  const { id, init } = declarator;
-  if (init === null) return null;
-  if (id === name) {
-    if (init.type === AST_NODE_TYPES.Identifier) {
-      return importOf(init, resolver, seen);
-    }
-    if (
-      init.type !== AST_NODE_TYPES.MemberExpression ||
-      init.object.type !== AST_NODE_TYPES.Identifier
-    ) {
-      return null;
-    }
-    return memberOf(importOf(init.object, resolver, seen), memberName(init));
-  }
+  const { id } = declarator;
+  if (declarator.init === null) return null;
+  if (id === name) return bindingOf(declarator.init, resolver, seen);
+  const init = unwrapped(declarator.init);
   if (
     id.type !== AST_NODE_TYPES.ObjectPattern ||
     init.type !== AST_NODE_TYPES.Identifier
@@ -291,8 +330,8 @@ export function insideCheckpointedCallback(
     return (
       (fn.type === AST_NODE_TYPES.ArrowFunctionExpression ||
         fn.type === AST_NODE_TYPES.FunctionExpression) &&
-      call !== undefined &&
-      ((isMethodCallIn(call, CHECKPOINTS_CALLBACK) &&
+      call?.type === AST_NODE_TYPES.CallExpression &&
+      ((methodCallIn(call, CHECKPOINTS_CALLBACK) !== null &&
         call.arguments.includes(fn)) ||
         isStepHelperCallback(call, fn, resolver))
     );
@@ -313,14 +352,39 @@ export function lookup(
 }
 
 // The repo's root: the directory that holds eslint.config.js and this
-// folder of rules.
+// folder of rules. Node takes it from the rules' real path.
 const root = fileURLToPath(new URL("..", import.meta.url));
 
 // The file's path from the repo's root, with forward slashes, wherever
 // ESLint runs. A relative filename is relative to the directory ESLint runs
-// in, so it is resolved from there first.
+// in, so it is resolved from there first. ESLint gives the path the editor
+// or shell used, which may reach the repo through a symlink (#402). When
+// that path falls outside the root, both are compared again as real paths.
+// Only then does it read the disk, so a file named from the root costs
+// nothing, and the last answer is kept because the rules ask for the same
+// file many times.
+let last: { filename: string; cwd: string; path: string } | undefined;
 export function repoPath(context: { filename: string; cwd: string }): string {
-  return relative(root, resolve(context.cwd, context.filename))
-    .split(sep)
-    .join("/");
+  const { filename, cwd } = context;
+  if (last?.filename !== filename || last.cwd !== cwd) {
+    const file = resolve(cwd, filename);
+    let path = relative(root, file);
+    if (path.startsWith("..") || isAbsolute(path)) {
+      path = relative(realPath(root), realPath(file));
+    }
+    last = { filename, cwd, path: path.split(sep).join("/") };
+  }
+  return last.path;
+}
+
+// An absolute path with every symlink resolved. An editor lints a buffer
+// that may not be saved yet, so a file or folder that is not on disk keeps
+// its name under its parent's real path.
+function realPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(realPath(parent), basename(path));
+  }
 }

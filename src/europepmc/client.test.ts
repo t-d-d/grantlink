@@ -39,6 +39,34 @@ function harness(
 
 const ok = (body = "<article/>") => new Response(body, { status: 200 });
 
+// A reply whose headers arrive but whose body fails part way, as when the
+// request times out or the connection drops while it is read.
+const brokenOff = (error: Error) =>
+  new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("<arti"));
+      },
+      pull(controller) {
+        controller.error(error);
+      },
+    }),
+    { status: 200 },
+  );
+// A reply whose body has failed before anything reads it, as when the
+// connection drops just after the headers arrive.
+const failedBody = (status: number) =>
+  new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error("connection reset"));
+      },
+    }),
+    { status },
+  );
+const timedOut = () =>
+  new DOMException("The operation timed out.", "TimeoutError");
+
 describe("fitness: requests are paced (europe-pmc.md)", () => {
   it("leaves at least half a second between requests, about 2 a second", async () => {
     const { client, requests } = harness(() => ok());
@@ -156,12 +184,84 @@ describe("fitness: requests back off (europe-pmc.md)", () => {
     expect(requests).toHaveLength(2);
   });
 
+  it("retries a reply whose body times out as it is read (#389)", async () => {
+    const { client, requests } = harness((_, call) =>
+      call === 0 ? brokenOff(timedOut()) : ok(),
+    );
+    await expect(client.fullText("PMC1")).resolves.toBe("<article/>");
+    expect(requests).toHaveLength(2);
+  });
+
+  it("retries a reply whose body breaks off, for a search too (#389)", async () => {
+    const { client, requests } = harness((_, call) =>
+      call === 0
+        ? brokenOff(new TypeError("terminated"))
+        : Response.json({ hitCount: 0, resultList: { result: [] } }),
+    );
+    await expect(client.search("*")).resolves.toMatchObject({ hitCount: 0 });
+    expect(requests).toHaveLength(2);
+  });
+
+  it("waits before it asks again for a body that broke off (#389)", async () => {
+    const { client, requests } = harness((_, call) =>
+      call === 0 ? brokenOff(new TypeError("terminated")) : ok(),
+    );
+    await client.fullText("PMC1");
+    expect(
+      (requests[1]?.at ?? 0) - (requests[0]?.at ?? 0),
+    ).toBeGreaterThanOrEqual(2_000);
+  });
+
+  it("does not retry a reply it reads whole but cannot parse", async () => {
+    const { client, requests } = harness(() => ok("{ not json"));
+    await expect(client.search("*")).rejects.toThrow(SyntaxError);
+    expect(requests).toHaveLength(1);
+  });
+
   it("does not retry a paper Europe PMC has no full text for", async () => {
     const { client, requests } = harness(
       () => new Response("", { status: 404 }),
     );
     await expect(client.fullText("PMC1")).rejects.toThrow(/404/u);
     expect(requests).toHaveLength(1);
+  });
+
+  it("still tries again after a 503 whose body has broken off (#426)", async () => {
+    const { client, requests } = harness((_url, call) =>
+      call === 0 ? failedBody(503) : ok(),
+    );
+    await expect(client.fullText("PMC1")).resolves.toBe("<article/>");
+    expect(requests).toHaveLength(2);
+  });
+});
+
+describe("releasing the body of a reply it does not read", () => {
+  it.each([400, 404, 410])(
+    "cancels the body of a %i reply it does not retry, so its connection goes back to the pool (#426)",
+    async (status) => {
+      let cancelled = false;
+      const { client } = harness(
+        () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              cancel() {
+                cancelled = true;
+              },
+            }),
+            { status },
+          ),
+      );
+      await expect(client.fullText("PMC1")).rejects.toThrow(EuropePmcError);
+      expect(cancelled).toBe(true);
+    },
+  );
+
+  it("still says what Europe PMC answered when the body it cancels has broken off (#426)", async () => {
+    const { client } = harness(() => failedBody(404));
+    await expect(client.fullText("PMC1")).rejects.toMatchObject({
+      name: "EuropePmcError",
+      last: 404,
+    });
   });
 });
 
@@ -531,6 +631,21 @@ describe("what a failed request leaves", () => {
     });
     const error = await client.fullText("PMC1").catch((e: unknown) => e);
     expect(error).toMatchObject({ last: "timeout" });
+  });
+
+  it("says the last request timed out when a body times out on every try (#389)", async () => {
+    const { client } = harness(() => brokenOff(timedOut()));
+    const error = await client.fullText("PMC1").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(EuropePmcError);
+    expect(error).toMatchObject({ last: "timeout" });
+    expect(client.sent()).toBe(5);
+  });
+
+  it("says the last request could not connect when a body breaks off on every try (#389)", async () => {
+    const { client } = harness(() => brokenOff(new TypeError("terminated")));
+    const error = await client.fullText("PMC1").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(EuropePmcError);
+    expect(error).toMatchObject({ last: "connection" });
   });
 
   it("says nothing was answered when a wait still owed stops the request", async () => {
