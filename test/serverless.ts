@@ -187,22 +187,39 @@ export function strayVariablesIn(value: unknown): string[] {
   return variablesIn(value, []);
 }
 
-// Each YAML merge key `<<` in a parsed value, with where it sits. osls
-// reads serverless.yml and the templates with js-yaml, which applies a
-// merge, while the static checks parse with the yaml package, which keeps
-// `<<` as an ordinary key, so a resource whose Type came from a merge would
-// pass them untyped. The app uses none, so the gate refuses any (#242).
-export function mergeKeysIn(value: unknown, path: string[] = []): string[] {
+// Each YAML merge key in a parsed value, with where it sits. osls reads
+// serverless.yml and the templates with js-yaml, which applies a merge,
+// while the static checks parse with the yaml package, which by default
+// keeps a plain `<<` as an ordinary key and reads a `!!merge` tag on an
+// empty key as the key "". Either way a resource whose Type came from a
+// merge would pass them untyped. The app uses neither, so the gate refuses
+// both (#242). An alias may hold itself, so the walk stops at a value it is
+// already inside.
+function mergeKeys(
+  value: unknown,
+  path: string[],
+  inside: ReadonlySet<unknown>,
+): string[] {
+  if (inside.has(value)) return [];
+  const within = new Set(inside).add(value);
   if (Array.isArray(value)) {
     return value.flatMap((item, index) =>
-      mergeKeysIn(item, [...path, String(index)]),
+      mergeKeys(item, [...path, String(index)], within),
     );
   }
   if (!isPlain(value)) return [];
+  const where = path.join(".") || "the top";
   return Object.entries(value).flatMap(([key, item]) => [
-    ...(key === "<<" ? [`a merge key at ${path.join(".") || "the top"}`] : []),
-    ...mergeKeysIn(item, [...path, key]),
+    ...(key === "<<" ? [`a merge key at ${where}`] : []),
+    ...(key === ""
+      ? [`an empty key, which osls may read as a merge, at ${where}`]
+      : []),
+    ...mergeKeys(item, [...path, key], within),
   ]);
+}
+
+export function mergeKeysIn(value: unknown): string[] {
+  return mergeKeys(value, [], new Set());
 }
 
 // Each entry of serverless.yml's `resources` that the static checks would

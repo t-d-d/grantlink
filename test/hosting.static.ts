@@ -71,7 +71,7 @@ describe("serverless.yml merges only what the static checks read", () => {
   });
 
   // osls applies a YAML merge key, which the static checks read as an
-  // ordinary key, so neither file may hold one (#242).
+  // ordinary key, so none of these files may hold one (#242).
   it("finds no merge key in serverless.yml", () => {
     expect(mergeKeysIn(serverless)).toEqual([]);
   });

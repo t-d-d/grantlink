@@ -350,6 +350,21 @@ describe("YAML merge keys, which osls applies and the static checks do not (#242
     ]);
   });
 
+  // js-yaml merges a `!!merge` tag on an empty key, which the yaml package
+  // reads as the key "".
+  it("finds a merge tag on an empty key", () => {
+    const tagged = "Base: &b { Type: T }\nR:\n  !!merge : *b\n";
+    expect(mergeKeysIn(parse(tagged, { logLevel: "error" }))).toEqual([
+      "an empty key, which osls may read as a merge, at R",
+    ]);
+  });
+
+  it("stops at an alias that holds itself", () => {
+    expect(mergeKeysIn(parse("a: &x\n  b: *x\n  <<: {}\n"))).toEqual([
+      "a merge key at a",
+    ]);
+  });
+
   it("finds nothing in YAML without one", () => {
     expect(
       mergeKeysIn(parse("Resources:\n  R: { Type: T, Properties: {} }")),
