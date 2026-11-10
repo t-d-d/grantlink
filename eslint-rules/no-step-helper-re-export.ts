@@ -9,6 +9,7 @@ import {
   memberName,
   moduleOf,
   repoPath,
+  unwrapped,
   withoutExtension,
 } from "./create-rule.ts";
 
@@ -45,8 +46,10 @@ export const noStepHelperReExport = createRule({
     // The module whose helper an exported value passes on under a name of
     // its own choosing, or null. That is an imported helper, a namespace
     // import of a module that holds one, a helper read from a namespace
-    // import, or this module's own helper.
-    const passedOn = (value: TSESTree.Node): string | null => {
+    // import, or this module's own helper, read through any wrapper that
+    // unwrapped takes off.
+    const passedOn = (exported: TSESTree.Node): string | null => {
+      const value = unwrapped(exported);
       if (value.type === AST_NODE_TYPES.Identifier) {
         const binding = importOf(value, context);
         if (binding === null) {
@@ -58,12 +61,11 @@ export const noStepHelperReExport = createRule({
             : helperNamed(binding.module, binding.name) !== null;
         return passes ? binding.module : null;
       }
-      if (
-        value.type === AST_NODE_TYPES.MemberExpression &&
-        value.object.type === AST_NODE_TYPES.Identifier
-      ) {
+      if (value.type === AST_NODE_TYPES.MemberExpression) {
+        const object = unwrapped(value.object);
+        if (object.type !== AST_NODE_TYPES.Identifier) return null;
         const name = memberName(value);
-        const binding = importOf(value.object, context);
+        const binding = importOf(object, context);
         if (name === null || binding?.name !== null) return null;
         return helperNamed(binding.module, name) === null
           ? null

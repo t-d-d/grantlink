@@ -82,32 +82,56 @@ export const STEP_HELPERS: readonly StepHelper[] = [
 // The step helper a call calls, if its callee resolves to one: a named
 // import `<name>(...)`, or a namespace import `<ns>.<name>(...)` or
 // `<ns>["<name>"](...)`, either one reached through a local alias that is
-// never assigned again (importOf). A local function, an import from another
-// module or a computed key that is not a constant string is not one. A
-// re-export would hide the helper's module, so no-step-helper-re-export
-// refuses one.
+// never assigned again (importOf). It looks through type assertions,
+// non-null assertions, type arguments and optional chaining (unwrapped), on
+// the call, the callee and the namespace alike. A local function, an import
+// from another module or a computed key that is not a constant string is
+// not one. A re-export would hide the helper's module, so
+// no-step-helper-re-export refuses one.
 export function stepHelperOf(
   node: TSESTree.Node,
   resolver: Resolver,
 ): StepHelper | null {
-  if (node.type !== AST_NODE_TYPES.CallExpression) return null;
-  const { callee } = node;
+  const call = unwrapped(node);
+  if (call.type !== AST_NODE_TYPES.CallExpression) return null;
+  const callee = unwrapped(call.callee);
   if (callee.type === AST_NODE_TYPES.Identifier) {
     const binding = importOf(callee, resolver);
     if (typeof binding?.name !== "string") return null;
     return helperNamed(binding.module, binding.name);
   }
-  if (
-    callee.type === AST_NODE_TYPES.MemberExpression &&
-    callee.object.type === AST_NODE_TYPES.Identifier
-  ) {
+  if (callee.type === AST_NODE_TYPES.MemberExpression) {
+    const object = unwrapped(callee.object);
+    if (object.type !== AST_NODE_TYPES.Identifier) return null;
     const name = memberName(callee);
     if (name === null) return null;
-    const binding = importOf(callee.object, resolver);
+    const binding = importOf(object, resolver);
     if (binding?.name !== null) return null;
     return helperNamed(binding.module, name);
   }
   return null;
+}
+
+// The expression a TypeScript wrapper or an optional chain holds, with
+// every such layer taken off: `x as T`, `<T>x`, `x satisfies T`, `x!`,
+// `x<T>` and the chain around `a?.b` or `a?.()`. None of them changes which
+// function a name holds, so the rules read through them.
+export function unwrapped(node: TSESTree.Node): TSESTree.Node {
+  let current = node;
+  for (;;) {
+    switch (current.type) {
+      case AST_NODE_TYPES.TSAsExpression:
+      case AST_NODE_TYPES.TSTypeAssertion:
+      case AST_NODE_TYPES.TSSatisfiesExpression:
+      case AST_NODE_TYPES.TSNonNullExpression:
+      case AST_NODE_TYPES.TSInstantiationExpression:
+      case AST_NODE_TYPES.ChainExpression:
+        current = current.expression;
+        break;
+      default:
+        return current;
+    }
+  }
 }
 
 // The name a member expression reads: `a.b`, `a["b"]` or a template key
@@ -178,26 +202,25 @@ function reassigned(variable: TSESLint.Scope.Variable): boolean {
 
 // What a declarator binds `name` to, when it aliases an import: the whole
 // of another identifier, a name read from a namespace import, or a name
-// destructured from one at the top of an object pattern.
+// destructured from one at the top of an object pattern. It reads through
+// the wrappers unwrapped takes off.
 function aliasOf(
   declarator: TSESTree.VariableDeclarator,
   name: TSESTree.Identifier,
   resolver: Resolver,
   seen: ReadonlySet<TSESLint.Scope.Variable>,
 ): { module: string; name: string | null } | null {
-  const { id, init } = declarator;
-  if (init === null) return null;
+  const { id } = declarator;
+  if (declarator.init === null) return null;
+  const init = unwrapped(declarator.init);
   if (id === name) {
     if (init.type === AST_NODE_TYPES.Identifier) {
       return importOf(init, resolver, seen);
     }
-    if (
-      init.type !== AST_NODE_TYPES.MemberExpression ||
-      init.object.type !== AST_NODE_TYPES.Identifier
-    ) {
-      return null;
-    }
-    return memberOf(importOf(init.object, resolver, seen), memberName(init));
+    if (init.type !== AST_NODE_TYPES.MemberExpression) return null;
+    const object = unwrapped(init.object);
+    if (object.type !== AST_NODE_TYPES.Identifier) return null;
+    return memberOf(importOf(object, resolver, seen), memberName(init));
   }
   if (
     id.type !== AST_NODE_TYPES.ObjectPattern ||
