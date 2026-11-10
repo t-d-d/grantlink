@@ -462,10 +462,12 @@ export const isFundingNote = (element: XmlElement, parent: string): boolean =>
 // as funding by its type or title is read whole, less the notes inside it
 // and its sections titled or typed as something other than funding (#541,
 // #563). One kept for its own words is about funding only in those words,
-// so its sections, at any depth, are left out: author contributions or a
-// data statement there name people or say nothing of funding. A funding
+// so the sections it holds directly are left out: author contributions or
+// a data statement there name people or say nothing of funding. A funding
 // section among them is found by its type or title, as every funding
-// section is (#526).
+// section is (#526). A section wrapped in another element inside the note
+// is kept with the note's words, unless its title or type names something
+// other than funding, as in a marked note (#565).
 const fundingNoteParts = (element: XmlElement): XmlNode[][] =>
   element.children.flatMap((child) => {
     if (child.kind !== "element") return [];
