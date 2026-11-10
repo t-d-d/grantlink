@@ -16,8 +16,9 @@ export interface XmlElement {
   name: string;
   // Its attributes in quotes, in the order written.
   attributes: XmlAttribute[];
-  // Whether its opening tag holds anything but attributes in quotes, or its
-  // closing tag holds anything but white space.
+  // Whether its opening tag holds anything but attributes in quotes, each
+  // after white space and each named once, or its closing tag holds anything
+  // but white space.
   malformed: boolean;
   // Whether it is self-closing.
   empty: boolean;
@@ -46,37 +47,54 @@ const element = (name: string, start: number): XmlElement => ({
   children: [],
 });
 
+// An opening tag that holds only its name and its attributes in quotes, each
+// after white space, as XML has it. The parser reads past a stray / and
+// attributes with no white space between them without saying so (#354).
+const OPENING_TAG =
+  /^<[^\s/>]+(?:\s+[^\s/>"'=]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*\/?>$/u;
+
 // The XML's nodes under a root with no name, as the parser reads them. An
 // element is closed by the next closing tag of its name that is still open,
 // and that tag closes every element opened inside it too. A closing tag
 // with no element open of its name is skipped, and every element still open
 // at the end is closed there. Such an element has no closing tag of its own.
-// Text and CDATA keep their entity references as written.
-export function parseXml(xml: string): XmlElement {
+// Text and CDATA keep their entity references as written. Read in any case,
+// every tag's name is written in lower case, so a closing tag closes an
+// element whose name differs from its own only in case.
+export function parseXml(
+  xml: string,
+  { anyCase = false }: { anyCase?: boolean } = {},
+): XmlElement {
   const root = element("", 0);
   const open: XmlElement[] = [root];
   const top = (): XmlElement => open.at(-1) ?? root;
   let attributes: XmlAttribute[] = [];
-  let malformed = false;
   let cdata = false;
   let openEnd = -1;
   const parser = new Parser(
     {
       onattribute(name, value, quote) {
-        // An attribute with no value, or with one not in quotes, is not XML.
+        // An attribute with no value, or with one not in quotes, is not XML,
+        // and the tag's source says so.
         if (quote === '"' || quote === "'") attributes.push({ name, value });
-        else malformed = true;
       },
       onopentag(name) {
+        // After a processing instruction, or a closing tag with white space
+        // before its >, the parser starts the next tag one place early.
+        const tag = xml.slice(
+          xml.indexOf("<", parser.startIndex),
+          parser.endIndex + 1,
+        );
+        const names = new Set(attributes.map((found) => found.name));
         const opened = {
           ...element(name, parser.startIndex),
           attributes,
-          malformed,
+          // An attribute written twice is not XML either.
+          malformed: !OPENING_TAG.test(tag) || names.size !== attributes.length,
         };
         top().children.push(opened);
         open.push(opened);
         attributes = [];
-        malformed = false;
         openEnd = parser.endIndex;
       },
       onclosetag(_name, implied) {
@@ -122,22 +140,22 @@ export function parseXml(xml: string): XmlElement {
         top().children.push({ kind: "instruction", target, data: rest });
       },
     },
-    { xmlMode: true, decodeEntities: false },
+    { xmlMode: true, decodeEntities: false, lowerCaseTags: anyCase },
   );
   parser.end(xml);
   return root;
 }
 
-// The XML's nodes as the cutter reads them, which differ from parseXml's only
-// when tags do not balance (#263). Then which closing tag is missing cannot
-// be told, so an element the cutter reads by its name, as readByName says,
-// is read with care, and holds no element of its name: one never closed, or
-// opened inside one of its name read with care. It ends at the next opening
-// or closing tag of its name, whether that is its own or not, and one with
-// none after it is dropped, with all it holds, so a broken element never
-// takes in the rest of the paper. What it held after the tag that ends it
-// follows it in its parent instead, and an element that held that tag ends
-// there too. Any other element never closed ends where the parser ends it,
+// The XML's nodes as the cutter reads them, in any case (#354), which differ
+// from parseXml's otherwise only when tags do not balance (#263). Then which
+// closing tag is missing cannot be told, so an element the cutter reads by its
+// name, as readByName says, is read with care, and holds no element of its
+// name: one never closed, or opened inside one of its name read with care. It
+// ends at the next opening or closing tag of its name, whether that is its own
+// or not, and one with none after it is dropped, with all it holds, so a broken
+// element never takes in the rest of the paper. What it held after the tag that
+// ends it follows it in its parent instead, and an element that held that tag
+// ends there too. Any other element never closed ends where the parser ends it,
 // at its parent's closing tag, and keeps what it holds, so a broken inline
 // element or part of the article loses no words. A self-closing element is
 // empty, and is neither a boundary nor ends one (#195).
@@ -145,7 +163,7 @@ export function readXml(
   xml: string,
   readByName: (name: string) => boolean,
 ): XmlElement {
-  const root = parseXml(xml);
+  const root = parseXml(xml, { anyCase: true });
   const tags = new Map<string, number[]>();
   const careful = new Set<XmlElement>();
   const mark = (parent: XmlElement, names: ReadonlySet<string>): void => {
