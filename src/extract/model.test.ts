@@ -577,6 +577,36 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.rejected).toBe(0);
   });
 
+  it("keeps the shapes the rules read since #506, a C/A pair in capitals only", async () => {
+    // A reference that carries the funder's short name, a long Crick number,
+    // an A number of four digits and a number tied to the funder by a word.
+    // The text is made up.
+    const written = ["CRUK/12/034", "FC00123456", "A1234", "4321"];
+    const paragraph = `Cancer Research UK grant 4321 funded this, with CRUK/12/034, FC00123456 and A1234, but not c1234/a56789.`;
+    const read = findReferences({ text: [paragraph], awards: [] });
+    expect(new Set(read.map(({ format }) => format))).toEqual(
+      new Set(["CRUK-X", "FCn", "An", "n", "Cn/An"]),
+    );
+    const { fetch } = fakeOpenRouter(
+      answer(
+        [...written, "c1234/a56789"].map((asWritten) => ({
+          asWritten,
+          confidence: 0.9,
+        })),
+      ),
+    );
+    const result = await proposeReferences([paragraph], {
+      model: haiku,
+      key: "k",
+      fetch,
+    });
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(written);
+    expect(result.status === "read" && result.rejected).toBe(1);
+  });
+
   it("rejects a word of capitals before a separator when it is not a code's place", async () => {
     // A name in capitals is not a code unless it starts the reference, and
     // a suffix follows only a code and its hyphen. The text is made up.
@@ -638,8 +668,8 @@ describe("fitness: no invented references (model-calls.md)", () => {
   });
 
   it("rejects a number that is not a bare number's length or suffix (#492)", async () => {
-    // The text is made up.
-    const written = ["2", "1234", "12345678", "123456-1", "123456/01"];
+    // A year is no bare number the rules read. The text is made up.
+    const written = ["2", "123", "2021", "12345678", "123456-1", "123456/01"];
     const { fetch } = fakeOpenRouter(
       answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
     );

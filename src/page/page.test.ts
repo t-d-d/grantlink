@@ -275,6 +275,10 @@ describe("rendering the page", () => {
     const html = renderFound(summarise(rows, run));
     expect(html).toContain("Cn/An is the older");
     expect(html).toContain("and n a bare award");
+    // A bare number may come from the text alone where it ties the number
+    // to the funder (#506).
+    expect(html).toContain("that the funding text ties to the funder");
+    expect(html).toContain("CRUK-X a form that");
   });
 
   it("puts the findings in place of the not-yet-run notice, and keeps the rest of the page", () => {

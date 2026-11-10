@@ -49,6 +49,141 @@ describe("the rules", () => {
     expect(found).toEqual([{ asWritten: written, normalised, format }]);
   });
 
+  // The forms gold set A still missed (#506), each made up in its shape.
+  it.each([
+    // A C/A pair with a four-digit award, and in lower case.
+    ["C1234/A5678", "C1234/A5678", "Cn/An"],
+    ["c123/a45678", "C123/A45678", "Cn/An"],
+    ["C123/a45678", "C123/A45678", "Cn/An"],
+    // A Crick number as printed, even with a digit too many (#175 rule 6).
+    ["FC0012345", "FC0012345", "FCn"],
+    ["FC00123456", "FC00123456", "FCn"],
+    // The funder's newer and prefixed forms.
+    ["CRUKDF-0123-AB", "CRUKDF-0123-AB", "CRUK-X"],
+    ["ABC-CRUK-ABCD12-AB", "ABC-CRUK-ABCD12-AB", "CRUK-X"],
+    ["CRUK/12/034", "CRUK/12/034", "CRUK-X"],
+    ["CRUK-A12345", "CRUK-A12345", "CRUK-X"],
+    // A bare number the text ties to the funder.
+    ["grant 12345", "12345", "n"],
+    ["grant no. 123456", "123456", "n"],
+    ["award number 1234", "1234", "n"],
+    ["12345", "12345", "n"],
+  ])("reads %s, new in #506, as %s", (written, normalised, format) => {
+    const found = findReferences(
+      sections(`This work was funded by Cancer Research UK (${written}).`),
+    );
+    expect(found).toEqual([
+      {
+        asWritten: written.replace(/^(?:grant|award)\D*/u, ""),
+        normalised,
+        format,
+      },
+    ]);
+  });
+
+  it("reads an A number with four digits in a sentence that names the funder", () => {
+    expect(
+      findReferences(sections("CRUK core funding to the lab (A1234).")),
+    ).toEqual([{ asWritten: "A1234", normalised: "A1234", format: "An" }]);
+  });
+
+  it("reads a bare number after a committee the funder names", () => {
+    expect(
+      findReferences(
+        sections(
+          "Cancer Research UK (CRUK) Example and Sample Committee (Award No. 12345).",
+        ),
+      ),
+    ).toEqual([{ asWritten: "12345", normalised: "12345", format: "n" }]);
+  });
+
+  it("reads a Crick number after no. in the funder's brackets", () => {
+    expect(
+      findReferences(
+        sections(
+          "The Example Institute receives its core funding from CRUK (no. FC001234), and others.",
+        ),
+      ),
+    ).toEqual([
+      { asWritten: "FC001234", normalised: "FC001234", format: "FCn" },
+    ]);
+  });
+
+  // A malformed pair is for the model (#177), and its first A number is no
+  // grant of its own.
+  it("leaves the first half of a pair of A numbers", () => {
+    expect(
+      findReferences(sections("Cancer Research UK grant A1234/A56789.")),
+    ).toEqual([{ asWritten: "A56789", normalised: "A56789", format: "An" }]);
+  });
+
+  it("reads both halves of a pair of five-digit A numbers", () => {
+    expect(
+      findReferences(sections("Cancer Research UK grant A12345/A23456.")),
+    ).toEqual([
+      { asWritten: "A12345", normalised: "A12345", format: "An" },
+      { asWritten: "A23456", normalised: "A23456", format: "An" },
+    ]);
+  });
+
+  it("leaves a word joined to CRUK that has no digit", () => {
+    expect(
+      findReferences(sections("A CRUK-funded study with CRUK/EPSRC support.")),
+    ).toEqual([]);
+  });
+
+  it("reads a C/A pair after CRUK/ as the pair alone", () => {
+    expect(findReferences(sections("Funded by CRUK/C1234/A56789."))).toEqual([
+      {
+        asWritten: "C1234/A56789",
+        normalised: "C1234/A56789",
+        format: "Cn/An",
+      },
+    ]);
+  });
+
+  it("leaves a run of words after CRUK/ when its digit lies past the reference", () => {
+    expect(
+      findReferences(
+        sections("Funded by CRUK/MRC/EPSRC/NIHR/BHF/2020 grants."),
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([
+    "Cancer Research UK grant 12345-67.",
+    "Cancer Research UK grant 12345/2.",
+    "Cancer Research UK grant 12345 / 2.",
+    "Cancer Research UK grant 1234.5.",
+  ])("leaves a bare number that is the start of a longer one: %j", (text) => {
+    expect(findReferences(sections(text))).toEqual([]);
+  });
+
+  it("lists a bare number the text ties to the funder once, beside its A number", () => {
+    expect(
+      findReferences(
+        sections("Funded by Cancer Research UK grant A12345 (ref 12345)."),
+      ),
+    ).toEqual([{ asWritten: "A12345", normalised: "A12345", format: "An" }]);
+    expect(
+      findReferences({
+        text: ["Cancer Research UK grant 12345."],
+        awards: [{ sources: ["Cancer Research UK"], ids: ["A12345"] }],
+      }),
+    ).toEqual([{ asWritten: "A12345", normalised: "A12345", format: "An" }]);
+  });
+
+  it("lists a bare number once beside a CRUK- reference that ends in it", () => {
+    expect(
+      findReferences({
+        text: ["Funded by Cancer Research UK (CRUK-12345)."],
+        awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
+      }),
+    ).toEqual([
+      { asWritten: "CRUK-12345", normalised: "CRUK-12345", format: "CRUK-X" },
+    ]);
+  });
+
   it("reads an A number in a sentence that names the funder", () => {
     expect(
       findReferences(sections("Supported by CRUK grant A28707 to the lab.")),
@@ -538,9 +673,23 @@ describe("the rules", () => {
     ]);
   });
 
-  it("leaves a bare number in the text that no award gives the funder", () => {
+  // A bare number counts from the text alone only where the text ties it to
+  // the funder (#506). These give it with no such tie.
+  it.each([
+    "Funded by Cancer Research UK. Sample 12345 was lost.",
+    "Funded by Cancer Research UK, and the Example Trust (grant 12345).",
+    "Funded by Cancer Research UK; the Example Trust gave grant 12345.",
+    "Cancer Research UK funded 12345 patients.",
+    "Funded by grant 12345 and by Cancer Research UK.",
+  ])("leaves a bare number the text does not tie to the funder: %j", (text) => {
+    expect(findReferences(sections(text))).toEqual([]);
+  });
+
+  it("leaves a year in the funder's brackets or after a grant word", () => {
     expect(
-      findReferences(sections("Funded by Cancer Research UK (grant 12345).")),
+      findReferences(
+        sections("Cancer Research UK (2020) and its grant 2021 call."),
+      ),
     ).toEqual([]);
   });
 
