@@ -405,14 +405,28 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
   });
 
   it.each([
-    ["refuses", () => reply("", 429, { "Retry-After": "300" }), true, false],
-    ["fails without a refusal", () => reply("", 503), false, true],
+    [
+      "refuses",
+      () => reply("", 429, { "Retry-After": "300" }),
+      true,
+      false,
+      "Europe PMC refused the run's search",
+    ],
+    [
+      "fails without a refusal",
+      () => reply("", 503),
+      false,
+      true,
+      "Europe PMC answered 503",
+    ],
   ] as const)(
     "logs once how many results the pages it read found and skipped when Europe PMC %s a later page of the run's search (#348)",
-    async (_how, later, refused, failed) => {
+    async (_how, later, refused, failed, why) => {
       const fake = fakeDeps({ search: laterPageFails(later) });
-      const { status } = await runWith(fake);
+      const { status, error } = await runWith(fake);
       expect(status).toBe("FAILED");
+      // The run fails with the search's own error, not the log step's.
+      expect(error).toContain(why);
       expect(logged("search-ended")).toEqual([
         expect.objectContaining({ found: 2, skipped: 1, refused, failed }),
       ]);

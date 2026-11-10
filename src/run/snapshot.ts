@@ -136,6 +136,9 @@ export async function takeSnapshot(
           async () => searchGoldA(deps, from),
         );
       } catch (error) {
+        // An error the SDK raises for itself is not a failed page, so it
+        // is thrown as it is, before any other durable operation.
+        if (!(error instanceof DurableOperationError)) throw error;
         failed = { error };
         break;
       }
