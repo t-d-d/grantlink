@@ -114,11 +114,26 @@ export function makeRun(deps: Deps) {
       const from: string = cursor;
       if (owed !== null) await ctx.wait(owed.name, { seconds: owed.seconds });
       owed = null;
-      const result = await ctx.step(
-        `search-${String(page)}`,
+      const searchStep = `search-${String(page)}`;
+      // eslint-disable-next-line grantlink/no-await-outside-step -- askEuropePmc's only await is its step
+      const searched = await askEuropePmc(
+        ctx,
+        searchStep,
+        `${searchStep}-wait`,
+        europePmcRetry,
         async () => searchPage(deps, from),
-        { retryStrategy: europePmcRetry },
       );
+      // A refused search fails the run, which publishes nothing, but only
+      // once the wait Europe PMC asked for has passed, so a run started
+      // after this one never asks it too soon (#264).
+      if ("owed" in searched) {
+        const wait = searched.owed;
+        if (wait !== null) await ctx.wait(wait.name, { seconds: wait.seconds });
+        throw new Error(
+          `Europe PMC refused the run's search, asked to wait ${String(wait?.seconds ?? 0)}s`,
+        );
+      }
+      const result = searched.read;
       // The table's own step, so a failure to write or read it is retried
       // under the store's strategy and never asks Europe PMC again.
       const todo = await ctx.step(
