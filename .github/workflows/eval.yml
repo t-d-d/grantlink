@@ -237,8 +237,10 @@ jobs:
           # All the ids first, then the first line, with no pipe: a reader
           # that stops early sends gh SIGPIPE and fails the step (#257).
           # --jq runs once per page, so it alone cannot pick the first.
+          # Only a comment this workflow's token wrote is its own: anyone can
+          # post the marker, and the token cannot edit their comment (#298).
           ids="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
-            --jq '.[] | select(.body | startswith("<!-- grantlink:eval -->")) | .id')"
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- grantlink:eval -->"))) | .id')"
           id="${ids%%$'\n'*}"
           if [ -n "$id" ]; then
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@comment.md >/dev/null
