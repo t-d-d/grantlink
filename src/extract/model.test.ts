@@ -5,6 +5,7 @@ import {
   proposeReferences,
   type Fetch,
 } from "./model.ts";
+import { findReferences } from "./rules.ts";
 
 // The model module against a fake OpenRouter: every request it would send
 // is kept, and each reply is given in turn. Nothing reaches past memory.
@@ -340,6 +341,64 @@ describe("fitness: no invented references (model-calls.md)", () => {
     );
     expect(result.status === "read" && result.references).toEqual([]);
     expect(result.status === "read" && result.rejected).toBe(2);
+  });
+
+  // The model pass draws a reference's edges as the rules do (#384). Each
+  // text is made up, names the funder, and gives A12345 once.
+  it.each([
+    [
+      "an underscore before it",
+      "Funded by Cancer Research UK (_A12345).",
+      false,
+    ],
+    [
+      "a letter outside the Basic Multilingual Plane before it",
+      "Funded by Cancer Research UK (\u{1D400}A12345).",
+      false,
+    ],
+    [
+      "a number that is not a decimal digit after it",
+      "Funded by Cancer Research UK (A12345¹).",
+      true,
+    ],
+  ])(
+    "draws a reference's edges as the rules do, with %s",
+    async (_, paragraph, kept) => {
+      const rules = findReferences({ text: [paragraph], awards: [] });
+      expect(rules.map(({ asWritten }) => asWritten)).toEqual(
+        kept ? ["A12345"] : [],
+      );
+      const { fetch } = fakeOpenRouter(
+        answer([{ asWritten: "A12345", confidence: 0.9 }]),
+      );
+      const result = await proposeReferences([paragraph], {
+        model: haiku,
+        key: "k",
+        fetch,
+      });
+      expect(
+        result.status === "read" &&
+          result.references.map(({ asWritten }) => asWritten),
+      ).toEqual(kept ? ["A12345"] : []);
+      expect(result.status === "read" && result.rejected).toBe(kept ? 0 : 1);
+    },
+  );
+
+  it("keeps a reference written with a hyphen, a slash or a backslash", async () => {
+    // Each is a character a reference may hold, and none may break the check
+    // of its edges. The text is made up.
+    const written = ["C1234-A56789", "C2345/A67890", "C3456\\A78901"];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(
+      [`Funded by Cancer Research UK (${written.join(", ")}).`],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(written);
   });
 
   it("rejects text from the paper that is not shaped as a reference, such as a name", async () => {

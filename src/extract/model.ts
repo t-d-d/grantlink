@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { funder, normalise, referenceSchema } from "./rules.ts";
+import { funder, normalise, referenceSchema, WORD } from "./rules.ts";
 
 // The model pass: reads a paper's funding text and proposes the grant
 // references the rules missed (docs/constraints/model-calls.md). This is the
@@ -166,22 +166,20 @@ function readAnswer(body: unknown): Answer | undefined {
 // the rules keep it (#269). Nothing else about the text changes.
 const plainSpaces = (text: string) => text.replace(/\s/gu, " ");
 
+// Escapes the characters a regular expression gives a meaning to. A hyphen
+// needs none outside a class, and the u flag refuses one escaped there.
+const escape = (text: string) => text.replace(/[\\^$.*+?()[\]{}|/]/gu, "\\$&");
+
 // Whether the paragraph gives the reference whole: not cut out of a longer
-// run of letters and digits, as "A5678" is out of "A56789". A combining mark
-// belongs to the letter before it, so one joined to a reference makes it part
-// of a longer word too, as the rules read it (#339, #369).
-const joined = /[\p{L}\p{M}\p{N}]/u;
+// run of letters and digits, as "A5678" is out of "A56789". Its edges are
+// drawn with the rules' own class, read a whole code point at a time, so the
+// two passes agree on combining marks, underscores, letters outside the Basic
+// Multilingual Plane and numbers that are not decimal digits (#339, #369,
+// #384).
 function givesWhole(paragraph: string, reference: string): boolean {
-  for (
-    let at = paragraph.indexOf(reference);
-    at !== -1;
-    at = paragraph.indexOf(reference, at + 1)
-  ) {
-    const before = paragraph[at - 1] ?? "";
-    const after = paragraph[at + reference.length] ?? "";
-    if (!joined.test(before) && !joined.test(after)) return true;
-  }
-  return false;
+  return new RegExp(`(?<!${WORD})${escape(reference)}(?!${WORD})`, "u").test(
+    paragraph,
+  );
 }
 
 // Keeps a reference only if the text gives it whole as written, it is made
