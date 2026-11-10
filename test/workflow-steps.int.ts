@@ -28,7 +28,7 @@ import {
 // The system commands the steps and the stubs run. The step's PATH holds
 // only these and the stubs, so a call nothing stubs fails instead of
 // reaching AWS.
-const commands = ["bash", "cat", "cut", "jq"];
+const commands = ["bash", "cat", "cut", "head", "jq"];
 const found = execFileSync("bash", ["-c", `command -v ${commands.join(" ")}`], {
   encoding: "utf8",
 })
@@ -52,18 +52,23 @@ afterEach(() => {
 
 // Runs the step in an empty directory, with the stubs and the system
 // commands above as its whole PATH, and any extra environment the step
-// reads.
+// reads. $RUNNER_TEMP is a directory outside the working tree, as on a
+// runner. A setup script runs in the working tree before the step, so a
+// case can put files there as a pull request's tree would.
 function runStep(
   run: string,
   stubs: Record<string, string> = {},
   env: Record<string, string> = {},
+  setup = "",
 ) {
   const dir = mkdtempSync(join(tmpdir(), "grantlink-step-"));
   dirs.push(dir);
   const bin = join(dir, "bin");
   const work = join(dir, "work");
+  const temp = join(dir, "temp");
   mkdirSync(bin);
   mkdirSync(work);
+  mkdirSync(temp);
   for (const path of found) symlinkSync(path, join(bin, basename(path)));
   for (const [name, body] of Object.entries(stubs)) {
     if (commands.includes(name)) throw new Error(`${name} is not a stub`);
@@ -75,7 +80,7 @@ function runStep(
   const githubEnv = join(dir, "env");
   writeFileSync(githubEnv, "");
   const step = join(dir, "step.sh");
-  writeFileSync(step, run);
+  writeFileSync(step, `${setup}\n${run}`);
   const result = spawnSync(bash, ["-e", step], {
     cwd: work,
     encoding: "utf8",
@@ -84,10 +89,12 @@ function runStep(
       PATH: bin,
       GITHUB_OUTPUT: output,
       GITHUB_ENV: githubEnv,
+      RUNNER_TEMP: temp,
       HOME: dir,
     },
   });
   return {
+    temp,
     status: result.status,
     stderr: result.stderr,
     output: readFileSync(output, "utf8"),
@@ -150,7 +157,9 @@ describe("the eval's read of the live release's report", () => {
   const curl = (body: string) => `cat <<'EOF'\n${body}\nEOF`;
   // Appended to the step, so the test can see what it left in live.json.
   const env = { RELEASE_URL: "https://example.test/release.json" };
-  const show = `\nif [ -f live.json ]; then echo "file=$(jq -c . live.json)" >> "$GITHUB_OUTPUT"; fi`;
+  // #233: the report goes outside the working tree, so a live.json in the
+  // pull request's tree is never taken for it.
+  const show = `\nif [ -f "$RUNNER_TEMP/live.json" ]; then echo "file=$(jq -c . "$RUNNER_TEMP/live.json")" >> "$GITHUB_OUTPUT"; fi`;
 
   it("takes the report from the release record, with no fingerprint, git or AWS call", () => {
     const { status, output } = runStep(
@@ -178,6 +187,74 @@ describe("the eval's read of the live release's report", () => {
       expect(output).toBe("reason=page-unread\n");
     },
   );
+});
+
+// #233: a pull request's tree can hold a live.json. The comment compares
+// with a live report only when the live step read one, and otherwise gives
+// the live step's reason. The node stub records its arguments and, like
+// check.ts, reads the live report it is given, and the gh stub finds no
+// earlier comment.
+describe("the eval's comment", () => {
+  const run = script(
+    evalWorkflow,
+    "eval",
+    "Comment with CI's scores beside the live release's",
+  );
+  const live = script(evalWorkflow, "eval", "live");
+  const stubs = {
+    node: 'echo "$*" >> "$RUNNER_TEMP/node-args"\n[ "$4" = --no-live ] || cat "$4" > /dev/null',
+    gh: ":",
+    curl: `cat <<'EOF'\n${JSON.stringify({ report: { fingerprint: "live" } })}\nEOF`,
+  };
+  const inTree = `echo '{"fingerprint":"from-the-tree"}' > live.json`;
+  const args = (temp: string) =>
+    readFileSync(join(temp, "node-args"), "utf8").trim();
+
+  it.each(["page-unread", "no-deploy"])(
+    "ignores a live.json in the tree, and gives the reason, when it is %s",
+    (reason) => {
+      const { status, temp } = runStep(
+        run,
+        stubs,
+        { PR: "1", GITHUB_REPOSITORY: "o/r", NO_LIVE: reason },
+        inTree,
+      );
+      expect(status).toBe(0);
+      expect(args(temp)).toBe(
+        `evals/check.ts comment report.json --no-live ${reason}`,
+      );
+    },
+  );
+
+  // The live step runs first, so a change to where it writes the report
+  // fails here rather than on every pull request.
+  it("compares with the report the live step wrote, not the tree's", () => {
+    const { status, temp } = runStep(
+      run,
+      stubs,
+      {
+        PR: "1",
+        GITHUB_REPOSITORY: "o/r",
+        NO_LIVE: "",
+        RELEASE_URL: "https://example.test/release.json",
+      },
+      `${inTree}\n${live}`,
+    );
+    expect(status).toBe(0);
+    expect(args(temp)).toBe(
+      `evals/check.ts comment report.json ${join(temp, "live.json")}`,
+    );
+  });
+
+  it("fails when the live step gave no reason and wrote no report", () => {
+    const { status } = runStep(
+      run,
+      stubs,
+      { PR: "1", GITHUB_REPOSITORY: "o/r", NO_LIVE: "" },
+      inTree,
+    );
+    expect(status).not.toBe(0);
+  });
 });
 
 describe("the deploy's stack outputs", () => {

@@ -197,7 +197,9 @@ jobs:
       # the step takes the report from the record (#139). If the record
       # cannot be read, is not one JSON value, or holds no report, there is
       # nothing to compare with, and the comment shows CI's scores alone
-      # (#88). The report is written to live.json only, never printed.
+      # (#88). The report is written to live.json under $RUNNER_TEMP only,
+      # never printed. It sits outside the working tree, so a live.json the
+      # pull request's tree holds is never taken for it (#233).
       - id: live
         name: Read the live release's report
         if: github.event_name == 'pull_request' && steps.cached.outputs.bucket != 'missing'
@@ -211,12 +213,14 @@ jobs:
             echo "reason=page-unread" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          printf '%s\n' "$live" > live.json
+          printf '%s\n' "$live" > "$RUNNER_TEMP/live.json"
 
       # One comment per pull request, updated on each run. When the step
       # above was skipped, the private bucket does not exist yet, so no
       # deploy has run. When it ran, it gives its own reason, and a missing
-      # one fails here rather than reading as no deploy.
+      # one fails here rather than reading as no deploy. The comment
+      # chooses on that reason, not on whether a file exists, and compares
+      # only with the report the step wrote (#233).
       - name: Comment with CI's scores beside the live release's
         if: github.event_name == 'pull_request'
         env:
@@ -225,8 +229,8 @@ jobs:
           NO_LIVE: ${{ steps.live.outcome == 'skipped' && 'no-deploy' || steps.live.outputs.reason }}
         run: |
           set -euo pipefail
-          if [ -f live.json ]; then
-            node evals/check.ts comment report.json live.json > comment.md
+          if [ -z "$NO_LIVE" ]; then
+            node evals/check.ts comment report.json "$RUNNER_TEMP/live.json" > comment.md
           else
             node evals/check.ts comment report.json --no-live "$NO_LIVE" > comment.md
           fi
