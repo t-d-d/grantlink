@@ -2,7 +2,7 @@ import type {
   DurableContext,
   RetryDecision,
 } from "@aws/durable-execution-sdk-js";
-import { readOrRefused, type Read } from "../pipeline/refused.ts";
+import { readOrRefused } from "../pipeline/refused.ts";
 
 // A wait Europe PMC asked for when it refused a paper, not yet waited. The
 // run carries it to the next step that asks Europe PMC and waits just
@@ -11,15 +11,6 @@ import { readOrRefused, type Read } from "../pipeline/refused.ts";
 // Each caller writes `ctx.wait(owed.name, { seconds: owed.seconds })` in
 // place, where the lint rules can see it.
 export type Owed = { name: string; seconds: number } | null;
-
-// The wait a failed paper's outcome leaves owed, named `name`.
-export const owedAfter = (
-  name: string,
-  outcome: Read<unknown> | undefined,
-): Owed =>
-  outcome !== undefined && "refused" in outcome && outcome.waitSeconds > 0
-    ? { name, seconds: outcome.waitSeconds }
-    : null;
 
 // What a step that asks Europe PMC leaves: what it read, or the wait its
 // refusal leaves owed.
@@ -43,7 +34,11 @@ export async function askEuropePmc<T>(
     async ({ attempt }) => readOrRefused(attempt, retry, read),
     { retryStrategy: retry },
   );
-  return "read" in outcome
-    ? { read: outcome.read }
-    : { owed: owedAfter(wait, outcome) };
+  if ("read" in outcome) return { read: outcome.read };
+  return {
+    owed:
+      outcome.waitSeconds > 0
+        ? { name: wait, seconds: outcome.waitSeconds }
+        : null,
+  };
 }
