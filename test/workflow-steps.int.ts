@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { MARKER as marker } from "../evals/check.ts";
 import {
   conformanceWorkflow,
   deploy,
@@ -287,7 +288,6 @@ describe("the eval's comment", () => {
   // with the comments below, run through the step's own --jq filter by
   // jq, and records every write it is sent.
   describe("with a marker comment from another user", () => {
-    const marker = "<!-- grantlink:eval -->";
     const comment = (id: number, login: string, body: string) => ({
       id,
       user: { login },
