@@ -179,7 +179,7 @@ export function memberName(node: TSESTree.MemberExpression): string | null {
 // The name a key gives, whether it reads a member or an object pattern's
 // property: a plain identifier, a string or a template with nothing
 // interpolated. A computed identifier is a variable, so it gives none.
-function keyName(key: TSESTree.Node, computed: boolean): string | null {
+export function keyName(key: TSESTree.Node, computed: boolean): string | null {
   if (!computed && key.type === AST_NODE_TYPES.Identifier) return key.name;
   if (key.type === AST_NODE_TYPES.TemplateLiteral) {
     return key.expressions.length === 0
@@ -256,7 +256,7 @@ export function walkAliases(
 
 // The declarator a local is an alias through, under the policy above, and
 // the name it declares there.
-function aliasDeclarator(variable: TSESLint.Scope.Variable): {
+export function aliasDeclarator(variable: TSESLint.Scope.Variable): {
   declarator: TSESTree.VariableDeclarator;
   name: TSESTree.Identifier;
 } | null {
