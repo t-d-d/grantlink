@@ -725,6 +725,12 @@ describe("strayParts", () => {
     expect(strayParts(xml)).toEqual(["article/back/p"]);
   });
 
+  it("reads an opening tag in another case as the cutter does, and names it in lower case (#415)", () => {
+    const xml =
+      "<Article><back><ACK><P>Grant A1.</P></ACK><Ref-List><ref>Name</ref></Ref-List></back></Article>";
+    expect(strayParts(xml)).toEqual(["article/back/ref-list"]);
+  });
+
   it("names a root that is not an article", () => {
     expect(strayParts("<book><p>B</p></book>")).toEqual(["book"]);
   });
