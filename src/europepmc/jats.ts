@@ -284,6 +284,33 @@ export const FUNDING_TITLES: ReadonlySet<string> = new Set([
 const isFundingTitle = (title: string): boolean =>
   FUNDING_TITLES.has(normaliseTitle(title));
 
+// Where the next node that is not a gap stands, from this one on.
+const pastGaps = (children: XmlNode[], from: number): number => {
+  let at = from;
+  while (isGap(children[at])) at += 1;
+  return at;
+};
+
+// Where a section's heading starts: past a <sec-meta>, if it opens with one.
+const headingStart = (section: XmlElement): number => {
+  const at = pastGaps(section.children, 0);
+  return isSecMeta(section.children[at])
+    ? pastGaps(section.children, at + 1)
+    : at;
+};
+
+// The title that stands here, after a label if there is one, and where it
+// stands, or undefined if there is none. A self-closing title names nothing
+// (#221).
+function titleFrom(
+  children: XmlNode[],
+  from: number,
+): { title: XmlElement; at: number } | undefined {
+  const at = isLabel(children[from]) ? pastGaps(children, from + 1) : from;
+  const title = children[at];
+  return isTitle(title) && !title.empty ? { title, at } : undefined;
+}
+
 // What a funding section holds after its heading, or undefined if the
 // element is not one. A section is found by its type or by its title, and
 // may open with a <sec-meta> and then a label before its title. Its
@@ -294,30 +321,18 @@ const isFundingTitle = (title: string): boolean =>
 function fundingContent(section: XmlElement): XmlNode[] | undefined {
   if (!isSection(section) || section.empty) return undefined;
   const children = section.children;
-  let at = 0;
-  const skipGaps = () => {
-    while (isGap(children[at])) at += 1;
-  };
-  skipGaps();
-  if (isSecMeta(children[at])) {
-    at += 1;
-    skipGaps();
-  }
+  const start = headingStart(section);
   if (
     anyAttribute(section, "sec-type", (value) =>
       FUNDING_SECTION_TYPE.test(value),
     )
   ) {
-    return children.slice(at);
+    return children.slice(start);
   }
-  if (isLabel(children[at])) {
-    at += 1;
-    skipGaps();
-  }
-  const title = children[at];
-  if (!isTitle(title) || title.empty) return undefined;
-  return isFundingTitle(plain(title.children))
-    ? children.slice(at + 1)
+  const found = titleFrom(children, start);
+  if (found === undefined) return undefined;
+  return isFundingTitle(plain(found.title.children))
+    ? children.slice(found.at + 1)
     : undefined;
 }
 
@@ -341,19 +356,49 @@ const NOTE_TYPE: Readonly<Record<string, string>> = Object.freeze({
   notes: "notes-type",
 });
 
-// What a note holds that is read with it: all but the notes and footnotes
-// inside it, which are read, or left out, on their own. A footnote is read
-// whole, as before #505.
+// These nodes less every element at any depth that fails the test, with
+// all it holds.
+const pruned = (
+  nodes: XmlNode[],
+  keep: (element: XmlElement) => boolean,
+): XmlNode[] =>
+  nodes.flatMap((node): XmlNode[] => {
+    if (node.kind !== "element") return [node];
+    return keep(node)
+      ? [{ ...node, children: pruned(node.children, keep) }]
+      : [];
+  });
+
+// Whether a section has a title, which may follow a <sec-meta> and a label.
+const hasTitle = (section: XmlElement): boolean =>
+  titleFrom(section.children, headingStart(section)) !== undefined;
+
+// What a note holds less the notes and footnotes inside it, which are read,
+// or left out, on their own. A footnote keeps all it holds.
 const NOTES_WITHIN = new Set(["notes", "fn-group", "fn"]);
-const noteContent = (note: XmlElement): XmlNode[] =>
+const lessNotesWithin = (note: XmlElement): XmlNode[] =>
   note.name === "notes"
     ? note.children.filter(
         (child) => child.kind !== "element" || !NOTES_WITHIN.has(child.name),
       )
     : note.children;
 
-// A note's own content: what it holds that is read with it, less its
-// sections, whose titles say what they are about.
+// What a note or footnote holds that is read with it: all but the notes
+// and footnotes inside a note, and any section in it, at any depth, whose
+// title names something other than funding, such as author contributions,
+// since it is about that. An untitled section and a funding section are
+// kept (#541).
+const noteContent = (note: XmlElement): XmlNode[] =>
+  pruned(
+    lessNotesWithin(note),
+    (element) =>
+      !isSection(element) || !hasTitle(element) || isFundingSection(element),
+  );
+
+// A note's own content: what it holds that is read with it, less the
+// sections it holds directly (#526). A section deeper in, wrapped in
+// another element, is left out when its title names something other than
+// funding, as in a marked note (#541).
 const ownContent = (note: XmlElement): XmlNode[] =>
   noteContent(note).filter(
     (child) => child.kind !== "element" || !isSection(child),
@@ -366,17 +411,8 @@ const ownWords = (note: XmlElement): string => plain(ownContent(note));
 // self-closing title names nothing, as in a section (#221).
 function noteTitle(note: XmlElement): string | undefined {
   const children = note.children;
-  let at = 0;
-  const skipGaps = () => {
-    while (isGap(children[at])) at += 1;
-  };
-  skipGaps();
-  if (isLabel(children[at])) {
-    at += 1;
-    skipGaps();
-  }
-  const title = children[at];
-  return isTitle(title) && !title.empty ? plain(title.children) : undefined;
+  const found = titleFrom(children, pastGaps(children, 0));
+  return found === undefined ? undefined : plain(found.title.children);
 }
 
 // Whether a note or a footnote is funding text (#505), and why: "marked"
@@ -412,10 +448,11 @@ export const isFundingNote = (element: XmlElement, parent: string): boolean =>
 
 // What the cut keeps of each funding note and footnote, at any depth, so
 // one nested in a note that is not about funding is found too. One marked
-// as funding by its type or title is read whole, less the notes inside it.
-// One kept for its own words is about funding only in those words, so its
-// sections are left out: author contributions or a data statement there
-// name people or say nothing of funding. A funding section among them is
+// as funding by its type or title is read whole, less the notes inside it
+// and its sections titled as something other than funding (#541). One kept
+// for its own words is about funding only in those words, so its sections,
+// at any depth, are left out: author contributions or a data statement
+// there name people or say nothing of funding. A funding section among them is
 // found by its type or title, as every funding section is (#526).
 const fundingNoteParts = (element: XmlElement): XmlNode[][] =>
   element.children.flatMap((child) => {
