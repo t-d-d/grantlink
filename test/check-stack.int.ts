@@ -331,6 +331,22 @@ describe("a funding text bucket outside the stack stops the deploy (#89)", () =>
     expect(result.output).not.toMatch(/import/iu);
     expect(result.output).not.toMatch(/grantlink-text/u);
   });
+
+  // After an established stack is deleted, the retained bucket still holds
+  // every paper's funding text and the eval reports CI filed, so the advice
+  // names every prefix to keep before the bucket goes (#197).
+  it("says to copy out the funding text, the eval snapshot and the eval reports before deleting the bucket (#197)", () => {
+    const result = check({ bucket: "403" });
+    expect(result.status).not.toBe(0);
+    for (const prefix of ["cache/", "eval/", "eval-reports/"])
+      expect(result.output).toContain(prefix);
+    expect(result.output).toMatch(/deleted/iu);
+    const advice = result.output.toLowerCase();
+    expect(advice.indexOf("copy")).toBeGreaterThan(-1);
+    expect(advice.indexOf("copy")).toBeLessThan(
+      advice.indexOf("empty and delete"),
+    );
+  });
 });
 
 describe("any other error stops the deploy, without the account id", () => {
