@@ -763,7 +763,9 @@ export const noNonDeterministicOutsideStep = createRule({
       // member that calls `Date` from it, `{ Date: { bind } } = globalThis`,
       // or copies the rest of an object that holds a source,
       // `{ Math: { ...m } } = globalThis`, since the name the rest declares
-      // carries the source on unseen.
+      // carries the source on unseen. When the declaration exports a name,
+      // `export const { Math: { ...m } } = globalThis`, the rest passes to
+      // another module, so that report says so.
       // Destructuring that member straight from `Date`, or from a default
       // `Date`, reports at `Date`, as passedOn says.
       VariableDeclarator(node) {
@@ -787,7 +789,9 @@ export const noNonDeterministicOutsideStep = createRule({
               const holder = keys
                 .map(holderOf)
                 .find((found) => found !== undefined);
-              if (holder !== undefined) report(property.key, holder, false);
+              if (holder !== undefined) {
+                report(property.key, holder, exportsName(node, context));
+              }
             }
             return false;
           },
