@@ -138,6 +138,17 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           let make: typeof randomUUID | undefined;`,
         },
         {
+          name: "exports a random source's type only",
+          code: `import { randomUUID } from "node:crypto";
+          export type { randomUUID };
+          export { type randomUUID as MakeId };`,
+        },
+        {
+          name: "re-exports another module's name that a local random source shares",
+          code: `import { randomUUID } from "node:crypto";
+          export { randomUUID } from "./fixed";`,
+        },
+        {
           name: "reads a wrapped clock and random source inside a step",
           code: `async function run(ctx: any) {
             const at = await ctx.step("at", async () => (Date as any).now());
@@ -228,6 +239,29 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
               messageId: "nonDeterministicOutsideStep",
               data: { op: "crypto.randomUUID" },
               line: 2,
+            },
+          ],
+        },
+        {
+          name: "re-exports a random source from the module that holds it",
+          code: `export { randomUUID } from "node:crypto";`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto.randomUUID" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a destructured clock in its declaration and again by name, once",
+          code: `export const { now } = Date;
+          export { now as clock };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now" },
+              line: 1,
             },
           ],
         },

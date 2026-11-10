@@ -156,12 +156,40 @@ function identifierPath(
   }
   const def = end.defs[0];
   if (def?.parent?.type !== AST_NODE_TYPES.ImportDeclaration) return null;
-  const module = MODULES[def.parent.source.value.replace(/^node:/, "")];
+  return modulePath(
+    def.parent.source.value,
+    def.node.type === AST_NODE_TYPES.ImportSpecifier
+      ? exportedName(def.node.imported)
+      : null,
+  );
+}
+
+// The global path a name from a module stands for, or the module itself
+// when the name is null. Null for a module MODULES does not name.
+function modulePath(
+  source: string,
+  name: string | null,
+): readonly string[] | null {
+  const module = MODULES[source.replace(/^node:/, "")];
   if (module === undefined) return null;
-  if (def.node.type === AST_NODE_TYPES.ImportSpecifier) {
-    return normalised([...module, exportedName(def.node.imported)]);
+  return name === null ? module : normalised([...module, name]);
+}
+
+// The global path `export { name } from "module"` passes on, for a module
+// MODULES names. Null for any other specifier, or one that passes on a
+// type only.
+function reexported(
+  specifier: TSESTree.ExportSpecifier,
+): readonly string[] | null {
+  const declaration = specifier.parent;
+  if (
+    declaration.source === null ||
+    declaration.exportKind === "type" ||
+    specifier.exportKind === "type"
+  ) {
+    return null;
   }
-  return module;
+  return modulePath(declaration.source.value, exportedName(specifier.local));
 }
 
 // The clock or random source a path names, such as `Date.now`.
@@ -238,35 +266,47 @@ function exported(
 
 // True when the identifier hands an import or a destructured name to another
 // module: the binding in an exported pattern, `export const { now } = Date`,
-// or the local of an export, `export { random }`. The rule does not follow
-// a relative import, so the caller there goes unchecked. A plain alias,
-// `export const D = Date`, is left to its initial value, which reports.
+// or the local of an export, `export { random }`, unless that binding's own
+// export already reports. The rule does not follow a relative import, so the
+// caller there goes unchecked. A plain alias, `export const D = Date`, is
+// left to its initial value, which reports. A type-only export passes on no
+// value, and `export { x } from "..."` names another module's binding, which
+// reexported checks.
 function exportsUnfollowed(
   identifier: TSESTree.Identifier,
   resolver: Resolver,
 ): boolean {
-  const parent = identifier.parent;
-  if (parent.type === AST_NODE_TYPES.ExportSpecifier) {
-    if (parent.local !== identifier) return false;
-    const variable = lookup(
-      identifier.name,
-      resolver.sourceCode.getScope(identifier),
-    );
-    if (variable === null) return false;
-    const alias = aliasDeclarator(variable);
-    return alias === null || alias.declarator.id !== alias.name;
-  }
   const variable = lookup(
     identifier.name,
     resolver.sourceCode.getScope(identifier),
   );
-  const alias = variable === null ? null : aliasDeclarator(variable);
+  if (variable === null) return false;
+  const alias = aliasDeclarator(variable);
+  const parent = identifier.parent;
+  if (parent.type !== AST_NODE_TYPES.ExportSpecifier) {
+    return alias?.name === identifier && exportedPattern(alias.declarator);
+  }
+  const declaration = parent.parent;
+  if (
+    parent.local !== identifier ||
+    parent.exportKind === "type" ||
+    declaration.source !== null ||
+    declaration.exportKind === "type"
+  ) {
+    return false;
+  }
   return (
-    alias !== null &&
-    alias.name === identifier &&
-    alias.declarator.id.type === AST_NODE_TYPES.ObjectPattern &&
-    alias.declarator.parent.parent.type ===
-      AST_NODE_TYPES.ExportNamedDeclaration
+    alias === null ||
+    (alias.declarator.id !== alias.name && !exportedPattern(alias.declarator))
+  );
+}
+
+// True when a declarator destructures in an exported declaration,
+// `export const { now } = Date`.
+function exportedPattern(declarator: TSESTree.VariableDeclarator): boolean {
+  return (
+    declarator.id.type === AST_NODE_TYPES.ObjectPattern &&
+    declarator.parent.parent.type === AST_NODE_TYPES.ExportNamedDeclaration
   );
 }
 
@@ -367,6 +407,12 @@ export const noNonDeterministicOutsideStep = createRule({
         const path = pathOf(node, context, new Set());
         check(node, path);
         checkDate(node, path);
+      },
+      // A name passed on from a module that holds a clock or random source,
+      // `export { randomUUID } from "node:crypto"`.
+      ExportSpecifier(node) {
+        const op = opOf(reexported(node));
+        if (op !== undefined) report(node.local, op);
       },
       // A named import, or an alias of a member, read on its own, such as
       // `randomUUID()` after `import { randomUUID } from "node:crypto"`, or one
