@@ -51,12 +51,16 @@
         "reason": "The deploy job runs them with the deploy role's credentials."
       },
       {
-        "glob": "test/page.live.ts",
+        "glob": "**/*.live.ts",
         "reason": "The deploy job runs the live tier with the deploy role's credentials."
       },
       {
         "glob": "test/tiers.ts",
-        "reason": "The deploy job runs the live tier with the deploy role's credentials."
+        "reason": "It sets which files the live tier runs with the deploy role's credentials."
+      },
+      {
+        "glob": "vitest.config.ts",
+        "reason": "It sets which files the live tier runs with the deploy role's credentials."
       },
       {
         "glob": "evals/**",

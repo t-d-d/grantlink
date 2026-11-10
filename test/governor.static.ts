@@ -46,8 +46,9 @@ describe("governor merges pull requests its review passes", () => {
         "package.json",
         "scripts/**",
         "serverless.yml",
-        "test/page.live.ts",
+        "**/*.live.ts",
         "test/tiers.ts",
+        "vitest.config.ts",
       ].sort(),
     );
   });
@@ -57,7 +58,8 @@ describe("governor merges pull requests its review passes", () => {
   // eval set's floors decide what may deploy, and the package files hold
   // the dependencies. The deploy job runs `scripts/**` and the live tier
   // with the deploy role's credentials, so they wait for the owner too
-  // (#203).
+  // (#203). The live tier is every `*.live.ts` file that `vitest.config.ts`
+  // and `test/tiers.ts` pick out, so all three are held.
   it("names every human-only path in CLAUDE.md and the review checklist", () => {
     const paths = (config.humanOnly ?? []).map(({ glob }) =>
       glob.replace(/\*\*$/u, ""),

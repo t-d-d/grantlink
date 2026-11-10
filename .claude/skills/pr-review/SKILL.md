@@ -52,11 +52,12 @@ A pass merges the pull request.
    `prReview.humanOnly` in `.github/governor.json`: the stacks in `infra/`,
    everything under `.github/`, the constraint files in `docs/constraints/`,
    `CLAUDE.md`, `.claude/`, the app stack in `serverless.yml`, the scripts
-   in `scripts/` and the live tier in `test/page.live.ts` and
-   `test/tiers.ts`, which the deploy job runs with the deploy role's
-   credentials, the eval set in `evals/`, and the dependencies in
-   `package.json` and `package-lock.json`. A pull request that changes one waits for the owner,
-   with the entry's reason. Governor checks this in code.
+   in `scripts/`, the live tests in `**/*.live.ts` with `test/tiers.ts`
+   and `vitest.config.ts` that pick them out, the eval set in `evals/`, and
+   the dependencies in `package.json` and `package-lock.json`. The deploy
+   job runs the scripts and the live tests with the deploy role's
+   credentials. A pull request that changes one waits for the owner, with
+   the entry's reason. Governor checks this in code.
 
 9. **No required status check is red on its head.** Governor checks this in
    code, and a push that turns the check green meets it.

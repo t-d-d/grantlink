@@ -41,7 +41,7 @@ grantlink finds research papers that say Cancer Research UK funded them but that
 - The pull request body follows the `pr-description` skill.
 - Nothing deploys except a green merge to main. Never deploy by hand.
 - Governor reviews pull requests against `.claude/skills/pr-review/SKILL.md` and merges one that passes. Do not merge your own pull request.
-- A pull request waits for the owner when it changes `infra/`, `.github/`, `docs/constraints/`, `CLAUDE.md`, `.claude/`, `serverless.yml`, `scripts/`, `test/page.live.ts`, `test/tiers.ts`, `evals/`, `package.json` or `package-lock.json`, or when its description's "Adds / removes" net line says it is more complex.
+- A pull request waits for the owner when it changes `infra/`, `.github/`, `docs/constraints/`, `CLAUDE.md`, `.claude/`, `serverless.yml`, `scripts/`, `**/*.live.ts`, `test/tiers.ts`, `vitest.config.ts`, `evals/`, `package.json` or `package-lock.json`, or when its description's "Adds / removes" net line says it is more complex.
 - When the review fails on the description, fix the description. When it says no edit to the description can make it pass, leave it for the owner.
 
 ## Issues
