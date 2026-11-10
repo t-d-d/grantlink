@@ -201,8 +201,9 @@ function printedAs(form: string, text: string, names: Span[]): boolean {
 // another paper is not printed. Each markup tag reads as a space, and any
 // run of spaces as one, so a tag inside a grant does not hide it and
 // indentation does not part a year from the funder's name. A bare number
-// in a decimal or a DOI, or one that reads as a year far from the funder's
-// name, is not printed (#520).
+// in a decimal, a range or a DOI, with a dot, a middle dot or any dash the
+// rules read as a hyphen, or one that reads as a year far from the
+// funder's name, is not printed (#520, #556).
 export function printedGrants(
   grants: readonly string[],
   article: string,
