@@ -190,14 +190,17 @@ export const FUNDING_FOOTNOTE = String.raw`\bfn-type="(?:financial-disclosure|fu
 // is not kept. A tag matches only by its whole name, so <sec-meta> is not a
 // section and <title-group> is not a title (#216). A label ends at its own
 // closing tag, so a labelled section is not taken for the labelled funding
-// section after it. A self-closing section is empty, and a self-closing
-// title names nothing, so neither starts a funding section: (?<!\/)> keeps
-// each tag from closing itself (#221). A section may open with a <sec-meta>,
-// which ends at its own closing tag as a label does. It is part of the match
+// section after it. A self-closing label is only itself, so it neither hides
+// the funding title after it nor runs on to a later label's closing tag
+// (#227). A self-closing section is empty, and a self-closing title names
+// nothing, so neither starts a funding section: (?<!\/)> keeps each tag from
+// closing itself (#221). A section may open with a <sec-meta>, which ends at
+// its own closing tag as a label does, and a self-closing one is only itself
+// as a label is (#227). It is part of the match
 // whether the section is found by its type or its title, so it is not kept,
 // since it can name people (#222).
-const SEC_META = String.raw`(?:<sec-meta${NAME_END}(?:[^>]*\/>|[^>]*>(?:(?!<\/sec-meta>)[\s\S])*<\/sec-meta>)\s*)?`;
-const FUNDING_SECTION_START = String.raw`<sec${NAME_END}(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*(?<!\/)>\s*${SEC_META}|[^>]*(?<!\/)>\s*${SEC_META}(?:<label${NAME_END}[^>]*>(?:(?!<\/label>)[\s\S])*<\/label>\s*)?<title${NAME_END}[^>]*(?<!\/)>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
+const SEC_META = String.raw`(?:<sec-meta${NAME_END}(?:[^>]*\/>|[^>]*(?<!\/)>(?:(?!<\/sec-meta>)[\s\S])*<\/sec-meta>)\s*)?`;
+const FUNDING_SECTION_START = String.raw`<sec${NAME_END}(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*(?<!\/)>\s*${SEC_META}|[^>]*(?<!\/)>\s*${SEC_META}(?:<label${NAME_END}(?:[^>]*\/>|[^>]*(?<!\/)>(?:(?!<\/label>)[\s\S])*<\/label>)\s*)?<title${NAME_END}[^>]*(?<!\/)>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
 
 const FUNDING_SECTION_AT = new RegExp(FUNDING_SECTION_START, "iuy");
 

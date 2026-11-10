@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { findReferences } from "../extract/rules.ts";
-import { elements, fundingSections } from "./jats.ts";
+import { elements, fundingSections, isFundingSectionAt } from "./jats.ts";
 
 const fixture = (pmcid: string) =>
   readFileSync(
@@ -341,6 +341,26 @@ describe("cutting a paper to its funding sections", () => {
       ).text,
     ).toEqual(["Funded by grant A1."]);
   });
+
+  it("takes a section with a self-closing label before its funding title (#227)", () => {
+    expect(
+      fundingSections(
+        `<article><body><sec><label/><title>Funding</title><p>Grant A1.</p></sec></body></article>`,
+      ).text,
+    ).toEqual(["Grant A1."]);
+  });
+
+  it.each([
+    ["label", "<label/>", "<label>2</label>"],
+    ["sec-meta", "<sec-meta/>", "<sec-meta><kwd>k</kwd></sec-meta>"],
+  ])(
+    "does not run a self-closing %s on to a later section's (#227)",
+    (_name, empty, full) => {
+      const xml = `<sec>${empty}<title>Methods</title><p>Body text.</p></sec><sec>${full}<title>Funding</title><p>Grant A1.</p></sec>`;
+      expect(isFundingSectionAt(xml, 0)).toBe(false);
+      expect(isFundingSectionAt(xml, xml.lastIndexOf("<sec>"))).toBe(true);
+    },
+  );
 
   describe("matches a section, label or title tag only by its whole name (#216)", () => {
     it.each([
