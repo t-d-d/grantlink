@@ -5,7 +5,6 @@ import {
   fragment,
   outermost,
   readXml,
-  serialize,
   type XmlElement,
   type XmlNode,
 } from "./xml.ts";
@@ -90,7 +89,15 @@ const namedInAnyCase =
     element?.kind === "element" && element.name.toLowerCase() === name;
 const isTitle = namedInAnyCase("title");
 const isLabel = namedInAnyCase("label");
-const isSecMeta = namedInAnyCase("sec-meta");
+// A section's <sec-meta> can name people (#222), so the cutter drops every
+// one it reads, matched by this name in any case. The check on recorded
+// fixtures (test/fixture-parts.ts) names one by this test too, so the two
+// agree (#472).
+const SEC_META = "sec-meta";
+export const isSecMetaName = (name: string): boolean =>
+  name.toLowerCase() === SEC_META;
+const isSecMeta = (element: XmlNode | undefined): element is XmlElement =>
+  element?.kind === "element" && isSecMetaName(element.name);
 const isSection = namedInAnyCase("sec");
 
 // An attribute's value split at white space.
@@ -116,7 +123,7 @@ export const FUNDING_METADATA = {
 // its words.
 const READ_BY_NAME = new Set<string>([
   "sec",
-  "sec-meta",
+  SEC_META,
   "label",
   "title",
   "p",
@@ -125,26 +132,9 @@ const READ_BY_NAME = new Set<string>([
   ...Object.values(FUNDING_METADATA),
 ]);
 
-// The XML as the cutter reads it, with care too for the element of this
-// name, if one is asked for.
-const read = (xml: string, name?: string): XmlElement =>
-  readXml(
-    xml,
-    (found) => found === name || READ_BY_NAME.has(found.toLowerCase()),
-  );
-
-// Every outermost element with this name, as its inner XML, written back
-// out. One inside another it keeps is read as part of that one.
-export function elements(
-  xml: string,
-  name: string,
-  test: (element: XmlElement) => boolean = () => true,
-): string[] {
-  return outermost(
-    read(xml, name),
-    (element) => element.name === name && test(element),
-  ).map(({ children }) => serialize(children));
-}
+// The XML as the cutter reads it.
+const read = (xml: string): XmlElement =>
+  readXml(xml, (found) => READ_BY_NAME.has(found.toLowerCase()));
 
 // An award group's ids with the funding sources they belong to. An award id
 // whose rid names sources in its group goes to those sources alone. Any
@@ -342,15 +332,6 @@ function fundingContent(section: XmlElement): XmlNode[] | undefined {
 // Whether the element is a funding section.
 export const isFundingSection = (element: XmlElement): boolean =>
   fundingContent(element) !== undefined;
-
-// Whether the section whose opening tag starts at this index of the XML is a
-// funding section.
-export function isFundingSectionAt(xml: string, index: number): boolean {
-  for (const element of descendants(read(xml))) {
-    if (element.start === index) return isFundingSection(element);
-  }
-  return false;
-}
 
 export function fundingSections(paper: string): FundingSections {
   const tree = read(paper);

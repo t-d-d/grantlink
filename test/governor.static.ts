@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { deploy } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
 
 // Governor merges a pull request its review passes (#181). What only the
@@ -56,9 +57,11 @@ describe("governor merges pull requests its review passes", () => {
   // The review reads no source files, so the paths that change what ships
   // wait for the owner too (#183): a merge deploys `serverless.yml`, the
   // eval set's floors decide what may deploy, and the package files hold
-  // the dependencies. The deploy job runs `scripts/**` and the live tier
-  // with the deploy role's credentials, so they wait for the owner too
-  // (#203). The live tier is every `*.live.ts` file that `vitest.config.ts`
+  // the dependencies. The deploy job runs `scripts/**` with the deploy
+  // role's credentials, so they wait for the owner too (#203). The live
+  // tier holds no credentials (#311), but it runs in the deploy job, which
+  // may ask GitHub for a token the deploy role trusts, so it waits as well
+  // (#410). The live tier is every `*.live.ts` file that `vitest.config.ts`
   // and `test/tiers.ts` pick out, so all three are held.
   it("names every human-only path in CLAUDE.md and the review checklist", () => {
     const paths = (config.humanOnly ?? []).map(({ glob }) =>
@@ -90,6 +93,29 @@ describe("governor merges pull requests its review passes", () => {
     expect(named(test8?.[0])).toEqual([...paths].sort());
   });
 
+  // The live step holds none of the deploy role's credentials (#311), but
+  // it runs in a job with `id-token: write`, and the deploy role trusts
+  // that job's environment. So code in the live tier could ask GitHub for a
+  // token and assume the role, and that is why its paths wait (#410).
+  it("gives the live tier's paths the reason that holds today", () => {
+    const live = ["**/*.live.ts", "test/tiers.ts", "vitest.config.ts"];
+    const job = Object.values(deploy.jobs).find((candidate) =>
+      (candidate.steps ?? []).some((step) =>
+        step.run?.includes("npm run test:live"),
+      ),
+    );
+    expect(job?.environment).toBe("prod");
+    expect(job?.permissions?.["id-token"]).toBe("write");
+    const reasons = (config.humanOnly ?? [])
+      .filter(({ glob }) => live.includes(glob))
+      .map(({ reason }) => reason);
+    expect(reasons).toHaveLength(live.length);
+    for (const reason of reasons) {
+      expect(reason).toMatch(/token/u);
+      expect(reason).not.toMatch(/credentials/u);
+    }
+  });
+
   it("leaves prReview.quote unset", () => {
     expect(config.quote).toBeUndefined();
   });
@@ -101,5 +127,37 @@ describe("governor merges pull requests its review passes", () => {
     expect(skill).toMatch(/net\s+line/u);
     expect(skill).not.toMatch(/prReview\.quote/u);
     expect(skill).toMatch(/no\s+edit\s+to\s+the\s+description\s+can\s+make/iu);
+  });
+});
+
+// A ticket whose body starts with `Blocked until:` is held, but its sidebar
+// shows no blocker. With `waits.issue` set, governor links each waiting
+// ticket as blocked by the wait ticket, so the sidebar shows the hold
+// (#461). Governor's own sessions are told how to make a ticket wait; a
+// session a person starts reads CLAUDE.md, so it names the same ticket.
+describe("governor shows a waiting ticket's hold in its sidebar", () => {
+  const waits = z
+    .object({
+      waits: z.object({
+        enabled: z.boolean().optional(),
+        issue: z.number().int().positive().optional(),
+      }),
+    })
+    .parse(JSON.parse(readRepoFile(".github/governor.json"))).waits;
+
+  it("has waits on, naming the wait ticket", () => {
+    expect(waits.enabled).not.toBe(false);
+    expect(waits.issue).toBeDefined();
+  });
+
+  it("tells sessions in CLAUDE.md how to make a ticket wait, naming the same ticket", () => {
+    const line = /^- .*`Blocked until: YYYY-MM-DD`.*$/mu.exec(
+      readRepoFile("CLAUDE.md"),
+    )?.[0];
+    expect(line, "CLAUDE.md's line on waiting").toBeDefined();
+    const named = [...(line ?? "").matchAll(/#(\d+)/gu)].map(([, n]) =>
+      Number(n),
+    );
+    expect(named).toEqual([waits.issue]);
   });
 });

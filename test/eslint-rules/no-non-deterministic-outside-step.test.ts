@@ -11,6 +11,35 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
     {
       valid: [
         {
+          name: "uses Date without reading the clock: instanceof, UTC, parse, prototype and types",
+          code: `function f(x: unknown, d: Date): Array<Date> {
+            const D = Date;
+            const a = x instanceof Date;
+            const b = x instanceof D;
+            const c = Date.UTC(2020, 0, 1);
+            const e = Date.parse("2020-01-01");
+            const g = Date.prototype;
+            const h = x instanceof (globalThis.Date as DateConstructor);
+            const day: Date = new Date(0);
+            return [day, d];
+          }`,
+        },
+        {
+          name: "tests Date without calling it: typeof and equality",
+          code: `function f(x: any) {
+            const a = typeof Date === "function";
+            const b = x.constructor === Date;
+            const c = Date !== x;
+            return [a, b, c];
+          }`,
+        },
+        {
+          name: "passes Date as a value inside a step",
+          code: `async function run(ctx: any) {
+            await ctx.step("at", async () => ids.map(Date), { retryStrategy: r });
+          }`,
+        },
+        {
           name: "reads the clock inside a step's callback through the comma operator",
           code: `async function run(ctx: any) {
             await ctx.step("start", (0, async () => Date.now()), { retryStrategy: r });
@@ -126,6 +155,24 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `const since = new Date("2020-01-01");`,
         },
         {
+          name: "reads the clock as a string inside a step",
+          code: `async function run(ctx: any) {
+            const at = await ctx.step("at", async () => Date());
+          }`,
+        },
+        {
+          name: "calls and constructs a local Date that shadows the global",
+          code: `async function run(ctx: any) {
+            const Date = () => "fixed";
+            const a = Date();
+            const b = new (Date as any)();
+          }`,
+        },
+        {
+          name: "calls a Date parameter that shadows the global",
+          code: `function stamp(Date: () => string) { return Date(); }`,
+        },
+        {
           name: "calls random on a parameter that shadows Math",
           code: `function f(Math: Rng) { return Math.random(); }`,
         },
@@ -148,6 +195,67 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
         },
       ],
       invalid: [
+        {
+          name: "passes Date as a value for something else to call",
+          code: `const a = ids.map(Date);
+          const b = Reflect.construct(Date, []);
+          const c = Date.call(null);
+          const d = Date.apply(null, []);
+          const e = Date["bind"](null);
+          const f = ids.map(globalThis.Date);
+          const g = ids.map(Date as any);
+          const h = { make: Date };`,
+          errors: Array.from({ length: 8 }, (_, i) => ({
+            messageId: "nonDeterministicOutsideStep" as const,
+            data: { op: "Date" },
+            line: i + 1,
+          })),
+        },
+        {
+          name: "reads a member of Date under a key it cannot name, which may be call",
+          code: `function f(k: string) {
+            return Date[k](null);
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports an alias of Date, which another module may call",
+          code: `export const D = Date;
+          const E = Date;
+          export { E };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "passes Date as a value through an alias, at the use and not the alias",
+          code: `const D = Date;
+          async function run(ctx: any) {
+            const at = ids.map(D);
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 3,
+            },
+          ],
+        },
         {
           name: "reads the clock in the read of a local function that shares askEuropePmc's name",
           filename: "src/run/run.ts",
@@ -305,6 +413,46 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
             {
               messageId: "nonDeterministicOutsideStep",
               data: { op: "new Date()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "new Date()" },
+            },
+          ],
+        },
+        {
+          name: "reads the clock as a string by calling Date without new",
+          code: `async function run(ctx: any) {
+            const a = Date();
+            const b = (Date as any)();
+            const c = Date!();
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date()" },
+            },
+          ],
+        },
+        {
+          name: "reads the clock past a type named Date, which shadows no value",
+          code: `type Date = string;
+          async function run(ctx: any) {
+            const a = Date();
+            const b = new Date();
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date()" },
             },
             {
               messageId: "nonDeterministicOutsideStep",
