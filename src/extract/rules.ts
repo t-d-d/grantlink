@@ -237,7 +237,8 @@ function scan(text: string, keep: "long" | "short" | "all"): Reference[] {
 // A bare number is common in any text, so it counts only when the metadata
 // gives it to the funder as a whole award id and the paper's own funding or
 // acknowledgement text gives the same number, standing alone (#97). A number
-// joined to a letter, any decimal digit or a separator is part of a longer reference.
+// joined to a letter, any decimal digit or a separator is part of a longer
+// reference.
 const BARE_NUMBER = /^\d{5,7}$/u;
 
 function confirmedNumber(id: string, text: readonly string[]): boolean {

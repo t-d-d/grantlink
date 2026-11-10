@@ -227,6 +227,11 @@ describe("the rules", () => {
     ["a fullwidth digit after an A number", "A12345１"],
     ["a Devanagari digit before an A number", "१A12345"],
     ["an Arabic-Indic digit after a G number", "G123/45١"],
+    ["a fullwidth digit after a C/A reference", "C1234/A56789１"],
+    ["an Arabic-Indic digit after a coded reference", "DRCMDPA/100010١"],
+    ["a Devanagari digit before an FC number", "१FC001234"],
+    ["a fullwidth digit after a CC number", "CC2001１"],
+    ["an Arabic-Indic digit after an RT number", "RT1234١"],
   ])("leaves a reference with %s", (_, reference) => {
     expect(findReferences(sections(`Funded by CRUK (${reference}).`))).toEqual(
       [],
