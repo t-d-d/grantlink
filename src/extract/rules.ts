@@ -8,7 +8,7 @@ import funderFile from "./funder.json" with { type: "json" };
 
 // Bump this whenever a pattern, or which references the rules keep,
 // changes, so every stored result says which rules made it.
-export const RULES_VERSION = "rules-5";
+export const RULES_VERSION = "rules-6";
 
 export const funder = z
   .object({
@@ -48,7 +48,13 @@ export const referenceSchema = z
 export type Reference = z.infer<typeof referenceSchema>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-const NAMES = funder.names.map(escape).join("|");
+// A hyphen, in a name or a reference, may be written as a Unicode hyphen or
+// dash (U+2010 to U+2015) (#201). The class holds the characters themselves,
+// not \u escapes, so the any-case pass below finds no letter in it.
+const DASH = `[-${String.fromCodePoint(0x2010)}-${String.fromCodePoint(0x2015)}]`;
+const NAMES = funder.names
+  .map((name) => escape(name).replace(/-/gu, DASH))
+  .join("|");
 // The names again, matching in any case without the `i` flag, for a pattern
 // whose own letters must keep their case.
 const ANY_CASE_NAMES = NAMES.replace(
@@ -59,8 +65,6 @@ const funderName = new RegExp(`(?:^|[^A-Za-z])(?:${NAMES})(?![A-Za-z])`, "iu");
 
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
-// A hyphen may be written as a Unicode hyphen or dash (U+2010 to U+2015).
-const DASH = String.raw`[-\u2010-\u2015]`;
 
 interface Pattern {
   format: string | ((match: RegExpMatchArray) => string);

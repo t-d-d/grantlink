@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { mergeOver, strayVariablesIn, unreadResources } from "./serverless.ts";
+import { parse } from "yaml";
+import { parseTemplate } from "./cfn.ts";
+import {
+  mergeKeysIn,
+  mergeOver,
+  strayVariablesIn,
+  unreadResources,
+} from "./serverless.ts";
 
 const TEMPLATES = ["infra/site.cfn.yml", "infra/data.cfn.yml"];
 const known = TEMPLATES.map((path) => `\${file(./${path})}`);
-const stack = { declared: ["SiteBucket", "Distribution"], functions: ["run"] };
+const stack = {
+  declared: ["SiteBucket", "Distribution"],
+  outputs: ["SiteBucketName", "DistributionId", "PageUrl"],
+  functions: ["run"],
+};
 const unread = (resources: unknown): string[] =>
   unreadResources(resources, TEMPLATES, stack);
 
@@ -182,6 +193,17 @@ describe("inline resources that change what a template or osls declares (#166)",
     },
   );
 
+  it.each(["SiteBucketName", "DistributionId", "PageUrl"])(
+    "finds an inline entry that changes the output %s, which a template declares (#243)",
+    (id) => {
+      expect(
+        unread([...known, { Outputs: { [id]: { Value: "other" } } }]),
+      ).toEqual([
+        `entry 3 changes the output ${id}, which a template declares`,
+      ]);
+    },
+  );
+
   it.each(["Parameters", "Resources", "Outputs"])(
     "finds %s that is not a map, which osls would merge over the whole section",
     (key) => {
@@ -301,5 +323,66 @@ describe("variables inside a template (#166)", () => {
     expect(
       strayVariablesIn({ Outputs: { O: { Value: "${self:custom.x}" } } }),
     ).toEqual(["a variable from self at Outputs.O.Value"]);
+  });
+});
+
+// osls reads YAML with js-yaml, which applies a merge key, while the static
+// checks keep `<<` as an ordinary key. The app uses none, so the gate
+// refuses any (#242).
+describe("YAML merge keys, which osls applies and the static checks do not (#242)", () => {
+  const inline = [
+    "resources:",
+    "  - Resources:",
+    "      Box: { <<: { Type: AWS::EC2::Instance }, Properties: {} }",
+  ].join("\n");
+
+  it("finds a resource whose Type comes from a merge key in serverless.yml", () => {
+    expect(mergeKeysIn(parse(inline))).toEqual([
+      "a merge key at resources.0.Resources.Box",
+    ]);
+  });
+
+  it("finds a merge key from an alias in a template", () => {
+    const template = [
+      "Resources:",
+      "  Base: &role",
+      "    Type: AWS::IAM::Role",
+      "    Properties: {}",
+      "  Other:",
+      "    <<: *role",
+      "    Properties:",
+      "      RoleName: !Sub ${AWS::StackName}-other",
+    ].join("\n");
+    expect(mergeKeysIn(parseTemplate(template))).toEqual([
+      "a merge key at Resources.Other",
+    ]);
+  });
+
+  it("finds a merge key inside a list, and at the top", () => {
+    expect(mergeKeysIn({ "<<": {}, a: [{ b: { "<<": {} } }] })).toEqual([
+      "a merge key at the top",
+      "a merge key at a.0.b",
+    ]);
+  });
+
+  // js-yaml merges a `!!merge` tag on an empty key, which the yaml package
+  // reads as the key "".
+  it("finds a merge tag on an empty key", () => {
+    const tagged = "Base: &b { Type: T }\nR:\n  !!merge : *b\n";
+    expect(mergeKeysIn(parse(tagged, { logLevel: "error" }))).toEqual([
+      "an empty key, which osls may read as a merge, at R",
+    ]);
+  });
+
+  it("stops at an alias that holds itself", () => {
+    expect(mergeKeysIn(parse("a: &x\n  b: *x\n  <<: {}\n"))).toEqual([
+      "a merge key at a",
+    ]);
+  });
+
+  it("finds nothing in YAML without one", () => {
+    expect(
+      mergeKeysIn(parse("Resources:\n  R: { Type: T, Properties: {} }")),
+    ).toEqual([]);
   });
 });

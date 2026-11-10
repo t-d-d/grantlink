@@ -52,9 +52,11 @@ export function mergeOver<T extends object>(target: T, source: object): T {
 const READ_KEYS = ["Parameters", "Resources", "Outputs"];
 
 // What the app stack declares besides serverless.yml's inline entries: the
-// templates' resources, and the functions osls makes resources for.
+// templates' resources and outputs, and the functions osls makes resources
+// for.
 export interface DeclaredElsewhere {
   declared: readonly string[];
+  outputs: readonly string[];
   functions: readonly string[];
 }
 
@@ -187,6 +189,41 @@ export function strayVariablesIn(value: unknown): string[] {
   return variablesIn(value, []);
 }
 
+// Each YAML merge key in a parsed value, with where it sits. osls reads
+// serverless.yml and the templates with js-yaml, which applies a merge,
+// while the static checks parse with the yaml package, which by default
+// keeps a plain `<<` as an ordinary key and reads a `!!merge` tag on an
+// empty key as the key "". Either way a resource whose Type came from a
+// merge would pass them untyped. The app uses neither, so the gate refuses
+// both (#242). An alias may hold itself, so the walk stops at a value it is
+// already inside.
+function mergeKeys(
+  value: unknown,
+  path: string[],
+  inside: ReadonlySet<unknown>,
+): string[] {
+  if (inside.has(value)) return [];
+  const within = new Set(inside).add(value);
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) =>
+      mergeKeys(item, [...path, String(index)], within),
+    );
+  }
+  if (!isPlain(value)) return [];
+  const where = path.join(".") || "the top";
+  return Object.entries(value).flatMap(([key, item]) => [
+    ...(key === "<<" ? [`a merge key at ${where}`] : []),
+    ...(key === ""
+      ? [`an empty key, which osls may read as a merge, at ${where}`]
+      : []),
+    ...mergeKeys(item, [...path, key], within),
+  ]);
+}
+
+export function mergeKeysIn(value: unknown): string[] {
+  return mergeKeys(value, [], new Set());
+}
+
 // Each entry of serverless.yml's `resources` that the static checks would
 // not read: the known templates missing from the head of the list or out of
 // order, `extensions`, any key but the three above, and any template but
@@ -194,7 +231,8 @@ export function strayVariablesIn(value: unknown): string[] {
 // so they must come first. An inline entry may add resources but not change
 // one a template declares or osls generates, since osls merges it over
 // them and the checks that filter by Type would miss the merged one (#166).
-// Nor may it change an output osls generates, or hold a section that is
+// Nor may it change an output a template declares or osls generates, since
+// the deploy reads the stack's outputs (#243), or hold a section that is
 // not a map, which osls would merge over the whole section. It may use no
 // variable but the cf and env ones. Entries count from 1.
 export function unreadResources(
@@ -226,18 +264,25 @@ export function unreadResources(
           ? []
           : [`${at} has ${key} that is not a map`];
       });
-      const inline = isPlain(entry.Resources) ? entry.Resources : {};
-      const changed = Object.keys(inline).flatMap((id): string[] => {
-        if (elsewhere.declared.includes(id))
-          return [`${at} changes ${id}, which a template declares`];
-        if (oslsGenerates(id, elsewhere.functions))
-          return [`${at} changes ${id}, which osls generates`];
-        return [];
-      });
-      const outputs = isPlain(entry.Outputs) ? entry.Outputs : {};
-      const changedOutputs = Object.keys(outputs)
-        .filter((id) => oslsGenerates(id, elsewhere.functions))
-        .map((id) => `${at} changes the output ${id}, which osls generates`);
+      // Each id in `section` that a template declares or osls generates.
+      const changes = (
+        section: unknown,
+        declared: readonly string[],
+        what: string,
+      ): string[] =>
+        Object.keys(isPlain(section) ? section : {}).flatMap((id): string[] => {
+          if (declared.includes(id))
+            return [`${at} changes ${what}${id}, which a template declares`];
+          if (oslsGenerates(id, elsewhere.functions))
+            return [`${at} changes ${what}${id}, which osls generates`];
+          return [];
+        });
+      const changed = changes(entry.Resources, elsewhere.declared, "");
+      const changedOutputs = changes(
+        entry.Outputs,
+        elsewhere.outputs,
+        "the output ",
+      );
       const variables = variablesIn(entry, []).map(
         (found) => `${at} has ${found}`,
       );

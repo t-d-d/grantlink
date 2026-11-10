@@ -16,7 +16,8 @@ export const found = z
     finishedAt: z.iso.datetime(),
     counts: z
       .object({
-        // Every paper the run's search found.
+        // The papers the latest complete search returned, and those of runs
+        // started after it (see summarise).
         papers: z.number().int().nonnegative(),
         processed: z.number().int().nonnegative(),
         withReference: z.number().int().nonnegative(),
