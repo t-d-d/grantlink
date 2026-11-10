@@ -456,39 +456,19 @@ function aliasOf(
 // The constant key an object pattern destructures `name` from, at its top
 // level: `{ now }`, `{ now: at }` or `{ now = f }`. A name with a default
 // may not hold what it reads, so aliasOf marks it inexact. Null for a
-// computed key that is not a constant, or for a name the pattern
-// destructures from a nested pattern, which destructuredPath follows.
+// computed key that is not a constant, or for a name the pattern does not
+// destructure at its top level, such as one in a nested pattern.
 function destructuredKey(
   pattern: TSESTree.ObjectPattern,
   name: TSESTree.Identifier,
 ): string | null {
-  const path = destructuredPath(pattern, name);
-  return path?.length === 1 ? (path[0] ?? null) : null;
-}
-
-// The constant keys an object pattern destructures `name` through, from its
-// top level down any nested object patterns: `{ now }` gives `now`, and
-// `{ Date: { now: at } }` gives `Date`, `now`. A default, on the name or on
-// a nested pattern, `{ Date: { now } = D }`, is read through. Null when the
-// name is not in the pattern, or sits under a key that is not a constant.
-function destructuredPath(
-  pattern: TSESTree.ObjectPattern,
-  name: TSESTree.Identifier,
-): readonly string[] | null {
-  for (const property of pattern.properties) {
-    if (property.type !== AST_NODE_TYPES.Property) continue;
-    const value = withoutDefault(property.value);
-    const rest =
-      value === name
-        ? []
-        : value.type === AST_NODE_TYPES.ObjectPattern
-          ? destructuredPath(value, name)
-          : null;
-    if (rest === null) continue;
-    const key = keyName(property.key, property.computed);
-    return key === null ? null : [key, ...rest];
-  }
-  return null;
+  const property = pattern.properties.find(
+    (p): p is TSESTree.Property =>
+      p.type === AST_NODE_TYPES.Property && withoutDefault(p.value) === name,
+  );
+  return property === undefined
+    ? null
+    : keyName(property.key, property.computed);
 }
 
 // A pattern's target without the default it may give, `{ now = f }`.
