@@ -1,6 +1,6 @@
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import type { TSESTree } from "@typescript-eslint/utils";
-import { createRule, methodCallIn } from "./create-rule.ts";
+import { createRule, methodCallIn, unwrapped } from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
 //
@@ -48,11 +48,13 @@ function isNameExpression(node: TSESTree.Node): boolean {
 }
 
 // The options argument of a step call, `null` when it has none, or
-// `undefined` when the call is not a step this rule can read.
+// `undefined` when the call is not a step this rule can read. It reads each
+// argument through the wrappers unwrapped takes off, so `"fetch" as const`
+// is a name and `{} as StepConfig` is options with no retry strategy.
 function stepOptions(
   args: readonly TSESTree.CallExpressionArgument[],
-): TSESTree.CallExpressionArgument | null | undefined {
-  const [first, second, third] = args;
+): TSESTree.Node | null | undefined {
+  const [first, second, third] = args.map(unwrapped);
   if (first === undefined) return undefined;
   if (isInlineFunction(first)) return second ?? null;
   if (second === undefined) return undefined;
