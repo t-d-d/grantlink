@@ -104,6 +104,7 @@ describe("governor merges pull requests its review passes", () => {
         step.run?.includes("npm run test:live"),
       ),
     );
+    expect(job?.environment).toBe("prod");
     expect(job?.permissions?.["id-token"]).toBe("write");
     const reasons = (config.humanOnly ?? [])
       .filter(({ glob }) => live.includes(glob))
