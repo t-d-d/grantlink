@@ -295,7 +295,12 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
             {
               messageId: "nonDeterministicOutsideStep",
               data: { op: "Math" },
-              line: 1,
+              column: 9,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              column: 29,
             },
           ],
         },
@@ -1496,6 +1501,41 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
               messageId: "nonDeterministicOutsideStep",
               data: { op: "Date" },
               column: 52,
+            },
+          ],
+        },
+        {
+          name: "copies the rest of Math destructured from globalThis in a nested pattern",
+          code: `async function run(ctx: any) { const { Math: { ...m } } = globalThis; m.random(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              column: 40,
+            },
+          ],
+        },
+        {
+          name: "copies the rest of Date destructured from globalThis in a nested pattern",
+          filename: "src/run/run.ts",
+          code: `const { Date: { ...d } } = globalThis; d.now();`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 9,
+            },
+          ],
+        },
+        {
+          name: "exports the rest of Math destructured from globalThis in a nested pattern",
+          filename: "src/run/run.ts",
+          code: `export const { Math: { ...m } } = globalThis;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              column: 16,
             },
           ],
         },
