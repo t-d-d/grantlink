@@ -42,6 +42,15 @@ function plain(xml: string): string {
 // ends a word (#210, #216).
 const NAME_END = String.raw`(?=[\s/>])`;
 
+// A tag name as a pattern that matches only that name, so a name holding a
+// regular expression character such as a dot reads as written (#217).
+const literal = (name: string): string =>
+  name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+
+// A closing tag with this name. XML allows white space before its > (#217).
+const closingTag = (name: string, flags: string): RegExp =>
+  new RegExp(`</${literal(name)}\\s*>`, flags);
+
 // Drops comments and turns each CDATA section into escaped text, so that a
 // tag written inside either is not read as markup.
 function markup(xml: string): string {
@@ -68,7 +77,7 @@ function tagged(
   name: string,
   attributes = "",
 ): { tag: string; inner: string }[] {
-  const tags = new RegExp(`<(/?)${name}${NAME_END}([^>]*)>`, "gu");
+  const tags = new RegExp(`<(/?)${literal(name)}${NAME_END}([^>]*)>`, "gu");
   const wanted = new RegExp(attributes, "u");
   const found: { tag: string; inner: string }[] = [];
   let opening = "";
@@ -96,13 +105,12 @@ function tagged(
     }
   }
   if (depth > 0) {
-    const close = xml.indexOf(`</${name}>`, start);
-    if (close !== -1) {
-      found.push({ tag: opening, inner: xml.slice(start, close) });
-      return [
-        ...found,
-        ...tagged(xml.slice(close + name.length + 3), name, attributes),
-      ];
+    const next = closingTag(name, "gu");
+    next.lastIndex = start;
+    const close = next.exec(xml);
+    if (close !== null) {
+      found.push({ tag: opening, inner: xml.slice(start, close.index) });
+      return [...found, ...tagged(xml.slice(next.lastIndex), name, attributes)];
     }
   }
   return found;
@@ -180,8 +188,21 @@ function paragraphs(section: string): string[] {
 // What counts as a funding part, read here by the cutter and by the check on
 // recorded fixtures (test/fixture-parts.ts), so the two agree (#159).
 
+// A pattern for the attributes of an opening tag, after its name, that holds
+// this attribute with one of these values. It steps over each attribute
+// before it whole, so it matches only a whole attribute, never part of a
+// longer name such as x-fn-type or text inside another attribute's value
+// (#217).
+function wholeAttribute(name: string, values: string): string {
+  const quoted = String.raw`(?:"[^"]*"|'[^']*')`;
+  return String.raw`^(?:\s+[^\s=]+\s*=\s*${quoted})*\s+${name}\s*=\s*(?:"(?:${values})"|'(?:${values})')`;
+}
+
 // The attribute that marks a footnote as funding text.
-export const FUNDING_FOOTNOTE = String.raw`\bfn-type="(?:financial-disclosure|funding|supported-by)"`;
+export const FUNDING_FOOTNOTE = wholeAttribute(
+  "fn-type",
+  "financial-disclosure|funding|supported-by",
+);
 
 // The start of a funding or acknowledgements section, found by its type or by
 // its title. Europe PMC often marks acknowledgements up as a section rather
@@ -222,7 +243,7 @@ const FUNDING_SECTION = new RegExp(FUNDING_SECTION_START, "giu");
 // its name, as in tagged, and one with none after it is dropped. Tags match
 // in any case, as the pattern that finds the section does.
 function closeOf(xml: string, name: string, from: number): number {
-  const tags = new RegExp(`<(/?)${name}${NAME_END}([^>]*)>`, "giu");
+  const tags = new RegExp(`<(/?)${literal(name)}${NAME_END}([^>]*)>`, "giu");
   tags.lastIndex = from;
   let depth = 1;
   for (let tag = tags.exec(xml); tag !== null; tag = tags.exec(xml)) {
@@ -231,7 +252,7 @@ function closeOf(xml: string, name: string, from: number): number {
     depth += closing ? -1 : 1;
     if (depth === 0) return tag.index;
   }
-  const next = new RegExp(`</${name}>`, "giu");
+  const next = closingTag(name, "giu");
   next.lastIndex = from;
   return next.exec(xml)?.index ?? -1;
 }
