@@ -1,6 +1,10 @@
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import type { TSESTree } from "@typescript-eslint/utils";
-import { createRule, insideCheckpointedCallback } from "./create-rule.ts";
+import {
+  createRule,
+  insideCheckpointedCallback,
+  unwrapped,
+} from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
 //
@@ -24,13 +28,16 @@ const NON_DETERMINISTIC: Readonly<Record<string, ReadonlySet<string>>> = {
   ]),
 };
 
+// The object is read through unwrapped, so `(Date as any).now()`,
+// `Math!.random()` and `(crypto satisfies Crypto).randomUUID()` count too.
 function memberOp(node: TSESTree.MemberExpression): string | undefined {
   if (node.computed) return undefined;
-  if (node.object.type !== AST_NODE_TYPES.Identifier) return undefined;
+  const object = unwrapped(node.object);
+  if (object.type !== AST_NODE_TYPES.Identifier) return undefined;
   if (node.property.type !== AST_NODE_TYPES.Identifier) return undefined;
-  const allowed = NON_DETERMINISTIC[node.object.name];
+  const allowed = NON_DETERMINISTIC[object.name];
   return allowed?.has(node.property.name) === true
-    ? `${node.object.name}.${node.property.name}`
+    ? `${object.name}.${node.property.name}`
     : undefined;
 }
 

@@ -92,6 +92,72 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
         },
         {
+          name: "reads the clock through as, satisfies and a non-null assertion on Date",
+          code: `async function run(ctx: any) {
+            const a = (Date as any).now();
+            const b = (Date satisfies DateConstructor).now();
+            const c = Date!.now();
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+            },
+          ],
+        },
+        {
+          name: "reads random through as, satisfies and a non-null assertion on Math",
+          code: `async function run(ctx: any) {
+            const a = (Math as any).random();
+            const b = (Math satisfies Math).random();
+            const c = Math!.random();
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
+        },
+        {
+          name: "reads random through as, satisfies and a non-null assertion on crypto",
+          code: `async function run(ctx: any) {
+            const a = (crypto as any).randomUUID();
+            const b = (crypto satisfies Crypto).randomUUID();
+            const c = crypto!.randomUUID();
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto.randomUUID()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto.randomUUID()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto.randomUUID()" },
+            },
+          ],
+        },
+        {
           name: "passes a random source by reference",
           code: `const pick = items.sort(Math.random);`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
