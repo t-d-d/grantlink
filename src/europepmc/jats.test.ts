@@ -859,6 +859,16 @@ describe("keeping funding notes and footnotes (#505)", () => {
     expect(JSON.stringify(sections)).not.toContain("Authorname");
   });
 
+  // An untitled section wrapped in another element does not say it is about
+  // something else, so it stays part of the note's own words (#541).
+  it("reads a wrapped, untitled section as a note's own words", () => {
+    expect(
+      back(
+        "<notes><boxed-text><sec><p>Supported by Cancer Research UK.</p></sec></boxed-text></notes>",
+      ).text,
+    ).toEqual(["Supported by Cancer Research UK."]);
+  });
+
   // A note kept for naming the funder in its own words is about funding
   // only in those words, so of the sections it holds the cut keeps only the
   // funding sections, which it finds as it finds every funding section, ahead
