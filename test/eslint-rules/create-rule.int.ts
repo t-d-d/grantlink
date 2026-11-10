@@ -12,11 +12,10 @@ import { root } from "../repo.ts";
 describe("repoPath through a symlink to the repo", () => {
   const dir = mkdtempSync(join(tmpdir(), "repo-path-"));
   const link = join(dir, "checkout");
-  symlinkSync(root, link, "dir");
-
   afterAll(() => {
     rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
   });
+  symlinkSync(root, link, "dir");
 
   it("names a file on disk from the repo root", () => {
     expect(
