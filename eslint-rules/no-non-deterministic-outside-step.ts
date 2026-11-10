@@ -475,8 +475,9 @@ function exportsUnfollowed(
 // an export default or an export assignment passes on, `export default
 // Date.now`, or the initial value of an alias that is exported, `export const
 // now = Date.now`, or `const D = Date` and then `export { D }`. Its report
-// stands for the export. So is an object that holds a source when an
-// exported pattern copies its rest, `export const { ...m } = Math`. A call is
+// stands for the export. So is an object that holds a source when a pattern
+// copies its rest and the rest is exported, `export const { ...m } = Math`,
+// or `const { ...m } = Math` and then `export { m }`. A call is
 // never one, since `export const d = new Date()` passes on the value it read
 // and not the source.
 function exportedSource(node: TSESTree.Node, resolver: Resolver): boolean {
@@ -490,7 +491,12 @@ function exportedSource(node: TSESTree.Node, resolver: Resolver): boolean {
     case AST_NODE_TYPES.VariableDeclarator: {
       if (parent.init !== outer) return false;
       if (parent.id.type === AST_NODE_TYPES.ObjectPattern) {
-        return copiesRest(parent.id) && exportedDeclaration(parent);
+        const rest = parent.id.properties.at(-1);
+        if (rest?.type !== AST_NODE_TYPES.RestElement) return false;
+        const copy = resolver.sourceCode
+          .getDeclaredVariables(parent)
+          .find((variable) => variable.identifiers[0] === rest.argument);
+        return copy !== undefined && exported(parent, copy);
       }
       if (parent.id.type !== AST_NODE_TYPES.Identifier) return false;
       const [declared] = resolver.sourceCode.getDeclaredVariables(parent);

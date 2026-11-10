@@ -554,9 +554,22 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
-          name: "exports the rest of Math, which copies random",
+          name: "exports the rest of Math, which the rule counts as passing Math on",
           filename: "src/run/run.ts",
           code: `export const { ...m } = Math;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by name the rest of Math",
+          filename: "src/run/run.ts",
+          code: `const { ...m } = Math;
+          export { m };`,
           errors: [
             {
               messageId: "exportedOutsideStep",
