@@ -197,11 +197,11 @@ describe("strayParts", () => {
       "article/body (text)",
     ],
     [
-      "a processing instruction holding text in a funding statement, whose element the check does not otherwise read (#303)",
+      "a processing instruction holding text in a funding statement (#303, #336)",
       {
         meta: "<funding-group><funding-statement>Funded.<?x Somebody?></funding-statement></funding-group>",
       },
-      "article/front/article-meta/funding-group (text)",
+      "article/front/article-meta/funding-group/funding-statement (text)",
     ],
     [
       "a processing instruction holding text in the licence (#303)",
@@ -211,11 +211,11 @@ describe("strayParts", () => {
       "article/front/article-meta/permissions/license (text)",
     ],
     [
-      "a comment holding text in a funding statement (#303)",
+      "a comment holding text in a funding statement (#303, #336)",
       {
         meta: "<funding-group><funding-statement>Funded.<!-- Somebody --></funding-statement></funding-group>",
       },
-      "article/front/article-meta/funding-group (text)",
+      "article/front/article-meta/funding-group/funding-statement (text)",
     ],
   ])("names %s", (_what, parts, stray) => {
     expect(strayParts(paper(parts))).toEqual([stray]);

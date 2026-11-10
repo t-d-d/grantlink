@@ -180,19 +180,34 @@ function attribute(tag: string, name: string): string[] {
   return value.split(/\s+/u).filter((part) => part !== "");
 }
 
+// The funding metadata the cutter reads, by element name. In each funding
+// group it reads every funding statement whole, and in each award group every
+// funding source and award id whole. The check on recorded fixtures
+// (test/fixture-parts.ts) reads a funding group by these names too, so the two
+// agree (#305).
+export const FUNDING_METADATA = {
+  group: "funding-group",
+  statement: "funding-statement",
+  award: "award-group",
+  source: "funding-source",
+  id: "award-id",
+} as const;
+
 // An award group's ids with the funding sources they belong to. An award id
 // whose rid names sources in its group goes to those sources alone. Any
 // other id goes to every source in the group, which then does not say whose
 // it is (#128).
 function awardsOf(group: string): FundingSections["awards"] {
-  const sources = tagged(group, "funding-source").map(({ tag, inner }) => ({
-    ids: attribute(tag, "id"),
-    name: plain(inner),
-  }));
+  const sources = tagged(group, FUNDING_METADATA.source).map(
+    ({ tag, inner }) => ({
+      ids: attribute(tag, "id"),
+      name: plain(inner),
+    }),
+  );
   const all = sources.map(({ name }) => name).filter((name) => name !== "");
   const untied: string[] = [];
   const tied = new Map<string, { sources: string[]; ids: string[] }>();
-  for (const { tag, inner } of tagged(group, "award-id")) {
+  for (const { tag, inner } of tagged(group, FUNDING_METADATA.id)) {
     const id = plain(inner);
     if (id === "") continue;
     const rid = attribute(tag, "rid");
@@ -354,12 +369,12 @@ function fundingBodySections(xml: string): string[] {
 
 export function fundingSections(paper: string): FundingSections {
   const xml = markup(paper);
-  const groups = elements(xml, "funding-group");
+  const groups = elements(xml, FUNDING_METADATA.group);
   const statements = groups.flatMap((group) =>
-    elements(group, "funding-statement").map(plain),
+    elements(group, FUNDING_METADATA.statement).map(plain),
   );
   const awards = groups.flatMap((group) =>
-    elements(group, "award-group").flatMap(awardsOf),
+    elements(group, FUNDING_METADATA.award).flatMap(awardsOf),
   );
   const sections = fundingBodySections(xml);
   const text = [

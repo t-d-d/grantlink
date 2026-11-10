@@ -22,7 +22,11 @@
 // the cutter finds a funding statement, funding source or award id at any
 // depth in its group, but the check names one anywhere but its own place.
 
-import { FUNDING_FOOTNOTE, isFundingSectionAt } from "../src/europepmc/jats.ts";
+import {
+  FUNDING_FOOTNOTE,
+  FUNDING_METADATA,
+  isFundingSectionAt,
+} from "../src/europepmc/jats.ts";
 
 interface Element {
   name: string;
@@ -37,6 +41,11 @@ interface Element {
 
 const FOOTNOTE = new RegExp(FUNDING_FOOTNOTE, "u");
 
+// The funding metadata the cutter reads, by the names it reads them by, and
+// where a funding group stands in a recorded full text (#305).
+const { group, statement, award, source, id } = FUNDING_METADATA;
+const GROUP = `article/front/article-meta/${group}`;
+
 const isFundingSection = (element: Element): boolean =>
   element.name === "sec" && element.funding;
 const isFundingFootnote = (element: Element): boolean =>
@@ -50,12 +59,10 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
   article: (child) => ["front", "body", "back"].includes(child.name),
   "article/front": (child) => child.name === "article-meta",
   "article/front/article-meta": (child) =>
-    ["article-id", "permissions", "funding-group"].includes(child.name),
+    ["article-id", "permissions", group].includes(child.name),
   "article/front/article-meta/permissions": (child) => child.name === "license",
-  "article/front/article-meta/funding-group": (child) =>
-    ["funding-statement", "award-group"].includes(child.name),
-  "article/front/article-meta/funding-group/award-group": (child) =>
-    ["funding-source", "award-id"].includes(child.name),
+  [GROUP]: (child) => [statement, award].includes(child.name),
+  [`${GROUP}/${award}`]: (child) => [source, id].includes(child.name),
   "article/body": isFundingSection,
   "article/back": (child) =>
     child.name === "ack" ||
@@ -193,20 +200,17 @@ function strayInPart(part: Element, path: string): string[] {
 
 // What the cutter reads whole inside a funding group: each funding
 // statement, and each funding source and award id in an award group. Any
-// element inside one is read with it, but a comment is dropped unread, so a
-// comment with text is named (#275).
-const READ_WHOLE = new Set(
-  [
-    "funding-group/funding-statement",
-    "funding-group/award-group/funding-source",
-    "funding-group/award-group/award-id",
-  ].map((path) => `article/front/article-meta/${path}`),
-);
+// element inside one is read with it, but a comment or a processing
+// instruction is dropped unread, so one with text is named (#275, #336).
+const READ_WHOLE = new Set([
+  `${GROUP}/${statement}`,
+  `${GROUP}/${award}/${source}`,
+  `${GROUP}/${award}/${id}`,
+]);
 
 function stray(element: Element, path: string): string[] {
   if (isPart(element)) return strayInPart(element, path);
-  if (READ_WHOLE.has(path))
-    return hasComment(element) ? [`${path} (text)`] : [];
+  if (READ_WHOLE.has(path)) return hasUnread(element) ? [`${path} (text)`] : [];
   const allowed = ALLOWED[path];
   if (allowed === undefined)
     return hasUnread(element) ? [`${path} (text)`] : [];
