@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { format, resolveConfig, type Options } from "prettier";
 import { manifest, snapshotKeys } from "./gold.ts";
 
 // Pins a snapshot once a run has written it (docs/constraints/evals.md):
@@ -63,6 +64,16 @@ export function pin(
   };
 }
 
+// Writes a file the gate's format check accepts. JSON.stringify puts each
+// item of a short array on its own line, and Prettier would join them.
+export function toFile(
+  file: string,
+  value: unknown,
+  options: Options = {},
+): Promise<string> {
+  return format(JSON.stringify(value), { ...options, filepath: file });
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [dir] = process.argv.slice(2);
   if (dir === undefined) throw new Error("usage: node evals/pin.ts <dir>");
@@ -75,11 +86,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     snapshot,
     read("gold-a.json") as GoldAFile,
   );
-  const write = (file: string, value: unknown) => {
-    writeFileSync(here(file), `${JSON.stringify(value, null, 2)}\n`);
+  const write = async (file: string, value: unknown) => {
+    const path = fileURLToPath(here(file));
+    const options = (await resolveConfig(path)) ?? {};
+    writeFileSync(path, await toFile(path, value, options));
   };
-  write("snapshot.json", result.snapshot);
-  write("gold-a.json", result.goldA);
+  await write("snapshot.json", result.snapshot);
+  await write("gold-a.json", result.goldA);
   console.log(
     `Pinned snapshot ${snapshot.id}: ${String(result.goldA.papers.length)} papers in gold set A.`,
   );
