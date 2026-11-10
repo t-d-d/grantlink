@@ -4,7 +4,7 @@ import type { TSESTree } from "@typescript-eslint/utils";
 import {
   aliasDeclarator,
   createRule,
-  destructuredKey,
+  destructuredPath,
   exportedName,
   insideCheckpointedCallback,
   lookup,
@@ -164,11 +164,12 @@ function identifierPath(
     if (declarator.init === null) return null;
     const init = pathOf(declarator.init, resolver, next);
     if (declarator.id === name || init === null) return init;
-    // A name destructured at the top of an object pattern, `{ now } = Date`,
-    // with or without a default.
+    // A name destructured from an object pattern, at its top,
+    // `{ now } = Date`, or from a nested pattern,
+    // `{ Date: { now } } = globalThis`, with or without a default.
     if (declarator.id.type !== AST_NODE_TYPES.ObjectPattern) return null;
-    const key = destructuredKey(declarator.id, name, "with-default");
-    return key === null ? null : normalised([...init, key]);
+    const keys = destructuredPath(declarator.id, name, "with-default");
+    return keys === null ? null : normalised([...init, ...keys]);
   }
   const def = end.defs[0];
   if (def?.parent?.type !== AST_NODE_TYPES.ImportDeclaration) return null;

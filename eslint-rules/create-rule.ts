@@ -456,23 +456,49 @@ function aliasOf(
 // The constant key an object pattern destructures `name` from, at its top
 // level: `{ now }` or `{ now: at }`. A name with a default, `{ now = f }`,
 // may not hold what it reads, so only `with-default` counts it, for a rule
-// that only refuses. Null for a computed key that is not a constant.
+// that only refuses. Null for a computed key that is not a constant, or for
+// a name the pattern destructures from a nested pattern, which
+// destructuredPath follows.
 export function destructuredKey(
   pattern: TSESTree.ObjectPattern,
   name: TSESTree.Identifier,
   defaults: "exact" | "with-default",
 ): string | null {
-  const property = pattern.properties.find(
-    (p): p is TSESTree.Property =>
-      p.type === AST_NODE_TYPES.Property &&
-      (p.value === name ||
-        (defaults === "with-default" &&
-          p.value.type === AST_NODE_TYPES.AssignmentPattern &&
-          p.value.left === name)),
-  );
-  return property === undefined
-    ? null
-    : keyName(property.key, property.computed);
+  const path = destructuredPath(pattern, name, defaults);
+  return path?.length === 1 ? (path[0] ?? null) : null;
+}
+
+// The constant keys an object pattern destructures `name` through, from its
+// top level down any nested object patterns: `{ now }` gives `now`, and
+// `{ Date: { now: at } }` gives `Date`, `now`. A default, on the name or on
+// a nested pattern, `{ Date: { now } = D }`, counts only under
+// `with-default`, as destructuredKey says. Null when the name is not in the
+// pattern, or sits under a key that is not a constant.
+export function destructuredPath(
+  pattern: TSESTree.ObjectPattern,
+  name: TSESTree.Identifier,
+  defaults: "exact" | "with-default",
+): readonly string[] | null {
+  for (const property of pattern.properties) {
+    if (property.type !== AST_NODE_TYPES.Property) continue;
+    let value = property.value;
+    if (
+      defaults === "with-default" &&
+      value.type === AST_NODE_TYPES.AssignmentPattern
+    ) {
+      value = value.left;
+    }
+    const rest =
+      value === name
+        ? []
+        : value.type === AST_NODE_TYPES.ObjectPattern
+          ? destructuredPath(value, name, defaults)
+          : null;
+    if (rest === null) continue;
+    const key = keyName(property.key, property.computed);
+    return key === null ? null : [key, ...rest];
+  }
+  return null;
 }
 
 // The named import a member of a namespace import gives.
