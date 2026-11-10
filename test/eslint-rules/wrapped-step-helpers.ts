@@ -1,5 +1,5 @@
-// Ways to reach askEuropePmc through a TypeScript wrapper or optional
-// chaining (#408). Each gives the module's opening lines and the text that
+// Ways to reach askEuropePmc through a TypeScript wrapper, optional
+// chaining (#408) or the comma operator (#429). Each gives the module's opening lines and the text that
 // stands before a call's argument list, so a rule's tests can write
 // `${shape.callee}(ctx, ...)` in a body that follows `shape.prelude`.
 export interface WrappedStepHelper {
@@ -91,6 +91,37 @@ export const WRAPPED_STEP_HELPERS: readonly WrappedStepHelper[] = [
     name: "an alias destructured from an asserted namespace",
     prelude: `${namespace}
     const { askEuropePmc: ask } = owed as typeof owed;`,
+    callee: "ask",
+  },
+  {
+    name: "a member read through the comma operator",
+    prelude: namespace,
+    callee: "(0, owed.askEuropePmc)",
+  },
+  {
+    name: "a named import read through the comma operator",
+    prelude: named,
+    callee: "(0, askEuropePmc)",
+  },
+  {
+    name: "a namespace read through the comma operator",
+    prelude: namespace,
+    callee: "(0, owed).askEuropePmc",
+  },
+  {
+    name: "the comma operator inside an assertion",
+    prelude: namespace,
+    callee: "((0, owed.askEuropePmc) as typeof owed.askEuropePmc)",
+  },
+  {
+    name: "an assertion inside the comma operator",
+    prelude: named,
+    callee: "(0, askEuropePmc as typeof askEuropePmc)",
+  },
+  {
+    name: "an alias assigned through the comma operator",
+    prelude: `${namespace}
+    const ask = (0, owed.askEuropePmc);`,
     callee: "ask",
   },
 ];
