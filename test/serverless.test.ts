@@ -3,7 +3,11 @@ import { mergeOver, strayVariablesIn, unreadResources } from "./serverless.ts";
 
 const TEMPLATES = ["infra/site.cfn.yml", "infra/data.cfn.yml"];
 const known = TEMPLATES.map((path) => `\${file(./${path})}`);
-const stack = { declared: ["SiteBucket", "Distribution"], functions: ["run"] };
+const stack = {
+  declared: ["SiteBucket", "Distribution"],
+  outputs: ["SiteBucketName", "DistributionId", "PageUrl"],
+  functions: ["run"],
+};
 const unread = (resources: unknown): string[] =>
   unreadResources(resources, TEMPLATES, stack);
 
@@ -178,6 +182,17 @@ describe("inline resources that change what a template or osls declares (#166)",
     (id) => {
       expect(unread([...known, { Outputs: { [id]: { Value: 1 } } }])).toEqual([
         `entry 3 changes the output ${id}, which osls generates`,
+      ]);
+    },
+  );
+
+  it.each(["SiteBucketName", "DistributionId", "PageUrl"])(
+    "finds an inline entry that changes the output %s, which a template declares (#243)",
+    (id) => {
+      expect(
+        unread([...known, { Outputs: { [id]: { Value: "other" } } }]),
+      ).toEqual([
+        `entry 3 changes the output ${id}, which a template declares`,
       ]);
     },
   );
