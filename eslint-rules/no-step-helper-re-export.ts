@@ -1,12 +1,12 @@
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import type { TSESTree } from "@typescript-eslint/utils";
 import {
+  bindingOf,
   createRule,
   exportedName,
   helperNamed,
   holdsStepHelper,
   importOf,
-  memberName,
   moduleOf,
   repoPath,
   unwrapped,
@@ -61,17 +61,11 @@ export const noStepHelperReExport = createRule({
             : helperNamed(binding.module, binding.name) !== null;
         return passes ? binding.module : null;
       }
-      if (value.type === AST_NODE_TYPES.MemberExpression) {
-        const object = unwrapped(value.object);
-        if (object.type !== AST_NODE_TYPES.Identifier) return null;
-        const name = memberName(value);
-        const binding = importOf(object, context);
-        if (name === null || binding?.name !== null) return null;
-        return helperNamed(binding.module, name) === null
-          ? null
-          : binding.module;
-      }
-      return null;
+      const binding = bindingOf(value, context);
+      if (typeof binding?.name !== "string") return null;
+      return helperNamed(binding.module, binding.name) === null
+        ? null
+        : binding.module;
     };
     const checkValue = (node: TSESTree.Node, value: TSESTree.Node): void => {
       const module = passedOn(value);
