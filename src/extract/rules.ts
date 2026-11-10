@@ -1,5 +1,6 @@
 import { z } from "zod";
 import funderFile from "./funder.json" with { type: "json" };
+import { latest, type Version } from "./versions.ts";
 
 // The rules pass: reads grant references out of a paper's funding sections
 // with patterns, before any model sees the paper. It returns references
@@ -7,8 +8,11 @@ import funderFile from "./funder.json" with { type: "json" };
 // (docs/constraints/personal-data.md).
 
 // Bump this whenever a pattern, or which references the rules keep,
-// changes, so every stored result says which rules made it.
-export const RULES_VERSION = "rules-10";
+// changes, so every stored result says which rules made it. To bump, add a
+// line naming your issue at the end of RULES_VERSIONS below (see
+// versions.ts, #414).
+export const RULES_VERSIONS: readonly Version[] = [{ number: 10, issue: 368 }];
+export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
 export const funder = z
   .object({

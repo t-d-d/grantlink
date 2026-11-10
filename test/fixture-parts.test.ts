@@ -118,6 +118,27 @@ describe("strayParts", () => {
       "article/back/ack/sec-meta",
     ],
     [
+      "a sec-meta inside a paragraph of the acknowledgements, which the cutter drops (#416)",
+      {
+        back: "<ack><p>G<sec-meta>B</sec-meta></p></ack>",
+      },
+      "article/back/ack/p/sec-meta",
+    ],
+    [
+      "a sec-meta deep inside a paragraph of a funding section (#416)",
+      {
+        body: "<body><sec><title>Funding</title><p>Funded <bold><italic><sec-meta>B</sec-meta></italic></bold>.</p></sec></body>",
+      },
+      "article/body/sec/p/bold/italic/sec-meta",
+    ],
+    [
+      "a sec-meta in any case inside a paragraph of a funding footnote (#416)",
+      {
+        back: '<fn-group><fn fn-type="funding"><p>Funded.<SEC-META>B</SEC-META></p></fn></fn-group>',
+      },
+      "article/back/fn-group/fn/p/SEC-META",
+    ],
+    [
       "the author list",
       {
         meta: "<contrib-group><contrib><name>A</name></contrib></contrib-group>",
@@ -717,6 +738,18 @@ describe("strayParts", () => {
     ],
   ])("names %s", (_what, parts, stray) => {
     expect(strayParts(paper(parts))).toEqual([stray]);
+  });
+
+  it("reads tags in any case, as the cutter does, so a closing tag in another case ends its element (#415)", () => {
+    const xml =
+      "<article><back><ack><p>Grant A1.</p></ACK><p>Name</p></ack></back></article>";
+    expect(strayParts(xml)).toEqual(["article/back/p"]);
+  });
+
+  it("reads an opening tag in another case as the cutter does, and names it in lower case (#415)", () => {
+    const xml =
+      "<Article><back><ACK><P>Grant A1.</P></ACK><Ref-List><ref>Name</ref></Ref-List></back></Article>";
+    expect(strayParts(xml)).toEqual(["article/back/ref-list"]);
   });
 
   it("names a root that is not an article", () => {

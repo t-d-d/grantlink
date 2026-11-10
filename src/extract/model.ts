@@ -6,6 +6,7 @@ import {
   referenceSchema,
   wholeReference,
 } from "./rules.ts";
+import { latest, type Version } from "./versions.ts";
 
 // The model pass: reads a paper's funding text and proposes the grant
 // references the rules missed (docs/constraints/model-calls.md). This is the
@@ -28,8 +29,13 @@ export const MODELS = [
 export type ModelId = (typeof MODELS)[number];
 
 // Bump this whenever the prompt, or how a reply is read, changes, so every
-// stored result says which prompt made it.
-export const PROMPT_VERSION = "prompt-3";
+// stored result says which prompt made it. To bump, add a line naming your
+// issue at the end of PROMPT_VERSIONS below (see versions.ts, #414).
+export const PROMPT_VERSIONS: readonly Version[] = [
+  { number: 2, issue: 384 },
+  { number: 3, issue: 413 },
+];
+export const PROMPT_VERSION = latest("prompt", PROMPT_VERSIONS);
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 
