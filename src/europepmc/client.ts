@@ -78,25 +78,37 @@ export interface EuropePmc {
   fullText(pmcid: string): Promise<string>;
   // The funder's grant ids Europe PMC links to a paper.
   grants(pmcid: string): Promise<string[]>;
+  // How many requests this client has sent, answered or not, so a step can
+  // count the requests it made (#378).
+  sent(): number;
 }
+
+// What Europe PMC last did with a request: the status it answered with, or
+// that the request timed out or could not connect.
+export type Answer = number | "timeout" | "connection";
 
 // Europe PMC refused or failed the request, and this client will not try
 // again. `waitSeconds` is how long Europe PMC's last refusal asked callers
 // to wait, if it said: the run's step waits at least that long before it
-// asks again.
+// asks again. `last` is what Europe PMC did with the last request this
+// client sent for it, or undefined when a wait still owed stopped the
+// request before any was sent.
 export class EuropePmcError extends Error {
   readonly status: number | undefined;
   readonly waitSeconds: number | undefined;
+  readonly last: Answer | undefined;
 
   constructor(
     message: string,
     status: number | undefined,
     waitSeconds?: number,
+    last: Answer | undefined = status,
   ) {
     super(message);
     this.name = "EuropePmcError";
     this.status = status;
     this.waitSeconds = waitSeconds;
+    this.last = last;
   }
 }
 
@@ -219,12 +231,14 @@ export function europePmc(
   // belong to this client, which a run makes for itself.
   let next = 0;
   let interval = INTERVAL_MS;
+  let sent = 0;
 
   async function request(url: URL): Promise<Response> {
     if (url.protocol !== "https:" || !HOSTS.includes(url.host)) {
       throw new Error(`refusing to call ${url.host}: not Europe PMC`);
     }
     let failure = "";
+    let last: Answer | undefined;
     // The Retry-After of the last refusal, in ms, if it gave one.
     let lastAsked: number | undefined;
     for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
@@ -237,11 +251,13 @@ export function europePmc(
           `Europe PMC asked to wait ${String(seconds)}s more`,
           undefined,
           seconds,
+          last,
         );
       }
       if (wait > 0) await clock.sleep(wait);
       const started = clock.now();
       let response: Response | undefined;
+      sent += 1;
       try {
         response = await fetch(url, {
           headers: { "User-Agent": USER_AGENT },
@@ -249,6 +265,10 @@ export function europePmc(
         });
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
+        last =
+          error instanceof Error && error.name === "TimeoutError"
+            ? "timeout"
+            : "connection";
       }
       const took = clock.now() - started;
       // Slow down while Europe PMC is slow, and come back to the usual pace
@@ -262,6 +282,7 @@ export function europePmc(
       if (response?.ok) return response;
       if (response !== undefined) {
         failure = `Europe PMC answered ${String(response.status)}`;
+        last = response.status;
         const refused = response.status === 429 || response.status >= 500;
         if (!refused) throw new EuropePmcError(failure, response.status);
         await response.body?.cancel();
@@ -278,6 +299,7 @@ export function europePmc(
           `${failure}, asked to wait ${String(seconds)}s`,
           response?.status,
           seconds,
+          last,
         );
       }
       const backoff =
@@ -290,10 +312,13 @@ export function europePmc(
       `${failure}, after ${String(ATTEMPTS)} tries`,
       undefined,
       lastAsked === undefined ? undefined : Math.ceil(lastAsked / 1_000),
+      last,
     );
   }
 
   return {
+    sent: () => sent,
+
     async search(
       cursor,
       selection = searchQuery(),

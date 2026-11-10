@@ -123,6 +123,7 @@ function fake(
   const searched: string[] = [];
   const sizes: (number | undefined)[] = [];
   const api: EuropePmc = {
+    sent: () => fetched.length + searched.length,
     search(_cursor, selection = "", pageSize?: number): Promise<SearchPage> {
       searched.push(selection);
       sizes.push(pageSize);

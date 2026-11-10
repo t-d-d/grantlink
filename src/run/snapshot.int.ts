@@ -59,6 +59,7 @@ function failingFirstLabelled(first: () => Promise<string>) {
   fake.deps.europePmc = {
     search: real.search.bind(real),
     grants: real.grants.bind(real),
+    sent: real.sent.bind(real),
     fullText: (pmcid) => {
       if (!snapshot) return real.fullText(pmcid);
       if (LABELLED.includes(pmcid)) asked.push(pmcid);

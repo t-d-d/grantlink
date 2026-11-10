@@ -56,7 +56,8 @@ export interface Resolver {
 // Functions in src/run/ that take a context as their first argument and run
 // some of their other arguments inside a step, keyed by the module that
 // exports them and the exported name, with those arguments' positions.
-// askEuropePmc runs `read` as its step and calls `retry` from inside it. The
+// askEuropePmc runs `read` as its step and calls `retry` from inside it, and
+// askForPaper calls `sent` there too. The
 // rules treat a call to one as a durable operation on that context and those
 // arguments as a step's callback. They resolve the callee to its binding, so
 // a caller may import one under any name, and a function that only shares
@@ -69,6 +70,7 @@ export interface StepHelper {
 
 export const STEP_HELPERS: readonly StepHelper[] = [
   { module: "src/run/owed.ts", name: "askEuropePmc", callbacks: [3, 4] },
+  { module: "src/run/owed.ts", name: "askForPaper", callbacks: [3, 4, 5] },
 ];
 
 // The step helper a call `<name>(...)` calls, if `<name>` resolves to a

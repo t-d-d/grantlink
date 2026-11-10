@@ -138,6 +138,7 @@ function refusingPapers(error: Error) {
     search: fake.deps.europePmc.search.bind(fake.deps.europePmc),
     fullText: () => Promise.reject(error),
     grants: fake.deps.europePmc.grants.bind(fake.deps.europePmc),
+    sent: fake.deps.europePmc.sent.bind(fake.deps.europePmc),
   };
   return fake;
 }
@@ -459,6 +460,7 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
           return Promise.reject(error);
         },
         grants: fake.deps.europePmc.grants.bind(fake.deps.europePmc),
+        sent: fake.deps.europePmc.sent.bind(fake.deps.europePmc),
       };
       // Count only the run's own reads, not the snapshot's.
       fake.deps.text.hasSnapshot = () => Promise.resolve(true);
@@ -490,6 +492,7 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
       fullText: () =>
         Promise.reject(new Error("Europe PMC answered 503, after 5 tries")),
       grants: fake.deps.europePmc.grants.bind(fake.deps.europePmc),
+      sent: fake.deps.europePmc.sent.bind(fake.deps.europePmc),
     };
     const { status, result } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
@@ -534,6 +537,7 @@ function refusingFor(
       check(`grants ${pmcid}`);
       return real.grants(pmcid);
     },
+    sent: real.sent.bind(real),
     fullText: (pmcid) => {
       check(`fullText ${pmcid}`);
       if (!refusing) return real.fullText(pmcid);
@@ -583,6 +587,7 @@ async function refusingLast() {
       check(`grants ${pmcid}`);
       return real.grants(pmcid);
     },
+    sent: real.sent.bind(real),
     fullText: (pmcid) => {
       check(`fullText ${pmcid}`);
       if (pmcid !== last) return real.fullText(pmcid);
@@ -1088,3 +1093,100 @@ function snapshotFailedFields(): Record<string, unknown> {
   }
   return rest;
 }
+
+// When a paper fails, the logs say why and how hard the run tried, so the
+// reason never has to be found again by asking Europe PMC by hand (#378).
+describe("a paper that fails logs why (#378)", () => {
+  // A search that finds one paper, PMC0000099, which has no fixture, so
+  // Europe PMC answers 503 for its full text every time.
+  const unreadable = () =>
+    reply(
+      JSON.stringify({
+        hitCount: 1,
+        resultList: { result: [{ pmcid: "PMC0000099" }] },
+      }),
+    );
+
+  it("logs its PMCID, the status of Europe PMC's last answer, and how many requests and tries it took", async () => {
+    const fake = fakeDeps({ search: unreadable });
+    fake.deps.text.hasSnapshot = () => Promise.resolve(true);
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.failed).toBe(1);
+    expect(logged("paper-failed")).toEqual([
+      expect.objectContaining({
+        pmcid: "PMC0000099",
+        why: "answered",
+        status: 503,
+        requests: 5,
+        tries: 3,
+      }),
+    ]);
+  });
+
+  it("logs a paper Europe PMC has no full text for after one request and one try", async () => {
+    const fake = fakeDeps({ search: unreadable });
+    fake.deps.text.hasSnapshot = () => Promise.resolve(true);
+    const real = fake.deps.europePmc;
+    fake.deps.europePmc = {
+      search: real.search.bind(real),
+      grants: real.grants.bind(real),
+      sent: real.sent.bind(real),
+      fullText: () =>
+        Promise.reject(new EuropePmcError("Europe PMC answered 404", 404)),
+    };
+    await runWith(fake);
+    expect(logged("paper-failed")).toEqual([
+      expect.objectContaining({
+        pmcid: "PMC0000099",
+        why: "answered",
+        status: 404,
+        tries: 1,
+      }),
+    ]);
+  });
+
+  it("logs a fault in the code as such, with no message", async () => {
+    const fake = fakeDeps({ search: unreadable });
+    fake.deps.text.hasSnapshot = () => Promise.resolve(true);
+    const real = fake.deps.europePmc;
+    fake.deps.europePmc = {
+      search: real.search.bind(real),
+      grants: real.grants.bind(real),
+      sent: real.sent.bind(real),
+      fullText: () => Promise.reject(new Error("Quillfeather wrote this")),
+    };
+    await runWith(fake);
+    expect(logged("paper-failed")).toEqual([
+      expect.objectContaining({ pmcid: "PMC0000099", why: "code", tries: 1 }),
+    ]);
+    expect(logs.join("\n")).not.toContain("Quillfeather");
+  });
+
+  it("logs a gold paper that fails in the snapshot under its own event, with its set", async () => {
+    const fake = fakeDeps({
+      gold: {
+        goldB: {
+          about: "a test's gold set B",
+          papers: [{ pmcid: "PMC0000098", references: [] }],
+        },
+      },
+    });
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toEqual({
+      taken: false,
+      reason: "a gold set B paper could not be read",
+    });
+    expect(logged("gold-paper-failed")).toEqual([
+      expect.objectContaining({
+        pmcid: "PMC0000098",
+        set: "B",
+        why: "answered",
+        status: 503,
+        requests: 5,
+        tries: 3,
+      }),
+    ]);
+  });
+});
