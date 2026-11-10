@@ -1,6 +1,7 @@
 import { afterAll, describe, it } from "vitest";
 import { noNestedDurableOperations } from "../../eslint-rules/no-nested-durable-operations.ts";
 import { ruleTester } from "../rule-tester.ts";
+import { WRAPPED_STEP_HELPERS } from "./wrapped-step-helpers.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
 
@@ -37,6 +38,28 @@ describe("fitness: no durable operation inside its own context's operation (dura
       },
     ],
     invalid: [
+      ...WRAPPED_STEP_HELPERS.map((shape) => ({
+        name: `asks Europe PMC through ${shape.name} on the same context inside a step`,
+        filename: "src/run/run.ts",
+        code: `${shape.prelude}
+        async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await ${shape.callee}(ctx, "paper", "wait", r, async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
+      ...WRAPPED_STEP_HELPERS.map((shape) => ({
+        name: `calls a step on the same context inside askEuropePmc's read, reached through ${shape.name}`,
+        filename: "src/run/run.ts",
+        code: `${shape.prelude}
+        async function run(ctx: any) {
+          await ${shape.callee}(ctx, "paper", "wait", r, async () => {
+            await ctx.step("inner", async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
       {
         name: "asks Europe PMC through a renamed import on the same context inside a step",
         filename: "src/run/run.ts",
@@ -140,6 +163,16 @@ describe("fitness: no durable operation inside its own context's operation (dura
         name: "reaches the same context through an alias",
         code: `async function run(ctx: any) {
           const same = ctx;
+          await ctx.runInChildContext("paper", async () => {
+            await same.wait("pause", { seconds: 1 });
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
+        name: "reaches the same context through an alias with a non-null assertion",
+        code: `async function run(ctx: any) {
+          const same = ctx!;
           await ctx.runInChildContext("paper", async () => {
             await same.wait("pause", { seconds: 1 });
           });

@@ -2,14 +2,15 @@ import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import type { TSESTree } from "@typescript-eslint/utils";
 import type { StepHelper } from "./create-rule.ts";
 import {
+  bindingOf,
   createRule,
   exportedName,
   helperNamed,
   holdsStepHelper,
   importOf,
-  memberName,
   moduleOf,
   repoPath,
+  unwrapped,
   walkAliases,
   withoutExtension,
 } from "./create-rule.ts";
@@ -69,8 +70,10 @@ export const noStepHelperReExport = createRule({
     // The module whose helper an exported value passes on under a name of
     // its own choosing, or null. That is an imported helper, a namespace
     // import of a module that holds one, a helper read from a namespace
-    // import, or this module's own helper or a local alias of it.
-    const passedOn = (value: TSESTree.Node): string | null => {
+    // import, or this module's own helper or a local alias of it, read
+    // through any wrapper that unwrapped takes off.
+    const passedOn = (exported: TSESTree.Node): string | null => {
+      const value = unwrapped(exported);
       if (value.type === AST_NODE_TYPES.Identifier) {
         const binding = importOf(value, context);
         if (binding === null) {
@@ -82,18 +85,11 @@ export const noStepHelperReExport = createRule({
             : helperNamed(binding.module, binding.name) !== null;
         return passes ? binding.module : null;
       }
-      if (
-        value.type === AST_NODE_TYPES.MemberExpression &&
-        value.object.type === AST_NODE_TYPES.Identifier
-      ) {
-        const name = memberName(value);
-        const binding = importOf(value.object, context);
-        if (name === null || binding?.name !== null) return null;
-        return helperNamed(binding.module, name) === null
-          ? null
-          : binding.module;
-      }
-      return null;
+      const binding = bindingOf(value, context);
+      if (typeof binding?.name !== "string") return null;
+      return helperNamed(binding.module, binding.name) === null
+        ? null
+        : binding.module;
     };
     const checkValue = (node: TSESTree.Node, value: TSESTree.Node): void => {
       const module = passedOn(value);

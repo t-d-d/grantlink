@@ -1,6 +1,7 @@
 import { afterAll, describe, it } from "vitest";
 import { noStepHelperReExport } from "../../eslint-rules/no-step-helper-re-export.ts";
 import { ruleTester } from "../rule-tester.ts";
+import { WRAPPED_STEP_HELPERS } from "./wrapped-step-helpers.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
 
@@ -77,6 +78,15 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
       },
     ],
     invalid: [
+      ...WRAPPED_STEP_HELPERS.filter(
+        (shape) => !shape.callee.endsWith("?."),
+      ).map((shape) => ({
+        name: `exports askEuropePmc reached through ${shape.name} as a constant`,
+        filename: "src/run/run.ts",
+        code: `${shape.prelude}
+        export const exported = ${shape.callee};`,
+        errors: [{ messageId: "reExport" as const }],
+      })),
       {
         name: "re-exports askEuropePmc from its module",
         filename: "src/run/run.ts",
@@ -211,6 +221,14 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         let impl = askEuropePmc;
         impl = somethingElse;
         export { impl as askEuropePmc };`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports a local alias of askEuropePmc through a type assertion from its own module",
+        filename: "src/run/owed.ts",
+        code: `async function askEuropePmc() {}
+        const ask = askEuropePmc as typeof askEuropePmc;
+        export { ask };`,
         errors: [{ messageId: "reExport" }],
       },
       {
