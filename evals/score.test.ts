@@ -62,7 +62,7 @@ describe("telling a CRUK reference from another linked id", () => {
     "A21139\\",
     "PRCRPG-Nov21\\\\100001",
     "CRUK-UCL-2023",
-    "CRUK_Manchester",
+    "CRUK-C5759",
   ])("takes %s", (id) => {
     expect(crukReference(id)).toBe(true);
   });
@@ -84,6 +84,10 @@ describe("telling a CRUK reference from another linked id", () => {
     "cruk",
     "CRUK-",
     "CRUK\\",
+    "CRUK_Manchester",
+    "CRUK/MRC",
+    "CRUK-FUNDED",
+    "CRUK-MI",
   ])("refuses %s", (id) => {
     expect(crukReference(id)).toBe(false);
   });
