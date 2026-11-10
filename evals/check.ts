@@ -192,8 +192,9 @@ export function comment(
 }
 
 // The rules alone beside the rules and then each model the eval compares
-// (#329). They do not gate: the release is the rules alone until a run
-// calls a model. A row with no score says what it waits for.
+// (#329). They do not gate: rules ship alone (#330), and the eval scores
+// each model to show what it would add. A row with no score says what it
+// waits for.
 function models(ci: Report): string[] {
   const candidates = ci.candidates ?? [];
   if (candidates.length === 0) return [];

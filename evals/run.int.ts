@@ -209,7 +209,7 @@ describe("the rules, then each model", () => {
     });
     const row = (rows: typeof result.rows, id: string) =>
       rows.find((r) => r.id === id)?.score;
-    // The release is still the rules alone (#332 adds the model to runs).
+    // The release is the rules alone, as #330 decided.
     expect(row(result.rows, "recall-b")).toBe(0);
     expect(row(result.baseline, "recall-b")).toBe(0);
     expect(row(result.baseline, "spend")).toBe(0);
