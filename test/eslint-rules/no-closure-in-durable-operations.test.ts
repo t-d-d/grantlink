@@ -56,33 +56,12 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
     ],
     invalid: [
       {
-        name: "counts into an outer variable from askEuropePmc's read through the comma operator",
-        filename: "src/run/run.ts",
-        code: `import { askEuropePmc } from "./owed.ts";
-        async function run(ctx: any) {
-          let read = 0;
-          await askEuropePmc(ctx, "p", "w", r, (0, async () => { read += 1; }));
-        }`,
-        errors: [{ messageId: "closureVariableUsage" }],
-      },
-      {
         name: "counts into an outer variable from a step's callback through the comma operator",
         code: `async function run(ctx: any) {
           let read = 0;
           await ctx.step("count", (0, async () => { read += 1; }), { retryStrategy: r });
         }`,
         errors: [{ messageId: "closureVariableUsage" }],
-      },
-      {
-        name: "pushes through the comma operator inside a step",
-        code: `async function run(ctx: any, found: number[]) {
-          await ctx.step("count", async () => {
-            (0, found).push(1);
-          }, { retryStrategy: r });
-        }`,
-        errors: [
-          { messageId: "closureVariableUsage", data: { name: "found" } },
-        ],
       },
 
       ...[
@@ -93,6 +72,10 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
         [
           "behind a non-null assertion",
           "(async () => { read += 1; return readPaper(); })!",
+        ],
+        [
+          "through the comma operator",
+          "(0, async () => { read += 1; return readPaper(); })",
         ],
       ].map(([what, callback]) => ({
         name: `counts into an outer variable from askEuropePmc's read ${String(what)}`,
@@ -107,6 +90,7 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
 
       ...[
         ["pushes through a non-null assertion", "found!.push(1);", "found"],
+        ["pushes through the comma operator", "(0, found).push(1);", "found"],
         [
           "pushes through a type assertion",
           "(found as number[]).push(1);",
