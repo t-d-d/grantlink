@@ -53,6 +53,17 @@ const brokenOff = (error: Error) =>
     }),
     { status: 200 },
   );
+// A reply whose body has failed before anything reads it, as when the
+// connection drops just after the headers arrive.
+const failedBody = (status: number) =>
+  new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error("connection reset"));
+      },
+    }),
+    { status },
+  );
 const timedOut = () =>
   new DOMException("The operation timed out.", "TimeoutError");
 
@@ -215,6 +226,16 @@ describe("fitness: requests back off (europe-pmc.md)", () => {
     expect(requests).toHaveLength(1);
   });
 
+  it("still tries again after a 503 whose body has broken off (#426)", async () => {
+    const { client, requests } = harness((_url, call) =>
+      call === 0 ? failedBody(503) : ok(),
+    );
+    await expect(client.fullText("PMC1")).resolves.toBe("<article/>");
+    expect(requests).toHaveLength(2);
+  });
+});
+
+describe("releasing the body of a reply it does not read", () => {
   it.each([400, 404, 410])(
     "cancels the body of a %i reply it does not retry, so its connection goes back to the pool (#426)",
     async (status) => {
@@ -236,17 +257,7 @@ describe("fitness: requests back off (europe-pmc.md)", () => {
   );
 
   it("still says what Europe PMC answered when the body it cancels has broken off (#426)", async () => {
-    const { client } = harness(
-      () =>
-        new Response(
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.error(new Error("connection reset"));
-            },
-          }),
-          { status: 404 },
-        ),
-    );
+    const { client } = harness(() => failedBody(404));
     await expect(client.fullText("PMC1")).rejects.toMatchObject({
       name: "EuropePmcError",
       last: 404,
