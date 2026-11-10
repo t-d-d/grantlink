@@ -798,6 +798,35 @@ describe("keeping funding notes and footnotes (#505)", () => {
     ).toEqual(["a"]);
   });
 
+  // A note kept for naming the funder in its own words is about funding
+  // only in those words, so of the sections it holds the cut keeps only the
+  // funding sections, which it finds as it finds every funding section, ahead
+  // of the notes (#526). Author contributions name people.
+  it("keeps only the funding sections of a note kept for its own words", () => {
+    const sections = back(
+      "<notes><p>Supported by Cancer Research UK.</p>" +
+        "<sec><title>Author contributions</title><p>Authorname wrote it.</p></sec>" +
+        "<sec><title>Data availability</title><p>B data.</p></sec>" +
+        "<sec><title>Funding</title><p>Grant A1.</p></sec>" +
+        "</notes>",
+    );
+    expect(sections.text).toEqual([
+      "Grant A1.",
+      "Supported by Cancer Research UK.",
+    ]);
+    expect(JSON.stringify(sections)).not.toContain("Authorname");
+  });
+
+  it("keeps only the funding sections of a footnote kept for its own words", () => {
+    const sections = back(
+      "<fn-group><fn><p>Supported by CRUK.</p>" +
+        "<sec><title>Author contributions</title><p>Authorname wrote it.</p></sec>" +
+        "</fn></fn-group>",
+    );
+    expect(sections.text).toEqual(["Supported by CRUK."]);
+    expect(JSON.stringify(sections)).not.toContain("Authorname");
+  });
+
   it("reads a note with an empty type by the funder's name", () => {
     expect(
       back('<notes notes-type=""><p>Funded by Cancer Research UK.</p></notes>')
