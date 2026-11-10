@@ -158,9 +158,10 @@ interface Shape {
   before?: string;
   after?: string;
   // Whether the model pass keeps a reply of this shape only where the
-  // rules' own pattern reads that reply, and no more or less, in the text.
+  // rules' own scan reads that reply, and no more or less, in the text.
   // A form with a prefix and up to four parts may run on past a reply, as
-  // CRUK/12/34 does past CRUK/12 (#561).
+  // CRUK/12/34 does past CRUK/12 (#561), and an earlier pattern may take
+  // part of it, as the C/A pattern does in CRUK/C1234/A56789 (#599).
   readWhole?: true;
   // A short number such as an A number is common, so it counts only in a
   // sentence that names the funder.
@@ -370,34 +371,26 @@ const READ_SHAPE = new RegExp(
 export const hasReferenceShape = (reference: string): boolean =>
   READ_SHAPE.test(reference);
 
-const READ_WHOLE = SHAPES.flatMap(
-  ({ shape, modelShape, before, after, readWhole }) =>
-    readWhole === true
-      ? [
-          {
-            shape: new RegExp(`^(?:${modelShape ?? shape})$`, "u"),
-            pattern: new RegExp(
-              `${before ?? START}${shape}${END}${after ?? ""}`,
-              "gu",
-            ),
-          },
-        ]
-      : [],
+const READ_WHOLE = new RegExp(
+  `^(?:${SHAPES.filter(({ readWhole }) => readWhole === true)
+    .map(({ shape, modelShape }) => modelShape ?? shape)
+    .join("|")})$`,
+  "u",
 );
 
 // Whether a paragraph gives a reference as written whole, between the edges
 // above. The model pass checks its references with this, so the two passes
 // cannot draw a reference's edges differently (#384). A reference of a shape
 // the rules read whole, such as a CRUK- form, counts only where the rules'
-// pattern reads just that reference (#561). Any other counts between the
-// edges above, as wholeReference reads it.
+// own scan reads just that reference (#561). The scan runs every pattern in
+// turn, so where an earlier one takes the text, as the C/A pattern takes
+// C1234/A56789 out of CRUK/C1234/A56789, the CRUK- form is not read (#599).
+// Any other counts between the edges above, as wholeReference reads it.
 export function readsWhole(paragraph: string, reference: string): boolean {
-  const whole = READ_WHOLE.find(({ shape }) => shape.test(reference));
-  if (whole !== undefined) {
-    return Array.from(
-      paragraph.matchAll(whole.pattern),
-      ([match]) => match,
-    ).includes(reference);
+  if (READ_WHOLE.test(reference)) {
+    return scan(paragraph, "long").some(
+      ({ asWritten }) => asWritten === reference,
+    );
   }
   return wholeReference(reference).test(paragraph);
 }
