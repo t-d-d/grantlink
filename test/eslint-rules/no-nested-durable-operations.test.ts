@@ -5,6 +5,16 @@ import { WRAPPED_STEP_HELPERS } from "./wrapped-step-helpers.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
 
+// Ways to reach a context through a TypeScript wrapper (#427), as the text
+// that stands where the context does.
+const WRAPPED_CONTEXTS = [
+  { name: "as", context: "(ctx as any)" },
+  { name: "angle brackets", context: "(<any>ctx)" },
+  { name: "satisfies", context: "(ctx satisfies any)" },
+  { name: "a non-null assertion", context: "ctx!" },
+  { name: "a non-null assertion asserted with as", context: "(ctx! as any)" },
+] as const;
+
 describe("fitness: no durable operation inside its own context's operation (durable-execution.md)", () => {
   tester.run("no-nested-durable-operations", noNestedDurableOperations, {
     valid: [
@@ -16,6 +26,16 @@ describe("fitness: no durable operation inside its own context's operation (dura
           });
         }`,
       },
+      ...WRAPPED_CONTEXTS.map((shape) => ({
+        name: `asks Europe PMC on a child context reached through ${shape.name}`,
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
+          await ctx.runInChildContext("paper", async (child: any) => {
+            await askEuropePmc(${shape.context.replace("ctx", "child")}, "fetch", "wait", r, async () => 1);
+          });
+        }`,
+      })),
       {
         name: "asks Europe PMC on a child context",
         filename: "src/run/run.ts",
@@ -28,6 +48,58 @@ describe("fitness: no durable operation inside its own context's operation (dura
       },
     ],
     invalid: [
+      ...WRAPPED_CONTEXTS.map((shape) => ({
+        name: `asks Europe PMC on the same context reached through ${shape.name} inside a step`,
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await askEuropePmc(${shape.context}, "paper", "wait", r, async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
+      ...WRAPPED_CONTEXTS.map((shape) => ({
+        name: `calls a step on the same context reached through ${shape.name} inside a step`,
+        code: `async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await ${shape.context}.step("inner", async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
+      ...WRAPPED_CONTEXTS.map((shape) => ({
+        name: `calls a step on the same context inside askEuropePmc's read, given the context through ${shape.name}`,
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
+          await askEuropePmc(${shape.context}, "paper", "wait", r, async () => {
+            await ctx.step("inner", async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
+      ...WRAPPED_CONTEXTS.map((shape) => ({
+        name: `asks Europe PMC through an optional call on the same context reached through ${shape.name} inside a step`,
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await askEuropePmc?.(${shape.context}, "paper", "wait", r, async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
+      ...WRAPPED_CONTEXTS.map((shape) => ({
+        name: `reaches the same context through an alias of it through ${shape.name}`,
+        code: `async function run(ctx: any) {
+          const same = ${shape.context};
+          await ctx.runInChildContext("paper", async () => {
+            await same.wait("pause", { seconds: 1 });
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" as const }],
+      })),
       ...WRAPPED_STEP_HELPERS.map((shape) => ({
         name: `asks Europe PMC through ${shape.name} on the same context inside a step`,
         filename: "src/run/run.ts",
