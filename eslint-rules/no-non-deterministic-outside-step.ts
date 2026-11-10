@@ -30,10 +30,10 @@ import type { Resolver } from "./create-rule.ts";
 // `const { now: { call } } = Date`, or a member that calls `Date`,
 // `const { Date: { bind } } = globalThis`, reports once, at that key, or at
 // `Date` itself when it is what the pattern destructures, `{ bind } = Date`.
-// An alias of `Date` itself, `const D = Date`,
-// reports only where it is used, `D()` or `ids.map(D)`, unless it is
-// exported, `export const D = Date`. Then it also reports where it is
-// declared, so `D()` in the same module gives a second report.
+// An alias of `Date` itself, `const D = Date`, reports only where it is
+// used, `D()` or `ids.map(D)`, unless it is exported, `export const D =
+// Date`. Then it also reports where it is declared, so `D()` in the same
+// module gives a second report.
 const NON_DETERMINISTIC: Readonly<Record<string, ReadonlySet<string>>> = {
   Math: new Set(["random"]),
   Date: new Set(["now"]),
@@ -193,10 +193,10 @@ function identifierPath(
 // Visit each property of an object pattern, down any nested patterns, with
 // the global paths it may read. `keys` follows the keys from what the
 // pattern destructures, `{ Date: { now } } = globalThis` reading
-// `Date.now` at `now`. `values` adds the default a nested pattern gives,
-// `{ foo: { random } = Math } = globalThis`, which the patterns inside it
-// read from in place of `foo` when it is undefined. A visit that returns
-// true stops the walk.
+// `Date.now` at `now`. A nested pattern also reads from its default,
+// `{ foo: { random } = Math } = globalThis`, in place of `foo` when that
+// is undefined. Given a target, the walk goes down only the nested
+// patterns that hold it. A visit that returns true stops the walk.
 function eachProperty(
   pattern: TSESTree.ObjectPattern,
   bases: readonly (readonly string[])[],
@@ -205,28 +205,29 @@ function eachProperty(
   visit: (
     property: TSESTree.Property,
     keys: readonly (readonly string[])[],
-    values: readonly (readonly string[])[],
   ) => boolean,
+  target?: TSESTree.Node,
 ): boolean {
   for (const property of pattern.properties) {
     if (property.type !== AST_NODE_TYPES.Property) continue;
     const key = keyName(property.key, property.computed);
     const keys =
       key === null ? [] : bases.map((base) => normalised([...base, key]));
-    const values = [...keys];
+    if (visit(property, keys)) return true;
     const inner = withoutDefault(property.value);
     if (
-      property.value.type === AST_NODE_TYPES.AssignmentPattern &&
-      inner.type === AST_NODE_TYPES.ObjectPattern
+      inner.type !== AST_NODE_TYPES.ObjectPattern ||
+      (target !== undefined &&
+        (target.range[0] < inner.range[0] || target.range[1] > inner.range[1]))
     ) {
+      continue;
+    }
+    const values = [...keys];
+    if (property.value.type === AST_NODE_TYPES.AssignmentPattern) {
       const fallback = pathOf(property.value.right, resolver, seen);
       if (fallback !== null) values.push(fallback);
     }
-    if (visit(property, keys, values)) return true;
-    if (
-      inner.type === AST_NODE_TYPES.ObjectPattern &&
-      eachProperty(inner, values, resolver, seen, visit)
-    ) {
+    if (eachProperty(inner, values, resolver, seen, visit, target)) {
       return true;
     }
   }
@@ -240,8 +241,9 @@ function withoutDefault(value: TSESTree.Property["value"]): TSESTree.Node {
 
 // The global path a name destructured from an object pattern reads, from
 // what the pattern destructures or from a nested pattern's default. Where
-// they differ, the one that starts at a holder of a source wins, since a
-// path here only makes the rule refuse. Null when none is known.
+// they differ, the one that names a source wins, then one that starts at
+// a holder of a source, since a path here only makes the rule refuse.
+// Null when none is known.
 function destructuredFrom(
   pattern: TSESTree.ObjectPattern,
   bases: readonly (readonly string[])[],
@@ -250,12 +252,24 @@ function destructuredFrom(
   seen: ReadonlySet<TSESLint.Scope.Variable>,
 ): readonly string[] | null {
   let found: readonly (readonly string[])[] = [];
-  eachProperty(pattern, bases, resolver, seen, (property, keys) => {
-    if (withoutDefault(property.value) !== name) return false;
-    found = keys;
-    return true;
-  });
-  return found.find((path) => HOLDERS.has(path[0] ?? "")) ?? found[0] ?? null;
+  eachProperty(
+    pattern,
+    bases,
+    resolver,
+    seen,
+    (property, keys) => {
+      if (withoutDefault(property.value) !== name) return false;
+      found = keys;
+      return true;
+    },
+    name,
+  );
+  return (
+    found.find((path) => opOf(path) !== undefined || namesDate(path)) ??
+    found.find((path) => HOLDERS.has(path[0] ?? "")) ??
+    found[0] ??
+    null
+  );
 }
 
 // True when an object pattern destructures a member that calls what it
@@ -307,6 +321,11 @@ function opOf(path: readonly string[] | null): string | undefined {
   return NON_DETERMINISTIC[object]?.has(property) === true
     ? `${object}.${property}`
     : undefined;
+}
+
+// True when a path names `Date` itself, which reads the clock when called.
+function namesDate(path: readonly string[] | null): boolean {
+  return path?.length === 1 && path[0] === "Date";
 }
 
 // The object a path names when it is one of HOLDERS. Another module that
@@ -470,12 +489,16 @@ function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
       );
     case AST_NODE_TYPES.UnaryExpression:
       return parent.operator !== "typeof";
-    // A default of a nested pattern, `{ foo: { bind } = Date }`, calls it
-    // only through a member the pattern destructures.
+    // A default of a nested pattern in a declaration the rule follows,
+    // `const { foo: { bind } = Date } = globalThis`, calls it only through
+    // a member the pattern destructures. Anywhere else, such as a
+    // parameter's default or an assignment, the rule does not follow the
+    // names it gives, so it counts as passed on.
     case AST_NODE_TYPES.AssignmentPattern:
       return (
         parent.right !== outer ||
         parent.left.type !== AST_NODE_TYPES.ObjectPattern ||
+        !inFollowedDeclaration(parent) ||
         callsThrough(parent.left)
       );
     case AST_NODE_TYPES.VariableDeclarator: {
@@ -494,6 +517,30 @@ function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
     }
     default:
       return true;
+  }
+}
+
+// True when a nested pattern's default sits in an object pattern that a
+// declarator with an initial value declares, `const { foo: { now } = Date }
+// = globalThis`, whose names identifierPath follows. Not for a parameter, an
+// assignment, or a loop's declarator, which has no initial value.
+function inFollowedDeclaration(node: TSESTree.AssignmentPattern): boolean {
+  let n: TSESTree.Node = node;
+  for (;;) {
+    const parent: TSESTree.Node = n.parent;
+    if (parent.type !== AST_NODE_TYPES.Property || parent.value !== n) {
+      return false;
+    }
+    const pattern: TSESTree.Node = parent.parent;
+    if (pattern.type !== AST_NODE_TYPES.ObjectPattern) return false;
+    const above: TSESTree.Node = pattern.parent;
+    if (above.type === AST_NODE_TYPES.VariableDeclarator) {
+      return above.id === pattern && above.init !== null;
+    }
+    n =
+      above.type === AST_NODE_TYPES.AssignmentPattern && above.left === pattern
+        ? above
+        : pattern;
   }
 }
 
@@ -528,8 +575,6 @@ export const noNonDeterministicOutsideStep = createRule({
       if (op === undefined) return;
       report(node, calledThrough(node) ? `${op}()` : op);
     };
-    const namesDate = (path: readonly string[] | null): boolean =>
-      path?.length === 1 && path[0] === "Date";
     const isDate = (callee: TSESTree.Node): boolean =>
       namesDate(pathOf(callee, context, new Set()));
     // An object that holds a source, exported by default, `export default

@@ -1140,6 +1140,72 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "gives Date as a parameter's default to a pattern the rule does not follow",
+          code: `async function run(ctx: any) { const stamp = ({ now } = Date) => now(); stamp(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 57,
+            },
+          ],
+        },
+        {
+          name: "gives Date as a parameter's default to a nested pattern that reads now from it",
+          code: `async function run(ctx: any) { const stamp = ({ now: { call } } = Date) => call(); stamp(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 67,
+            },
+          ],
+        },
+        {
+          name: "gives Date as a nested default in an assignment the rule does not follow",
+          code: `async function run(ctx: any) { let now: any; ({ foo: { now } = Date } = globalThis); now(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 64,
+            },
+          ],
+        },
+        {
+          name: "gives Date as a nested default in a loop's pattern, which has no initial value",
+          code: `async function run(ctx: any) { for (const { foo: { now } = Date } of [{}]) now(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              column: 60,
+            },
+          ],
+        },
+        {
+          name: "reads the clock from a Date default under a key that names another holder",
+          code: `async function run(ctx: any) { const { crypto: { now } = Date } = globalThis; now(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+              column: 79,
+            },
+          ],
+        },
+        {
+          name: "reads the clock from a Date default in a pattern that destructures a holder",
+          code: `async function run(ctx: any) { const { foo: { now } = Date } = Math; now(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+              column: 70,
+            },
+          ],
+        },
+        {
           name: "draws random through crypto.webcrypto",
           code: `import * as c from "crypto"; async function run(ctx: any) { const id = c.webcrypto.randomUUID(); }`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
