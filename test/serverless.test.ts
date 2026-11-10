@@ -247,6 +247,49 @@ describe("inline resources that change what a template, osls or an earlier inlin
     ]);
   });
 
+  // A template cannot hold a parameter and a resource under one logical id,
+  // so CloudFormation refuses the stack only when it deploys (#323).
+  it("finds an inline parameter named as a template's resource", () => {
+    expect(
+      unread([...known, { Parameters: { SiteBucket: { Default: "a" } } }]),
+    ).toEqual([
+      "entry 3 declares the parameter SiteBucket, which a template declares as a resource",
+    ]);
+  });
+
+  it("finds an inline parameter named as a resource osls generates", () => {
+    expect(
+      unread([
+        ...known,
+        { Parameters: { ServerlessDeploymentBucket: { Default: "a" } } },
+      ]),
+    ).toEqual([
+      "entry 3 declares the parameter ServerlessDeploymentBucket, which osls generates as a resource",
+    ]);
+  });
+
+  it("finds an inline parameter named as an inline resource, in the same entry, an earlier one or a later one", () => {
+    expect(
+      unread([
+        ...known,
+        { Resources: { Early: { Type: "T" } } },
+        {
+          Parameters: {
+            Early: { Default: "a" },
+            Same: { Default: "b" },
+            Late: { Default: "c" },
+          },
+          Resources: { Same: { Type: "T" } },
+        },
+        { Resources: { Late: { Type: "T" } } },
+      ]),
+    ).toEqual([
+      "entry 4 declares the parameter Early, which entry 3 declares as a resource",
+      "entry 4 declares the parameter Same, which entry 4 declares as a resource",
+      "entry 4 declares the parameter Late, which entry 5 declares as a resource",
+    ]);
+  });
+
   it("passes an inline parameter that sets a template's default, as serverless.yml does", () => {
     expect(
       unread([...known, { Parameters: { CertificateArn: { Default: "a" } } }]),

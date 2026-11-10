@@ -236,6 +236,7 @@ export function mergeKeysIn(value: unknown): string[] {
 // output an earlier inline entry declares, which osls would merge over it
 // (#261), or a parameter an earlier inline entry declares (#297), or hold a
 // section that is not a map, which osls would merge over the whole section.
+// No inline parameter may share its name with any resource (#323).
 // It may use no variable but the cf and env ones.
 // Entries count from 1.
 export function unreadResources(
@@ -330,5 +331,24 @@ export function unreadResources(
         ...variables,
       ];
     });
-  return [...head, ...rest];
+  // A template cannot hold a parameter and a resource under one logical id
+  // (#323). Any inline entry's resource counts, earlier or later, since
+  // CloudFormation reads the merged stack as a whole.
+  const clashes = [...inlineParameters].flatMap(([id, at]): string[] => {
+    if (elsewhere.declared.includes(id))
+      return [
+        `${at} declares the parameter ${id}, which a template declares as a resource`,
+      ];
+    if (oslsGenerates(id, elsewhere.functions))
+      return [
+        `${at} declares the parameter ${id}, which osls generates as a resource`,
+      ];
+    const resourceAt = inlineResources.get(id);
+    return resourceAt === undefined
+      ? []
+      : [
+          `${at} declares the parameter ${id}, which ${resourceAt} declares as a resource`,
+        ];
+  });
+  return [...head, ...rest, ...clashes];
 }
