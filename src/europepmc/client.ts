@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { funder } from "../extract/rules.ts";
 import { isPmcid } from "../shared/pmcid.ts";
+import { INLINE_NAMES, paired, type Part } from "../title.ts";
 
 // The only module that talks to Europe PMC, and the only outside service a
 // run reads papers from (docs/constraints/public-data.md). It keeps to
@@ -203,75 +204,83 @@ function openAccessOnly(selection: string): string {
 }
 
 // A title as plain text with its inline markup. Europe PMC's search reply
-// sends a title's sup, sub, i and b either as raw tags or encoded (#619),
-// so both come out as the same raw tag, which the page shows as formatting
-// (#606). Any other tag goes. A control character or half a surrogate pair
-// goes too, as JSON would spell each in six bytes, and a page of titles
-// must fit in one checkpoint.
-const INLINE = ["sup", "sub", "i", "b"] as const;
-const TAGS = INLINE.flatMap((name) => [`<${name}>`, `</${name}>`]);
-// Each kept tag stands as one control character while the text is cleaned,
-// as the cleaning has already turned every control character in the title
-// into a space.
-const MARK = TAGS.map((_, i) => String.fromCharCode(i + 1));
+// sends a title's inline tags (src/title.ts) either as raw tags or encoded
+// (#619), so both come out as the same raw tag, which the page shows as
+// formatting (#606). Any other tag goes. A control character or half a
+// surrogate pair goes too, as JSON would spell each in six bytes, and a page
+// of titles must fit in one checkpoint.
+//
 // A tag holds no "<", so a raw "<" in the text, as in p<0.05, is not read
 // as the start of one and does not take the words up to the next tag. A
 // tag half raw and half encoded is read as a tag, as decoding would make
-// one of it that the page shows.
-const MARKUP =
-  /<(\/?)(sup|sub|i|b)(?:\s[^<>]*)?(?:>|&gt;)|&lt;(\/?)(sup|sub|i|b)(?:&gt;|>)|<[^<>]*>/giu;
+// one of it that the page shows. A tag sent encoded with attributes stays
+// text, as reading one as a tag risks taking a real "<" for one (#639).
+const MARKUP = new RegExp(
+  `<(/?)(${INLINE_NAMES})(?:\\s[^<>]*)?(?:>|&gt;)|&lt;(/?)(${INLINE_NAMES})(?:&gt;|>)|<[^<>]*>`,
+  "giu",
+);
 const LIMIT = 500;
 
-export function plainTitle(title: string): string {
-  const marked = title
-    .replace(/[\p{Cc}\p{Cs}]/gu, " ")
-    .replace(
-      MARKUP,
-      (
-        _,
-        rawClose?: string,
-        rawName?: string,
-        close?: string,
-        name?: string,
-      ) => {
-        const tag = (rawName ?? name)?.toLowerCase();
-        if (tag === undefined) return "";
-        return MARK[TAGS.indexOf(`<${rawClose ?? close ?? ""}${tag}>`)] ?? "";
-      },
-    )
+const cleanText = (text: string) =>
+  text
     .replace(/&lt;/gu, "<")
     .replace(/&gt;/gu, ">")
     .replace(/&quot;/gu, '"')
     .replace(/&#39;|&apos;/gu, "'")
     .replace(/&amp;/gu, "&")
-    .replace(/\s+/gu, " ")
-    .trim();
-  // Cut at 500 characters between tags, never inside one.
-  const parts: string[] = [];
-  let length = 0;
-  for (const char of marked) {
-    const mark = MARK.indexOf(char);
-    const part = mark === -1 ? char : (TAGS[mark] ?? "");
-    if (length + part.length > LIMIT) break;
-    parts.push(part);
-    length += part.length;
+    .replace(/\s+/gu, " ");
+
+// The title split into its kept tags and its text. Another tag is dropped
+// where it stands, so the text either side of it is cleaned as one.
+function rawParts(title: string): Part[] {
+  const parts: Part[] = [];
+  let text = "";
+  let from = 0;
+  for (const match of title.matchAll(MARKUP)) {
+    text += title.slice(from, match.index);
+    from = match.index + match[0].length;
+    const name = (match[2] ?? match[4])?.toLowerCase();
+    if (name === undefined) continue;
+    if (text !== "") parts.push({ text: cleanText(text) });
+    text = "";
+    parts.push({ tag: `<${match[1] ?? match[3] ?? ""}${name}>` });
   }
-  // A dropped tag can leave a space at either end or two together.
-  return paired(parts).join("").replace(/\s+/gu, " ").trim();
+  text += title.slice(from);
+  if (text !== "") parts.push({ text: cleanText(text) });
+  return parts;
 }
 
-// Drops a tag left without its pair, by the cut or in Europe PMC's data.
-function paired(parts: string[]): string[] {
-  const open: number[] = [];
-  const drop = new Set<number>();
-  parts.forEach((part, i) => {
-    if (!TAGS.includes(part)) return;
-    if (!part.startsWith("</")) open.push(i);
-    else if (parts[open.at(-1) ?? -1] === part.replace("/", "")) open.pop();
-    else drop.add(i);
-  });
-  for (const i of open) drop.add(i);
-  return parts.filter((_, i) => !drop.has(i));
+export function plainTitle(title: string): string {
+  const parts = rawParts(title.replace(/[\p{Cc}\p{Cs}]/gu, " "));
+  const first = parts[0];
+  if (first && "text" in first) first.text = first.text.trimStart();
+  const last = parts.at(-1);
+  if (last && "text" in last) last.text = last.text.trimEnd();
+  // Cut at 500 characters between tags, never inside one.
+  const kept: Part[] = [];
+  let length = 0;
+  for (const part of parts) {
+    if ("tag" in part) {
+      if (length + part.tag.length > LIMIT) break;
+      kept.push(part);
+      length += part.tag.length;
+      continue;
+    }
+    let text = "";
+    for (const char of part.text) {
+      if (length + char.length > LIMIT) break;
+      text += char;
+      length += char.length;
+    }
+    kept.push({ text });
+    if (text.length < part.text.length) break;
+  }
+  // A dropped tag can leave a space at either end or two together.
+  return paired(kept)
+    .map((part) => ("tag" in part ? part.tag : part.text))
+    .join("")
+    .replace(/\s+/gu, " ")
+    .trim();
 }
 
 function retryAfter(response: Response, clock: Clock): number | undefined {
