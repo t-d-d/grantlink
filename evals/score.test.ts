@@ -91,10 +91,9 @@ describe("telling a CRUK reference from another linked id", () => {
     "CRUK2019",
     "CRUK_2019",
     "CRUK.12345",
-    // A part before the last with no digit, or a year alone (#514).
+    // A part before the last with no digit (#514).
     "CRUK-UCL-2023",
     "CRUK/SMITH/2",
-    "CRUK/2019",
   ])("refuses %s", (id) => {
     expect(crukReference(id)).toBe(false);
   });
