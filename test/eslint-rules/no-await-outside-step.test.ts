@@ -4,12 +4,23 @@ import { noAwaitOutsideStep } from "../../eslint-rules/no-await-outside-step.ts"
 import { root } from "../repo.ts";
 import { ruleTester } from "../rule-tester.ts";
 import { WRAPPED_DURABLE_CALLS } from "./wrapped-durable-calls.ts";
+import { WRAPPED_STEP_HELPERS } from "./wrapped-step-helpers.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
 
 describe("fitness: no bare await in a durable body (durable-execution.md)", () => {
   tester.run("no-await-outside-step", noAwaitOutsideStep, {
     valid: [
+      ...WRAPPED_STEP_HELPERS.map((shape) => ({
+        name: `awaits I/O inside askEuropePmc's read, reached through ${shape.name}`,
+        filename: "src/run/run.ts",
+        code: `${shape.prelude}
+        async function run(ctx: any) {
+          await ${shape.callee}(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      })),
       {
         name: "awaits a durable operation",
         code: `async function run(ctx: any) {
