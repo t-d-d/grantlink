@@ -313,6 +313,23 @@ describe("the deploy role's credentials", () => {
     }
   });
 
+  // Each output goes to the variable for its part of the credentials, told
+  // apart by a word in the variable's name, so no two are swapped.
+  it("go each to the variable for its part", () => {
+    const parts: Record<string, string> = {
+      key: "KEY_ID",
+      secret: "SECRET",
+      session: "SESSION",
+    };
+    for (const step of given) {
+      for (const [name, value] of Object.entries(step.env ?? {})) {
+        const part = /steps\.assume\.outputs\.(\w+)/u.exec(value)?.[1];
+        if (part === undefined) continue;
+        expect(name).toContain(parts[part]);
+      }
+    }
+  });
+
   it("are read nowhere but in those steps' env", () => {
     const deployJob = jobs.deploy;
     const rest = {

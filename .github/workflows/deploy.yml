@@ -109,7 +109,7 @@ jobs:
       # The account id, the token and the credentials are masked before
       # anything else runs, so no later line prints them. The credentials
       # are this step's outputs, and only the steps that call AWS name them
-      # in their env, so code no other step runs holds them. The step that
+      # in their env, so no other step's code holds them. The step that
       # reads the live page gets none (#259).
       - name: Assume the deploy role
         id: assume

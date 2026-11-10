@@ -428,6 +428,7 @@ describe.each([
     const result = assumeRole(run, stsReply(field));
     expect(result.status).not.toBe(0);
     expect(written(result)).toBe("");
+    expect(other(result)).toBe("");
   });
 
   // #160: jq -e fails on a missing field, but says nothing on its own.
@@ -448,6 +449,7 @@ describe.each([
       const result = assumeRole(run, stsReply(undefined, field));
       expect(result.status).not.toBe(0);
       expect(written(result)).toBe("");
+      expect(other(result)).toBe("");
       expect(result.stderr).toMatch(namesPath(path));
     },
   );
@@ -465,6 +467,7 @@ describe.each([
       const result = assumeRole(run, stsReply(), oidc);
       expect(result.status).not.toBe(0);
       expect(written(result)).toBe("");
+      expect(other(result)).toBe("");
       expect(result.stderr).not.toContain("aws-called");
       expect(result.stderr).toMatch(/^::error::.*\.value\b/mu);
     },
