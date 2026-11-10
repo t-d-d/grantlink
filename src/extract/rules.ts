@@ -16,6 +16,7 @@ export const RULES_VERSIONS: readonly Version[] = [
   { number: 11, issue: 506 },
   { number: 12, issue: 510 },
   { number: 13, issue: 525 },
+  { number: 14, issue: 573 },
 ];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
@@ -308,6 +309,12 @@ const BARE_SUFFIX = String.raw`${DASH}\d{2}`;
 // Any bare number a reply may be, of the n shape's four digits or of BARE's
 // five to seven, with or without its suffix.
 const BARE_REPLY = new RegExp(String.raw`^\d+(?:${BARE_SUFFIX})?$`, "u");
+// What may not come before a bare number, so it is not the end of a longer
+// one, as in 12/345678, ABC-123456 or 1.23456. A number the metadata gives
+// counts only with this edge (#573). The rules' n shape reads a bare number
+// from the text only after a bracket, a tie word, a colon or a hash, so it
+// never reads one there.
+const NUMBER_BEFORE = String.raw`(?<!${SEP}|${DASH}|\d\.)`;
 
 // A reference as written, between the edges above. A bare number of any
 // length counts only where the text does not go on past it, as the rules
@@ -414,13 +421,16 @@ function scan(text: string, keep: "long" | "short" | "all"): Reference[] {
 // A bare number is common in any text, so it counts only when the metadata
 // gives it to the funder as a whole award id and the paper's own funding or
 // acknowledgement text gives the same number, standing alone (#97). A number
-// joined to a letter, any decimal digit or a separator is part of a longer
-// reference.
+// joined to a letter, any decimal digit or a separator, or after a hyphen or
+// a digit and a decimal point, is part of a longer reference (#573).
 const BARE_NUMBER = new RegExp(`^${BARE}$`, "u");
 
 function confirmedNumber(id: string, text: readonly string[]): boolean {
   if (!BARE_NUMBER.test(id)) return false;
-  const alone = new RegExp(`(?<!${WORD}|${SEP})${id}(?!${WORD}|${SEP})`, "u");
+  const alone = new RegExp(
+    `${NUMBER_BEFORE}(?<!${WORD})${id}(?!${WORD}|${SEP})`,
+    "u",
+  );
   return text.some((paragraph) => alone.test(paragraph));
 }
 

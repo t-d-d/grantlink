@@ -551,6 +551,41 @@ describe("the rules", () => {
     },
   );
 
+  // A number the metadata gives needs the edges a model reply needs, so the
+  // two passes agree: a hyphen, or a digit and a decimal point, before it
+  // makes it the end of a longer one (#573). The texts are made up.
+  it.each([
+    ["Funded by CRUK (ABC-123456).", "123456"],
+    ["Funded by CRUK grant 1.23456.", "23456"],
+  ])(
+    "leaves a bare number the metadata gives where the text runs into it, in %s",
+    (text, id) => {
+      expect(
+        findReferences({
+          text: [text],
+          awards: [{ sources: ["Cancer Research UK"], ids: [id] }],
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  it.each([
+    ["Funded by CRUK grant 123456.", "123456"],
+    ["Funded by CRUK (CR 234567).", "234567"],
+    ["Funded by CRUK [345678].", "345678"],
+    ["Funded by CRUK, award number:45678.", "45678"],
+  ])(
+    "reads a bare number the metadata gives after a space, a bracket or a colon, in %s",
+    (text, id) => {
+      expect(
+        findReferences({
+          text: [text],
+          awards: [{ sources: ["Cancer Research UK"], ids: [id] }],
+        }).map(({ normalised }) => normalised),
+      ).toEqual([id]);
+    },
+  );
+
   it("lists a bare number once when the text also gives it with its A", () => {
     expect(
       findReferences({
