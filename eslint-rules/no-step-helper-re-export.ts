@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESLint } from "@typescript-eslint/utils";
+import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import type { TSESTree } from "@typescript-eslint/utils";
 import type { StepHelper } from "./create-rule.ts";
 import {
@@ -7,10 +7,10 @@ import {
   helperNamed,
   holdsStepHelper,
   importOf,
-  lookup,
   memberName,
   moduleOf,
   repoPath,
+  walkAliases,
   withoutExtension,
 } from "./create-rule.ts";
 
@@ -47,32 +47,20 @@ export const noStepHelperReExport = createRule({
       context.report({ node, messageId: "reExport", data: { module } });
     };
     // This module's own helper that an identifier names, directly or through
-    // a chain of local aliases such as `const ask = askEuropePmc`. Any name
-    // along the chain counts, so an alias of askEuropePmc counts even when
-    // askEuropePmc is itself an alias. A later write to an alias does not
-    // stop the chain: the rule refuses what the export may pass on.
+    // a chain of local aliases (walkAliases) such as `const ask =
+    // askEuropePmc`. Any name along the chain counts, so an alias of
+    // askEuropePmc counts even when askEuropePmc is itself an alias. The rule
+    // refuses what the export may pass on, so an inexact walk counts too.
     const localHelper = (
       identifier: TSESTree.Identifier,
-      seen: ReadonlySet<TSESLint.Scope.Variable> = new Set(),
     ): StepHelper | null => {
-      const helper = helperNamed(here, identifier.name);
-      if (helper !== null) return helper;
-      const variable = lookup(
-        identifier.name,
-        context.sourceCode.getScope(identifier),
-      );
-      const def = variable?.defs[0];
-      if (
-        variable === null ||
-        seen.has(variable) ||
-        variable.defs.length !== 1 ||
-        def?.type !== TSESLint.Scope.DefinitionType.Variable ||
-        def.node.id !== def.name ||
-        def.node.init?.type !== AST_NODE_TYPES.Identifier
-      ) {
-        return null;
+      const chain = walkAliases(identifier, context)?.chain;
+      if (chain === undefined) return helperNamed(here, identifier.name);
+      for (const variable of chain) {
+        const helper = helperNamed(here, variable.name);
+        if (helper !== null) return helper;
       }
-      return localHelper(def.node.init, new Set([...seen, variable]));
+      return null;
     };
     // The module whose helper an exported value passes on under a name of
     // its own choosing, or null. That is an imported helper, a namespace

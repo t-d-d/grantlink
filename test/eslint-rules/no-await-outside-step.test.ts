@@ -122,6 +122,17 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         }`,
       },
       {
+        name: "awaits I/O inside askEuropePmc's read, reached through a let alias that is never written again",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        let ask = askEuropePmc;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
         name: "awaits I/O inside askEuropePmc's read, reached through a destructured alias of a namespace import",
         filename: "src/run/run.ts",
         code: `import * as owed from "./owed.ts";
@@ -278,6 +289,17 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         filename: "src/run/run.ts",
         code: `import * as owed from "./owed.ts";
         let ask = owed.askEuropePmc;
+        ask = other;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits an alias of an imported askEuropePmc that is assigned again",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        let ask = askEuropePmc;
         ask = other;
         async function run(ctx: any) {
           await ask(ctx, "paper", "wait", r, async () => 1);

@@ -204,6 +204,26 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         errors: [{ messageId: "reExport" }],
       },
       {
+        name: "exports an alias of an imported askEuropePmc that is written again later",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        function somethingElse() {}
+        let ask = askEuropePmc;
+        ask = somethingElse;
+        export { ask };`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports an alias of askEuropePmc read from a namespace import that is written again later",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        function somethingElse() {}
+        let ask = owed.askEuropePmc;
+        ask = somethingElse;
+        export default ask;`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
         name: "exports an imported askEuropePmc as a constant",
         filename: "src/run/run.ts",
         code: `import { askEuropePmc } from "./owed.ts";

@@ -25,6 +25,16 @@ describe("fitness: no durable operation inside its own context's operation (dura
           });
         }`,
       },
+      {
+        name: "uses a local declared twice, which is no alias of either value",
+        code: `async function run(ctx: any, other: any) {
+          var same = ctx;
+          var same = other;
+          await ctx.runInChildContext("paper", async () => {
+            await same.wait("pause", { seconds: 1 });
+          });
+        }`,
+      },
     ],
     invalid: [
       {
@@ -133,6 +143,27 @@ describe("fitness: no durable operation inside its own context's operation (dura
           await ctx.runInChildContext("paper", async () => {
             await same.wait("pause", { seconds: 1 });
           });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
+        name: "reaches the same context through a let alias",
+        code: `async function run(ctx: any) {
+          let same = ctx;
+          await ctx.runInChildContext("paper", async () => {
+            await same.wait("pause", { seconds: 1 });
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
+        name: "reaches the same context through an alias that is written again later",
+        code: `async function run(ctx: any, other: any) {
+          let same = ctx;
+          await ctx.runInChildContext("paper", async () => {
+            await same.wait("pause", { seconds: 1 });
+          });
+          same = other;
         }`,
         errors: [{ messageId: "sameContextUsage" }],
       },
