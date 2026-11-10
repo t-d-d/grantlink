@@ -13,6 +13,10 @@ const known = TEMPLATES.map((path) => `\${file(./${path})}`);
 const stack = {
   declared: ["SiteBucket", "Distribution"],
   outputs: ["SiteBucketName", "DistributionId", "PageUrl"],
+  parameters: {
+    DomainName: ["Type", "Default", "Description"],
+    CertificateArn: ["Type", "Description"],
+  },
   functions: ["run"],
 };
 const unread = (resources: unknown): string[] =>
@@ -144,7 +148,7 @@ describe("what serverless.yml's resources hold that the static checks do not rea
   });
 });
 
-describe("inline resources that change what a template, osls or an earlier inline entry declares (#166, #261, #297)", () => {
+describe("inline resources that change what a template, osls or an earlier inline entry declares (#166, #261, #297, #322)", () => {
   it("finds an inline entry that changes a template's resource", () => {
     expect(
       unread([
@@ -251,6 +255,44 @@ describe("inline resources that change what a template, osls or an earlier inlin
     expect(
       unread([...known, { Parameters: { CertificateArn: { Default: "a" } } }]),
     ).toEqual([]);
+  });
+
+  it("finds an inline entry that sets any field but Default on a template's parameter (#322)", () => {
+    expect(
+      unread([
+        ...known,
+        {
+          Parameters: {
+            CertificateArn: {
+              Default: "a",
+              Type: "Number",
+              AllowedValues: ["a"],
+              NoEcho: true,
+            },
+          },
+        },
+      ]),
+    ).toEqual([
+      "entry 3 changes the parameter CertificateArn's Type, which a template declares",
+      "entry 3 changes the parameter CertificateArn's AllowedValues, which a template declares",
+      "entry 3 changes the parameter CertificateArn's NoEcho, which a template declares",
+    ]);
+  });
+
+  it("finds an inline entry that sets a Default a template's parameter already has (#322)", () => {
+    expect(
+      unread([...known, { Parameters: { DomainName: { Default: "a" } } }]),
+    ).toEqual([
+      "entry 3 changes the parameter DomainName's Default, which a template declares",
+    ]);
+  });
+
+  it("finds an inline entry whose template parameter is not a map, which osls would put in its place (#322)", () => {
+    expect(unread([...known, { Parameters: { CertificateArn: "a" } }])).toEqual(
+      [
+        "entry 3 changes the parameter CertificateArn, which a template declares",
+      ],
+    );
   });
 
   it("passes a resource of its own, such as FirstRunRole", () => {

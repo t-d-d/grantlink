@@ -54,7 +54,8 @@ describe("fitness: data stays in London (hosting.md)", () => {
 // The deploy reads the stack's outputs, so an inline entry may not replace
 // one a template declares (#243), nor a resource or an output an earlier
 // inline entry declares (#261), nor a parameter an earlier inline entry
-// declares (#297).
+// declares (#297), nor a template's parameter beyond a Default it lacks
+// (#322).
 describe("serverless.yml merges only what the static checks read", () => {
   it("lists the two templates, then only parameters, new inline resources and outputs", () => {
     expect(
@@ -71,6 +72,14 @@ describe("serverless.yml merges only what the static checks read", () => {
         "ResultsTableName",
       ]),
     );
+  });
+
+  it("reads the site template's parameters, so serverless.yml's inline defaults are checked against them (#322)", () => {
+    expect(DECLARED_ELSEWHERE.parameters).toMatchObject({
+      DomainName: expect.arrayContaining(["Default"]) as unknown,
+      CertificateArn: expect.not.arrayContaining(["Default"]) as unknown,
+      HostedZoneId: expect.not.arrayContaining(["Default"]) as unknown,
+    });
   });
 
   // osls takes `extensions` from the merged list, so a template that holds

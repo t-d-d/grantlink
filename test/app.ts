@@ -39,11 +39,18 @@ export const TEMPLATES = [SITE_TEMPLATE, DATA_TEMPLATE] as const;
 const templates = TEMPLATES.map(readTemplate);
 
 // What serverless.yml's inline entries may not change: the templates'
-// resources and outputs, and what osls generates for the functions (#166,
-// #243).
+// resources, outputs and parameters, and what osls generates for the
+// functions (#166, #243, #322).
 export const DECLARED_ELSEWHERE = {
   declared: templates.flatMap((template) => Object.keys(template.Resources)),
   outputs: templates.flatMap((template) => Object.keys(template.Outputs ?? {})),
+  parameters: Object.fromEntries(
+    templates.flatMap((template) =>
+      Object.entries(template.Parameters ?? {}).map(
+        ([id, fields]) => [id, Object.keys(fields)] as const,
+      ),
+    ),
+  ),
   functions: Object.keys(serverless.functions ?? {}),
 };
 
