@@ -95,6 +95,10 @@ const ANY_CASE_NAMES = namesPattern(funder.names, true);
 const EDGE = String.raw`[\p{L}\p{M}]`;
 const funderName = new RegExp(`(?<!${EDGE})(?:${NAMES})(?!${EDGE})`, "iu");
 
+// Whether text names the funder. Gold set B's draw reads names with this
+// too, so its hard cases match what the rules read (#338).
+export const namesFunder = (text: string): boolean => funderName.test(text);
+
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
 

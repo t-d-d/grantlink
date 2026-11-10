@@ -4,7 +4,11 @@ import {
   type EuropePmc,
 } from "../../src/europepmc/client.ts";
 import { fundingSections } from "../../src/europepmc/jats.ts";
-import { findReferences, funder } from "../../src/extract/rules.ts";
+import {
+  findReferences,
+  funder,
+  namesFunder,
+} from "../../src/extract/rules.ts";
 import { sample } from "../../src/pipeline/snapshot.ts";
 
 // Draws gold set B's 100 papers (#3): a seeded draw from the unlinked set,
@@ -25,7 +29,6 @@ export type HardCase = (typeof HARD_CASES)[number];
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 const NAME = `(?:${funder.names.map(escape).join("|")})`;
-const named = new RegExp(`(?:^|[^A-Za-z])${NAME}(?![A-Za-z])`, "iu");
 const centre = new RegExp(
   `${NAME}(?:\\s+[A-Z][A-Za-z'&-]*){0,4}\\s+(?:Centre|Center|Institute|Unit)\\b`,
   "u",
@@ -59,7 +62,7 @@ export function hardCases(xml: string): HardCase[] {
   const text = sections.text.join(" ");
   const mentions = sections.text
     .flatMap(sentences)
-    .filter((s) => named.test(s));
+    .filter((s) => namesFunder(s));
   const asFunder = mentions.filter((s) => FUNDING_WORDS.test(s));
   const interests = [
     ...[...xml.matchAll(COI_FN)].map((match) => match[1] ?? ""),
@@ -68,11 +71,11 @@ export function hardCases(xml: string): HardCase[] {
   const others =
     OTHER_FUNDERS.test(text) ||
     sections.awards.some((award) =>
-      award.sources.some((source) => source !== "" && !named.test(source)),
+      award.sources.some((source) => source !== "" && !namesFunder(source)),
     );
 
   const found: HardCase[] = [];
-  if (interests.some((note) => named.test(note))) {
+  if (interests.some((note) => namesFunder(note))) {
     found.push("declared-interest");
   }
   if (centre.test(text)) found.push("centre-or-institute");
