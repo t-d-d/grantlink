@@ -124,21 +124,23 @@ export function stepHelperOf(
 // What an expression reads from a relative module, through the wrappers
 // unwrapped takes off: an identifier's import (importOf), or a name read
 // from a namespace import `<ns>.<name>` or `<ns>["<name>"]`. Null for
-// anything else.
+// anything else. `once` says the expression is read once, as an alias's
+// initial value, which importOf passes on.
 export function bindingOf(
   node: TSESTree.Node,
   resolver: Resolver,
   seen: ReadonlySet<TSESLint.Scope.Variable> = new Set(),
+  once = false,
 ): ImportBinding | null {
   const value = unwrapped(node);
   if (value.type === AST_NODE_TYPES.Identifier) {
-    return importOf(value, resolver, seen);
+    return importOf(value, resolver, seen, once);
   }
   if (value.type !== AST_NODE_TYPES.MemberExpression) return null;
   const object = unwrapped(value.object);
   const name = memberName(value);
   if (object.type !== AST_NODE_TYPES.Identifier || name === null) return null;
-  return memberOf(importOf(object, resolver, seen), name);
+  return memberOf(importOf(object, resolver, seen, once), name);
 }
 
 // The expression a TypeScript wrapper, an optional chain or the comma
@@ -197,7 +199,10 @@ function keyName(key: TSESTree.Node, computed: boolean): string | null {
 // local declared more than once (`var ask = a; var ask = b;`), or declared
 // with no value and given one later (`let ask; ask = a;`), is not an alias,
 // and the walk ends at it. A later write does not end the walk, but makes it
-// inexact: the local may hold something else when it is read.
+// inexact: the local may hold something else when it is read. A local read
+// once, as the next alias's initial value, holds what it held at that read,
+// so a write that can only run after the read does not count against it
+// (writtenBeforeRead, #437).
 //
 // Where what a name holds lets code off a check, only an exact walk counts:
 // stepHelperOf by default, since it gives a step helper's callbacks a step's
@@ -210,17 +215,21 @@ export interface AliasWalk {
   // The local the identifier names, then each local it aliases in turn.
   // The last is where the walk ended.
   chain: readonly TSESLint.Scope.Variable[];
-  // True when no local along the chain is written after its declaration.
+  // True when no local along the chain may be written before it is read.
+  // The first is read where the identifier sits only when the walk was
+  // asked with `once`; otherwise any write to it counts.
   readonly exact: boolean;
 }
 
 // Walk the chain of plain aliases from an identifier, such as
 // `const ask = askEuropePmc` or `let same = ctx`. It ends at a local that
 // aliases a name it cannot resolve. Null when the identifier itself does not
-// resolve, or the chain loops back on itself.
+// resolve, or the chain loops back on itself. `once` says the identifier
+// itself is read once, as another alias's initial value.
 export function walkAliases(
   identifier: TSESTree.Identifier,
   resolver: Resolver,
+  once = false,
 ): AliasWalk | null {
   const first = lookup(
     identifier.name,
@@ -228,6 +237,8 @@ export function walkAliases(
   );
   if (first === null) return null;
   const chain = [first];
+  // The identifier each local in the chain is read through.
+  const reads = [identifier];
   for (let current = first; ;) {
     const alias = aliasDeclarator(current);
     const init =
@@ -244,13 +255,18 @@ export function walkAliases(
     if (next === null) break;
     if (chain.includes(next)) return null;
     chain.push(next);
+    reads.push(init);
     current = next;
   }
   return {
     chain,
     // Scanning every reference costs a walk, so only a rule that asks pays.
     get exact() {
-      return !chain.some(reassigned);
+      return !chain.some((variable, i) =>
+        i === 0 && !once
+          ? reassigned(variable)
+          : writtenBeforeRead(variable, reads[i] ?? identifier),
+      );
     },
   };
 }
@@ -290,8 +306,9 @@ export function importOf(
   identifier: TSESTree.Identifier,
   resolver: Resolver,
   seen: ReadonlySet<TSESLint.Scope.Variable> = new Set(),
+  once = false,
 ): ImportBinding | null {
-  const walk = walkAliases(identifier, resolver);
+  const walk = walkAliases(identifier, resolver, once);
   const end = walk?.chain.at(-1);
   if (walk === null || end === undefined || seen.has(end)) return null;
   const declared = aliasDeclarator(end);
@@ -323,9 +340,78 @@ export function importOf(
   };
 }
 
+// The references that write to the variable, other than its declaration.
+function writesOf(
+  variable: TSESLint.Scope.Variable,
+): TSESLint.Scope.Reference[] {
+  return variable.references.filter((ref) => ref.isWrite() && !ref.init);
+}
+
 // True when anything but its declaration writes to the variable.
 function reassigned(variable: TSESLint.Scope.Variable): boolean {
-  return variable.references.some((ref) => ref.isWrite() && !ref.init);
+  return writesOf(variable).length > 0;
+}
+
+// True when a write other than its declaration may run before this read of
+// the variable. A variable nothing writes again holds its first value
+// wherever it is read. Otherwise it counts none only when the variable is
+// an alias under the policy above, every such write follows the read in the
+// same function that declares the variable, and no loop around the read may
+// reach it without running the declaration first. A write in a nested
+// function may run at any time, a read in a function the variable outlives
+// may run after any write, and a loop runs a later write before its next
+// read.
+function writtenBeforeRead(
+  variable: TSESLint.Scope.Variable,
+  identifier: TSESTree.Identifier,
+): boolean {
+  const writes = writesOf(variable);
+  if (writes.length === 0) return false;
+  const declared = aliasDeclarator(variable);
+  const read = variable.references.find((ref) => ref.identifier === identifier);
+  const scope = variable.scope.variableScope;
+  if (declared === null || read?.from.variableScope !== scope) return true;
+  return (
+    writes.some(
+      (ref) =>
+        ref.from.variableScope !== scope ||
+        ref.identifier.range[0] < identifier.range[1],
+    ) || inLoopWithout(identifier, declared.declarator, scope.block)
+  );
+}
+
+// True when a loop around the node, inside the function or program that
+// declares the variable, may reach it without running the declarator first
+// on that pass: the declarator is not in the loop's body, or it declares a
+// var, which a pass may skip or run after the read and which keeps its
+// value from the pass before. A loop outside that function calls it afresh
+// on each pass, with a fresh var.
+function inLoopWithout(
+  node: TSESTree.Node,
+  declarator: TSESTree.VariableDeclarator,
+  boundary: TSESTree.Node,
+): boolean {
+  const scoped = declarator.parent.kind !== "var";
+  // ESLint gives the program a null parent, so the walk stops on either.
+  for (let n = node.parent; n && n !== boundary; n = n.parent) {
+    switch (n.type) {
+      case AST_NODE_TYPES.ForStatement:
+      case AST_NODE_TYPES.ForInStatement:
+      case AST_NODE_TYPES.ForOfStatement:
+      case AST_NODE_TYPES.WhileStatement:
+      case AST_NODE_TYPES.DoWhileStatement:
+        if (!scoped || !within(declarator, n.body)) return true;
+        break;
+      default:
+        break;
+    }
+  }
+  return false;
+}
+
+// True when the node lies inside the other's source range.
+function within(node: TSESTree.Node, outer: TSESTree.Node): boolean {
+  return node.range[0] >= outer.range[0] && node.range[1] <= outer.range[1];
 }
 
 // What a declarator binds `name` to, when it aliases an import through more
@@ -340,7 +426,7 @@ function aliasOf(
 ): ImportBinding | null {
   const { id } = declarator;
   if (declarator.init === null) return null;
-  if (id === name) return bindingOf(declarator.init, resolver, seen);
+  if (id === name) return bindingOf(declarator.init, resolver, seen, true);
   const init = unwrapped(declarator.init);
   if (
     id.type !== AST_NODE_TYPES.ObjectPattern ||
@@ -350,7 +436,7 @@ function aliasOf(
   }
   const key = destructuredKey(id, name, "exact");
   if (key === null) return null;
-  return memberOf(importOf(init, resolver, seen), key);
+  return memberOf(importOf(init, resolver, seen, true), key);
 }
 
 // The constant key an object pattern destructures `name` from, at its top

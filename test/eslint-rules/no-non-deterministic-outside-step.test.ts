@@ -11,6 +11,20 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
     {
       valid: [
         {
+          name: "reads the clock inside a step's callback through the comma operator",
+          code: `async function run(ctx: any) {
+            await ctx.step("start", (0, async () => Date.now()), { retryStrategy: r });
+          }`,
+        },
+        {
+          name: "reads the clock inside askEuropePmc's read through the comma operator",
+          filename: "src/run/run.ts",
+          code: `import { askEuropePmc } from "./owed.ts";
+          async function run(ctx: any) {
+            await askEuropePmc(ctx, "paper", "wait", r, (0, async () => Date.now()));
+          }`,
+        },
+        {
           name: "reads the clock inside a step's callback asserted with as",
           code: `async function run(ctx: any) {
             await ctx.step("start", (async () => Date.now()) as any, { retryStrategy: r });
@@ -100,6 +114,14 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           export { randomUUID };`,
         },
         {
+          name: "reads a wrapped clock and random source inside a step",
+          code: `async function run(ctx: any) {
+            const at = await ctx.step("at", async () => (Date as any).now());
+            const day = await ctx.step("day", async () => new (Date as any)());
+            const id = await ctx.step("id", async () => crypto!.randomUUID());
+          }`,
+        },
+        {
           name: "parses a fixed date",
           code: `const since = new Date("2020-01-01");`,
         },
@@ -154,6 +176,94 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           name: "draws a random integer",
           code: `const n = crypto.randomInt(5);`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "reads the clock through as, satisfies and a non-null assertion on Date",
+          code: `async function run(ctx: any) {
+            const a = (Date as any).now();
+            const b = (Date satisfies DateConstructor).now();
+            const c = Date!.now();
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+            },
+          ],
+        },
+        {
+          name: "reads random through as, satisfies and a non-null assertion on Math",
+          code: `async function run(ctx: any) {
+            const a = (Math as any).random();
+            const b = (Math satisfies Math).random();
+            const c = Math!.random();
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
+        },
+        {
+          name: "reads random through as, satisfies and a non-null assertion on crypto",
+          code: `async function run(ctx: any) {
+            const a = (crypto as any).randomUUID();
+            const b = (crypto satisfies Crypto).randomUUID();
+            const c = crypto!.randomUUID();
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto.randomUUID()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto.randomUUID()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto.randomUUID()" },
+            },
+          ],
+        },
+        {
+          name: "constructs the current date through as, satisfies and a non-null assertion on Date",
+          code: `async function run(ctx: any) {
+            const a = new (Date as any)();
+            const b = new (Date satisfies DateConstructor)();
+            const c = new Date!();
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "new Date()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "new Date()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "new Date()" },
+            },
+          ],
         },
         {
           name: "passes a random source by reference",

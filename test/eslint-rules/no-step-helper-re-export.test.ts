@@ -5,6 +5,27 @@ import { WRAPPED_STEP_HELPERS } from "./wrapped-step-helpers.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
 
+// Ways for owed.ts to wrap its own askEuropePmc when it aliases it locally
+// (#436), as the TypeScript wrappers and the comma operator (#429) allow:
+// each gives the wrapper's description and the alias's initialiser.
+const OWN_MODULE_WRAPPERS: readonly (readonly [string, string])[] = [
+  ["asserted with as", "askEuropePmc as typeof askEuropePmc"],
+  ["asserted with angle brackets", "<typeof askEuropePmc>askEuropePmc"],
+  ["checked with satisfies", "askEuropePmc satisfies typeof askEuropePmc"],
+  ["with a non-null assertion", "askEuropePmc!"],
+  ["given type arguments", "askEuropePmc<number>"],
+  ["in brackets", "(askEuropePmc)"],
+  [
+    "in brackets and asserted with as",
+    "((askEuropePmc) as typeof askEuropePmc)",
+  ],
+  ["through the comma operator", "(0, askEuropePmc)"],
+  [
+    "through the comma operator and asserted with as",
+    "(0, askEuropePmc as typeof askEuropePmc)",
+  ],
+];
+
 describe("fitness: a step helper is reached only from its own module (durable-execution.md)", () => {
   tester.run("no-step-helper-re-export", noStepHelperReExport, {
     valid: [
@@ -64,10 +85,35 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         export { impl as askEuropePmc };`,
       },
       {
+        name: "exports under the helper's own name an alias of a local alias of askEuropePmc written after the alias reads it, from its own module",
+        filename: "src/run/owed.ts",
+        code: `async function askEuropePmc() {}
+        function somethingElse() {}
+        let impl: any = askEuropePmc;
+        const ask = impl;
+        impl = somethingElse;
+        export { ask as askEuropePmc };`,
+      },
+      {
         name: "exports a local alias of another function in the helper's module",
         filename: "src/run/owed.ts",
         code: `function somethingElse() {}
         const ask = somethingElse;
+        export { ask };`,
+      },
+      ...OWN_MODULE_WRAPPERS.map(([wrapper, init]) => ({
+        name: `exports a local alias of askEuropePmc ${wrapper} under the helper's own name from its own module`,
+        filename: "src/run/owed.ts",
+        code: `async function askEuropePmc() {}
+        const impl = ${init};
+        export { impl as askEuropePmc };`,
+      })),
+      {
+        name: "exports a local alias of another function asserted as askEuropePmc's type in the helper's module",
+        filename: "src/run/owed.ts",
+        code: `async function askEuropePmc() {}
+        async function somethingElse() {}
+        const ask = somethingElse as typeof askEuropePmc;
         export { ask };`,
       },
       {
@@ -87,6 +133,25 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         export const exported = ${shape.callee};`,
         errors: [{ messageId: "reExport" as const }],
       })),
+      ...OWN_MODULE_WRAPPERS.flatMap(([wrapper, init]) => [
+        {
+          name: `exports a local alias of askEuropePmc ${wrapper} from its own module`,
+          filename: "src/run/owed.ts",
+          code: `async function askEuropePmc() {}
+        const ask = ${init};
+        export { ask };`,
+          errors: [{ messageId: "reExport" as const }],
+        },
+        {
+          name: `exports an alias of a local alias of askEuropePmc ${wrapper} as the default from its own module`,
+          filename: "src/run/owed.ts",
+          code: `async function askEuropePmc() {}
+        const first = ${init};
+        const ask = first;
+        export default ask;`,
+          errors: [{ messageId: "reExport" as const }],
+        },
+      ]),
       {
         name: "re-exports askEuropePmc from its module",
         filename: "src/run/run.ts",
@@ -221,14 +286,6 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         let impl = askEuropePmc;
         impl = somethingElse;
         export { impl as askEuropePmc };`,
-        errors: [{ messageId: "reExport" }],
-      },
-      {
-        name: "exports a local alias of askEuropePmc through a type assertion from its own module",
-        filename: "src/run/owed.ts",
-        code: `async function askEuropePmc() {}
-        const ask = askEuropePmc as typeof askEuropePmc;
-        export { ask };`,
         errors: [{ messageId: "reExport" }],
       },
       {
