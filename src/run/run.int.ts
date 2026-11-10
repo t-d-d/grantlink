@@ -10,8 +10,9 @@ import {
   it,
   vi,
 } from "vitest";
-import { goldB, pinned, snapshotKeys } from "../../evals/gold.ts";
+import { snapshotKeys } from "../../evals/gold.ts";
 import {
+  FAKE_GOLD,
   fakeDeps,
   fakeRelease,
   isGoldSearch,
@@ -679,7 +680,7 @@ describe("a failure to write or read the table is retried apart from Europe PMC'
 });
 
 describe("the eval snapshot (evals.md)", () => {
-  const MANIFEST = snapshotKeys.manifest(pinned.id);
+  const MANIFEST = snapshotKeys.manifest(FAKE_GOLD.snapshotId);
   const manifestOf = (fake: ReturnType<typeof fakeDeps>) =>
     JSON.parse(String(fake.text.get(MANIFEST))) as {
       id: string;
@@ -698,19 +699,21 @@ describe("the eval snapshot (evals.md)", () => {
     expect(status).toBe("SUCCEEDED");
     expect(result?.snapshot).toMatchObject({
       taken: true,
-      papers: 2 + goldB.papers.length,
+      papers: 2 + FAKE_GOLD.goldB.papers.length,
     });
     expect(fake.requests.some(isGoldSearch)).toBe(true);
 
     const manifest = manifestOf(fake);
-    expect(manifest.id).toBe(pinned.id);
+    expect(manifest.id).toBe(FAKE_GOLD.snapshotId);
     const inSet = (set: string) =>
       manifest.papers
         .filter((paper) => paper.set === set)
         .map((paper) => paper.pmcid)
         .sort();
     expect(inSet("A")).toEqual(["PMC0000001", "PMC0000002"]);
-    expect(inSet("B")).toEqual(goldB.papers.map((paper) => paper.pmcid).sort());
+    expect(inSet("B")).toEqual(
+      FAKE_GOLD.goldB.papers.map((paper) => paper.pmcid).sort(),
+    );
     const one = manifest.papers.find((paper) => paper.pmcid === "PMC0000001");
     expect(one).toMatchObject({ set: "A", grants: ["A56789"] });
     const text = String(fake.text.get("eval/papers/PMC0000001.json"));

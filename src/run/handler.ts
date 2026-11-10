@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
 import { z } from "zod";
+import { goldA, goldB, pinned } from "../../evals/gold.ts";
 import { europePmc } from "../europepmc/client.ts";
 import { release } from "../page/release.ts";
 import type { Deps } from "../pipeline/steps.ts";
@@ -36,7 +37,7 @@ const readRelease = () =>
 
 // Made for each invocation, so no state, such as the Europe PMC client's
 // pace, carries from one run into the next.
-function liveDeps(): Deps {
+export function liveDeps(): Deps {
   return {
     europePmc: europePmc(),
     table: dynamoTable(env.TABLE_NAME),
@@ -48,6 +49,9 @@ function liveDeps(): Deps {
     // Only a step's helpers call this, so every clock read sits in a step.
     // eslint-disable-next-line grantlink/no-non-deterministic-outside-step -- called only from inside steps
     now: () => new Date().toISOString(),
+    // The repo's own gold sets, and the snapshot id evals/snapshot.json
+    // pins.
+    gold: { goldA, goldB, snapshotId: pinned.id },
   };
 }
 

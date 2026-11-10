@@ -1,13 +1,7 @@
 import { createHash } from "node:crypto";
 import { LARGEST_PAGE_SIZE } from "../europepmc/client.ts";
 import { fundingSections } from "../europepmc/jats.ts";
-import {
-  GRANT,
-  goldA,
-  manifest,
-  pinned,
-  type Manifest,
-} from "../../evals/gold.ts";
+import { GRANT, manifest, type Manifest } from "../../evals/gold.ts";
 import { logger } from "../log.ts";
 import type { Deps } from "./steps.ts";
 
@@ -47,7 +41,7 @@ export function sample(pmcids: readonly string[], seed: number): string[] {
 }
 
 export async function snapshotTaken(deps: Deps): Promise<boolean> {
-  return deps.text.hasSnapshot(pinned.id);
+  return deps.text.hasSnapshot(deps.gold.snapshotId);
 }
 
 export async function searchGoldA(
@@ -56,7 +50,7 @@ export async function searchGoldA(
 ): Promise<{ pmcids: string[]; skipped: number; nextCursor: string | null }> {
   const page = await deps.europePmc.search(
     cursor,
-    goldA.query,
+    deps.gold.goldA.query,
     LARGEST_PAGE_SIZE,
   );
   logger.info("snapshot-search", {
@@ -119,18 +113,19 @@ export async function writeManifest(
   deps: Deps,
   entries: Entry[],
 ): Promise<{ manifestSha256: string }> {
+  const { goldA, snapshotId } = deps.gold;
   const body = JSON.stringify(
     manifest.parse({
-      id: pinned.id,
+      id: snapshotId,
       createdAt: deps.now(),
       goldA: { query: goldA.query, seed: goldA.seed, size: goldA.size },
       papers: entries,
     }),
   );
-  const stored = await deps.text.putManifest(pinned.id, body);
+  const stored = await deps.text.putManifest(snapshotId, body);
   const manifestSha256 = sha256(stored);
   logger.info("snapshot-written", {
-    id: pinned.id,
+    id: snapshotId,
     papers: entries.length,
     manifestSha256,
   });

@@ -1,3 +1,4 @@
+import type { goldA, goldB } from "../../evals/gold.ts";
 import type { EuropePmc, SearchPaper } from "../europepmc/client.ts";
 import { fundingSections } from "../europepmc/jats.ts";
 import { findReferences, RULES_VERSION } from "../extract/rules.ts";
@@ -12,6 +13,15 @@ import type { Table } from "../store/table.ts";
 // context (docs/constraints/durable-execution.md), so a test can call it
 // with fakes.
 
+// The gold sets the eval snapshot reads, and the id it is taken under. The
+// handler gives the repo's own, from evals/; a test gives small ones, so its
+// time does not grow with gold set B.
+export interface Gold {
+  goldA: typeof goldA;
+  goldB: typeof goldB;
+  snapshotId: string;
+}
+
 export interface Deps {
   europePmc: EuropePmc;
   table: Table;
@@ -25,6 +35,7 @@ export interface Deps {
   // The commit the function was deployed from.
   codeVersion: string;
   now: () => string;
+  gold: Gold;
 }
 
 export interface SearchResult {

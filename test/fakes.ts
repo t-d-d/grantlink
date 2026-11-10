@@ -1,8 +1,7 @@
 import { FLOORS } from "../evals/floors.ts";
-import { goldA, goldB } from "../evals/gold.ts";
 import { europePmc, type Clock } from "../src/europepmc/client.ts";
 import { release, type Release } from "../src/page/release.ts";
-import type { Deps } from "../src/pipeline/steps.ts";
+import type { Deps, Gold } from "../src/pipeline/steps.ts";
 import type { PageFiles } from "../src/store/bucket.ts";
 import { paperRow, type PaperRow, type Table } from "../src/store/table.ts";
 import { fixture } from "./fixtures.ts";
@@ -112,11 +111,33 @@ const GRANTS: Partial<Record<string, string>> = {
   PMC0000002: "RRCOER-Jun24\\100008",
 };
 
+// The gold sets a test's run reads, in place of the repo's own, so a test's
+// time does not grow as gold set B does. Gold set A lists no papers, so the
+// snapshot samples it from its search. Gold set B is three papers neither
+// search finds, so a refusal the run meets is not met again in gold set B.
+export const FAKE_GOLD: Gold = {
+  goldA: {
+    about: "a test's gold set A",
+    query: 'GRANT_AGENCY:"Test Funder"',
+    seed: 7,
+    size: 300,
+    papers: [],
+  },
+  goldB: {
+    about: "a test's gold set B",
+    papers: ["PMC0000011", "PMC0000012", "PMC0000013"].map((pmcid) => ({
+      pmcid,
+      references: [],
+    })),
+  },
+  snapshotId: "s1",
+};
+
 // Whether a request is gold set A's sampling search. The client wraps the
 // recorded query, so the request holds it rather than starts with it.
 export const isGoldSearch = (url: URL) =>
   url.pathname.endsWith("/search") &&
-  (url.searchParams.get("query") ?? "").includes(goldA.query);
+  (url.searchParams.get("query") ?? "").includes(FAKE_GOLD.goldA.query);
 
 // How a test may replace Europe PMC's answers: `search` for the run's
 // search, and `goldSearch` for gold set A's sampling search.
@@ -125,7 +146,13 @@ export interface FakeSearches {
   goldSearch?: (cursor: string) => Response;
 }
 
-const LABELLED = new Set(goldB.papers.map((paper) => paper.pmcid));
+const LABELLED = new Set(FAKE_GOLD.goldB.papers.map((paper) => paper.pmcid));
+
+// What fakeDeps takes: Europe PMC's answers, and any gold set to put in
+// place of FAKE_GOLD's.
+export interface FakeOptions extends FakeSearches {
+  gold?: Partial<Gold>;
+}
 
 // Europe PMC answering from the fixtures. A paper with no fixture fails as
 // a server error does; either search may be replaced to fail it.
@@ -187,14 +214,12 @@ export function fakeEuropePmc(options: FakeSearches = {}) {
       return Promise.resolve(reply(fixture(file)));
     }
     const pmcid = /\/(PMC\d+)\/fullTextXML$/u.exec(url.pathname)?.[1] ?? "";
+    // FAKE_GOLD's gold set B papers have no recording of their own, and
+    // answer with a full text written by hand.
+    const file = LABELLED.has(pmcid) ? "PMC0000003" : pmcid;
     try {
-      return Promise.resolve(reply(fixture(`${pmcid}.xml`)));
+      return Promise.resolve(reply(fixture(`${file}.xml`)));
     } catch {
-      // Gold set B's papers, which the snapshot reads from the real labels,
-      // answer with a full text written by hand unless one is recorded.
-      if (LABELLED.has(pmcid)) {
-        return Promise.resolve(reply(fixture("PMC0000003.xml")));
-      }
       return Promise.resolve(reply("", 503));
     }
   };
@@ -224,7 +249,7 @@ export function fakeRelease(run: number): Release {
   });
 }
 
-export function fakeDeps(options: FakeSearches = {}) {
+export function fakeDeps(options: FakeOptions = {}) {
   const table = memoryTable();
   const text = new Map<string, unknown>();
   // Written once, as the bucket's policy makes every write under eval/.
@@ -272,6 +297,7 @@ export function fakeDeps(options: FakeSearches = {}) {
     release: () => Promise.resolve(null),
     codeVersion: "test",
     now: () => "2026-11-09T12:00:00.000Z",
+    gold: { ...FAKE_GOLD, ...options.gold },
   };
   return { deps, table, text, site, requests: epmc.requests };
 }

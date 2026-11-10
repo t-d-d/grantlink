@@ -1,25 +1,22 @@
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
 import { LocalDurableTestRunner } from "@aws/durable-execution-sdk-js-testing";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { fakeDeps } from "../../test/fakes.ts";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { FAKE_GOLD, fakeDeps } from "../../test/fakes.ts";
 import { EuropePmcError } from "../europepmc/client.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
-// The snapshot with a gold set B to read. The repo's own gold set B is
-// empty until its labels land, so this file gives it three papers from the
-// fixtures, none of them in gold set A's sample.
+// The snapshot with a gold set B of its own, passed in through the run's
+// deps, so these tests never read the repo's labels.
 
-const { LABELLED } = vi.hoisted(() => ({
-  LABELLED: ["PMC13628515", "PMC13642255", "PMC13664392"],
-}));
+const LABELLED = FAKE_GOLD.goldB.papers.map((paper) => paper.pmcid);
 
-vi.mock(import("../../evals/gold.ts"), async (original) => ({
-  ...(await original()),
-  goldB: {
-    about: "three papers from the fixtures",
-    papers: LABELLED.map((pmcid) => ({ pmcid, references: [] })),
-  },
-}));
+const goldB = (pmcids: string[]) => ({
+  about: "papers from the fixtures",
+  papers: pmcids.map((pmcid) => ({ pmcid, references: [] })),
+});
+
+const manifestKey = (fake: ReturnType<typeof fakeDeps>) =>
+  `eval/${fake.deps.gold.snapshotId}/manifest.json`;
 
 beforeAll(() =>
   LocalDurableTestRunner.setupTestEnvironment({ skipTime: true }),
@@ -42,8 +39,7 @@ async function runWith(fake: ReturnType<typeof fakeDeps>) {
 
 // Europe PMC answering the first labelled paper's full text with `first`
 // once the snapshot starts, and recording every gold set B paper the
-// snapshot asks about. The run reads the same papers first, as it finds
-// them in its own search.
+// snapshot asks about.
 function failingFirstLabelled(first: () => Promise<string>) {
   const fake = fakeDeps();
   const real = fake.deps.europePmc;
@@ -76,6 +72,23 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
       taken: true,
       papers: 2 + LABELLED.length,
     });
+    expect(fake.text.has(manifestKey(fake))).toBe(true);
+  });
+
+  it("leaves the snapshot for the next run when a labelled paper cannot be read", async () => {
+    // The fake Europe PMC holds no full text for PMC0000009, and answers
+    // 503.
+    const fake = fakeDeps({
+      gold: { goldB: goldB([...LABELLED.slice(0, 1), "PMC0000009"]) },
+    });
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.published).toMatchObject({ published: true });
+    expect(result?.snapshot).toEqual({
+      taken: false,
+      reason: "a gold set B paper could not be read",
+    });
+    expect(fake.text.has(manifestKey(fake))).toBe(false);
   });
 
   it.each([
@@ -96,7 +109,7 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
         reason: "a gold set B paper could not be read",
       });
       expect(asked).toEqual([LABELLED[0]]);
-      expect(fake.text.has("eval/s1/manifest.json")).toBe(false);
+      expect(fake.text.has(manifestKey(fake))).toBe(false);
     },
   );
 
@@ -129,6 +142,6 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
       reason: "a gold set B paper could not be read",
     });
     expect(asked).toEqual([LABELLED[0]]);
-    expect(fake.text.has("eval/s1/manifest.json")).toBe(false);
+    expect(fake.text.has(manifestKey(fake))).toBe(false);
   });
 });
