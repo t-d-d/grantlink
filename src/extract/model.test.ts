@@ -742,6 +742,26 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.rejected).toBe(1);
   });
 
+  it("rejects a CRUK- form where the rules read the C/A pair inside it instead (#599)", async () => {
+    // The rules' C/A pattern runs first and takes the pair, so they read
+    // C1234/A56789 and no CRUK- form here. The text is made up.
+    const { fetch } = fakeOpenRouter(
+      answer([
+        { asWritten: "CRUK/C1234/A56789", confidence: 0.9 },
+        { asWritten: "C1234/A56789", confidence: 0.9 },
+      ]),
+    );
+    const result = await proposeReferences(
+      ["Funded by CRUK (CRUK/C1234/A56789)."],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(["C1234/A56789"]);
+    expect(result.status === "read" && result.rejected).toBe(1);
+  });
+
   it("keeps a CRUK- form just where the rules read it, at their limits too (#561)", async () => {
     // What follows is no part the rules read: a part in lower case, a part
     // too long, or a fifth part. The text is made up.
