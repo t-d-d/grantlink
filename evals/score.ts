@@ -120,6 +120,21 @@ function withoutReferenceLists(article: string): string {
   }
 }
 
+// The front matter, an article's or a sub-article's, holds its metadata:
+// its DOI, dates and copyright line. Only its funding groups are read, so
+// a journal's own DOI or a year beside the funder's name in a copyright
+// line is not taken for a grant (#555).
+const FRONT = /<(front|front-stub)(?=[\s>])[^>]*>([\s\S]*?)<\/\1\s*>/gu;
+const FUNDING_GROUP = /<funding-group(?=[\s>])[\s\S]*?<\/funding-group\s*>/gu;
+
+function withoutFrontMatter(article: string): string {
+  return article.replace(
+    FRONT,
+    (_front, _tag, inner: string) =>
+      ` ${[...inner.matchAll(FUNDING_GROUP)].map(([group]) => group).join(" ")} `,
+  );
+}
+
 // A form as a pattern that ignores case and spaces, with a slash written
 // any way canonical reads one, and nothing alphanumeric either side of it.
 // A space may not split a run of digits, or "1 2345" in a sentence, or two
@@ -173,8 +188,9 @@ function printedAs(form: string, text: string, names: Span[]): boolean {
 
 // The linked grants a paper prints, in the order given: those with a form
 // sameGrant accepts standing alone in the whole article less its reference
-// list, ignoring case and spaces (#502, #503). A grant cited only by
-// another paper is not printed. Each markup tag reads as a space, and any
+// list and its front matter but for the funding groups there, ignoring
+// case and spaces (#502, #503, #555). A grant cited only by another paper
+// is not printed. Each markup tag reads as a space, and any
 // run of spaces as one, so a tag inside a grant does not hide it and
 // indentation does not part a year from the funder's name. A bare number
 // in a decimal or a DOI, or one that reads as a year far from the funder's
@@ -183,7 +199,7 @@ export function printedGrants(
   grants: readonly string[],
   article: string,
 ): string[] {
-  const text = withoutReferenceLists(article)
+  const text = withoutReferenceLists(withoutFrontMatter(article))
     .replace(/<[^>]*>/gu, " ")
     .replace(/\s+/gu, " ");
   const names = [...text.matchAll(FUNDER_NAME)].map((m) => ({

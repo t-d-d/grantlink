@@ -161,6 +161,47 @@ describe("finding which linked grants a paper prints", () => {
     ).toEqual(["A11111"]);
   });
 
+  // The front matter is the article's metadata, so only its funding group
+  // is read (#555).
+  it.each([
+    [
+      "A12345",
+      "a journal's own DOI",
+      '<article><front><article-meta><article-id pub-id-type="doi">10.7554/eLife.12345</article-id></article-meta></front><body><p>No grant here.</p></body></article>',
+    ],
+    [
+      "A2021",
+      "a copyright line",
+      "<article><front><article-meta><permissions><copyright-statement>Published under exclusive licence to Cancer Research UK 2021</copyright-statement></permissions></article-meta></front><body><p>No grant here.</p></body></article>",
+    ],
+    [
+      "A12345",
+      "a sub-article's own DOI",
+      '<article><body><p>No grant here.</p></body><sub-article><front-stub><article-id pub-id-type="doi">10.7554/eLife.12345.sa1</article-id></front-stub><body><p>A review.</p></body></sub-article></article>',
+    ],
+  ])(
+    "does not find %s printed in the front matter's %s",
+    (grant, _what, article) => {
+      expect(printedGrants([grant], article)).toEqual([]);
+    },
+  );
+
+  it.each([
+    [
+      "A12345",
+      "<article><front><article-meta><funding-group><award-group><funding-source>Cancer Research UK</funding-source><award-id>A12345</award-id></award-group></funding-group></article-meta></front><body><p>No grant here.</p></body></article>",
+    ],
+    [
+      "A2021",
+      "<article><front><article-meta><funding-group><award-group><funding-source>Cancer Research UK</funding-source><award-id>2021</award-id></award-group></funding-group></article-meta></front><body><p>No grant here.</p></body></article>",
+    ],
+  ])(
+    "finds %s printed in the front matter's funding group",
+    (grant, article) => {
+      expect(printedGrants([grant], article)).toEqual([grant]);
+    },
+  );
+
   it("keeps only the linked grants the paper prints, in their order", () => {
     expect(
       printedGrants(
