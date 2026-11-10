@@ -283,12 +283,14 @@ const PATTERNS = SHAPES.map(
 // hyphen, as in "123456-01" (#97, #177).
 const BARE = String.raw`\d{5,7}`;
 const BARE_SUFFIX = String.raw`${DASH}\d{2}`;
-const BARE_REPLY = new RegExp(`^${BARE}(?:${BARE_SUFFIX})?$`, "u");
+// Any bare number a reply may be, of the n shape's four digits or of BARE's
+// five to seven, with or without its suffix.
+const BARE_REPLY = new RegExp(String.raw`^\d+(?:${BARE_SUFFIX})?$`, "u");
 
 // A reference as written, between the edges above. The model pass checks
 // its references with this, so the two passes cannot draw a reference's
-// edges differently (#384). A bare number counts only where the text does
-// not go on past it, as the rules read one (#567).
+// edges differently (#384). A bare number of any length counts only where
+// the text does not go on past it, as the rules read one (#567).
 export const wholeReference = (reference: string): RegExp =>
   new RegExp(
     `${START}${escape(reference)}${END}${BARE_REPLY.test(reference) ? NUMBER_AFTER : ""}`,

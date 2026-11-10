@@ -718,6 +718,20 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.rejected).toBe(5);
   });
 
+  it("rejects a four-digit bare number the text goes on past, as the rules read none (#567)", async () => {
+    // The rules read a bare number of four digits too, so its reply is
+    // held to the same after. The text is made up.
+    const { fetch } = fakeOpenRouter(
+      answer([{ asWritten: "1234", confidence: 0.9 }]),
+    );
+    const result = await proposeReferences(
+      ["Funded by CRUK award number 1234/5."],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(1);
+  });
+
   it("keeps a bare number the text ends, or follows with a comma or a full stop (#567)", async () => {
     // The text is made up.
     const written = ["123456", "234567", "345678", "456789-01"];
