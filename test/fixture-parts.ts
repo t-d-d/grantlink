@@ -12,7 +12,9 @@
 // (#215). Inside the funding metadata it names anything the cutter does not
 // read: a funding group may hold its funding statements and award groups,
 // and an award group its funding sources and award ids, so a principal award
-// recipient or investigator, which names people, is named (#275). Three
+// recipient or investigator, which names people, is named (#275). The check
+// takes those names from the cutter too, so it follows when the cutter reads
+// another (#305). Three
 // differences stay, where the check is stricter than the cutter. The cutter
 // finds a funding section nested in another section, but the check refuses
 // the outer section, whose other parts can carry names: a recording keeps

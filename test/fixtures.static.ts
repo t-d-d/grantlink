@@ -62,15 +62,17 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
 
   // The check reads a funding group by the names the cutter reads it by, so
   // when the cutter reads another element the check follows. Each name is
-  // written once, in the cutter, and never in the check (#305).
-  it.each(Object.values(FUNDING_METADATA))(
-    "%s is written once in the cutter and not in the check",
-    (name) => {
-      const quoted = new RegExp(`["'\`]${name}["'\`]`, "gu");
-      expect(readRepoFile("src/europepmc/jats.ts").match(quoted)).toHaveLength(
-        1,
-      );
-      expect(readRepoFile("test/fixture-parts.ts")).not.toContain(name);
+  // written once, in the cutter, and never in the check, and the cutter
+  // reads by each, so the check allows no element the cutter has stopped
+  // reading (#305).
+  const cutter = readRepoFile("src/europepmc/jats.ts");
+  const check = readRepoFile("test/fixture-parts.ts");
+  it.each(Object.entries(FUNDING_METADATA))(
+    "%s (%s) is written once in the cutter, read by it, and not in the check",
+    (key, name) => {
+      expect(cutter.split(name)).toHaveLength(2);
+      expect(cutter).toContain(`FUNDING_METADATA.${key}`);
+      expect(check).not.toContain(name);
     },
   );
 
