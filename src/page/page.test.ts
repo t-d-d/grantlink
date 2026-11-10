@@ -97,6 +97,7 @@ describe("a reference with a character a later version allows", () => {
         ...summarise([done("PMC1", [later])], run),
         papers: [{ pmcid: "PMC1", title: "Title", references: [reference] }],
       });
+    expect(rebuild(template, published(later), null)).toContain("A_12345");
     expect(() =>
       rebuild(
         template,
@@ -109,6 +110,16 @@ describe("a reference with a character a later version allows", () => {
     ).toThrow();
     expect(() =>
       rebuild(template, published({ ...later, format: "" }), null),
+    ).toThrow();
+    expect(() =>
+      rebuild(template, published({ ...later, asWritten: "" }), null),
+    ).toThrow();
+    expect(() =>
+      rebuild(
+        template,
+        published({ ...later, normalised: "A".repeat(41) }),
+        null,
+      ),
     ).toThrow();
     expect(() =>
       rebuild(template, published({ ...later, text: "A sentence." }), null),
