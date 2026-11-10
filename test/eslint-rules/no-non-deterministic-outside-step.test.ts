@@ -1173,6 +1173,89 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "draws random from Math given as the default of a destructured name",
+          code: `async function run(ctx: any) { const { foo: M = Math } = globalThis; M.random(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
+        },
+        {
+          name: "draws random destructured from Math given as the default of a nested pattern",
+          code: `async function run(ctx: any) { const { foo: { random: r } = Math } = globalThis; r(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
+        },
+        {
+          name: "calls Date given as the default of a destructured name, once at the call",
+          code: `async function run(ctx: any) { const { foo: D = Date } = x; D(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date()" },
+              column: 61,
+            },
+          ],
+        },
+        {
+          name: "passes Date on as a nested default that destructures a member calling it",
+          code: `async function run(ctx: any) { const { foo: { bind: b } = Date } = x; const f = b(null); }`,
+          errors: [
+            { messageId: "nonDeterministicOutsideStep", data: { op: "Date" } },
+          ],
+        },
+        {
+          name: "exports Date given as the default of a destructured name, once at the name",
+          code: `export const { foo: D = Date } = x;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              column: 21,
+            },
+          ],
+        },
+        {
+          name: "passes Date on as a default the rule does not follow, of a parameter",
+          code: `async function run(ctx: any) { const f = ({ foo: D = Date }: any) => D; }`,
+          errors: [
+            { messageId: "nonDeterministicOutsideStep", data: { op: "Date" } },
+          ],
+        },
+        {
+          name: "draws random from Math given as the default when the initial value starts at another holder",
+          code: `async function run(ctx: any) { const { foo: M = Math } = Date; M.random(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
+        },
+        {
+          name: "draws random destructured from Math given as a nested default when the initial value starts at another holder",
+          code: `async function run(ctx: any) { const { foo: { random: r } = Math } = Date; r(); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+          ],
+        },
+        {
+          name: "passes Date on as a default when the name follows Math from its initial value",
+          code: `async function run(ctx: any) { const { Math: M = Date } = globalThis; }`,
+          errors: [
+            { messageId: "nonDeterministicOutsideStep", data: { op: "Date" } },
+          ],
+        },
+        {
           name: "reads the clock destructured from Date with a default",
           code: `async function run(ctx: any) { const { now = () => 0 } = Date; const at = now(); }`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],

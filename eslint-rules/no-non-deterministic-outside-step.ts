@@ -26,7 +26,9 @@ import type { Resolver } from "./create-rule.ts";
 // at the call. An alias of a method, `const now = Date.now`, reports where
 // it is declared, since that reads the method, and again at each call,
 // `now()`. A method destructured from its object, `const { now } = Date`,
-// reports only at each call. A pattern that destructures from a source,
+// reports only at each call. A name with a default, `const { foo: D = Date }
+// = x`, is followed to the default when its initial value names no source,
+// and reports as an alias does. A pattern that destructures from a source,
 // `const { now: { call } } = Date`, or a member that calls `Date`,
 // `const { Date: { bind } } = globalThis`, reports once, at that key, or at
 // `Date` itself when it is what the pattern destructures, `{ bind } = Date`.
@@ -241,9 +243,11 @@ function withoutDefault(value: TSESTree.Property["value"]): TSESTree.Node {
 }
 
 // The global path a name destructured from an object pattern reads, from
-// what the pattern destructures or from a nested pattern's default. Where
-// they differ, the one that names a source wins, then one that starts at
-// a holder of a source, since a path here only makes the rule refuse.
+// what the pattern destructures or from a default, the name's own,
+// `{ foo: M = Math } = globalThis`, or a nested pattern's. Where they
+// differ, the first that names a source or an object holding one, `Date`
+// among them, wins, then one that starts at such an object, since a path
+// here only makes the rule refuse.
 // Null when none is known.
 function destructuredFrom(
   pattern: TSESTree.ObjectPattern,
@@ -260,13 +264,21 @@ function destructuredFrom(
     seen,
     (property, keys) => {
       if (withoutDefault(property.value) !== name) return false;
-      found = keys;
+      // A name's own default, `{ foo: M = Math } = globalThis`, may give it
+      // in place of what the pattern reads.
+      const fallback =
+        property.value.type === AST_NODE_TYPES.AssignmentPattern
+          ? pathOf(property.value.right, resolver, seen)
+          : null;
+      found = fallback === null ? keys : [...keys, fallback];
       return true;
     },
     name,
   );
   return (
-    found.find((path) => opOf(path) !== undefined || namesDate(path)) ??
+    found.find(
+      (path) => opOf(path) !== undefined || holderOf(path) !== undefined,
+    ) ??
     found.find((path) => HOLDERS.has(path[0] ?? "")) ??
     found[0] ??
     null
@@ -521,16 +533,19 @@ function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
       return parent.operator !== "typeof";
     // A default of a nested pattern in a declaration the rule follows,
     // `const { foo: { bind } = Date } = globalThis`, calls it only through
-    // a member the pattern destructures. Anywhere else, such as a
-    // parameter's default or an assignment, the rule does not follow the
-    // names it gives, so it counts as passed on.
+    // a member the pattern destructures. A name's own default, `const {
+    // foo: D = Date } = x`, reports where the name is used, as an alias of
+    // `Date` does, when the rule follows the name to it. Anywhere else, such
+    // as a parameter's default or an assignment, the rule does not follow
+    // the names it gives, so it counts as passed on.
     case AST_NODE_TYPES.AssignmentPattern:
-      return (
-        parent.right !== outer ||
-        parent.left.type !== AST_NODE_TYPES.ObjectPattern ||
-        !inFollowedDeclaration(parent) ||
-        callsThrough(parent.left)
-      );
+      if (parent.right !== outer || !inFollowedDeclaration(parent)) {
+        return true;
+      }
+      return parent.left.type === AST_NODE_TYPES.ObjectPattern
+        ? callsThrough(parent.left)
+        : parent.left.type !== AST_NODE_TYPES.Identifier ||
+            !namesDate(pathOf(parent.left, resolver, new Set()));
     case AST_NODE_TYPES.VariableDeclarator: {
       if (parent.init !== outer) return true;
       if (parent.id.type === AST_NODE_TYPES.ObjectPattern) {

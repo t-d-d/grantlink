@@ -139,6 +139,10 @@ const END = `(?!${WORD})`;
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
 
+// What may not follow a bare number, so it is not the start of a longer
+// one, as in 12345/2, 12345-67 or 1234.5.
+const NUMBER_AFTER = String.raw`(?!${SEP}|${DASH}\d|\.\d)`;
+
 interface Shape {
   format: string | ((match: RegExpMatchArray) => string);
   // The reference alone, built from the pieces below. The rules read it
@@ -277,7 +281,7 @@ const SHAPES: readonly Shape[] = [
     format: "n",
     shape: String.raw`(?!(?:19|20)\d{2}(?!\d))\d{4,6}`,
     before: String.raw`(?<=(?<!${EDGE})(?:${ANY_CASE_NAMES})(?!${EDGE})(?:\s?\(\s?|(?!\s*${JOINED_NAME})(?:(?!${ANOTHER_FUNDER})[^;,.]){0,100}?${TIE_WORD}))`,
-    after: String.raw`(?!${SEP}|${DASH}\d|\.\d)`,
+    after: NUMBER_AFTER,
     sentenceOnly: true,
   },
 ];
@@ -295,24 +299,27 @@ const PATTERNS = SHAPES.map(
 // hyphen, as in "123456-01" (#97, #177).
 const BARE = String.raw`\d{5,7}`;
 const BARE_SUFFIX = String.raw`${DASH}\d{2}`;
-
-// Any bare number a reply may be, of any length, with or without its suffix.
+// Any bare number a reply may be, of the n shape's four digits or of BARE's
+// five to seven, with or without its suffix.
 const BARE_REPLY = new RegExp(String.raw`^\d+(?:${BARE_SUFFIX})?$`, "u");
 // What may not come before a bare number, so it is not the end of a longer
-// one, as in 12/345678, ABC-123456 or 1.23456. The rules read a bare number
-// only after a bracket, a tie word, a colon or a hash, so they never read
-// one there (#571).
+// one, as in 12/345678, ABC-123456 or 1.23456. The rules' n shape reads a
+// bare number from the text only after a bracket, a tie word, a colon or a
+// hash, so it never reads one there (#571).
 const NUMBER_BEFORE = String.raw`(?<!${SEP}|${DASH}|\d\.)`;
 
 // A reference as written, between the edges above. The model pass checks
 // its references with this, so the two passes cannot draw a reference's
-// edges differently (#384). A bare number counts only where the text does
-// not run into it (#571).
-export const wholeReference = (reference: string): RegExp =>
-  new RegExp(
-    `${BARE_REPLY.test(reference) ? NUMBER_BEFORE : ""}${START}${escape(reference)}${END}`,
+// edges differently (#384). A bare number of any length counts only where
+// the text neither runs into it nor goes on past it, as the rules read one
+// (#567, #571).
+export const wholeReference = (reference: string): RegExp => {
+  const bare = BARE_REPLY.test(reference);
+  return new RegExp(
+    `${bare ? NUMBER_BEFORE : ""}${START}${escape(reference)}${END}${bare ? NUMBER_AFTER : ""}`,
     "u",
   );
+};
 
 // Whether a reference, as written with plain spaces, is a shape the rules
 // read, in capitals but for a month in a code, or a bare number with an
