@@ -897,6 +897,47 @@ describe("keeping funding notes and footnotes (#505)", () => {
     ).toEqual(["a", "b", "c", "d"]);
   });
 
+  // An empty or blank title names nothing, as a self-closing one does
+  // (#221), so the subsection is read as untitled and kept (#600).
+  it.each([
+    ["empty", "<title></title>"],
+    ["blank", "<title> </title>"],
+  ])(
+    "keeps a subsection of a funding section whose title is %s (#600)",
+    (_what, title) => {
+      expect(
+        fundingSections(
+          "<article><body><sec><title>Funding</title><p>a</p>" +
+            `<sec>${title}<p>b</p></sec>` +
+            "</sec></body></article>",
+        ).text,
+      ).toEqual(["a", "b"]);
+    },
+  );
+
+  it.each([
+    ["empty", "<title></title>"],
+    ["blank", "<title> </title>"],
+  ])(
+    "keeps a subsection of a funding note whose title is %s (#600)",
+    (_what, title) => {
+      expect(
+        back(
+          `<notes notes-type="funding"><p>a</p><sec>${title}<p>b</p></sec></notes>`,
+        ).text,
+      ).toEqual(["a", "b"]);
+    },
+  );
+
+  it.each([
+    ["empty", "<title></title>"],
+    ["blank", "<title> </title>"],
+  ])("reads a note whose title is %s as untitled (#600)", (_what, title) => {
+    expect(
+      back(`<notes>${title}<p>Funded by Cancer Research UK.</p></notes>`).text,
+    ).toEqual(["Funded by Cancer Research UK."]);
+  });
+
   // A section's type counts as its title, so a section typed as something
   // other than funding is left out of a funding note, and one typed as
   // funding is kept (#563).

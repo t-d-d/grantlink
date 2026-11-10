@@ -304,14 +304,17 @@ const headingStart = (section: XmlElement): number => {
 
 // The title that stands here, after a label if there is one, and where it
 // stands, or undefined if there is none. A self-closing title names nothing
-// (#221).
+// (#221), and neither does one whose text is empty or blank, as a blank type
+// says nothing (#600).
 function titleFrom(
   children: XmlNode[],
   from: number,
 ): { title: XmlElement; at: number } | undefined {
   const at = isLabel(children[from]) ? pastGaps(children, from + 1) : from;
   const title = children[at];
-  return isTitle(title) && !title.empty ? { title, at } : undefined;
+  return isTitle(title) && !title.empty && plain(title.children) !== ""
+    ? { title, at }
+    : undefined;
 }
 
 // What a funding section holds after its heading, or undefined if the
@@ -419,7 +422,8 @@ const ownContent = (note: XmlElement): XmlNode[] =>
 const ownWords = (note: XmlElement): string => plain(ownContent(note));
 
 // A note's title, which may follow a label, or undefined if it has none. A
-// self-closing title names nothing, as in a section (#221).
+// self-closing, empty or blank title names nothing, as in a section (#221,
+// #600).
 function noteTitle(note: XmlElement): string | undefined {
   const children = note.children;
   const found = titleFrom(children, pastGaps(children, 0));
