@@ -9,12 +9,12 @@ import { root } from "./repo.ts";
 // `type Log = () => void` counts. A parameter whose type does not resolve is
 // reported, since the check cannot tell what it is. A parameter whose type,
 // or one member of its union, is an array or a tuple that holds a function is
-// reported wherever it sits and whether or not it is listed, since the table
-// lists single positions and cannot describe it. A rest parameter's type is
-// such an array, so a rest parameter of functions is reported the same way
-// (#480, #498). The source is checked as if it sat at `path` in the repo, under the
-// repo's tsconfig.json, so its relative and package imports resolve as they
-// do for the real module.
+// reported whether or not it is listed, since the table lists single
+// positions and cannot describe it. A rest parameter's type is such an array,
+// so a rest parameter of functions is reported the same way, even in the
+// context's place (#480, #498). The source is checked as if it sat at `path`
+// in the repo, under the repo's tsconfig.json, so its relative and package
+// imports resolve as they do for the real module.
 export function callbackMismatches(
   source: string,
   name: string,
@@ -130,22 +130,32 @@ function exportedFunction(
 
 // Whether a parameter's type is a function, an array or tuple that holds a
 // function, another type, or one the checker could not resolve, which it
-// reads as `any`. An array or tuple is read by its elements, so one whose
-// elements do not resolve is unread too.
+// reads as `any`. A type parameter is read by its constraint. An array or
+// tuple is read by its elements, so one whose elements do not resolve is
+// unread too. A union that may be a function reads as one, even when
+// another member does not resolve. `reading` holds the types already being
+// read, so a recursive type such as `type Json = string | Json[]` ends
+// instead of looping.
 function kindOf(
   checker: ts.TypeChecker,
   type: ts.Type,
+  reading = new Set<ts.Type>(),
 ): "function" | "functions" | "other" | "unread" {
+  if (type.flags & ts.TypeFlags.TypeParameter)
+    type = checker.getBaseConstraintOfType(type) ?? type;
   if (type.flags & ts.TypeFlags.Any) return "unread";
+  if (reading.has(type)) return "other";
+  reading.add(type);
   const members = type.isUnion() ? type.types : [type];
   const kinds = members.map((member) =>
     checker.isArrayType(member) || checker.isTupleType(member)
-      ? elementsKind(checker, member)
+      ? elementsKind(checker, member, reading)
       : member.getCallSignatures().length > 0
         ? "function"
         : "other",
   );
-  for (const kind of ["functions", "unread", "function"] as const)
+  reading.delete(type);
+  for (const kind of ["functions", "function", "unread"] as const)
     if (kinds.includes(kind)) return kind;
   return "other";
 }
@@ -154,9 +164,10 @@ function kindOf(
 function elementsKind(
   checker: ts.TypeChecker,
   type: ts.Type,
+  reading: Set<ts.Type>,
 ): "functions" | "other" | "unread" {
   const elements = checker.getTypeArguments(type as ts.TypeReference);
-  const kinds = elements.map((element) => kindOf(checker, element));
+  const kinds = elements.map((element) => kindOf(checker, element, reading));
   if (kinds.some((kind) => kind === "function" || kind === "functions"))
     return "functions";
   return kinds.includes("unread") ? "unread" : "other";

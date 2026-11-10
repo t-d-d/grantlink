@@ -165,6 +165,36 @@ describe("callbackMismatches", () => {
     expect(callbackMismatches(source, "help", [])).toEqual([]);
   });
 
+  it("reports a generic array or rest parameter constrained to functions", () => {
+    const source = [
+      "export function help<T extends Array<() => void>>(",
+      "  ctx: unknown,",
+      "  fns: T,",
+      "  ...more: T",
+      ") {}",
+    ].join("\n");
+    expect(callbackMismatches(source, "help", [])).toEqual([
+      "help's parameter 1 (fns) is an array of functions, which the table cannot list",
+      "help's parameter 2 (more) is a rest parameter of functions, which the table cannot list",
+    ]);
+  });
+
+  it("reads a recursive array type without looping", () => {
+    const source = [
+      "type Json = string | Json[];",
+      "type Logs = (() => void) | Logs[];",
+      "export function help(ctx: unknown, value: Json, logs: Logs[]) {}",
+    ].join("\n");
+    expect(callbackMismatches(source, "help", [])).toEqual([
+      "help's parameter 2 (logs) is an array of functions, which the table cannot list",
+    ]);
+  });
+
+  it("reads a callback in a union with an unread array as a callback", () => {
+    const source = `export function help(ctx: unknown, log: (() => void) | any[]) {}`;
+    expect(callbackMismatches(source, "help", [1])).toEqual([]);
+  });
+
   it("reports an array parameter whose element type does not resolve", () => {
     const source = [
       `import type { Log } from "./no-such-module.ts";`,
