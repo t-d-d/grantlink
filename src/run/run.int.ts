@@ -131,7 +131,7 @@ describe("a run over the back catalogue", () => {
       "CTRQQR-2021/100010",
       "A28707",
     ]);
-    expect(row?.versions).toEqual({ rules: "rules-4", code: "test" });
+    expect(row?.versions).toEqual({ rules: "rules-5", code: "test" });
     expect(fake.table.rows.get("PMC0000003")?.references).toEqual([]);
 
     const page = fake.site.files?.["index.html"] ?? "";
@@ -256,7 +256,8 @@ describe("a paper Europe PMC has since linked to a grant", () => {
     const first = await runWith(fake);
     expect(fake.site.files?.["index.html"]).toContain("Another made-up study.");
     // Counted from the first run, so a change to the rules that finds more
-    // or fewer references in the fixtures leaves this test as it is.
+    // or fewer references, or a fixture paper added or removed, leaves this
+    // test as it is.
     const before = first.result?.published;
     if (before?.published !== true)
       throw new Error("the first run did not publish");
@@ -290,7 +291,7 @@ describe("a paper Europe PMC has since linked to a grant", () => {
       JSON.parse(fake.site.files?.["found.json"] ?? "{}"),
     );
     expect(data.papers.map((paper) => paper.pmcid)).not.toContain("PMC0000002");
-    expect(data.counts.papers).toBe(7);
+    expect(data.counts.papers).toBe(before.papers - 1);
     // The table keeps the paper and what was read from it.
     expect(fake.table.rows.get("PMC0000002")).toMatchObject({
       status: "processed",
