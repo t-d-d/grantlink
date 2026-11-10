@@ -3,7 +3,12 @@ import { europePmc, type Clock } from "../src/europepmc/client.ts";
 import { release, type Release } from "../src/page/release.ts";
 import type { Deps, Gold } from "../src/pipeline/steps.ts";
 import type { PageFiles } from "../src/store/bucket.ts";
-import { paperRow, type PaperRow, type Table } from "../src/store/table.ts";
+import {
+  paperRow,
+  type LastFailure,
+  type PaperRow,
+  type Table,
+} from "../src/store/table.ts";
 import { fixture } from "./fixtures.ts";
 import { readRepoFile } from "./repo.ts";
 
@@ -71,11 +76,30 @@ export function memoryTable(): Table & {
       );
       return Promise.resolve();
     },
-    markFailed(pmcid) {
+    lastFailures(pmcids) {
+      return Promise.resolve(
+        new Map(
+          pmcids.flatMap((id): [string, LastFailure][] => {
+            const row = rows.get(id);
+            return row === undefined ||
+              row.status === "processed" ||
+              row.lastFailure === undefined
+              ? []
+              : [[id, row.lastFailure]];
+          }),
+        ),
+      );
+    },
+    // As the real table: counts the failure, and keeps why or no reason.
+    markFailed(pmcid, why) {
       const row = get(pmcid);
       rows.set(
         pmcid,
-        paperRow.parse({ ...row, failures: (row.failures ?? 0) + 1 }),
+        paperRow.parse({
+          ...row,
+          failures: (row.failures ?? 0) + 1,
+          lastFailure: why,
+        }),
       );
       return Promise.resolve();
     },
@@ -144,6 +168,8 @@ export const isGoldSearch = (url: URL) =>
 export interface FakeSearches {
   search?: (cursor: string) => Response;
   goldSearch?: (cursor: string) => Response;
+  // Europe PMC's answer for a paper's full text, in place of its fixture.
+  fullText?: (pmcid: string) => Response;
 }
 
 const LABELLED = new Set(FAKE_GOLD.goldB.papers.map((paper) => paper.pmcid));
@@ -214,6 +240,7 @@ export function fakeEuropePmc(options: FakeSearches = {}) {
       return Promise.resolve(reply(fixture(file)));
     }
     const pmcid = /\/(PMC\d+)\/fullTextXML$/u.exec(url.pathname)?.[1] ?? "";
+    if (options.fullText) return Promise.resolve(options.fullText(pmcid));
     // FAKE_GOLD's gold set B papers have no recording of their own, and
     // answer with a full text written by hand.
     const file = LABELLED.has(pmcid) ? "PMC0000003" : pmcid;

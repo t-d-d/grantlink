@@ -375,6 +375,62 @@ describe("the table module", () => {
     expect(sent).toHaveLength(8);
   });
 
+  it("records why a paper last failed as it counts the failure (#504)", async () => {
+    const { client, sent } = recorder();
+    await dynamoTable("results", client).markFailed("PMC11", 500);
+    expect(sent[0]?.input).toMatchObject({
+      Key: { pmcid: "PMC11" },
+      UpdateExpression: "SET lastFailure = :why ADD failures :one",
+      ExpressionAttributeValues: { ":one": 1, ":why": 500 },
+    });
+  });
+
+  it("records a failure with no known reason as a count alone (#504)", async () => {
+    const { client, sent } = recorder();
+    await dynamoTable("results", client).markFailed("PMC11", undefined);
+    expect(sent[0]?.input).toMatchObject({
+      UpdateExpression: "REMOVE lastFailure ADD failures :one",
+      ExpressionAttributeValues: { ":one": 1 },
+    });
+  });
+
+  it("names why each paper not yet processed last failed, if it did (#504)", async () => {
+    const { client, sent } = recorder(() => ({
+      Responses: {
+        results: [
+          { pmcid: "PMC11", status: "processed", lastFailure: 500 },
+          { pmcid: "PMC12", status: "pending", lastFailure: 500 },
+          { pmcid: "PMC13", status: "pending", lastFailure: "timeout" },
+          { pmcid: "PMC14", status: "pending" },
+          { pmcid: "PMC15", status: "pending", lastFailure: "a new reason" },
+        ],
+      },
+    }));
+    const failed = await dynamoTable("results", client).lastFailures([
+      "PMC11",
+      "PMC12",
+      "PMC13",
+      "PMC14",
+      "PMC15",
+    ]);
+    expect(failed).toEqual(
+      new Map<string, unknown>([
+        ["PMC12", 500],
+        ["PMC13", "timeout"],
+      ]),
+    );
+    expect(sent).toHaveLength(1);
+  });
+
+  it("reads a row whose reason for failing a later version wrote (#504)", () => {
+    const row = readRow({
+      ...processed,
+      status: "pending",
+      lastFailure: "a new reason",
+    });
+    expect(row.lastFailure).toBeUndefined();
+  });
+
   it("reads every row, page by page", async () => {
     const { client, sent } = recorder((command) =>
       (command as { input: { ExclusiveStartKey?: unknown } }).input
