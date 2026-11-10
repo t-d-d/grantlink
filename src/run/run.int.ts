@@ -810,12 +810,9 @@ describe("the eval snapshot (evals.md)", () => {
     expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
     expect(fake.text.has(MANIFEST)).toBe(false);
     expect(logged("snapshot-failed")).toEqual([
-      expect.objectContaining({
-        error: expect.stringContaining(
-          "the search skipped 2 results for a malformed PMCID and found no papers",
-        ) as unknown,
-      }),
+      expect.objectContaining({ runId: expect.any(String) as unknown }),
     ]);
+    expect(snapshotFailedFields()).toEqual({ reason: "malformed-search" });
   });
 
   it("takes the snapshot when a small last page of gold set A's search holds one malformed PMCID alone", async () => {
@@ -841,10 +838,51 @@ describe("the eval snapshot (evals.md)", () => {
     expect(result?.published).toMatchObject({ published: true });
     expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
     expect(fake.text.has(MANIFEST)).toBe(false);
-    expect(logged("snapshot-failed")).toEqual([
-      expect.objectContaining({
-        error: expect.stringContaining("S3 answered 503") as unknown,
-      }),
-    ]);
+    expect(snapshotFailedFields()).toEqual({ reason: "store-failed" });
+  });
+
+  // personal-data.md: a log line carries ids and counts, so the line logs
+  // a fixed reason and never the message the snapshot threw (#285).
+  it("logs store-failed, not the message, when the manifest cannot be written", async () => {
+    const fake = fakeDeps();
+    fake.deps.text.putManifest = () =>
+      Promise.reject(new Error("S3 answered 503 for Quillfeather"));
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
+    expect(snapshotFailedFields()).toEqual({ reason: "store-failed" });
+    expect(logs.join("\n")).not.toContain("Quillfeather");
+  });
+
+  it("logs search-failed, not the message, when gold set A's search fails other than by a refusal", async () => {
+    const fake = fakeDeps({ goldSearch: () => reply("Quillfeather", 500) });
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
+    expect(snapshotFailedFields()).toEqual({ reason: "search-failed" });
+  });
+
+  it("logs search-failed when gold set A's search replies with what its schema refuses", async () => {
+    const fake = fakeDeps({
+      goldSearch: () => reply(JSON.stringify({ hitCount: "Quillfeather" })),
+    });
+    const { status } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(snapshotFailedFields()).toEqual({ reason: "search-failed" });
+    expect(logs.join("\n")).not.toContain("Quillfeather");
   });
 });
+
+// The fields of the run's one snapshot-failed line, past its event, level
+// and run id.
+function snapshotFailedFields(): Record<string, unknown> {
+  const lines = logged("snapshot-failed");
+  expect(lines).toHaveLength(1);
+  const [line] = lines;
+  expect(line?.runId).toEqual(expect.any(String));
+  const rest: Record<string, unknown> = { ...line };
+  for (const key of ["event", "level", "runId"]) {
+    Reflect.deleteProperty(rest, key);
+  }
+  return rest;
+}
