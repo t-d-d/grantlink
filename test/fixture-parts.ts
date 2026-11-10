@@ -23,8 +23,9 @@ interface Element {
   name: string;
   children: Element[];
   text: boolean;
-  // Whether it holds a comment with text, which the cutter drops unread.
-  comment: boolean;
+  // Whether it holds a comment or a processing instruction with text, which
+  // the cutter drops unread.
+  unread: boolean;
   // Whether the cutter reads the element as a funding section or footnote.
   funding: boolean;
 }
@@ -53,17 +54,18 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
   "article/back/fn-group": isFundingFootnote,
 };
 
-// The XML's elements as a tree, under a root with no name. Declarations and
-// processing instructions are dropped. A processing instruction ends at its
-// own ?>, as in the pattern that finds a funding section, so a > inside it
-// does not end it. CDATA and comments count as text, since a comment can
-// hold a cut part kept by mistake.
+// The XML's elements as a tree, under a root with no name. Declarations are
+// dropped. A processing instruction ends at its own ?>, as in the pattern
+// that finds a funding section, so a > inside it does not end it. CDATA and
+// comments count as text, since a comment can hold a cut part kept by
+// mistake. So does what a processing instruction holds after its target,
+// other than the XML declaration's (#303).
 function parse(xml: string): Element {
   const root: Element = {
     name: "",
     children: [],
     text: false,
-    comment: false,
+    unread: false,
     funding: false,
   };
   const stack = [root];
@@ -73,11 +75,18 @@ function parse(xml: string): Element {
     const [whole, close, name, attributes = "", empty] = match;
     const parent = stack.at(-1) ?? root;
     if (name === undefined) {
-      if (/^(?:<!\[CDATA\[|<!--|[^<])/u.test(whole)) {
+      const instruction = /^<\?(\S*)([\s\S]*)\?>$/u.exec(whole);
+      if (instruction !== null) {
+        const [, target = "", data = ""] = instruction;
+        if (target.toLowerCase() !== "xml" && data.trim() !== "") {
+          parent.text = true;
+          parent.unread = true;
+        }
+      } else if (/^(?:<!\[CDATA\[|<!--|[^<])/u.test(whole)) {
         const text = whole.replace(/^(?:<!\[CDATA\[|<!--)|(?:\]\]|--)>$/gu, "");
         if (text.trim() !== "") {
           parent.text = true;
-          if (whole.startsWith("<!--")) parent.comment = true;
+          if (whole.startsWith("<!--")) parent.unread = true;
         }
       }
     } else if (close === "/") {
@@ -90,7 +99,7 @@ function parse(xml: string): Element {
         name,
         children: [],
         text: false,
-        comment: false,
+        unread: false,
         funding,
       };
       parent.children.push(element);
@@ -118,11 +127,12 @@ const PART_CHILDREN = ["p", "title", "label"];
 const hasText = (element: Element): boolean =>
   element.text || element.children.some(hasText);
 
-// A comment with text anywhere in a part is named, even in a part with no
-// paragraphs, whose other text the cutter reads: the cutter drops comments,
-// so what one holds is kept without being read (#230).
-const hasComment = (element: Element): boolean =>
-  element.comment || element.children.some(hasComment);
+// A comment or a processing instruction with text anywhere in a part is
+// named, even in a part with no paragraphs, whose other text the cutter
+// reads: the cutter drops both, so what one holds is kept without being read
+// (#230, #303).
+const hasUnread = (element: Element): boolean =>
+  element.unread || element.children.some(hasUnread);
 
 // Whether the cutter reads the element as a funding part: a funding section,
 // a funding footnote or the acknowledgements. Where each may stand is for
@@ -157,9 +167,7 @@ function strayInPart(part: Element, path: string): string[] {
     (child) => child.name === "p" && hasText(child),
   );
   return [
-    ...((paragraphs && part.text) || hasComment(part)
-      ? [`${path} (text)`]
-      : []),
+    ...((paragraphs && part.text) || hasUnread(part) ? [`${path} (text)`] : []),
     ...part.children
       .filter((child) => !PART_CHILDREN.includes(child.name))
       .map((child) => `${path}/${child.name}`),

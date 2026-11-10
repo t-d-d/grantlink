@@ -54,15 +54,15 @@ describe("strayParts", () => {
 
   // The check reads the raw XML, so a comment or a processing instruction
   // before a section's title must not hide the section from it either (#230).
-  it("passes a funding section with a processing instruction or an empty comment before its title", () => {
+  // One holding text is named (#303), so these hold none.
+  it("passes a funding section with an empty processing instruction or an empty comment before its title", () => {
     expect(
       strayParts(
         paper({
           body:
-            "<body><sec><?pi x?><title>Funding</title><p>Funded.</p></sec>" +
+            "<body><sec><?pi?><title>Funding</title><p>Funded.</p></sec>" +
             "<sec><label>5.</label><!----><title>Funding</title><p>Funded.</p></sec>" +
-            "<sec><title><!----><?pi x?>Funding</title><p>Funded.</p></sec>" +
-            "<sec><?pi a>b?><title>Funding</title><p>Funded.</p></sec></body>",
+            "<sec><title><!----><?pi ?>Funding</title><p>Funded.</p></sec></body>",
         }),
       ),
     ).toEqual([]);
@@ -185,6 +185,16 @@ describe("strayParts", () => {
       "a comment in the article-meta",
       { meta: "<!-- <contrib-group>A</contrib-group> -->" },
       "article/front/article-meta (text)",
+    ],
+    [
+      "a processing instruction holding text in the article-meta (#303)",
+      { meta: "<?x Somebody?>" },
+      "article/front/article-meta (text)",
+    ],
+    [
+      "a processing instruction holding text in the body (#303)",
+      { body: "<body><?x Somebody?></body>" },
+      "article/body (text)",
     ],
   ])("names %s", (_what, parts, stray) => {
     expect(strayParts(paper(parts))).toEqual([stray]);
@@ -313,6 +323,56 @@ describe("strayParts", () => {
       "article/back/fn-group/fn (text)",
     ],
     [
+      "a processing instruction holding text beside the paragraphs of a funding section (#303)",
+      { back: '<sec sec-type="funding"><p>Funded.</p><?x Somebody?></sec>' },
+      "article/back/sec (text)",
+    ],
+    [
+      "a processing instruction holding text inside a paragraph of a funding section (#303)",
+      { back: '<sec sec-type="funding"><p>Funded.<?x Somebody?></p></sec>' },
+      "article/back/sec (text)",
+    ],
+    [
+      "a processing instruction holding text in a funding section with no paragraphs (#303)",
+      {
+        back: '<sec sec-type="funding"><title>Funding</title>Funded.<?x Somebody?></sec>',
+      },
+      "article/back/sec (text)",
+    ],
+    [
+      "a processing instruction holding text before the title of a funding section, not the section (#303)",
+      {
+        body: "<body><sec><?pi x?><title>Funding</title><p>Funded.</p></sec></body>",
+      },
+      "article/body/sec (text)",
+    ],
+    [
+      "a processing instruction holding a > before the title of a funding section, which does not end it (#303)",
+      {
+        body: "<body><sec><?pi a>b?><title>Funding</title><p>Funded.</p></sec></body>",
+      },
+      "article/body/sec (text)",
+    ],
+    [
+      "a processing instruction holding text inside the title of a funding section (#303)",
+      {
+        body: "<body><sec><title><?pi x?>Funding</title><p>Funded.</p></sec></body>",
+      },
+      "article/body/sec (text)",
+    ],
+    [
+      "a processing instruction holding text in a funding footnote (#303)",
+      {
+        back: '<fn-group><fn fn-type="funding"><p>Funded.</p><?x Somebody?></fn></fn-group>',
+      },
+      "article/back/fn-group/fn (text)",
+    ],
+    [
+      "a processing instruction holding text in the acknowledgements (#303)",
+      { back: "<ack><p>Thanks.</p><?x Somebody?></ack>" },
+      "article/back/ack (text)",
+    ],
+    [
       "a paragraph inside the title of a funding section, which the cutter reads in place of the bare text",
       { back: '<sec sec-type="funding"><title><p>X</p></title>Somebody</sec>' },
       "article/back/sec/title/p",
@@ -355,5 +415,9 @@ describe("strayParts", () => {
 
   it("names text outside the root", () => {
     expect(strayParts(`${paper()}\nSomebody`)).toEqual(["(text)"]);
+  });
+
+  it("names a processing instruction holding text outside the root, but not the XML declaration (#303)", () => {
+    expect(strayParts(`${paper()}\n<?x Somebody?>`)).toEqual(["(text)"]);
   });
 });
