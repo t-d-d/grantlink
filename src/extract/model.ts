@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { funder, normalise, referenceSchema } from "./rules.ts";
+import { funder, normalise, referenceSchema, wholeReference } from "./rules.ts";
 
 // The model pass: reads a paper's funding text and proposes the grant
 // references the rules missed (docs/constraints/model-calls.md). This is the
@@ -21,7 +21,7 @@ export type ModelId = (typeof MODELS)[number];
 
 // Bump this whenever the prompt, or how a reply is read, changes, so every
 // stored result says which prompt made it.
-export const PROMPT_VERSION = "prompt-1";
+export const PROMPT_VERSION = "prompt-2";
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -166,22 +166,14 @@ function readAnswer(body: unknown): Answer | undefined {
 // the rules keep it (#269). Nothing else about the text changes.
 const plainSpaces = (text: string) => text.replace(/\s/gu, " ");
 
-// Whether the paragraph gives the reference whole: not cut out of a longer
-// run of letters and digits, as "A5678" is out of "A56789". A combining mark
-// belongs to the letter before it, so one joined to a reference makes it part
-// of a longer word too, as the rules read it (#339, #369).
-const joined = /[\p{L}\p{M}\p{N}]/u;
-function givesWhole(paragraph: string, reference: string): boolean {
-  for (
-    let at = paragraph.indexOf(reference);
-    at !== -1;
-    at = paragraph.indexOf(reference, at + 1)
-  ) {
-    const before = paragraph[at - 1] ?? "";
-    const after = paragraph[at + reference.length] ?? "";
-    if (!joined.test(before) && !joined.test(after)) return true;
-  }
-  return false;
+// Whether a paragraph gives the reference whole: not cut out of a longer
+// run of letters and digits, as "A5678" is out of "A56789". Its edges are
+// the rules' own, read a whole code point at a time, so the two passes agree
+// on combining marks, underscores, letters outside the Basic Multilingual
+// Plane and numbers that are not decimal digits (#339, #369, #384).
+function givesWhole(text: readonly string[], reference: string): boolean {
+  const whole = wholeReference(reference);
+  return text.some((paragraph) => whole.test(paragraph));
 }
 
 // Keeps a reference only if the text gives it whole as written, it is made
@@ -202,7 +194,7 @@ function check(
     if (
       !written.success ||
       !/\d/u.test(asWritten) ||
-      !source.some((paragraph) => givesWhole(paragraph, asWritten))
+      !givesWhole(source, asWritten)
     ) {
       rejected += 1;
       continue;

@@ -116,6 +116,12 @@ const WORD = String.raw`[\p{L}\p{M}\p{Nd}_]`;
 const START = `(?<!${WORD})`;
 const END = `(?!${WORD})`;
 
+// A reference as written, between the edges above. The model pass checks
+// its references with this, so the two passes cannot draw a reference's
+// edges differently (#384).
+export const wholeReference = (reference: string): RegExp =>
+  new RegExp(`${START}${escape(reference)}${END}`, "u");
+
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
 
