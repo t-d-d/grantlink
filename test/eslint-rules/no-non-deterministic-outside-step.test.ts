@@ -105,6 +105,16 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           }`,
         },
         {
+          name: "reads the clock through global inside a step",
+          code: `async function run(ctx: any) {
+            await ctx.step("start", async () => global.Date.now(), { retryStrategy: r });
+          }`,
+        },
+        {
+          name: "reads now through a parameter that shadows global",
+          code: `async function run(ctx: any, global: { Date: { now(): number } }) { const now = global.Date.now(); }`,
+        },
+        {
           name: "draws a named import of randomUUID inside a step",
           code: `import { randomUUID } from "node:crypto";
           async function run(ctx: any) {
@@ -718,6 +728,26 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
         {
           name: "makes a date through globalThis",
           code: `async function run(ctx: any) { const today = new globalThis.Date(); }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "reads the clock through global",
+          code: `async function run(ctx: any) { const now = global.Date.now(); }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "draws random through global with a string key",
+          code: `async function run(ctx: any) { const n = global["Math"].random(); }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "makes a date through global",
+          code: `async function run(ctx: any) { const today = new global.Date(); }`,
+          errors: [{ messageId: "nonDeterministicOutsideStep" }],
+        },
+        {
+          name: "reads the clock through an alias of global",
+          code: `const g = global; async function run(ctx: any) { const now = g.Date.now(); }`,
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
         },
         {
