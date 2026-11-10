@@ -17,6 +17,7 @@ import {
   type Published,
 } from "../pipeline/steps.ts";
 import { batches } from "../shared/batches.ts";
+import { logOnly } from "./log-only.ts";
 import { askEuropePmc, type Asked, type Owed } from "./owed.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
@@ -173,20 +174,16 @@ export function makeRun(deps: Deps) {
     // the run, so the totals of the pages it read still show in one line
     // (#348).
     const ended = stopped;
-    await ctx.step(
-      "search-ended",
-      async () => {
-        logSearchEnded(
-          runId,
-          found,
-          skipped,
-          ended !== null && "refused" in ended,
-          ended !== null && "failed" in ended,
-        );
-        return Promise.resolve();
-      },
-      { retryStrategy: storeRetry },
-    );
+    // A failure to log it does not end the run (#380).
+    await logOnly(ctx, "search-ended", () => {
+      logSearchEnded(
+        runId,
+        found,
+        skipped,
+        ended !== null && "refused" in ended,
+        ended !== null && "failed" in ended,
+      );
+    });
     if (ended !== null && "failed" in ended) throw ended.failed;
     // A refused search fails the run, which publishes nothing, but only
     // once the wait Europe PMC asked for has passed, so a run started
@@ -232,14 +229,10 @@ export function makeRun(deps: Deps) {
       // Only a fixed reason is logged, never the message, which a store's
       // or Europe PMC's client wrote (docs/constraints/personal-data.md).
       const why = snapshotFailure(error);
-      await ctx.step(
-        "snapshot-failed",
-        async () => {
-          logSnapshotFailed(runId, why);
-          return Promise.resolve();
-        },
-        { retryStrategy: storeRetry },
-      );
+      // A failure to log it does not skip the wait below (#380).
+      await logOnly(ctx, "snapshot-failed", () => {
+        logSnapshotFailed(runId, why);
+      });
       // The snapshot may have waited this out under its own name already,
       // so waiting again takes a name of its own.
       last =

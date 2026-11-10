@@ -40,6 +40,16 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         }`,
       },
       {
+        name: "awaits logOnly, whose only await is its step",
+        filename: "src/run/run.ts",
+        code: `import { logOnly } from "./log-only.ts";
+        async function run(ctx: any) {
+          await logOnly(ctx, "search-ended", () => {
+            logSearchEnded();
+          });
+        }`,
+      },
+      {
         name: "awaits askEuropePmc imported under another name",
         filename: "src/run/run.ts",
         code: `import { askEuropePmc as ask } from "./owed.ts";
