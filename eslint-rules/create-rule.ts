@@ -1,7 +1,10 @@
 import { posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AST_NODE_TYPES, ESLintUtils } from "@typescript-eslint/utils";
-import { TSESLint } from "@typescript-eslint/utils";
+import {
+  AST_NODE_TYPES,
+  ESLintUtils,
+  TSESLint,
+} from "@typescript-eslint/utils";
 import type { TSESTree } from "@typescript-eslint/utils";
 
 // Each rule's docs live in the constraint file that names it.
@@ -110,18 +113,21 @@ export function stepHelperOf(
 // The name a member expression reads: `a.b`, `a["b"]` or a template key
 // with nothing interpolated.
 export function memberName(node: TSESTree.MemberExpression): string | null {
-  const { property } = node;
-  if (!node.computed) {
-    return property.type === AST_NODE_TYPES.Identifier ? property.name : null;
-  }
-  if (property.type === AST_NODE_TYPES.TemplateLiteral) {
-    return property.expressions.length === 0
-      ? (property.quasis[0]?.value.cooked ?? null)
+  return keyName(node.property, node.computed);
+}
+
+// The name a key gives, whether it reads a member or an object pattern's
+// property: a plain identifier, a string or a template with nothing
+// interpolated. A computed identifier is a variable, so it gives none.
+function keyName(key: TSESTree.Node, computed: boolean): string | null {
+  if (!computed && key.type === AST_NODE_TYPES.Identifier) return key.name;
+  if (key.type === AST_NODE_TYPES.TemplateLiteral) {
+    return key.expressions.length === 0
+      ? (key.quasis[0]?.value.cooked ?? null)
       : null;
   }
-  return property.type === AST_NODE_TYPES.Literal &&
-    typeof property.value === "string"
-    ? property.value
+  return key.type === AST_NODE_TYPES.Literal && typeof key.value === "string"
+    ? key.value
     : null;
 }
 
@@ -144,8 +150,16 @@ export function importOf(
   if (variable === null || seen.has(variable)) return null;
   const def = variable.defs[0];
   if (def?.type === TSESLint.Scope.DefinitionType.Variable) {
-    if (variable.defs.length !== 1 || reassigned(variable)) return null;
-    return aliasOf(def.node, def.name, resolver, new Set([...seen, variable]));
+    if (variable.defs.length !== 1) return null;
+    // Resolve the alias before scanning for writes, so a local that holds
+    // anything else costs no walk over its references.
+    const alias = aliasOf(
+      def.node,
+      def.name,
+      resolver,
+      new Set([...seen, variable]),
+    );
+    return alias === null || reassigned(variable) ? null : alias;
   }
   if (def?.parent?.type !== AST_NODE_TYPES.ImportDeclaration) return null;
   const module = moduleOf(def.parent.source.value, resolver);
@@ -196,7 +210,10 @@ function aliasOf(
       p.type === AST_NODE_TYPES.Property && p.value === name,
   );
   if (property === undefined) return null;
-  return memberOf(importOf(init, resolver, seen), propertyName(property));
+  return memberOf(
+    importOf(init, resolver, seen),
+    keyName(property.key, property.computed),
+  );
 }
 
 // The named import a member of a namespace import gives.
@@ -206,24 +223,6 @@ function memberOf(
 ): { module: string; name: string } | null {
   if (binding?.name !== null || name === null) return null;
   return { module: binding.module, name };
-}
-
-// The key an object pattern's property reads: `{ b }`, `{ b: x }`,
-// `{ "b": x }` or a computed key that is a constant string.
-function propertyName(property: TSESTree.Property): string | null {
-  const { key } = property;
-  if (!property.computed && key.type === AST_NODE_TYPES.Identifier) {
-    return key.name;
-  }
-  if (key.type === AST_NODE_TYPES.Literal) {
-    return typeof key.value === "string" ? key.value : null;
-  }
-  if (key.type === AST_NODE_TYPES.TemplateLiteral) {
-    return key.expressions.length === 0
-      ? (key.quasis[0]?.value.cooked ?? null)
-      : null;
-  }
-  return null;
 }
 
 // The name an import or export specifier gives, as an identifier or a

@@ -161,6 +161,26 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
           await askEuropePmc(ctx, "paper", "wait", r, async () => readPaper());
         }`,
       },
+      {
+        name: "awaits I/O inside askEuropePmc's read, reached through an alias destructured by a string key",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const { "askEuropePmc": ask } = owed;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
+        name: "awaits askEuropePmc through an alias destructured by a template key",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const { [\`askEuropePmc\`]: ask } = owed;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => readPaper());
+        }`,
+      },
     ],
     invalid: [
       {
@@ -269,6 +289,17 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         filename: "src/run/run.ts",
         code: `import * as owed from "./owed.ts";
         const { askEuropePmc: ask = other } = owed;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits an alias destructured by a computed key that is a variable",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const askEuropePmc = "somethingElse";
+        const { [askEuropePmc]: ask } = owed;
         async function run(ctx: any) {
           await ask(ctx, "paper", "wait", r, async () => 1);
         }`,
