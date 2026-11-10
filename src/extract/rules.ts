@@ -257,7 +257,7 @@ const SHAPES: readonly Shape[] = [
     // CRUK/12 is not read from CRUK/12/2019, nor CRUK/AB12 from
     // CRUK/AB12/SMITH/2 (#514). A last part with no digit holds at most
     // two capitals, so CRUK/12/JONES is not one either (#560). Nor is
-    // CRUK/12 read from CRUK/12\\2019 or CRUK/12 /2019, where the next part
+    // CRUK/12 read from CRUK/12\2019 or CRUK/12 /2019, where the next part
     // follows a backslash or a slash spaced on one side (#598).
     format: "CRUK-X",
     shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:${CRUK_PARTS})`,
