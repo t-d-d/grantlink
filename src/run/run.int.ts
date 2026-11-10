@@ -249,7 +249,8 @@ describe("a paper Europe PMC has since linked to a grant", () => {
     const first = await runWith(fake);
     expect(fake.site.files?.["index.html"]).toContain("Another made-up study.");
     // Counted from the first run, so a change to the rules that finds more
-    // or fewer references in the fixtures leaves this test as it is.
+    // or fewer references, or a fixture paper added or removed, leaves this
+    // test as it is.
     const before = first.result?.published;
     if (before?.published !== true)
       throw new Error("the first run did not publish");
