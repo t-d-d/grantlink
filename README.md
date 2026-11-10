@@ -80,7 +80,7 @@ node evals/pin.ts .eval
 
 and raise the change to `evals/` as a pull request. Until a snapshot is pinned, the rows that need it show what they wait for and do not block.
 
-A session runs the eval itself while it iterates, with `AWS_PROFILE=grantlink-eval OPENROUTER_KEY=proxy npm run eval`. The key is a network secret for `openrouter.ai`, which the proxy puts into each request, so the session never sees it and any value will do. It reads the snapshot through `access-eval`, which may read `eval/` and nothing else. Its runs are advice and never enter the cache. The snapshot lands in `.eval/`, which git and Prettier leave out, since it holds funding text and names.
+A session runs the eval itself while it iterates, with `AWS_PROFILE=grantlink-eval OPENROUTER_KEY=proxy NODE_USE_ENV_PROXY=1 npm run eval`. The key is a network secret for `openrouter.ai`, which the proxy puts into each request, so the session never sees it and any value will do. `NODE_USE_ENV_PROXY=1` sends Node's own requests through that proxy. It reads the snapshot through `access-eval`, which may read `eval/` and nothing else. Its runs are advice and never enter the cache. The snapshot lands in `.eval/`, which git and Prettier leave out, since it holds funding text and names.
 
 ## How a run works
 

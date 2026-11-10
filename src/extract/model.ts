@@ -105,7 +105,26 @@ const envelope = z.object({
     .min(1),
 });
 
-const usage = z.object({ usage: z.object({ cost: z.number().nonnegative() }) });
+// What a call cost. On a key that brings its own Anthropic account, cost is
+// OpenRouter's fee alone and Anthropic's charge is the upstream cost, so the
+// spend is both.
+const usage = z
+  .object({
+    usage: z.object({
+      cost: z.number().nonnegative(),
+      is_byok: z.boolean().optional(),
+      cost_details: z
+        .object({
+          upstream_inference_cost: z.number().nonnegative().nullish(),
+        })
+        .nullish(),
+    }),
+  })
+  .transform(
+    ({ usage: { cost, is_byok, cost_details } }) =>
+      cost +
+      (is_byok === true ? (cost_details?.upstream_inference_cost ?? 0) : 0),
+  );
 
 const answer = z
   .object({
@@ -217,7 +236,7 @@ export async function proposeReferences(
       continue;
     }
     const cost = usage.safeParse(json);
-    if (cost.success) spend += cost.data.usage.cost;
+    if (cost.success) spend += cost.data;
     const read = readAnswer(json);
     if (read !== undefined) {
       return { status: "read", ...check(read.references, text), spend };

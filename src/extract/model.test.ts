@@ -162,6 +162,30 @@ describe("the reply", () => {
     });
   });
 
+  it("counts what Anthropic charges for a call on the key's own Anthropic account", async () => {
+    // With a key that brings its own Anthropic account, cost is OpenRouter's
+    // fee alone, and Anthropic's charge is the upstream cost.
+    const { fetch } = fakeOpenRouter(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '{"references":[]}' } }],
+          usage: {
+            cost: 0.0001,
+            is_byok: true,
+            cost_details: { upstream_inference_cost: 0.002 },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    const result = await proposeReferences(TEXT, {
+      model: haiku,
+      key: "k",
+      fetch,
+    });
+    expect(result.spend).toBeCloseTo(0.0021, 8);
+  });
+
   it("reads a reply wrapped in a code fence", async () => {
     const { fetch } = fakeOpenRouter(
       reply(
