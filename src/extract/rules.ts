@@ -9,7 +9,8 @@ import { latest, type Version } from "./versions.ts";
 
 // Bump this whenever a pattern, or which references the rules keep,
 // changes, so every stored result says which rules made it. To bump, add a
-// line naming your issue at the end of RULES_VERSIONS (versions.ts, #414).
+// line naming your issue at the end of RULES_VERSIONS below (see
+// versions.ts, #414).
 export const RULES_VERSIONS: readonly Version[] = [{ number: 10, issue: 368 }];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 

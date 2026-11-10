@@ -42,11 +42,11 @@ describe("a version history", () => {
 });
 
 describe("the versions recorded with every result", () => {
-  it("is the last line of the rules' history", () => {
+  it("is read from the last line of the rules' history, not set by hand", () => {
     expect(RULES_VERSION).toBe(latest("rules", RULES_VERSIONS));
   });
 
-  it("is the last line of the prompt's history", () => {
+  it("is read from the last line of the prompt's history, not set by hand", () => {
     expect(PROMPT_VERSION).toBe(latest("prompt", PROMPT_VERSIONS));
   });
 });

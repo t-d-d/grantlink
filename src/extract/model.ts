@@ -22,8 +22,8 @@ export type ModelId = (typeof MODELS)[number];
 
 // Bump this whenever the prompt, or how a reply is read, changes, so every
 // stored result says which prompt made it. To bump, add a line naming your
-// issue at the end of PROMPT_VERSIONS (versions.ts, #414).
-export const PROMPT_VERSIONS: readonly Version[] = [{ number: 2, issue: 313 }];
+// issue at the end of PROMPT_VERSIONS below (see versions.ts, #414).
+export const PROMPT_VERSIONS: readonly Version[] = [{ number: 2, issue: 384 }];
 export const PROMPT_VERSION = latest("prompt", PROMPT_VERSIONS);
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
