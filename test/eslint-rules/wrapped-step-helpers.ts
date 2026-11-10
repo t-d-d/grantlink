@@ -77,6 +77,24 @@ export const WRAPPED_STEP_HELPERS: readonly WrappedStepHelper[] = [
     callee: "ask",
   },
   {
+    name: "an alias asserted with angle brackets",
+    prelude: `${namespace}
+    const ask = <typeof owed.askEuropePmc>owed.askEuropePmc;`,
+    callee: "ask",
+  },
+  {
+    name: "an alias given type arguments",
+    prelude: `${named}
+    const ask = askEuropePmc<number>;`,
+    callee: "ask",
+  },
+  {
+    name: "an alias in brackets",
+    prelude: `${named}
+    const ask = (askEuropePmc);`,
+    callee: "ask",
+  },
+  {
     name: "an alias of a named import asserted with as",
     prelude: `${named}
     const ask = askEuropePmc as typeof askEuropePmc;`,
@@ -123,6 +141,12 @@ export const WRAPPED_STEP_HELPERS: readonly WrappedStepHelper[] = [
     name: "an alias assigned through the comma operator",
     prelude: `${namespace}
     const ask = (0, owed.askEuropePmc);`,
+    callee: "ask",
+  },
+  {
+    name: "an alias of a named import assigned through the comma operator",
+    prelude: `${named}
+    const ask = (0, askEuropePmc);`,
     callee: "ask",
   },
 ];
