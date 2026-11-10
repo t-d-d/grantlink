@@ -62,7 +62,6 @@ async function takeBatch(
     due = null;
     let asked: Asked<Taken>;
     try {
-      // eslint-disable-next-line grantlink/no-await-outside-step -- askEuropePmc's only await is its step
       asked = await askEuropePmc(
         ctx,
         `gold-${set}-${pmcid}`,
@@ -125,7 +124,6 @@ export async function takeSnapshot(
       const name = `snapshot-search-${String(page)}`;
       let asked: Asked<Awaited<ReturnType<typeof searchGoldA>>>;
       try {
-        // eslint-disable-next-line grantlink/no-await-outside-step -- askEuropePmc's only await is its step
         asked = await askEuropePmc(
           ctx,
           name,

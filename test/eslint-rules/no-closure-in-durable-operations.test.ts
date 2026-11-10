@@ -18,8 +18,26 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
             });
           }`,
       },
+      {
+        name: "writes an outer variable from askEuropePmc's other arguments",
+        code: `async function run(ctx: any) {
+            let tries = 0;
+            await askEuropePmc(ctx, "paper", "wait", () => { tries += 1; return r; }, async () => readPaper());
+          }`,
+      },
     ],
     invalid: [
+      {
+        name: "counts into an outer variable from askEuropePmc's read",
+        code: `async function run(ctx: any) {
+          let read = 0;
+          await askEuropePmc(ctx, "paper", "wait", r, async () => {
+            read += 1;
+            return readPaper();
+          });
+        }`,
+        errors: [{ messageId: "closureVariableUsage" }],
+      },
       {
         name: "collects into an outer array from a map item",
         code: `async function run(ctx: any) {

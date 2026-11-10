@@ -46,8 +46,38 @@ export const CHECKPOINTS_CALLBACK = new Set([
   "waitForCondition",
 ]);
 
+// Functions in src/run/ that run one of their arguments as a step, keyed by
+// name, with that argument's position. The rules treat a call to one as a
+// durable operation and that argument as a step's callback. They match the
+// bare name, so a caller imports it under that name.
+export const STEP_HELPERS: ReadonlyMap<string, number> = new Map([
+  ["askEuropePmc", 4],
+]);
+
+// A call `<name>(...)` to one of STEP_HELPERS.
+export function isStepHelperCall(
+  node: TSESTree.Node,
+): node is TSESTree.CallExpression & { callee: TSESTree.Identifier } {
+  return (
+    node.type === AST_NODE_TYPES.CallExpression &&
+    node.callee.type === AST_NODE_TYPES.Identifier &&
+    STEP_HELPERS.has(node.callee.name)
+  );
+}
+
+// True when `fn` is the argument a step helper runs as its step.
+export function isStepHelperCallback(
+  call: TSESTree.Node,
+  fn: TSESTree.Node,
+): boolean {
+  return (
+    isStepHelperCall(call) &&
+    call.arguments[STEP_HELPERS.get(call.callee.name) ?? -1] === fn
+  );
+}
+
 // True when the node sits inside a function passed to an operation that
-// checkpoints its callback. The operation's other arguments, such as the
+// checkpoints its callback, or run by a step helper as its step. The operation's other arguments, such as the
 // step's name, are evaluated in the body on every replay, so they do not
 // count.
 export function insideCheckpointedCallback(
@@ -61,8 +91,9 @@ export function insideCheckpointedCallback(
       (fn.type === AST_NODE_TYPES.ArrowFunctionExpression ||
         fn.type === AST_NODE_TYPES.FunctionExpression) &&
       call !== undefined &&
-      isMethodCallIn(call, CHECKPOINTS_CALLBACK) &&
-      call.arguments.includes(fn)
+      ((isMethodCallIn(call, CHECKPOINTS_CALLBACK) &&
+        call.arguments.includes(fn)) ||
+        isStepHelperCallback(call, fn))
     );
   });
 }

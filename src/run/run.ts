@@ -70,7 +70,6 @@ async function readBatch(
     due = null;
     let asked: Asked<{ references: number }>;
     try {
-      // eslint-disable-next-line grantlink/no-await-outside-step -- askEuropePmc's only await is its step
       asked = await askEuropePmc(
         ctx,
         `paper-${pmcid}`,
@@ -116,7 +115,6 @@ export function makeRun(deps: Deps) {
       if (owed !== null) await ctx.wait(owed.name, { seconds: owed.seconds });
       owed = null;
       const searchStep = `search-${String(page)}`;
-      // eslint-disable-next-line grantlink/no-await-outside-step -- askEuropePmc's only await is its step
       const searched = await askEuropePmc(
         ctx,
         searchStep,
