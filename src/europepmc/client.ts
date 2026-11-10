@@ -289,9 +289,12 @@ export function europePmc(
       if (response !== undefined) {
         failure = `Europe PMC answered ${String(response.status)}`;
         last = response.status;
+        // The body of any answer not read is cancelled, so its connection
+        // goes back to the pool rather than wait to be collected (#426). A
+        // body that has already broken off has nothing left to release.
+        await response.body?.cancel().catch(() => undefined);
         const refused = response.status === 429 || response.status >= 500;
         if (!refused) throw new EuropePmcError(failure, response.status);
-        await response.body?.cancel();
       }
       // Refused, or failed on the way: wait as long as Europe PMC asks, or
       // longer after each try, and keep the slower pace for a while.

@@ -1,6 +1,6 @@
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import type { TSESTree } from "@typescript-eslint/utils";
-import { createRule, isMethodCallIn } from "./create-rule.ts";
+import { createRule, methodCallIn } from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
 //
@@ -90,7 +90,9 @@ export const requireStepRetryStrategy = createRule({
   create(context) {
     return {
       CallExpression(node) {
-        if (!isMethodCallIn(node, STEP)) return;
+        // A wrapper on the call is a parent of this node, so only the
+        // callee's wrappers matter here.
+        if (methodCallIn(node, STEP) === null) return;
         const options = stepOptions(node.arguments);
         if (options === undefined) return;
         if (options === null) {
