@@ -8,7 +8,7 @@ import funderFile from "./funder.json" with { type: "json" };
 
 // Bump this whenever a pattern, or which references the rules keep,
 // changes, so every stored result says which rules made it.
-export const RULES_VERSION = "rules-6";
+export const RULES_VERSION = "rules-7";
 
 export const funder = z
   .object({
@@ -28,6 +28,10 @@ export interface FundingSections {
   awards: { sources: string[]; ids: string[] }[];
 }
 
+// A hyphen, in a name or a reference, may be written as a Unicode hyphen or
+// dash (U+2010 to U+2015) (#201) or as the minus sign (U+2212) (#269).
+const DASHES = `${String.fromCodePoint(0x2010)}-${String.fromCodePoint(0x2015)}${String.fromCodePoint(0x2212)}`;
+
 export const referenceSchema = z
   .object({
     // Only the characters a reference is made of, so a name cannot pass.
@@ -35,7 +39,7 @@ export const referenceSchema = z
       .string()
       .min(1)
       .max(48)
-      .regex(/^[A-Za-z0-9 /\\∖\u2010-\u2015-]+$/u),
+      .regex(new RegExp(`^[A-Za-z0-9 /\\\\∖${DASHES}-]+$`, "u")),
     normalised: z
       .string()
       .min(1)
@@ -48,20 +52,21 @@ export const referenceSchema = z
 export type Reference = z.infer<typeof referenceSchema>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-// A hyphen, in a name or a reference, may be written as a Unicode hyphen or
-// dash (U+2010 to U+2015) (#201).
-const DASH = String.raw`[-\u2010-\u2015]`;
+const DASH = `[-${DASHES}]`;
 
 // The names as one pattern, built a character at a time from each raw name,
-// so only the name's own letters ever become any-case classes (#271). The
-// any-case form matches in any case without the `i` flag, for a pattern
-// whose own letters must keep their case.
+// so only the name's own letters ever become any-case classes, never a
+// letter in an escape or a class such as \s (#271). The any-case form
+// matches in any case without the `i` flag, for a pattern whose own letters
+// must keep their case. Any run of whitespace may part the words of a name,
+// such as a no-break space, a line break or two spaces (#269).
 export function namesPattern(
   names: readonly string[],
   anyCase: boolean,
 ): string {
   const char = (c: string) => {
     if (c === "-") return DASH;
+    if (c === " ") return String.raw`\s+`;
     if (anyCase && /[A-Za-z]/u.test(c)) {
       return `[${c.toUpperCase()}${c.toLowerCase()}]`;
     }
@@ -151,11 +156,13 @@ const PATTERNS: Pattern[] = [
   },
 ];
 
+const UNICODE_DASH = new RegExp(`[${DASHES}]`, "gu");
+
 function normalise(written: string): string {
   return written
     .replace(/\s+/gu, "")
     .replace(/[\\∖]/gu, "/")
-    .replace(/[\u2010-\u2015]/gu, "-")
+    .replace(UNICODE_DASH, "-")
     .toUpperCase();
 }
 
@@ -180,7 +187,9 @@ function scan(text: string, keep: "long" | "short" | "all"): Reference[] {
       taken.push([start, end]);
       if (!sentenceOnly && keep === "short") continue;
       found.push({
-        asWritten: match[0],
+        // A space inside a reference, such as a no-break space, is kept as
+        // a plain one, the only space referenceSchema allows (#269).
+        asWritten: match[0].replace(/\s/gu, " "),
         normalised: normalise(match[0]),
         format: typeof format === "string" ? format : format(match),
       });
