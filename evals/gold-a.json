@@ -3,5 +3,516 @@
   "query": "GRANT_AGENCY:\"Cancer Research UK\" AND OPEN_ACCESS:y AND IN_EPMC:y AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]",
   "seed": 20261109,
   "size": 300,
-  "papers": []
+  "papers": [
+    { "pmcid": "PMC6955554", "grants": ["C8640/A23385"] },
+    {
+      "pmcid": "PMC6958528",
+      "grants": [
+        "C33043/A24478",
+        "C30122/A15774",
+        "C107/A104339",
+        "C30122/A11527",
+        "C10355/A15587",
+        "C33043/A12065",
+        "C107/A10433",
+        "FC001112"
+      ]
+    },
+    { "pmcid": "PMC6993865", "grants": ["FC001043"] },
+    { "pmcid": "PMC6997757", "grants": ["FC001030"] },
+    { "pmcid": "PMC7005468", "grants": ["10342"] },
+    { "pmcid": "PMC7007464", "grants": ["21153"] },
+    { "pmcid": "PMC7018727", "grants": ["C1422/A19842"] },
+    { "pmcid": "PMC7048087", "grants": ["A27176", "C9545/A29580", "A25117"] },
+    { "pmcid": "PMC7058834", "grants": ["C18281/A19169"] },
+    { "pmcid": "PMC7062525", "grants": ["C399/A2291"] },
+    { "pmcid": "PMC7070026", "grants": ["FC001110"] },
+    { "pmcid": "PMC7073926", "grants": ["21330"] },
+    { "pmcid": "PMC7142149", "grants": ["FC001039"] },
+    { "pmcid": "PMC7156481", "grants": ["C309/A25144"] },
+    { "pmcid": "PMC7164370", "grants": ["18387"] },
+    { "pmcid": "PMC7201665", "grants": ["C44576/A19501", "C1417/A22962"] },
+    {
+      "pmcid": "PMC7220953",
+      "grants": ["FC001180", "FC001201", "C197/A16465"]
+    },
+    { "pmcid": "PMC7222643", "grants": ["27294"] },
+    { "pmcid": "PMC7244439", "grants": ["23923"] },
+    { "pmcid": "PMC7248069", "grants": ["FC001120", "FC001193"] },
+    { "pmcid": "PMC7278358", "grants": ["C8717/A18245"] },
+    { "pmcid": "PMC7281073", "grants": ["23923"] },
+    { "pmcid": "PMC7301619", "grants": ["13405"] },
+    { "pmcid": "PMC7308883", "grants": ["C61367/A26670"] },
+    { "pmcid": "PMC7341025", "grants": ["25813"] },
+    { "pmcid": "PMC7377362", "grants": ["FC001193"] },
+    { "pmcid": "PMC7393433", "grants": ["14136"] },
+    {
+      "pmcid": "PMC7408103",
+      "grants": ["C30122/A15774", "C10355/A15587", "C30122/A11527"]
+    },
+    { "pmcid": "PMC7442418", "grants": ["C1298/A8362"] },
+    { "pmcid": "PMC7468890", "grants": ["FC001105"] },
+    { "pmcid": "PMC7472594", "grants": ["18618"] },
+    { "pmcid": "PMC7520805", "grants": ["FC00110218"] },
+    { "pmcid": "PMC7541214", "grants": ["C54889/A22732"] },
+    { "pmcid": "PMC7566496", "grants": ["c588/a19167"] },
+    {
+      "pmcid": "PMC7578335",
+      "grants": ["C26642/A27963", "A17196/", "A21139/"]
+    },
+    { "pmcid": "PMC7610388", "grants": ["A22909", "A19771", "A24566"] },
+    { "pmcid": "PMC7610488", "grants": ["C14303/A17197", "C9681/A18618"] },
+    { "pmcid": "PMC7610714", "grants": ["FC001002"] },
+    { "pmcid": "PMC7612106", "grants": ["FC001202"] },
+    {
+      "pmcid": "PMC7612476",
+      "grants": [
+        "A31287",
+        "A26813",
+        "C596/A23983",
+        "C596/A26855",
+        "FC001557",
+        "C596/A17196",
+        "A29799"
+      ]
+    },
+    {
+      "pmcid": "PMC7612730",
+      "grants": ["A25815", "A27657", "A17197", "A29580"]
+    },
+    {
+      "pmcid": "PMC7613289",
+      "grants": [
+        "C8221/A19170",
+        "C18281/A29019",
+        "C8221/A29017",
+        "C60192/A28516"
+      ]
+    },
+    { "pmcid": "PMC7614079", "grants": ["FC001002"] },
+    { "pmcid": "PMC7614664", "grants": ["A8690"] },
+    { "pmcid": "PMC7615196", "grants": ["FC001076", "27112"] },
+    { "pmcid": "PMC7615482", "grants": ["C71717/A30035"] },
+    { "pmcid": "PMC7615754", "grants": ["C500/A16896", "C16077/A29186"] },
+    { "pmcid": "PMC7616463", "grants": ["CC2129"] },
+    { "pmcid": "PMC7617162", "grants": ["C17093/A12443"] },
+    { "pmcid": "PMC7617436", "grants": ["C18342/A23390"] },
+    { "pmcid": "PMC7617912", "grants": ["CTRQQR-2021\\100002"] },
+    { "pmcid": "PMC7618310", "grants": ["C14303/A17197", "A24455"] },
+    { "pmcid": "PMC7618435", "grants": ["C6946/A24843"] },
+    { "pmcid": "PMC7619086", "grants": ["CC2041"] },
+    { "pmcid": "PMC7619409", "grants": ["C6913/A21608"] },
+    {
+      "pmcid": "PMC7619556",
+      "grants": ["A27838", "A21139", "A31287", "A29996", "A17196"]
+    },
+    { "pmcid": "PMC7648300", "grants": ["23983"] },
+    { "pmcid": "PMC7658808", "grants": ["C61367/A26670"] },
+    {
+      "pmcid": "PMC7686489",
+      "grants": ["C31250/A22804", "C348/A18927", "C157/A23218"]
+    },
+    { "pmcid": "PMC7695716", "grants": ["C9545/A29580"] },
+    { "pmcid": "PMC7718082", "grants": ["A27412", "A25254", "A20465"] },
+    { "pmcid": "PMC7723409", "grants": ["FC001043"] },
+    { "pmcid": "PMC7738515", "grants": ["C157/A25140"] },
+    { "pmcid": "PMC7745204", "grants": ["A17196", "A29252"] },
+    { "pmcid": "PMC7767108", "grants": ["19169"] },
+    { "pmcid": "PMC7796881", "grants": ["18176"] },
+    { "pmcid": "PMC7799410", "grants": ["C50816/A25745"] },
+    { "pmcid": "PMC7821500", "grants": ["C13474/A18583", "C6946/A14492"] },
+    {
+      "pmcid": "PMC7865141",
+      "grants": ["C38302/A12278", "C19591/A19076", "C602/A18974"]
+    },
+    {
+      "pmcid": "PMC7884404",
+      "grants": ["A17196", "27963", "A25142", "A21139"]
+    },
+    { "pmcid": "PMC7896097", "grants": ["C37/A18784"] },
+    { "pmcid": "PMC7900609", "grants": ["C17422/A25154"] },
+    { "pmcid": "PMC7901269", "grants": ["C375/A17721"] },
+    { "pmcid": "PMC7916504", "grants": ["C552/A29106"] },
+    { "pmcid": "PMC7923783", "grants": ["29017"] },
+    { "pmcid": "PMC7938299", "grants": ["C30431/A13128"] },
+    { "pmcid": "PMC7961054", "grants": ["C50696/A29834"] },
+    { "pmcid": "PMC7972992", "grants": ["C52489/A19924", "C9545/A29580"] },
+    { "pmcid": "PMC8026949", "grants": ["C569/A16891"] },
+    {
+      "pmcid": "PMC8048461",
+      "grants": [
+        "C8221/A29017",
+        "C18281/A19169",
+        "C8221/A20986",
+        "C60192/A28516",
+        "C8221/A19170"
+      ]
+    },
+    { "pmcid": "PMC8062913", "grants": ["26603"] },
+    { "pmcid": "PMC8063395", "grants": ["C9681/A29214", "C9545/A19836"] },
+    { "pmcid": "PMC8065101", "grants": ["16942"] },
+    { "pmcid": "PMC8081039", "grants": ["C6946/A14492", "C13474/A18583"] },
+    {
+      "pmcid": "PMC8086283",
+      "grants": ["C1418/A14133", "C570/A16491", "C8221/A19170"]
+    },
+    { "pmcid": "PMC8120803", "grants": ["22284"] },
+    {
+      "pmcid": "PMC8129972",
+      "grants": ["C1491/A25351", "C1491/A9895", "7253", "C1491/A15955"]
+    },
+    { "pmcid": "PMC8134523", "grants": ["C588/A19167"] },
+    { "pmcid": "PMC8170441", "grants": ["C5255/A23755"] },
+    { "pmcid": "PMC8175708", "grants": ["C42454/A28596"] },
+    { "pmcid": "PMC8177710", "grants": ["FC001198"] },
+    { "pmcid": "PMC8191799", "grants": ["A18604"] },
+    { "pmcid": "PMC8219719", "grants": ["C50880/A29831"] },
+    { "pmcid": "PMC8220774", "grants": ["C60192/A28516"] },
+    { "pmcid": "PMC8235859", "grants": ["C7852/A25447"] },
+    { "pmcid": "PMC8244534", "grants": ["A27225"] },
+    { "pmcid": "PMC8257641", "grants": ["C570/A16491"] },
+    { "pmcid": "PMC8263739", "grants": ["C1287/A10118", "C1287/A16563"] },
+    { "pmcid": "PMC8269424", "grants": ["C569/A16891"] },
+    { "pmcid": "PMC8278394", "grants": ["A21139", "A26825", "A17196"] },
+    { "pmcid": "PMC8279801", "grants": ["A25310"] },
+    { "pmcid": "PMC8317109", "grants": ["FC001202"] },
+    { "pmcid": "PMC8319545", "grants": ["C20510/A13031"] },
+    { "pmcid": "PMC8347517", "grants": ["A17196"] },
+    { "pmcid": "PMC8350516", "grants": ["A19771", "C41405/A19694"] },
+    { "pmcid": "PMC8352630", "grants": ["C49297/A27294"] },
+    { "pmcid": "PMC8353162", "grants": ["FC001051"] },
+    { "pmcid": "PMC8381233", "grants": ["C5047/A17528"] },
+    { "pmcid": "PMC8389235", "grants": ["14136"] },
+    { "pmcid": "PMC8395598", "grants": ["A21993"] },
+    { "pmcid": "PMC8447782", "grants": ["16896", "29186"] },
+    { "pmcid": "PMC8475152", "grants": ["C8640/A23385"] },
+    { "pmcid": "PMC8486596", "grants": ["C62187/A26989", "C62187/A29760"] },
+    { "pmcid": "PMC8492709", "grants": ["14136", "16563"] },
+    {
+      "pmcid": "PMC8501416",
+      "grants": [
+        "C55962/A24669",
+        "C47594/A21102",
+        "C47594/A16267",
+        "C47594/A21202",
+        "C9545/A29580",
+        "C14303/A17197"
+      ]
+    },
+    { "pmcid": "PMC8507406", "grants": ["C17422/A25154"] },
+    { "pmcid": "PMC8513902", "grants": ["FC001029"] },
+    { "pmcid": "PMC8533982", "grants": ["23390", "26813"] },
+    { "pmcid": "PMC8558849", "grants": ["FC001501"] },
+    { "pmcid": "PMC8567313", "grants": ["19763"] },
+    { "pmcid": "PMC8575990", "grants": ["C38317/A24043"] },
+    { "pmcid": "PMC8586672", "grants": ["27140"] },
+    { "pmcid": "PMC8596367", "grants": ["C1417/A22962"] },
+    { "pmcid": "PMC8602334", "grants": ["C55370/A25813"] },
+    { "pmcid": "PMC8630104", "grants": ["21139"] },
+    {
+      "pmcid": "PMC8642877",
+      "grants": [
+        "C5047/A10692",
+        "C1287/A10710",
+        "C5047/A15007",
+        "C8197/A16565",
+        "C12292/A11174",
+        "C1287/A10118",
+        "C1287/A16563",
+        "C1281/A12014",
+        "C5047/A8384"
+      ]
+    },
+    { "pmcid": "PMC8672067", "grants": ["C1422/A19842"] },
+    { "pmcid": "PMC8719760", "grants": ["C62187/A26989"] },
+    { "pmcid": "PMC8724928", "grants": ["C328/A21998", "C6078/A28736"] },
+    { "pmcid": "PMC8728035", "grants": ["C53325/A21134"] },
+    { "pmcid": "PMC8728214", "grants": ["C68484/A28159"] },
+    { "pmcid": "PMC8763645", "grants": ["C9545/A29580", "FC001051"] },
+    { "pmcid": "PMC8792830", "grants": ["C35696/A23187", "C309/A11566"] },
+    { "pmcid": "PMC8805023", "grants": ["C309/A25144"] },
+    { "pmcid": "PMC8829752", "grants": ["A22902", "A27412"] },
+    { "pmcid": "PMC8837819", "grants": ["EDDPMA-May21\\100005"] },
+    { "pmcid": "PMC8847351", "grants": ["FC0010218"] },
+    { "pmcid": "PMC8864489", "grants": ["C29637/A20781", "C29637/A26892"] },
+    { "pmcid": "PMC8881592", "grants": ["FC001029"] },
+    { "pmcid": "PMC8885405", "grants": ["A21019", "A9609"] },
+    { "pmcid": "PMC8900277", "grants": ["C19769/A11985"] },
+    { "pmcid": "PMC8960094", "grants": ["C57440/A21801"] },
+    { "pmcid": "PMC8961149", "grants": ["27294", "C8225/A21133"] },
+    { "pmcid": "PMC9047764", "grants": ["27744"] },
+    { "pmcid": "PMC9061857", "grants": ["A24867", "C42454/A28596"] },
+    {
+      "pmcid": "PMC9067153",
+      "grants": ["C588/A10721", "C8216/A6129", "C588/A19167"]
+    },
+    { "pmcid": "PMC9075396", "grants": ["14136", "C8221/A29017"] },
+    { "pmcid": "PMC9236901", "grants": ["C11496/A30025", "FC001169"] },
+    { "pmcid": "PMC9240092", "grants": ["C6946/A24843", "DRCPGM\\100005"] },
+    { "pmcid": "PMC9251811", "grants": ["14136", "C8221/A29017"] },
+    { "pmcid": "PMC9257647", "grants": ["PRCRPG-Nov21\\100002"] },
+    { "pmcid": "PMC9293387", "grants": ["23015"] },
+    { "pmcid": "PMC9303394", "grants": ["FC001119"] },
+    { "pmcid": "PMC9311339", "grants": ["C43975/A27498", "C1418/A14133"] },
+    { "pmcid": "PMC9319237", "grants": ["C355/A25137"] },
+    { "pmcid": "PMC9327842", "grants": ["C50664/A24460", "C50664/A30770"] },
+    { "pmcid": "PMC9331922", "grants": ["C56067/A21330"] },
+    { "pmcid": "PMC9336076", "grants": ["24788"] },
+    { "pmcid": "PMC9350601", "grants": ["A20411"] },
+    { "pmcid": "PMC9355877", "grants": ["CRUK-A19763"] },
+    { "pmcid": "PMC9359731", "grants": ["C52499/A27948"] },
+    { "pmcid": "PMC9360465", "grants": ["C18281/A29019"] },
+    { "pmcid": "PMC9381458", "grants": ["C8464/A23391", "C8464/A13457"] },
+    { "pmcid": "PMC9392355", "grants": ["18180", "23385"] },
+    {
+      "pmcid": "PMC9414325",
+      "grants": [
+        "C12540/A20447",
+        "C1491/A15955",
+        "C1491/A25351",
+        "C12540/A13230",
+        "C12540/A12829",
+        "CRUK/11/029"
+      ]
+    },
+    { "pmcid": "PMC9441940", "grants": ["29035"] },
+    {
+      "pmcid": "PMC9452574",
+      "grants": ["C9545/A29580", "C42780/A27066", "C9685/A25177"]
+    },
+    { "pmcid": "PMC9462719", "grants": ["C197/A16465"] },
+    { "pmcid": "PMC9464883", "grants": ["FC001043"] },
+    {
+      "pmcid": "PMC9486399",
+      "grants": [
+        "C19212/A16628",
+        "C19212/A27150",
+        "C7535/A27717",
+        "C9685/A25177"
+      ]
+    },
+    { "pmcid": "PMC9549271", "grants": ["CC2037"] },
+    { "pmcid": "PMC9578182", "grants": ["24043"] },
+    { "pmcid": "PMC9579888", "grants": ["C22436/A25354", "C547/A17574"] },
+    { "pmcid": "PMC9588798", "grants": ["FC001143", "FC001185"] },
+    { "pmcid": "PMC9596938", "grants": ["RCCPDF\\100008"] },
+    { "pmcid": "PMC9616799", "grants": ["A20145"] },
+    { "pmcid": "PMC9617530", "grants": ["23385"] },
+    { "pmcid": "PMC9627785", "grants": ["A17196", "A17096"] },
+    {
+      "pmcid": "PMC9640847",
+      "grants": [
+        "18180",
+        "CTRQQR-2021\\100002",
+        "C8640/A23385",
+        "C18081/A31373",
+        "RCCPDF\\100005"
+      ]
+    },
+    { "pmcid": "PMC9652148", "grants": ["C5255/A15935"] },
+    { "pmcid": "PMC9666924", "grants": ["CC2087"] },
+    { "pmcid": "PMC9704644", "grants": ["C1443/A12750", "C1443/A22095"] },
+    { "pmcid": "PMC9712093", "grants": ["C60521/A31315"] },
+    { "pmcid": "PMC9713472", "grants": ["C3/A10239"] },
+    { "pmcid": "PMC9764674", "grants": ["C38317/A24043", "C8225/A21133"] },
+    { "pmcid": "PMC9808374", "grants": ["C212/A7402"] },
+    { "pmcid": "PMC9831040", "grants": ["23924"] },
+    { "pmcid": "PMC9854291", "grants": ["C56067/A21330", "PPRCPJT\\100023"] },
+    { "pmcid": "PMC9884768", "grants": ["C6078/A28736"] },
+    { "pmcid": "PMC9886279", "grants": ["CC2129"] },
+    { "pmcid": "PMC9898032", "grants": ["C7838/A25173"] },
+    { "pmcid": "PMC9926234", "grants": ["C35050/A22284"] },
+    { "pmcid": "PMC9947008", "grants": ["FC001152"] },
+    { "pmcid": "PMC9947330", "grants": ["28701"] },
+    { "pmcid": "PMC9996383", "grants": ["A29911"] },
+    {
+      "pmcid": "PMC10041653",
+      "grants": ["DRCNPG-Nov21\\100004", "C20079/A15940"]
+    },
+    { "pmcid": "PMC10079237", "grants": ["CTRQQR-2021\\100002"] },
+    { "pmcid": "PMC10090862", "grants": ["C4639/A10822"] },
+    { "pmcid": "PMC10114121", "grants": ["C37891/A25310"] },
+    { "pmcid": "PMC10151839", "grants": ["PRCRPG-NOV21\\100002"] },
+    { "pmcid": "PMC10156912", "grants": ["C309/A25144"] },
+    { "pmcid": "PMC10161018", "grants": ["C309/A25144", "C2739/A22897"] },
+    { "pmcid": "PMC10238386", "grants": ["C35050/A22284"] },
+    { "pmcid": "PMC10238861", "grants": ["FC001086"] },
+    { "pmcid": "PMC10325068", "grants": ["FC001078"] },
+    { "pmcid": "PMC10338700", "grants": ["C8162/A25356", "C8162/A27047"] },
+    { "pmcid": "PMC10348048", "grants": ["C62640/A24723"] },
+    { "pmcid": "PMC10349863", "grants": ["22131", "22720"] },
+    { "pmcid": "PMC10353927", "grants": ["C22436/A25354"] },
+    { "pmcid": "PMC10354329", "grants": ["23385"] },
+    {
+      "pmcid": "PMC10396410",
+      "grants": ["C500/A16896", "C16077/A29186", "C56488/A24504"]
+    },
+    { "pmcid": "PMC10400073", "grants": ["FC001103"] },
+    { "pmcid": "PMC10454593", "grants": ["C1380/A18444", "CRUKDF-0715-CV"] },
+    { "pmcid": "PMC10465482", "grants": ["C63763/A27122"] },
+    { "pmcid": "PMC10473960", "grants": ["C309/A25144"] },
+    { "pmcid": "PMC10484666", "grants": ["CC2029", "CC1078"] },
+    { "pmcid": "PMC10488321", "grants": ["12788"] },
+    { "pmcid": "PMC10539308", "grants": ["C38302/A12981"] },
+    {
+      "pmcid": "PMC10539947",
+      "grants": ["DRCRPG-NOV22/100007", "C18342/A23390"]
+    },
+    { "pmcid": "PMC10556593", "grants": ["A25254", "A20465"] },
+    { "pmcid": "PMC10626578", "grants": ["C375/A17721"] },
+    { "pmcid": "PMC10626781", "grants": ["C7852/A25447"] },
+    { "pmcid": "PMC10640748", "grants": ["C18281/A29019"] },
+    { "pmcid": "PMC10644475", "grants": ["RCCFEL\\100095"] },
+    {
+      "pmcid": "PMC10663155",
+      "grants": ["C57633/A25043", "FC0010060", "FC001223"]
+    },
+    { "pmcid": "PMC10699776", "grants": ["DRCPGM\\100005"] },
+    { "pmcid": "PMC10731650", "grants": ["C63178/A24959", "C4278/A27066"] },
+    { "pmcid": "PMC10734675", "grants": ["29019"] },
+    { "pmcid": "PMC10741412", "grants": ["C45617/A29908"] },
+    { "pmcid": "PMC10742509", "grants": ["C56361/A26124"] },
+    { "pmcid": "PMC10745874", "grants": ["28680"] },
+    { "pmcid": "PMC10757908", "grants": ["24032"] },
+    { "pmcid": "PMC10767929", "grants": ["28159"] },
+    { "pmcid": "PMC10776406", "grants": ["24873"] },
+    {
+      "pmcid": "PMC10784292",
+      "grants": ["C6078/A28736", "C5255/A18085", "C34326/A19590"]
+    },
+    {
+      "pmcid": "PMC10786719",
+      "grants": [
+        "C60100/A23433",
+        "C60100/A27815",
+        "C60100/A23916",
+        "C60100/A25274"
+      ]
+    },
+    { "pmcid": "PMC10799816", "grants": ["C33589/A28284"] },
+    { "pmcid": "PMC10808534", "grants": ["C54019/A27535"] },
+    { "pmcid": "PMC10920093", "grants": ["A20971", "A27412"] },
+    { "pmcid": "PMC10931181", "grants": ["CGCATF-2021/100007"] },
+    { "pmcid": "PMC11077071", "grants": ["C68409/A28129"] },
+    { "pmcid": "PMC11102500", "grants": ["C56167/A29363"] },
+    { "pmcid": "PMC11103100", "grants": ["29213"] },
+    { "pmcid": "PMC11133854", "grants": ["RCCCDF-Nov23/100002"] },
+    { "pmcid": "PMC11203983", "grants": ["C17422/A25154"] },
+    { "pmcid": "PMC11229233", "grants": ["21143"] },
+    { "pmcid": "PMC11249388", "grants": ["29186"] },
+    {
+      "pmcid": "PMC11253896",
+      "grants": ["C57899/A25812", "C39297/A22748", "28736"]
+    },
+    { "pmcid": "PMC11317096", "grants": ["CTRQQR-2021\\100006"] },
+    { "pmcid": "PMC11319441", "grants": ["C63389/A30462", "C9545/A29580"] },
+    {
+      "pmcid": "PMC11393413",
+      "grants": [
+        "CTRQQR-2021\\100004",
+        "176885",
+        "C1519/A27375",
+        "C7675/A29313"
+      ]
+    },
+    {
+      "pmcid": "PMC11429846",
+      "grants": [
+        "C348/A18927",
+        "DRCPGM/100012",
+        "C26031/A11378",
+        "C31250/A22804"
+      ]
+    },
+    { "pmcid": "PMC11444162", "grants": ["CTRQQR-2021\\100012"] },
+    {
+      "pmcid": "PMC11529860",
+      "grants": ["CGCATF-2021/100012", "CGCATF-2021/100025"]
+    },
+    { "pmcid": "PMC11564105", "grants": ["C15075/A28647"] },
+    { "pmcid": "PMC11568761", "grants": ["EDDPGM-NOV22/100004"] },
+    { "pmcid": "PMC11615739", "grants": ["C13474/A27826"] },
+    {
+      "pmcid": "PMC11735834",
+      "grants": ["DRCPFA-Nov21\\100001", "A31287", "A1920"]
+    },
+    { "pmcid": "PMC11773044", "grants": ["A29368"] },
+    { "pmcid": "PMC11819509", "grants": ["28276"] },
+    {
+      "pmcid": "PMC11831108",
+      "grants": ["A31287", "A29055", "A17196", "A25045", "CTRQQR-2021\\100006"]
+    },
+    {
+      "pmcid": "PMC11871499",
+      "grants": ["C8225/A21133", "PRCRPG-Nov21\\\\100001"]
+    },
+    { "pmcid": "PMC11876445", "grants": ["RRCOER-Jun24/100004"] },
+    { "pmcid": "PMC11877151", "grants": ["PRCPJT-Nov22/100007"] },
+    { "pmcid": "PMC11879119", "grants": ["CC2129"] },
+    { "pmcid": "PMC11884936", "grants": ["FC001003"] },
+    { "pmcid": "PMC11913756", "grants": ["25064"] },
+    {
+      "pmcid": "PMC11941251",
+      "grants": ["13529", "155865", "PPRPGM-Nov20\\100002"]
+    },
+    { "pmcid": "PMC11982232", "grants": ["DRCDDRPGMApr2020\\100002"] },
+    { "pmcid": "PMC12046492", "grants": ["PPRCTAGPJT\\10000"] },
+    { "pmcid": "PMC12092935", "grants": ["CTUQQR-DEC22/100008"] },
+    { "pmcid": "PMC12167126", "grants": ["A31287", "A29802"] },
+    { "pmcid": "PMC12167516", "grants": ["C16077/A29186", "C500/A16896"] },
+    { "pmcid": "PMC12201982", "grants": ["C20892/A23557"] },
+    { "pmcid": "PMC12215114", "grants": ["EDDCPJT\\100018"] },
+    { "pmcid": "PMC12258328", "grants": ["A29832"] },
+    { "pmcid": "PMC12304225", "grants": ["CC2074"] },
+    {
+      "pmcid": "PMC12353783",
+      "grants": ["PPRCTAGPJT\\100008", "PRCRPG-Nov21\\100002"]
+    },
+    { "pmcid": "PMC12392094", "grants": ["C8717/A18245"] },
+    { "pmcid": "PMC12581074", "grants": ["C5759/A27412"] },
+    { "pmcid": "PMC12629916", "grants": ["C864/A14136", "C8221/A29017"] },
+    { "pmcid": "PMC12673093", "grants": ["A31279"] },
+    {
+      "pmcid": "PMC12790592",
+      "grants": [
+        "C19942/A28832",
+        "A18745",
+        "RRNPSF-Jan21/100001",
+        "RRCOER-Jun24/100004",
+        "C7893/A2899"
+      ]
+    },
+    { "pmcid": "PMC12816917", "grants": ["C8717/A18245"] },
+    { "pmcid": "PMC12863253", "grants": ["DRCNPG-Nov21\\100002"] },
+    { "pmcid": "PMC12903419", "grants": ["CC0102"] },
+    { "pmcid": "PMC12905196", "grants": ["C62187/A29760", "C9685/A25177"] },
+    {
+      "pmcid": "PMC12905269",
+      "grants": [
+        "C17918/A2887",
+        "C6/A18796",
+        "DRCPGM\\100005",
+        "C17918/A28870",
+        "C17183/A23303"
+      ]
+    },
+    { "pmcid": "PMC12963708", "grants": ["C8162/A29083"] },
+    { "pmcid": "PMC13071546", "grants": ["C197/A16465"] },
+    {
+      "pmcid": "PMC13187489",
+      "grants": ["A20465", "A25254", "A27412", "A25146"]
+    },
+    { "pmcid": "PMC13206311", "grants": ["C49739/A17456"] },
+    { "pmcid": "PMC13226747", "grants": ["C6946/A14492"] },
+    { "pmcid": "PMC13377609", "grants": ["C2115/A21421"] },
+    { "pmcid": "PMC13431790", "grants": ["FC010110"] },
+    {
+      "pmcid": "PMC13448571",
+      "grants": ["PICCTR-2024/100001", "PRCRPGNov21\\100002"]
+    },
+    { "pmcid": "PMC13479736", "grants": ["FC001003"] },
+    { "pmcid": "PMC13534702", "grants": ["C5255/A23225"] },
+    { "pmcid": "PMC13569650", "grants": ["C19677/A12617"] },
+    { "pmcid": "PMC13721756", "grants": ["RCCCEA-Nov23/100003", "18387"] }
+  ]
 }
