@@ -25,7 +25,12 @@ import {
   type Owed,
   type PaperAsked,
 } from "./owed.ts";
-import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
+import {
+  europePmcRetry,
+  onceRetry,
+  paperRetry,
+  storeRetry,
+} from "./retry.ts";
 import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 
 // A run: search Europe PMC page by page, record what each page found, read
@@ -63,12 +68,14 @@ interface BatchOutcome {
 }
 
 // Reads a batch of papers, first waiting out any wait an earlier refusal
-// left `owed`. It returns the wait its own last refusal leaves owed, if no
-// paper after it has paid it.
+// left `owed`. A paper in `once` gets one request, with no retry (#504). It
+// returns the wait its own last refusal leaves owed, if no paper after it
+// has paid it.
 async function readBatch(
   ctx: DurableContext,
   deps: Deps,
   pmcids: string[],
+  once: string[],
   runId: string,
   owed: Owed,
 ): Promise<BatchOutcome> {
@@ -79,14 +86,15 @@ async function readBatch(
     if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
     due = null;
     let asked: PaperAsked<{ references: number }>;
+    const single = once.includes(pmcid);
     try {
       asked = await askForPaper(
         ctx,
         `paper-${pmcid}`,
         `wait-${pmcid}`,
-        paperRetry,
+        single ? onceRetry : paperRetry,
         () => deps.europePmc.sent(),
-        async () => readPaper(deps, pmcid, runId),
+        async () => readPaper(deps, pmcid, runId, single),
       );
     } catch (error) {
       // The step returns a paper's own failure, so what reaches here is the
@@ -174,7 +182,7 @@ export function makeRun(deps: Deps) {
       const result = searched.read;
       // The table's own step, so a failure to write or read it is retried
       // under the store's strategy and never asks Europe PMC again.
-      const todo = await ctx.step(
+      const { todo, once } = await ctx.step(
         `record-${String(page)}`,
         async () => recordPage(deps, result.papers, runId),
         { retryStrategy: storeRetry },
@@ -184,7 +192,7 @@ export function makeRun(deps: Deps) {
       for (const [index, batch] of batches(todo, BATCH).entries()) {
         const name = `papers-${String(page)}-${String(index)}`;
         const outcome = await ctx.runInChildContext(name, async (child) =>
-          readBatch(child, deps, batch, runId, owed),
+          readBatch(child, deps, batch, once, runId, owed),
         );
         read += outcome.read;
         failed += outcome.failed;

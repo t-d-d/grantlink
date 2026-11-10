@@ -1,7 +1,7 @@
 import type { goldA, goldB } from "../../evals/gold.ts";
 import type { EuropePmc, SearchPaper } from "../europepmc/client.ts";
 import { fundingSections } from "../europepmc/jats.ts";
-import type { PaperFailure } from "./failure.ts";
+import { lastFailure, type PaperFailure } from "./failure.ts";
 import { findReferences, RULES_VERSION } from "../extract/rules.ts";
 import { logger } from "../log.ts";
 import { summarise } from "../page/found.ts";
@@ -176,31 +176,49 @@ export function checkWholeSearch(found: number, skipped: number): void {
   }
 }
 
+// The papers a page leaves to read, and those of them whose full text
+// answered 500 when they last failed, which the run asks for once (#504).
+export interface ToRead {
+  todo: string[];
+  once: string[];
+}
+
 // Records each paper a page of the run's search found, and that this run's
-// search returned it, and decides which still need reading. Safe to run
-// twice: what the table holds of a paper is kept.
+// search returned it, and decides which still need reading and which of
+// those to ask for once. Safe to run twice: what the table holds of a paper
+// is kept.
 export async function recordPage(
   deps: Deps,
   papers: SearchPaper[],
   runId: string,
-): Promise<string[]> {
+): Promise<ToRead> {
   await deps.table.addFound(papers, deps.now(), runId);
   const ids = papers.map((paper) => paper.pmcid);
   const done = await deps.table.processed(ids);
   const todo = ids.filter((pmcid) => !done.has(pmcid));
-  logger.info("page-recorded", { found: ids.length, todo: todo.length });
-  return todo;
+  const failed = await deps.table.lastFailures(todo);
+  const once = todo.filter((pmcid) => failed.get(pmcid) === 500);
+  logger.info("page-recorded", {
+    found: ids.length,
+    todo: todo.length,
+    once: once.length,
+  });
+  return { todo, once };
 }
 
 // Reads one paper: fetches its full text, keeps its funding sections in the
 // bucket, and records the references the rules find. Nothing but the
-// references reaches the table.
+// references reaches the table. With `once`, Europe PMC's client sends one
+// request for the full text and does not try again (#504).
 export async function readPaper(
   deps: Deps,
   pmcid: string,
   runId: string,
+  once = false,
 ): Promise<{ references: number }> {
-  const sections = fundingSections(await deps.europePmc.fullText(pmcid));
+  const sections = fundingSections(
+    await deps.europePmc.fullText(pmcid, { once }),
+  );
   await deps.text.putFundingText(pmcid, sections);
   const references = findReferences(sections);
   await deps.table.markProcessed(pmcid, {
@@ -226,7 +244,7 @@ export async function markFailed(
   pmcid: string,
   failure: PaperFailure,
 ): Promise<void> {
-  await deps.table.markFailed(pmcid);
+  await deps.table.markFailed(pmcid, lastFailure(failure));
   logger.warn("paper-failed", { pmcid, ...failure });
 }
 
