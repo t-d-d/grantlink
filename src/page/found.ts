@@ -58,11 +58,63 @@ export type Found = z.infer<typeof found>;
 const byPmcid = (a: { pmcid: string }, b: { pmcid: string }) =>
   Number(a.pmcid.slice(3)) - Number(b.pmcid.slice(3));
 
+// Each format with its count, most common first, leaving out any at none.
+function mostCommonFirst(formats: Map<string, number>): Found["formats"] {
+  return [...formats]
+    .filter(([, count]) => count > 0)
+    .map(([format, count]) => ({ format, count }))
+    .sort((a, b) => b.count - a.count || a.format.localeCompare(b.format));
+}
+
+// A correction notice repeats the funding text of the paper it corrects, so
+// it is no finding to show (#660). The search leaves out what Europe PMC
+// marks as one, but neither the table nor found.json keeps a paper's
+// publication types, so a notice found before that, or still in a
+// found.json, is known by its title: a notice word followed by a colon or
+// "to". "Correction of …" is a research paper's title, and stays.
+const NOTICE =
+  /^(?:(?:author|publisher)\s+)?(?:correction|corrigendum|erratum)(?:\s*:|\s+to\b)/iu;
+
+export function isNotice(title: string): boolean {
+  return NOTICE.test(title);
+}
+
+// The published data without any correction notice, its counts and formats
+// taken down by what goes. A notice a run read and found no reference in is
+// not in found.json, so only a run takes it out of the counts.
+export function withoutNotices(data: Found): Found {
+  const gone = data.papers.filter((paper) => isNotice(paper.title));
+  const goneReferences = gone.flatMap((paper) => paper.references);
+  const goneWaiting = data.pending.filter((paper) => isNotice(paper.title));
+  const papers = data.papers.filter((paper) => !isNotice(paper.title));
+  const formats = new Map<string, number>(
+    data.formats.map(({ format, count }) => [format, count]),
+  );
+  for (const { format } of goneReferences) {
+    formats.set(format, (formats.get(format) ?? 0) - 1);
+  }
+  return found.parse({
+    ...data,
+    counts: {
+      papers: data.counts.papers - gone.length - goneWaiting.length,
+      processed: data.counts.processed - gone.length,
+      withReference: data.counts.withReference - gone.length,
+      references: data.counts.references - goneReferences.length,
+      pending: data.counts.pending - goneWaiting.length,
+    },
+    papers,
+    formats: mostCommonFirst(formats),
+    pending: data.pending.filter((paper) => !isNotice(paper.title)),
+  });
+}
+
 // Lists and counts only the papers the latest complete search returned,
 // `search` being the run whose search that was, whichever run publishes.
 // The search asks for papers linked to none of the funder's grants and not
-// marked as retracted, so a paper it left out has since been linked,
-// retracted or dropped, and is no longer one the page is about. The table
+// marked as retracted or as a correction notice, so a paper it left out
+// has since been linked, retracted or dropped, and is no longer one the
+// page is about. A correction notice an older search returned is left out
+// too. The table
 // keeps its row. A row keeps the mark of the latest-started run that
 // returned it, and run ids sort as their runs started, so a paper that
 // search returned may carry the mark of a run that started after it. Such a run's search is newer, so its papers count too
@@ -73,7 +125,10 @@ export function summarise(
   search: string = run.runId,
 ): Found {
   const rows = all.filter(
-    (row) => row.foundByRun !== undefined && row.foundByRun >= search,
+    (row) =>
+      row.foundByRun !== undefined &&
+      row.foundByRun >= search &&
+      !isNotice(row.title),
   );
   const processed = rows.filter((row) => row.status === "processed");
   const papers = processed
@@ -107,9 +162,7 @@ export function summarise(
       pending: pending.length,
     },
     papers,
-    formats: [...formats]
-      .map(([format, count]) => ({ format, count }))
-      .sort((a, b) => b.count - a.count || a.format.localeCompare(b.format)),
+    formats: mostCommonFirst(formats),
     pending,
   });
 }

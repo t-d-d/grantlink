@@ -389,6 +389,14 @@ describe("searching Europe PMC", () => {
     expect(searchQuery()).toContain('NOT PUB_TYPE:"retracted publication"');
   });
 
+  // A correction notice repeats the funding text of the paper it corrects,
+  // so it is no finding to show (#660). Europe PMC gives one either
+  // publication type, or both.
+  it("leaves out papers Europe PMC marks as correction notices", () => {
+    expect(searchQuery()).toContain('NOT PUB_TYPE:"published erratum"');
+    expect(searchQuery()).toContain('NOT PUB_TYPE:"correction"');
+  });
+
   // Two common tokens would widen the search too far, so only the rules
   // read this name (#510).
   it("leaves CR UK with a space out of the search", () => {

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { PaperRow } from "../store/table.ts";
-import { found as foundSchema, summarise } from "./found.ts";
+import { found as foundSchema, isNotice, summarise } from "./found.ts";
 import { rebuild } from "./build.ts";
 import { buildPage, renderFound } from "./render.ts";
 
@@ -159,6 +159,82 @@ describe("a paper the run's search no longer returns", () => {
       { format: "Cn/An", count: 3 },
       { format: "An", count: 1 },
     ]);
+  });
+});
+
+describe("a correction notice (#660)", () => {
+  // Europe PMC marks a correction notice by its publication types, which
+  // neither the table nor found.json keeps, so the page knows one by the
+  // word its title starts with. Both notices the search returned in
+  // November 2026 start this way, and no paper in it does.
+  const notices = [
+    "Correction: Title of a paper",
+    "Corrigendum to: Title of a paper",
+    "Erratum: Title of a paper",
+    "Author Correction: Title of a paper",
+    "Publisher Correction: Title of a paper",
+    "CORRECTION: Title of a paper",
+    "Correction to Title of a paper",
+  ];
+  const papers = [
+    "A review of attenuation correction methods",
+    "Correction of a defect in DNA repair",
+    "Correctional facilities and cancer screening",
+    "Erratum in the record of a trial",
+    "Correction tools for sequencing errors",
+  ];
+
+  it("is known by its title, and a paper is not", () => {
+    for (const title of notices) expect(isNotice(title)).toBe(true);
+    for (const title of papers) expect(isNotice(title)).toBe(false);
+  });
+
+  const withNotices = [
+    ...rows,
+    { ...done("PMC5", [ca]), title: "Correction: Title of PMC1" },
+    row("PMC6", { title: "Corrigendum to: Title of PMC2" }),
+  ];
+
+  it("is neither listed nor counted by the run", () => {
+    const found = summarise(withNotices, run);
+    expect(found).toEqual(summarise(rows, run));
+  });
+
+  it("is taken off the page at deploy, from a found.json that lists it", () => {
+    const listed = {
+      ...summarise(rows, run),
+      counts: {
+        papers: 6,
+        processed: 4,
+        withReference: 3,
+        references: 6,
+        pending: 2,
+      },
+      papers: [
+        ...summarise(rows, run).papers,
+        {
+          pmcid: "PMC5",
+          title: "Correction: Title of PMC1",
+          references: [
+            { ...an, format: "Notice" },
+            { ...an, format: "Notice" },
+            ca,
+          ],
+        },
+      ],
+      formats: [
+        { format: "Cn/An", count: 3 },
+        { format: "Notice", count: 2 },
+        { format: "An", count: 1 },
+      ],
+      pending: [
+        ...summarise(rows, run).pending,
+        { pmcid: "PMC6", title: "Corrigendum to: Title of PMC2" },
+      ],
+    };
+    expect(rebuild(template, JSON.stringify(listed), null)).toBe(
+      buildPage(template, summarise(rows, run)),
+    );
   });
 });
 

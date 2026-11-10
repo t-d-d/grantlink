@@ -1,12 +1,14 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { found } from "./found.ts";
+import { found, withoutNotices } from "./found.ts";
 import { release } from "./release.ts";
 import { buildPage } from "./render.ts";
 
 // Builds the page again at deploy: from the data the last run published,
 // so a deploy that changes the template keeps the findings, and from the
-// release record, so the page shows the release it is.
+// release record, so the page shows the release it is. A correction notice
+// in the data is left out, so a deploy takes one off the page without
+// waiting for a run.
 // scripts/publish-page.sh runs it on a copy of site/, which it rewrites in
 // place:
 //
@@ -21,7 +23,8 @@ export function rebuild(
 ): string {
   return buildPage(
     template,
-    data === null ? null : found.parse(JSON.parse(data)),
+    // A correction notice an older run published goes at deploy (#660).
+    data === null ? null : withoutNotices(found.parse(JSON.parse(data))),
     record === null ? null : release.parse(JSON.parse(record)),
   );
 }
