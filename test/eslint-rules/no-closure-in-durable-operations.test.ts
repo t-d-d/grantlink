@@ -221,6 +221,27 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
         }`,
         errors: [{ messageId: "closureVariableUsage" }],
       },
+      ...[
+        [
+          "an array of branches asserted with as",
+          "[async () => { done += 1; }] as F[]",
+        ],
+        [
+          "an object of branches checked with satisfies",
+          "{ one: async () => { done += 1; } } satisfies B",
+        ],
+        [
+          "an array of branches behind a non-null assertion",
+          "[async () => { done += 1; }]!",
+        ],
+      ].map(([what, branches]) => ({
+        name: `counts into an outer variable from a parallel branch in ${String(what)}`,
+        code: `async function run(ctx: any) {
+          let done = 0;
+          await ctx.parallel("both", ${String(branches)});
+        }`,
+        errors: [{ messageId: "closureVariableUsage" as const }],
+      })),
       {
         name: "counts into an outer variable",
         code: `async function run(ctx: any) {

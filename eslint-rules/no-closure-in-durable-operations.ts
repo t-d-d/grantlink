@@ -57,12 +57,14 @@ function isCallback(node: TSESTree.Node): node is Callback {
   );
 }
 
-// The literal nodes between a call and a callback passed inside it.
+// The literal nodes between a call and a callback passed inside it, and the
+// wrappers unwrapped takes off around them, as in `[branch] as F[]`.
 function isLiteralWrapper(node: TSESTree.Node): boolean {
   return (
     node.type === AST_NODE_TYPES.ArrayExpression ||
     node.type === AST_NODE_TYPES.ObjectExpression ||
-    node.type === AST_NODE_TYPES.Property
+    node.type === AST_NODE_TYPES.Property ||
+    unwrapped(node) !== node
   );
 }
 
