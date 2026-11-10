@@ -17,6 +17,7 @@ import {
   type Entry,
   type Taken,
 } from "../pipeline/snapshot.ts";
+import { logOnly } from "./log-only.ts";
 import { askEuropePmc, type Asked, type Owed } from "./owed.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 
@@ -158,25 +159,16 @@ export async function takeSnapshot(
     // #348). The line only reports, so when its step fails the search's
     // own judgment below still decides how the snapshot ends, not that
     // failure (#370).
-    try {
-      await ctx.step(
-        "snapshot-search-ended",
-        async () => {
-          logGoldSearchEnded(
-            runId,
-            deps.gold.snapshotId,
-            found.length,
-            skipped,
-            refused !== null,
-            failed !== null,
-          );
-          return Promise.resolve();
-        },
-        { retryStrategy: storeRetry },
+    await logOnly(ctx, "snapshot-search-ended", () => {
+      logGoldSearchEnded(
+        runId,
+        deps.gold.snapshotId,
+        found.length,
+        skipped,
+        refused !== null,
+        failed !== null,
       );
-    } catch (error) {
-      if (!(error instanceof DurableOperationError)) throw error;
-    }
+    });
     if (failed !== null) failedAs("search-failed", failed.error);
     // A refused search loses the snapshot for this run, and leaves the
     // wait Europe PMC asked for owed, which the run waits out before it

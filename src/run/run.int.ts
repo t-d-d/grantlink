@@ -34,13 +34,30 @@ beforeAll(() =>
 afterAll(() => LocalDurableTestRunner.teardownTestEnvironment());
 
 const logs: string[] = [];
+// Keeps each line the run logs in `logs`.
 function keepLine(...args: unknown[]): void {
   logs.push(args.map(String).join(" "));
 }
 const spy = vi.spyOn(console, "log").mockImplementation(keepLine);
 afterEach(() => {
   logs.length = 0;
+  spy.mockImplementation(keepLine);
 });
+
+// Makes every try to log a line with event `event` throw, so the step that
+// logs it fails after its retries (#380).
+function failToLog(event: string) {
+  spy.mockImplementation((...args: unknown[]) => {
+    const line = args.map(String).join(" ");
+    if (
+      line.startsWith("{") &&
+      (JSON.parse(line) as { event?: unknown }).event === event
+    ) {
+      throw new Error(`could not log ${event}`);
+    }
+    logs.push(line);
+  });
+}
 afterAll(() => {
   spy.mockRestore();
 });
@@ -432,6 +449,28 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
     },
   );
 
+  it("still judges, records and publishes its search when its search-ended step fails (#380)", async () => {
+    const fake = fakeDeps();
+    failToLog("search-ended");
+    const { status, result, retryDelays } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(retryDelays("search-ended")).not.toEqual([]);
+    expect(fake.table.search.latest).toBe(result?.runId);
+    expect(result?.published).toMatchObject({ published: true });
+    expect(fake.site.files).toBeDefined();
+    expect(logged("search-ended")).toEqual([]);
+  });
+
+  it("still fails a search that skipped results and found no papers when its search-ended step fails (#380)", async () => {
+    const fake = fakeDeps({ search: malformedPage });
+    failToLog("search-ended");
+    const { status, error, retryDelays } = await runWith(fake);
+    expect(status).toBe("FAILED");
+    expect(retryDelays("search-ended")).not.toEqual([]);
+    expect(error).toContain("malformed PMCID");
+    expect(fake.site.files).toBeUndefined();
+  });
+
   it("publishes nothing when the search finds nothing", async () => {
     const fake = fakeDeps({
       search: () =>
@@ -693,6 +732,20 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
     expect(ended).toBeGreaterThanOrEqual(seen.notBefore);
   });
 
+  it("ends only once a refusal on its last paper has been waited out, when the snapshot and its snapshot-failed step both fail (#380)", async () => {
+    const { fake, seen } = await refusingLast();
+    fake.deps.text.hasSnapshot = () =>
+      Promise.reject(new Error("S3 answered 503"));
+    failToLog("snapshot-failed");
+    const { status, result, ended, retryDelays } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(retryDelays("snapshot-failed")).not.toEqual([]);
+    expect(logged("snapshot-failed")).toEqual([]);
+    expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
+    expect(seen.notBefore).toBeGreaterThan(0);
+    expect(ended).toBeGreaterThanOrEqual(seen.notBefore);
+  });
+
   it.each([300, 7200])(
     "ends only once a refusal of gold set A's search with a Retry-After of %is has been waited out, when that fails the snapshot (#236)",
     async (seconds) => {
@@ -735,6 +788,24 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
       expect(ended).toBeGreaterThanOrEqual(notBefore());
     },
   );
+
+  it("fails only once a refusal of the run's search has been waited out, when its search-ended step fails (#380)", async () => {
+    const fake = fakeDeps({
+      search: () => reply("", 429, { "Retry-After": "300" }),
+    });
+    failToLog("search-ended");
+    const started = Date.now();
+    const { status, error, ended, retryDelays } = await runWith(fake);
+    expect(status).toBe("FAILED");
+    expect(retryDelays("search-ended")).not.toEqual([]);
+    expect(error).toContain("Europe PMC refused the run's search");
+    expect(fake.site.files).toBeUndefined();
+    const retried = retryDelays("search-0").reduce(
+      (sum, delay) => sum + delay,
+      0,
+    );
+    expect(ended - started).toBeGreaterThanOrEqual((retried + 300) * 1000);
+  });
 
   it.each([300, 7200])(
     "fails only once a refusal of the run's search with a Retry-After of %is has been waited out (#264)",
@@ -1031,22 +1102,8 @@ describe("the eval snapshot (evals.md)", () => {
   // A failed snapshot-search-ended step leaves the search's own reason in
   // charge of how the snapshot ends, not its error (#370).
   describe("when the snapshot-search-ended step fails", () => {
-    afterEach(() => {
-      spy.mockImplementation(keepLine);
-    });
-
-    function failSearchEndedLine(): void {
-      spy.mockImplementation((...args: unknown[]) => {
-        const line = args.map(String).join(" ");
-        if (line.includes('"event":"snapshot-search-ended"')) {
-          throw new Error("the log line could not be written");
-        }
-        logs.push(line);
-      });
-    }
-
     it("logs malformed-search, not unknown, for a malformed search", async () => {
-      failSearchEndedLine();
+      failToLog("snapshot-search-ended");
       const fake = fakeDeps({ goldSearch: malformedPage });
       const { status, result, retryDelays } = await runWith(fake);
       expect(status).toBe("SUCCEEDED");
@@ -1056,7 +1113,7 @@ describe("the eval snapshot (evals.md)", () => {
     });
 
     it("ends with Europe PMC's refusal, not a failure, when it refuses the search", async () => {
-      failSearchEndedLine();
+      failToLog("snapshot-search-ended");
       const fake = fakeDeps({
         goldSearch: () => reply("", 429, { "Retry-After": "300" }),
       });
@@ -1079,7 +1136,7 @@ describe("the eval snapshot (evals.md)", () => {
     });
 
     it("logs search-failed, not unknown, when a page of the search fails", async () => {
-      failSearchEndedLine();
+      failToLog("snapshot-search-ended");
       const fake = fakeDeps({ goldSearch: () => reply("", 500) });
       const { status, result, retryDelays } = await runWith(fake);
       expect(status).toBe("SUCCEEDED");
@@ -1089,7 +1146,7 @@ describe("the eval snapshot (evals.md)", () => {
     });
 
     it("still takes the snapshot when the search is whole", async () => {
-      failSearchEndedLine();
+      failToLog("snapshot-search-ended");
       const fake = fakeDeps({
         goldSearch: smallLastPageMalformed([
           "PMC0000001",
