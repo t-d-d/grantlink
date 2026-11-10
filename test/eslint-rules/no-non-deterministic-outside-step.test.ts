@@ -266,6 +266,18 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           const d = performance ? 1 : 2;
           const e = Date && f();`,
         },
+        {
+          name: "assigns from Math, by destructuring, a member that holds no source",
+          filename: "src/run/run.ts",
+          code: `let PI;
+          ({ PI } = Math);`,
+        },
+        {
+          name: "assigns from Date, by destructuring, a member that does not call it",
+          filename: "src/run/run.ts",
+          code: `let UTC;
+          ({ UTC } = Date);`,
+        },
       ],
       invalid: [
         {
@@ -660,6 +672,79 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
               messageId: "nonDeterministicOutsideStep",
               data: { op: "Math" },
               line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from Math, by destructuring, a source it holds",
+          code: `let random;
+          ({ random } = Math);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from globalThis, by destructuring, an object that holds a source",
+          code: `let M;
+          ({ Math: M } = globalThis);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "globalThis" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from Date, by destructuring, a member that calls it",
+          code: `let bind;
+          ({ bind } = Date);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "uses the value of an assignment that destructures from Math",
+          code: `let PI;
+          helper(({ PI } = Math));`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns a copy of Math through a rest in a nested pattern's default, destructured from globalThis",
+          code: `let m;
+          ({ x: { ...m } = Math } = globalThis);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns Math by array destructuring to a name it does not export, beside one it does",
+          code: `export let b;
+          let a;
+          [a, b] = [Math, 1];`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 3,
             },
           ],
         },
@@ -1694,18 +1779,13 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
-          name: "gives Date as a nested default in an assignment the rule does not follow, from globalThis, which it passes on",
+          name: "gives Date as a nested default in an assignment the rule does not follow, and not globalThis, whose foo holds no source",
           code: `async function run(ctx: any) { let now: any; ({ foo: { now } = Date } = globalThis); now(); }`,
           errors: [
             {
               messageId: "nonDeterministicOutsideStep",
               data: { op: "Date" },
               column: 64,
-            },
-            {
-              messageId: "nonDeterministicOutsideStep",
-              data: { op: "globalThis" },
-              column: 73,
             },
           ],
         },

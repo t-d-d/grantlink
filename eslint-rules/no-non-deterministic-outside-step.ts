@@ -667,12 +667,49 @@ function passedOn(
         (!holder && exported(parent, declared))
       );
     }
+    // An assignment that destructures, `({ PI } = Math)`. The rule does not
+    // follow the names it gives, so it counts as passed on when a name may
+    // get a source, `Date` or an object that holds one, `({ random } =
+    // Math)`, or a member that calls `Date`, `({ bind } = Date)`, or a copy
+    // of a holder through a rest, or when its own value is used,
+    // `f(({ PI } = Math))`.
+    case AST_NODE_TYPES.AssignmentExpression:
+      return (
+        parent.right !== outer ||
+        parent.left.type !== AST_NODE_TYPES.ObjectPattern ||
+        outermost(parent).parent?.type !== AST_NODE_TYPES.ExpressionStatement ||
+        callsThrough(parent.left) ||
+        (holder && copiesRest(parent.left)) ||
+        givesSource(parent.left, pathOf(outer, resolver, new Set()))
+      );
     case AST_NODE_TYPES.ExportDefaultDeclaration:
     case AST_NODE_TYPES.TSExportAssignment:
       return !holder;
     default:
       return true;
   }
+}
+
+// True when an object pattern takes, from what it destructures, a source,
+// `Date` or an object that holds one, under a key at its top, `{ random }`
+// from `Math` or `{ Math: { PI } }` from `globalThis`, or when what it
+// destructures has no known path.
+function givesSource(
+  pattern: TSESTree.ObjectPattern,
+  base: readonly string[] | null,
+): boolean {
+  if (base === null) return true;
+  return pattern.properties.some((property) => {
+    if (property.type !== AST_NODE_TYPES.Property) return false;
+    const key = keyName(property.key, property.computed);
+    if (key === null) return true;
+    const path = normalised([...base, key]);
+    return (
+      opOf(path) !== undefined ||
+      namesDate(path) ||
+      holderOf(path) !== undefined
+    );
+  });
 }
 
 // The declarator with an initial value whose object pattern holds a nested
