@@ -1,7 +1,7 @@
 import type { goldA, goldB } from "../../evals/gold.ts";
 import type { EuropePmc, SearchPaper } from "../europepmc/client.ts";
 import { fundingSections } from "../europepmc/jats.ts";
-import { lastFailure, type PaperFailure } from "./failure.ts";
+import { failureReason, type PaperFailure } from "./failure.ts";
 import { findReferences, RULES_VERSION } from "../extract/rules.ts";
 import { logger } from "../log.ts";
 import { summarise } from "../page/found.ts";
@@ -244,7 +244,7 @@ export async function markFailed(
   pmcid: string,
   failure: PaperFailure,
 ): Promise<void> {
-  await deps.table.markFailed(pmcid, lastFailure(failure));
+  await deps.table.markFailed(pmcid, failureReason(failure));
   logger.warn("paper-failed", { pmcid, ...failure });
 }
 

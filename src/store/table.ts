@@ -170,12 +170,14 @@ export function dynamoTable(
 ): Table {
   const send = (command: object) => client.send(command);
 
-  // The items the table holds of `pmcids`, each with the fields
-  // `projection` names, read a hundred keys at a time.
+  // The items the table holds of `pmcids`, each with its pmcid, its status
+  // and the `extra` fields, read a hundred keys at a time. The projection
+  // always names #status, so the name it is given is always used.
   async function getMany(
     pmcids: string[],
-    projection: string,
+    extra: string[] = [],
   ): Promise<unknown[]> {
+    const projection = ["pmcid", "#status", ...extra].join(", ");
     const items: unknown[] = [];
     for (const batch of batches(pmcids, 100)) {
       let keys = batch.map((pmcid) => ({ pmcid }));
@@ -317,7 +319,7 @@ export function dynamoTable(
 
     async processed(pmcids) {
       const done = new Set<string>();
-      for (const item of await getMany(pmcids, "pmcid, #status")) {
+      for (const item of await getMany(pmcids)) {
         const row = z.object({ pmcid: PMCID, status: z.string() }).parse(item);
         if (row.status === "processed") done.add(row.pmcid);
       }
@@ -326,7 +328,7 @@ export function dynamoTable(
 
     async lastFailures(pmcids) {
       const failed = new Map<string, LastFailure>();
-      for (const item of await getMany(pmcids, "pmcid, #status, lastFailure")) {
+      for (const item of await getMany(pmcids, ["lastFailure"])) {
         const row = z
           .object({
             pmcid: PMCID,

@@ -75,9 +75,10 @@ export interface EuropePmc {
     selection?: string,
     pageSize?: number,
   ): Promise<SearchPage>;
-  // With `once`, the client sends one request and does not try again, as
-  // for a paper whose full text answered 500 when it last failed (#504).
-  // The pace and any wait Europe PMC asked for hold as for any request.
+  // With `once`, the client sends at most one request and does not try
+  // again, as for a paper whose full text answered 500 when it last failed
+  // (#504). The pace and any wait Europe PMC asked for hold as for any
+  // request.
   fullText(pmcid: string, options?: { once?: boolean }): Promise<string>;
   // The funder's grant ids Europe PMC links to a paper.
   grants(pmcid: string): Promise<string[]>;

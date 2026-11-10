@@ -25,7 +25,7 @@ export type ReadOrFailed<T> =
 
 // Why a paper failed, as its row keeps it (#504): the status Europe PMC last
 // answered with, or the reason itself.
-export function lastFailure(failure: PaperFailure): LastFailure {
+export function failureReason(failure: PaperFailure): LastFailure {
   // An answer always carries its status, so none would be a fault here.
   if (failure.why === "answered") return failure.status ?? "code";
   return failure.why;
