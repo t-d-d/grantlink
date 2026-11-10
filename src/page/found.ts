@@ -1,12 +1,22 @@
 import { z } from "zod";
-import { referenceSchema } from "../extract/rules.ts";
 import { pmcid as PMCID } from "../shared/pmcid.ts";
+import { storedReference } from "../store/reference.ts";
 import type { PaperRow } from "../store/table.ts";
 
 // What the page shows from a run, built from the results table. It holds a
 // paper's id, title and references, and nothing else of the paper
 // (docs/constraints/no-republished-text.md). The run publishes it beside the
 // page as found.json, and the deploy builds the page again from it.
+//
+// A reference here is checked by the length and type of each field, as the
+// table reads it (src/store/reference.ts), not by the characters
+// referenceSchema allows (#344). A row may hold a character a later version
+// allows, and a run on an older version, or a deploy that rolls back, must
+// still build the page from it. The page still publishes only what a check
+// passed: the version that wrote the row checked its characters against its
+// own referenceSchema, and every write still does. What the page carries is
+// unchanged: each paper's PMCID, title and references, each as written,
+// normalised and by format, and no other field.
 
 const title = z.string().max(500);
 
@@ -27,7 +37,11 @@ export const found = z
       .strict(),
     papers: z.array(
       z
-        .object({ pmcid: PMCID, title, references: z.array(referenceSchema) })
+        .object({
+          pmcid: PMCID,
+          title,
+          references: z.array(storedReference.strict()),
+        })
         .strict(),
     ),
     formats: z.array(

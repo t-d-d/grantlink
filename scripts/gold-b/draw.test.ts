@@ -5,6 +5,7 @@ import {
   type EuropePmc,
   type SearchPage,
 } from "../../src/europepmc/client.ts";
+import { namesFunder } from "../../src/extract/rules.ts";
 import {
   allocate,
   draw,
@@ -44,6 +45,16 @@ describe("the hard-case checks", () => {
       funding: "This work was funded by Cancer Research UK.",
       coi: "The authors declare no competing interests.",
     });
+    expect(hardCases(xml)).not.toContain("declared-interest");
+  });
+
+  it("agrees with the rules on a name with a non-ASCII letter before it (#338)", () => {
+    const note = "One author has received honoraria from \u00c9CRUK.";
+    const xml = paper({
+      funding: "This work was funded by Cancer Research UK.",
+      coi: note,
+    });
+    expect(namesFunder(note)).toBe(false);
     expect(hardCases(xml)).not.toContain("declared-interest");
   });
 
