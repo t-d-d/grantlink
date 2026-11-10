@@ -148,9 +148,15 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           let make: typeof randomUUID | undefined;`,
         },
         {
-          name: "re-exports a random source without reading it",
+          name: "exports a random source's type only",
           code: `import { randomUUID } from "node:crypto";
-          export { randomUUID };`,
+          export type { randomUUID };
+          export { type randomUUID as MakeId };`,
+        },
+        {
+          name: "re-exports another module's name that a local random source shares",
+          code: `import { randomUUID } from "node:crypto";
+          export { randomUUID } from "./fixed";`,
         },
         {
           name: "reads a wrapped clock and random source inside a step",
@@ -230,6 +236,87 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
             {
               messageId: "nonDeterministicOutsideStep",
               data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "re-exports a random source, which another module may call",
+          code: `import { randomUUID } from "node:crypto";
+          export { randomUUID };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto.randomUUID" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "re-exports a random source from the module that holds it",
+          code: `export { randomUUID } from "node:crypto";`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto.randomUUID" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a destructured clock in its declaration and again by name, once",
+          code: `export const { now } = Date;
+          export { now as clock };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a clock destructured from Date in its declaration",
+          code: `export const { now } = Date;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a random source destructured from Math by name",
+          code: `const { random } = Math;
+          export { random };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports Date destructured from globalThis under another name",
+          code: `export const { Date: D } = globalThis;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a destructured clock with a default, renamed in the export",
+          code: `const { now: clock = () => 0 } = performance;
+          export { clock as now };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "performance.now" },
               line: 2,
             },
           ],
