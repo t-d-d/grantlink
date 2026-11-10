@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { funder, normalise, referenceSchema, WORD } from "./rules.ts";
+import { funder, normalise, referenceSchema, wholeReference } from "./rules.ts";
 
 // The model pass: reads a paper's funding text and proposes the grant
 // references the rules missed (docs/constraints/model-calls.md). This is the
@@ -21,7 +21,7 @@ export type ModelId = (typeof MODELS)[number];
 
 // Bump this whenever the prompt, or how a reply is read, changes, so every
 // stored result says which prompt made it.
-export const PROMPT_VERSION = "prompt-1";
+export const PROMPT_VERSION = "prompt-2";
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -166,20 +166,14 @@ function readAnswer(body: unknown): Answer | undefined {
 // the rules keep it (#269). Nothing else about the text changes.
 const plainSpaces = (text: string) => text.replace(/\s/gu, " ");
 
-// Escapes the characters a regular expression gives a meaning to. A hyphen
-// needs none outside a class, and the u flag refuses one escaped there.
-const escape = (text: string) => text.replace(/[\\^$.*+?()[\]{}|/]/gu, "\\$&");
-
-// Whether the paragraph gives the reference whole: not cut out of a longer
+// Whether a paragraph gives the reference whole: not cut out of a longer
 // run of letters and digits, as "A5678" is out of "A56789". Its edges are
-// drawn with the rules' own class, read a whole code point at a time, so the
-// two passes agree on combining marks, underscores, letters outside the Basic
-// Multilingual Plane and numbers that are not decimal digits (#339, #369,
-// #384).
-function givesWhole(paragraph: string, reference: string): boolean {
-  return new RegExp(`(?<!${WORD})${escape(reference)}(?!${WORD})`, "u").test(
-    paragraph,
-  );
+// the rules' own, read a whole code point at a time, so the two passes agree
+// on combining marks, underscores, letters outside the Basic Multilingual
+// Plane and numbers that are not decimal digits (#339, #369, #384).
+function givesWhole(text: readonly string[], reference: string): boolean {
+  const whole = wholeReference(reference);
+  return text.some((paragraph) => whole.test(paragraph));
 }
 
 // Keeps a reference only if the text gives it whole as written, it is made
@@ -200,7 +194,7 @@ function check(
     if (
       !written.success ||
       !/\d/u.test(asWritten) ||
-      !source.some((paragraph) => givesWhole(paragraph, asWritten))
+      !givesWhole(source, asWritten)
     ) {
       rejected += 1;
       continue;

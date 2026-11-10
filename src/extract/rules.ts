@@ -111,11 +111,16 @@ export const namesFunder = (text: string): boolean => funderName.test(text);
 // A reference's edges. Any letter or combining mark joined to a reference,
 // not only A to Z, makes it part of a longer word, as at the funder's name
 // (#339). So does any decimal digit, not only 0 to 9 (#368), and an
-// underscore, as \b had it. The model pass draws a reference's edges with
-// this class too, so the two cannot differ (#384).
-export const WORD = String.raw`[\p{L}\p{M}\p{Nd}_]`;
+// underscore, as \b had it.
+const WORD = String.raw`[\p{L}\p{M}\p{Nd}_]`;
 const START = `(?<!${WORD})`;
 const END = `(?!${WORD})`;
+
+// A reference as written, between the edges above. The model pass checks
+// its references with this, so the two passes cannot draw a reference's
+// edges differently (#384).
+export const wholeReference = (reference: string): RegExp =>
+  new RegExp(`${START}${escape(reference)}${END}`, "u");
 
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
