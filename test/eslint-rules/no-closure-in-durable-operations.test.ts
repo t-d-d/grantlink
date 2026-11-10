@@ -236,6 +236,35 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
         errors: [{ messageId: "closureVariableUsage" }],
       },
       {
+        name: "counts into an outer variable from askEuropePmc's read, reached through a destructured alias with a default",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const { askEuropePmc: ask = other } = owed;
+        async function run(ctx: any) {
+          let read = 0;
+          await ask(ctx, "paper", "wait", r, async () => {
+            read += 1;
+            return readPaper();
+          });
+        }`,
+        errors: [{ messageId: "closureVariableUsage" }],
+      },
+      {
+        name: "counts into an outer variable from askEuropePmc's read, reached through an alias that is written again later",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        let ask = askEuropePmc;
+        ask = other;
+        async function run(ctx: any) {
+          let read = 0;
+          await ask(ctx, "paper", "wait", r, async () => {
+            read += 1;
+            return readPaper();
+          });
+        }`,
+        errors: [{ messageId: "closureVariableUsage" }],
+      },
+      {
         name: "counts into an outer variable from askEuropePmc's retry, reached through a constant read from a namespace import",
         filename: "src/run/run.ts",
         code: `import * as owed from "./owed.ts";

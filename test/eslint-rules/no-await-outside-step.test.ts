@@ -491,6 +491,18 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         errors: [{ messageId: "awaitOutsideStep" }],
       },
       {
+        name: "awaits I/O inside the read of an alias with a default, which gets no step allowance",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        const { askEuropePmc: ask = other } = owed;
+        async function run(ctx: any) {
+          void ask(ctx, "paper", "wait", r, async () => {
+            await readPaper();
+          });
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
         name: "awaits an alias destructured by a computed key that is a variable",
         filename: "src/run/run.ts",
         code: `import * as owed from "./owed.ts";

@@ -209,8 +209,11 @@ function keyName(key: TSESTree.Node, computed: boolean): string | null {
 // allowances, and no-step-helper-re-export when it lets a module export its
 // own helper. Where it only makes a rule refuse, an inexact walk counts too:
 // no-step-helper-re-export's refusals, no-nested-durable-operations, for
-// a context and for a step helper (stepHelperOf with `walk: "any"`), and
-// no-non-deterministic-outside-step, for a clock or random source.
+// a context and for a step helper (stepHelperOf with `walk: "any"`),
+// no-closure-in-durable-operations, for a step helper's callbacks
+// (isStepHelperCallback with `walk: "any"`), and
+// no-non-deterministic-outside-step, for a clock or random source. A name
+// destructured with a default makes a walk inexact.
 export interface AliasWalk {
   // The local the identifier names, then each local it aliases in turn.
   // The last is where the walk ended.
@@ -299,9 +302,9 @@ export interface ImportBinding {
 // What an identifier's binding imports from a relative module, reached
 // through any chain of aliases (walkAliases), such as `const ask =
 // askEuropePmc`, `const ask = owed.askEuropePmc` or
-// `const { askEuropePmc: ask } = owed`. Null for any other binding,
-// including a destructured name with a default, which may not be the
-// import.
+// `const { askEuropePmc: ask } = owed`. A destructured name with a
+// default, `const { askEuropePmc: ask = other } = owed`, may not be the
+// import, so it comes back inexact. Null for any other binding.
 export function importOf(
   identifier: TSESTree.Identifier,
   resolver: Resolver,
@@ -417,7 +420,8 @@ function within(node: TSESTree.Node, outer: TSESTree.Node): boolean {
 // What a declarator binds `name` to, when it aliases an import through more
 // than a plain identifier, which walkAliases follows: a name read from a
 // namespace import, or a name destructured from one at the top of an object
-// pattern. It reads through the wrappers unwrapped takes off.
+// pattern, with or without a default. It reads through the wrappers unwrapped
+// takes off.
 function aliasOf(
   declarator: TSESTree.VariableDeclarator,
   name: TSESTree.Identifier,
@@ -434,9 +438,15 @@ function aliasOf(
   ) {
     return null;
   }
+  // A name with a default may hold the default instead, so it binds the
+  // member only inexactly: a rule that asks for an exact walk refuses it.
   const key = destructuredKey(id, name, "exact");
-  if (key === null) return null;
-  return memberOf(importOf(init, resolver, seen, true), key);
+  const withDefault = key === null;
+  const member = memberOf(
+    importOf(init, resolver, seen, true),
+    key ?? destructuredKey(id, name, "with-default"),
+  );
+  return member === null || !withDefault ? member : { ...member, exact: false };
 }
 
 // The constant key an object pattern destructures `name` from, at its top
@@ -513,13 +523,15 @@ export function withoutExtension(path: string): string {
 
 // True when `fn` is an argument a step helper runs inside its step, read
 // through the wrappers unwrapped takes off, as in `(async () => {...}) as F`.
+// `walk` is passed on to stepHelperOf.
 export function isStepHelperCallback(
   call: TSESTree.Node,
   fn: TSESTree.Node,
   resolver: Resolver,
+  walk: "exact" | "any" = "exact",
 ): boolean {
   if (call.type !== AST_NODE_TYPES.CallExpression) return false;
-  const helper = stepHelperOf(call, resolver);
+  const helper = stepHelperOf(call, resolver, walk);
   const callback = unwrapped(fn);
   return (
     helper?.callbacks.some((at) => {
