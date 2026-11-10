@@ -27,8 +27,6 @@ describe("the eval workflow", () => {
     expect(JSON.stringify(steps)).toContain("secrets.AWS_EVAL_ROLE_ARN");
   });
 
-  // The private bucket is grantlink-text-<account id>, built from the
-  // account the role is in, as the app stack names it (#43).
   // Besides the role, the eval reads one secret: its own model key, with
   // its own credit limit (#328). The key's name is left unwritten here, as
   // no test in the gate names a key (code-and-tests.md).
@@ -65,7 +63,7 @@ describe("the eval workflow", () => {
 
   // test/role-credentials.static.ts checks the assume step builds the
   // bucket's name after it masks the account.
-  it("takes the private bucket's name from the assume step, not a variable", () => {
+  it("does not read the bucket's name from a variable of its own", () => {
     expect(readRepoFile("scripts/eval-snapshot.sh")).not.toContain(
       "PRIVATE_BUCKET_NAME",
     );

@@ -118,7 +118,7 @@ describe("the run reads the funding text bucket", () => {
   });
 
   // test/role-credentials.static.ts checks the masks and the bucket's name.
-  it("never traces the shell", () => {
+  it("stops on the first error and never traces the shell", () => {
     const run = assume?.run ?? "";
     expect(run).toMatch(/^set -euo pipefail$/mu);
     expect(text).not.toMatch(/\bset -x\b/u);
