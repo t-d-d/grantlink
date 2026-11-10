@@ -1289,16 +1289,17 @@ describe("a paper that fails logs why (#378)", () => {
     const stalls = europePmc({
       clock: instant,
       fetch: () =>
-        Promise.resolve({
-          ok: true,
-          status: 200,
-          headers: new Headers(),
-          body: null,
-          text: () =>
-            Promise.reject(
-              new DOMException("The operation timed out.", "TimeoutError"),
-            ),
-        } as unknown as Response),
+        Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              pull(controller) {
+                controller.error(
+                  new DOMException("The operation timed out.", "TimeoutError"),
+                );
+              },
+            }),
+          ),
+        ),
     });
     fake.deps.europePmc = {
       search: real.search.bind(real),

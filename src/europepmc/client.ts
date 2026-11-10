@@ -269,8 +269,6 @@ export function europePmc(
         });
         if (response.ok) body = await response.text();
       } catch (error) {
-        // Failed on the way, before the reply's headers or while its body
-        // was read.
         response = undefined;
         failure = error instanceof Error ? error.message : String(error);
         last =

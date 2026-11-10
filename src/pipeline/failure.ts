@@ -23,13 +23,10 @@ export type ReadOrFailed<T> =
   { read: T } | { failed: PaperFailure; waitSeconds: number };
 
 function why(error: unknown): Pick<PaperFailure, "why" | "status"> {
-  if (!(error instanceof EuropePmcError)) {
-    // A reply whose body timed out as it was read.
-    if (error instanceof Error && error.name === "TimeoutError") {
-      return { why: "timeout" };
-    }
-    return { why: "code" };
-  }
+  // Europe PMC's client wraps every failure on the way, a reply's body
+  // included (#389), so anything else is a fault in the code or another
+  // service.
+  if (!(error instanceof EuropePmcError)) return { why: "code" };
   const { last } = error;
   if (typeof last === "number") return { why: "answered", status: last };
   if (last === "timeout") return { why: "timeout" };
