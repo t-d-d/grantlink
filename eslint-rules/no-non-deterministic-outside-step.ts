@@ -656,9 +656,11 @@ function copiesRest(pattern: TSESTree.ObjectPattern): boolean {
 // that gets it may read the source from unseen. The rest of a pattern,
 // `const { ...rest } = c`, copies its members, so it counts. An export by
 // default and an alias whose declaration is exported are left to
-// checkDefault and exportsUnfollowed, which report those.
+// checkDefault and exportsUnfollowed, which report those. `path` is the
+// global path the node reads.
 function passedOn(
   node: TSESTree.Node,
+  path: readonly string[],
   resolver: Resolver,
   holder = false,
 ): boolean {
@@ -705,10 +707,7 @@ function passedOn(
       return parent.left.type === AST_NODE_TYPES.ObjectPattern
         ? callsThrough(parent.left) || (holder && copiesRest(parent.left))
         : parent.left.type !== AST_NODE_TYPES.Identifier ||
-            !samePath(
-              pathOf(parent.left, resolver, new Set()),
-              pathOf(outer, resolver, new Set()),
-            );
+            !samePath(pathOf(parent.left, resolver, new Set()), path);
     case AST_NODE_TYPES.VariableDeclarator: {
       if (parent.init !== outer) return true;
       if (parent.id.type === AST_NODE_TYPES.ObjectPattern) {
@@ -736,7 +735,7 @@ function passedOn(
         outermost(parent).parent?.type !== AST_NODE_TYPES.ExpressionStatement ||
         callsThrough(parent.left) ||
         (holder && copiesRest(parent.left)) ||
-        givesSource(parent.left, pathOf(outer, resolver, new Set()))
+        givesSource(parent.left, path)
       );
     case AST_NODE_TYPES.ExportDefaultDeclaration:
     case AST_NODE_TYPES.TSExportAssignment:
@@ -748,13 +747,11 @@ function passedOn(
 
 // True when an object pattern takes, from what it destructures, a source,
 // `Date` or an object that holds one, under a key at its top, `{ random }`
-// from `Math` or `{ Math: { PI } }` from `globalThis`, or when what it
-// destructures has no known path.
+// from `Math` or `{ Math: { PI } }` from `globalThis`.
 function givesSource(
   pattern: TSESTree.ObjectPattern,
-  base: readonly string[] | null,
+  base: readonly string[],
 ): boolean {
-  if (base === null) return true;
   return pattern.properties.some((property) => {
     if (property.type !== AST_NODE_TYPES.Property) return false;
     const key = keyName(property.key, property.computed);
@@ -864,7 +861,11 @@ export const noNonDeterministicOutsideStep = createRule({
     ) => {
       const date = namesDate(path);
       const passed = date ? "Date" : holderOf(path);
-      if (passed !== undefined && passedOn(node, context, !date)) {
+      if (
+        passed !== undefined &&
+        path !== null &&
+        passedOn(node, path, context, !date)
+      ) {
         report(node, passed, exportedSource(node, context, !date));
       }
     };

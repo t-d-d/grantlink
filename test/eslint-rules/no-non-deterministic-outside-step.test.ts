@@ -809,6 +809,30 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "assigns from Math, by destructuring, a member under a key the rule cannot name",
+          code: `let r;
+          ({ [k]: r } = Math);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from Math, by destructuring, in a loop's head rather than a statement of its own",
+          code: `let PI;
+          for (({ PI } = Math); ; ) {}`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
           name: "assigns a copy of Math through a rest in a nested pattern's default, destructured from globalThis",
           code: `let m;
           ({ x: { ...m } = Math } = globalThis);`,
