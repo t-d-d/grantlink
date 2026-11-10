@@ -652,7 +652,9 @@ function realPath(path: string): string {
 // The variable a write lands in, through members and the wrappers unwrapped
 // takes off: `found` in `found!.push(1)`, `(found as T[]).push(1)` and
 // `totals!.papers += 1`.
-export function rootIdentifier(node: TSESTree.Node): TSESTree.Identifier | undefined {
+export function rootIdentifier(
+  node: TSESTree.Node,
+): TSESTree.Identifier | undefined {
   let current = unwrapped(node);
   while (current.type === AST_NODE_TYPES.MemberExpression)
     current = unwrapped(current.object);

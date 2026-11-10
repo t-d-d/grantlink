@@ -541,21 +541,20 @@ function assignmentOf(
   // left side it is.
   let target: TSESTree.Node = parent;
   for (;;) {
-    const above: TSESTree.Node | undefined = target.parent;
+    const above: TSESTree.Node = target.parent;
     if (
-      above?.type === AST_NODE_TYPES.ObjectPattern ||
-      above?.type === AST_NODE_TYPES.ArrayPattern ||
-      above?.type === AST_NODE_TYPES.RestElement ||
-      (above?.type === AST_NODE_TYPES.Property &&
+      above.type === AST_NODE_TYPES.ObjectPattern ||
+      above.type === AST_NODE_TYPES.ArrayPattern ||
+      above.type === AST_NODE_TYPES.RestElement ||
+      (above.type === AST_NODE_TYPES.Property &&
         above.value === target &&
         above.parent.type === AST_NODE_TYPES.ObjectPattern) ||
-      (above?.type === AST_NODE_TYPES.AssignmentPattern &&
-        above.left === target)
+      (above.type === AST_NODE_TYPES.AssignmentPattern && above.left === target)
     ) {
       target = above;
       continue;
     }
-    return above?.type === AST_NODE_TYPES.AssignmentExpression &&
+    return above.type === AST_NODE_TYPES.AssignmentExpression &&
       above.left === target
       ? above
       : null;
