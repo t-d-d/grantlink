@@ -180,23 +180,18 @@ export async function takeSnapshot(
   // nothing then has asked Europe PMC since gold set A's last refusal. If
   // the manifest write throws, the run loses what this returns, so the
   // snapshot waits that out before it throws (#284).
-  let written: { manifestSha256: string };
   try {
-    written = await ctx.step(
+    const { manifestSha256 } = await ctx.step(
       "snapshot-manifest",
       async () => writeManifest(deps, entries),
       { retryStrategy: storeRetry },
     );
+    return {
+      snapshot: { taken: true, papers: entries.length, manifestSha256 },
+      owed: due,
+    };
   } catch (error) {
     if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
     throw error;
   }
-  return {
-    snapshot: {
-      taken: true,
-      papers: entries.length,
-      manifestSha256: written.manifestSha256,
-    },
-    owed: due,
-  };
 }
