@@ -132,6 +132,10 @@ describe("finding which linked grants a paper prints", () => {
       "A2019",
       "<funding-source>\n                    <institution-wrap>\n                      <institution>Cancer Research UK</institution>\n                    </institution-wrap>\n                  </funding-source>\n                  <award-id>2019</award-id>",
     ],
+    // A dash the rules read as a hyphen prints the hyphen in a grant
+    // (#581).
+    ["CTRQQR-2021/100010", "<p>CTRQQR\u20132021/100010</p>"],
+    ["CTRQQR-2021/100010", "<p>CTRQQR\u22122021/100010</p>"],
   ])("finds %s printed in %s", (grant, article) => {
     expect(printedGrants([grant], article)).toEqual([grant]);
   });
@@ -157,6 +161,16 @@ describe("finding which linked grants a paper prints", () => {
     ["A12345", "<p>Version 12345·6 of the tool.</p>"],
     ["A12345", "<p>Samples 12345—6 were run.</p>"],
     ["A12345", "<p>Samples 4−12345 were run.</p>"],
+    // The dot operator and the bullet operator can write a decimal too,
+    // and any decimal digit, not only 0 to 9, joins a number, as the rules
+    // read it (#581).
+    ["A12345", "<p>The ratio was 1\u22c512345 overall.</p>"],
+    ["A12345", "<p>The ratio was 1\u221912345 overall.</p>"],
+    ["A12345", "<p>Order \u0661\u066212345 arrived.</p>"],
+    ["A12345", "<p>Order 12345\u0663 arrived.</p>"],
+    ["A12345", "<p>The ratio was \u0661.12345 overall.</p>"],
+    ["A12345", "<p>Version 12345.\u0666 of the tool.</p>"],
+    ["CTRQQR-2021/100010", "<p>CTRQQR-2021/100010\u0661</p>"],
     // A bare number that reads as a year counts only near CRUK (#520).
     ["A2019", "<p>Recruited in 2019.</p>"],
     [

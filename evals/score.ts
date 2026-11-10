@@ -141,8 +141,13 @@ function withoutFrontMatter(article: string): string {
   );
 }
 
+// A letter from A to Z or any decimal digit, not only 0 to 9, as the rules
+// read a digit (#368, #581). A form is not printed where one is joined to
+// it.
+const JOINED = String.raw`[A-Za-z\p{Nd}]`;
+
 // A form as a pattern that ignores case and spaces, with a slash written
-// any way canonical reads one, and nothing alphanumeric either side of it.
+// any way canonical reads one, and nothing JOINED either side of it.
 // A space may not split a run of digits, or "1 2345" in a sentence, or two
 // table cells, would read as 12345.
 function standingAlone(form: string): RegExp {
@@ -157,21 +162,25 @@ function standingAlone(form: string): RegExp {
       return `${between}${one}`;
     })
     .join("");
-  return new RegExp(`(?<![A-Za-z0-9])${pattern}(?![A-Za-z0-9])`, "iu");
+  return new RegExp(`(?<!${JOINED})${pattern}(?!${JOINED})`, "iu");
 }
 
 // A bare number with a dot or a hyphen and then a digit on either side of
 // it sits in a decimal, a range or a DOI, so it is not printed there
-// (#520). A middle dot writes a decimal too, and a hyphen may be any dash
-// the rules read as one (#556).
-const JOINER = `[.\u00b7${DASHES}-]`;
+// (#520). A middle dot, a dot operator or a bullet operator writes a
+// decimal too (#556, #581). Every dash the rules read as a hyphen is a
+// hyphen by the time this reads the text.
+const JOINER = "[.\u00b7\u22c5\u2219-]";
 
 function bareNumber(digits: string): RegExp {
   return new RegExp(
-    `(?<![A-Za-z0-9]|\\d${JOINER})${digits}(?![A-Za-z0-9]|${JOINER}\\d)`,
+    `(?<!${JOINED}|\\p{Nd}${JOINER})${digits}(?!${JOINED}|${JOINER}\\p{Nd})`,
     "giu",
   );
 }
+
+// Any dash the rules read as a hyphen, as normalise turns it into one.
+const UNICODE_DASH = new RegExp(`[${DASHES}]`, "gu");
 
 // A bare number that could be a year counts only within this many
 // characters of a name the rules read for the funder (#520).
@@ -202,17 +211,19 @@ function printedAs(form: string, text: string, names: Span[]): boolean {
 // there, ignoring case and spaces (#502, #503, #555). A grant cited only by
 // another paper is not printed. Each markup tag reads as a space, and any
 // run of spaces as one, so a tag inside a grant does not hide it and
-// indentation does not part a year from the funder's name. A bare number
-// in a decimal, a range or a DOI, with a dot, a middle dot or any dash the
-// rules read as a hyphen, or one that reads as a year far from the
-// funder's name, is not printed (#520, #556).
+// indentation does not part a year from the funder's name. Any dash the
+// rules read as a hyphen reads as one here too, so a grant printed with an
+// en dash is printed (#581). A bare number in a decimal, a range or a DOI,
+// or one that reads as a year far from the funder's name, is not printed
+// (#520, #556).
 export function printedGrants(
   grants: readonly string[],
   article: string,
 ): string[] {
   const text = withoutReferenceLists(withoutFrontMatter(article))
     .replace(/<[^>]*>/gu, " ")
-    .replace(/\s+/gu, " ");
+    .replace(/\s+/gu, " ")
+    .replace(UNICODE_DASH, "-");
   const names = [...text.matchAll(FUNDER_NAME)].map((m) => ({
     start: m.index,
     end: m.index + m[0].length,
