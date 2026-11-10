@@ -687,6 +687,37 @@ describe("the rules", () => {
     },
   );
 
+  // The same holds at the end: a hyphen and digits, or a decimal point and
+  // a digit, after it makes it the start of a longer one (#577).
+  it.each([["Funded by CRUK, 12345-67."], ["Funded by CRUK, 12345.6."]])(
+    "leaves a bare number the metadata gives where the text goes on past it, in %s",
+    (text) => {
+      expect(
+        findReferences({
+          text: [text],
+          awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  it.each([
+    ["Funded by CRUK, 12345 and the Example Trust."],
+    ["Funded by CRUK (12345)."],
+    ["Funded by CRUK, 12345."],
+    ["Funded by CRUK, 12345, and the Example Trust."],
+  ])(
+    "reads a bare number the metadata gives before a space, a bracket, a full stop or a comma, in %s",
+    (text) => {
+      expect(
+        findReferences({
+          text: [text],
+          awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
+        }).map(({ normalised }) => normalised),
+      ).toEqual(["12345"]);
+    },
+  );
+
   it.each([
     ["Funded by CRUK, 123456.", "123456"],
     ["Funded by CRUK (CR 234567).", "234567"],
