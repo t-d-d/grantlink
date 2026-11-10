@@ -233,7 +233,10 @@ export function europePmc(
   let interval = INTERVAL_MS;
   let sent = 0;
 
-  async function request(url: URL): Promise<Response> {
+  // A request's reply body. A body that times out or breaks off as it is
+  // read failed on the way like a request that never reached Europe PMC,
+  // so it is tried again the same way (#389).
+  async function request(url: URL): Promise<string> {
     if (url.protocol !== "https:" || !HOSTS.includes(url.host)) {
       throw new Error(`refusing to call ${url.host}: not Europe PMC`);
     }
@@ -257,13 +260,16 @@ export function europePmc(
       if (wait > 0) await clock.sleep(wait);
       const started = clock.now();
       let response: Response | undefined;
+      let body: string | undefined;
       sent += 1;
       try {
         response = await fetch(url, {
           headers: { "User-Agent": USER_AGENT },
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });
+        if (response.ok) body = await response.text();
       } catch (error) {
+        response = undefined;
         failure = error instanceof Error ? error.message : String(error);
         last =
           error instanceof Error && error.name === "TimeoutError"
@@ -279,7 +285,7 @@ export function europePmc(
           : Math.max(INTERVAL_MS, interval / 2);
       next = clock.now() + interval;
 
-      if (response?.ok) return response;
+      if (body !== undefined) return body;
       if (response !== undefined) {
         failure = `Europe PMC answered ${String(response.status)}`;
         last = response.status;
@@ -331,7 +337,7 @@ export function europePmc(
       url.searchParams.set("format", "json");
       url.searchParams.set("pageSize", String(pageSize));
       url.searchParams.set("cursorMark", cursor);
-      const reply = searchReply.parse(await (await request(url)).json());
+      const reply = searchReply.parse(JSON.parse(await request(url)));
       const results = reply.resultList.result;
       // A result with no PMCID has no full text in Europe PMC, so it is
       // not a paper to read. One with a malformed PMCID is counted.
@@ -363,7 +369,7 @@ export function europePmc(
 
     async fullText(pmcid) {
       if (!isPmcid(pmcid)) throw new Error(`not a PMCID: ${pmcid}`);
-      return (await request(new URL(`${pmcid}/fullTextXML`, BASE))).text();
+      return request(new URL(`${pmcid}/fullTextXML`, BASE));
     },
 
     async grants(pmcid) {
@@ -372,7 +378,7 @@ export function europePmc(
       url.searchParams.set("query", `PMCID:${pmcid}`);
       url.searchParams.set("resultType", "core");
       url.searchParams.set("format", "json");
-      const reply = grantsReply.parse(await (await request(url)).json());
+      const reply = grantsReply.parse(JSON.parse(await request(url)));
       // Europe PMC can list one grant more than once, as for each holder.
       // Each counts once, or it would weigh twice in gold set A's recall.
       const ids = reply.resultList.result.flatMap((result) =>
