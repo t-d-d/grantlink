@@ -56,6 +56,13 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         export { ask };`,
       },
       {
+        name: "exports a local alias of askEuropePmc under the helper's own name from its own module",
+        filename: "src/run/owed.ts",
+        code: `async function askEuropePmc() {}
+        const impl = askEuropePmc;
+        export { impl as askEuropePmc };`,
+      },
+      {
         name: "exports a local alias of another function in the helper's module",
         filename: "src/run/owed.ts",
         code: `function somethingElse() {}
@@ -166,6 +173,33 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         code: `async function askEuropePmc() {}
         const first = askEuropePmc;
         const ask = first;
+        export { ask };`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports a local alias of askEuropePmc when askEuropePmc is itself an alias in its own module",
+        filename: "src/run/owed.ts",
+        code: `async function impl() {}
+        const askEuropePmc = impl;
+        const ask = askEuropePmc;
+        export { ask };`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports a constant that aliases a local alias of askEuropePmc from its own module",
+        filename: "src/run/owed.ts",
+        code: `async function askEuropePmc() {}
+        const first = askEuropePmc;
+        export const ask = first;`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports a local alias of askEuropePmc that is written again later from its own module",
+        filename: "src/run/owed.ts",
+        code: `async function askEuropePmc() {}
+        function somethingElse() {}
+        let ask = askEuropePmc;
+        ask = somethingElse;
         export { ask };`,
         errors: [{ messageId: "reExport" }],
       },

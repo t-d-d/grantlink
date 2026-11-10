@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint } from "@typescript-eslint/utils";
 import type { TSESTree } from "@typescript-eslint/utils";
+import type { StepHelper } from "./create-rule.ts";
 import {
   createRule,
   exportedName,
@@ -22,7 +23,9 @@ import {
 // namespace import of its module or a helper read from one, whether by name,
 // as a constant or as the default, and `export { askEuropePmc as ask }`,
 // `export const ask = askEuropePmc` or `export default askEuropePmc` in
-// owed.ts itself. A type-only export carries no function, so it passes.
+// owed.ts itself, directly or through a chain of local aliases such as
+// `const ask = askEuropePmc; export { ask }`. A type-only export carries no
+// function, so it passes.
 export const noStepHelperReExport = createRule({
   name: "no-step-helper-re-export",
   meta: {
@@ -43,13 +46,17 @@ export const noStepHelperReExport = createRule({
     const report = (node: TSESTree.Node, module: string): void => {
       context.report({ node, messageId: "reExport", data: { module } });
     };
-    // The name a chain of local aliases such as `const ask = askEuropePmc`
-    // ends at. A later write to an alias does not stop the chain: the rule
-    // refuses what the export may pass on.
-    const aliasedName = (
+    // This module's own helper that an identifier names, directly or through
+    // a chain of local aliases such as `const ask = askEuropePmc`. Any name
+    // along the chain counts, so an alias of askEuropePmc counts even when
+    // askEuropePmc is itself an alias. A later write to an alias does not
+    // stop the chain: the rule refuses what the export may pass on.
+    const localHelper = (
       identifier: TSESTree.Identifier,
       seen: ReadonlySet<TSESLint.Scope.Variable> = new Set(),
-    ): string => {
+    ): StepHelper | null => {
+      const helper = helperNamed(here, identifier.name);
+      if (helper !== null) return helper;
       const variable = lookup(
         identifier.name,
         context.sourceCode.getScope(identifier),
@@ -63,9 +70,9 @@ export const noStepHelperReExport = createRule({
         def.node.id !== def.name ||
         def.node.init?.type !== AST_NODE_TYPES.Identifier
       ) {
-        return identifier.name;
+        return null;
       }
-      return aliasedName(def.node.init, new Set([...seen, variable]));
+      return localHelper(def.node.init, new Set([...seen, variable]));
     };
     // The module whose helper an exported value passes on under a name of
     // its own choosing, or null. That is an imported helper, a namespace
@@ -75,7 +82,7 @@ export const noStepHelperReExport = createRule({
       if (value.type === AST_NODE_TYPES.Identifier) {
         const binding = importOf(value, context);
         if (binding === null) {
-          return helperNamed(here, aliasedName(value)) === null ? null : here;
+          return localHelper(value) === null ? null : here;
         }
         const passes =
           binding.name === null
@@ -125,11 +132,12 @@ export const noStepHelperReExport = createRule({
             continue;
           }
           // This module's own helper, exported under its own name, is how
-          // callers reach it.
-          if (
-            helperNamed(here, local) !== null &&
-            exportedName(specifier.exported) === local
-          ) {
+          // callers reach it, whether the local is the helper or an alias.
+          const own =
+            specifier.local.type === AST_NODE_TYPES.Identifier
+              ? localHelper(specifier.local)
+              : null;
+          if (own !== null && exportedName(specifier.exported) === own.name) {
             continue;
           }
           checkValue(specifier, specifier.local);
