@@ -68,6 +68,24 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           name: "parses a fixed date",
           code: `const since = new Date("2020-01-01");`,
         },
+        {
+          name: "reads the clock as a string inside a step",
+          code: `async function run(ctx: any) {
+            const at = await ctx.step("at", async () => Date());
+          }`,
+        },
+        {
+          name: "calls and constructs a local Date that shadows the global",
+          code: `async function run(ctx: any) {
+            const Date = () => "fixed";
+            const a = Date();
+            const b = new (Date as any)();
+          }`,
+        },
+        {
+          name: "calls a Date parameter that shadows the global",
+          code: `function stamp(Date: () => string) { return Date(); }`,
+        },
       ],
       invalid: [
         {
@@ -205,6 +223,28 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
             {
               messageId: "nonDeterministicOutsideStep",
               data: { op: "new Date()" },
+            },
+          ],
+        },
+        {
+          name: "reads the clock as a string by calling Date without new",
+          code: `async function run(ctx: any) {
+            const a = Date();
+            const b = (Date as any)();
+            const c = Date!();
+          }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date()" },
             },
           ],
         },

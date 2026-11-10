@@ -3,6 +3,7 @@ import type { TSESTree } from "@typescript-eslint/utils";
 import {
   createRule,
   insideCheckpointedCallback,
+  lookup,
   unwrapped,
 } from "./create-rule.ts";
 
@@ -57,6 +58,19 @@ export const noNonDeterministicOutsideStep = createRule({
   },
   defaultOptions: [],
   create(context) {
+    // A name `Date` that a local declaration shadows is not the clock. A
+    // global variable has no definitions, even when the config lists it.
+    const isGlobalDate = (
+      callee: TSESTree.Node,
+      at: TSESTree.Node,
+    ): boolean => {
+      const name = unwrapped(callee);
+      if (name.type !== AST_NODE_TYPES.Identifier || name.name !== "Date") {
+        return false;
+      }
+      const variable = lookup("Date", context.sourceCode.getScope(at));
+      return variable === null || variable.defs.length === 0;
+    };
     const report = (node: TSESTree.Node, op: string): void => {
       if (insideCheckpointedCallback(node, context)) return;
       context.report({
@@ -66,17 +80,16 @@ export const noNonDeterministicOutsideStep = createRule({
       });
     };
     return {
-      // The callee is read through unwrapped too, so `new (Date as any)()`
-      // and `new Date!()` count.
+      // The callee is read through unwrapped too, so `new (Date as any)()`,
+      // `new Date!()` and `(Date as any)()` count. `Date()` without `new`
+      // returns the current time as a string, so it reads the clock too.
       NewExpression(node) {
-        const callee = unwrapped(node.callee);
-        if (
-          callee.type === AST_NODE_TYPES.Identifier &&
-          callee.name === "Date" &&
-          node.arguments.length === 0
-        ) {
+        if (node.arguments.length === 0 && isGlobalDate(node.callee, node)) {
           report(node, "new Date()");
         }
+      },
+      CallExpression(node) {
+        if (isGlobalDate(node.callee, node)) report(node, "Date()");
       },
       // A call reports through its callee, so `Date.now()` and a bare
       // `Math.random` passed as a value each report once.
