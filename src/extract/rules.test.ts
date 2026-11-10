@@ -158,6 +158,12 @@ describe("the rules", () => {
     "Funded by CRUK (CRUK-2019).",
     "Funded by CRUK (CRUK/12/2019).",
     "Funded by CRUK (CRUK/AB12/SMITH/2).",
+    // Deeper in the form, the read does not fall back to its front.
+    "Funded by CRUK (CRUK/12/34/2019).",
+    "Funded by CRUK (CRUK/12/AB12/SMITH/2).",
+    "Funded by CRUK (CRUK/1/2/3/SMITH/2).",
+    // A later CRUK- piece takes no digit from an earlier one.
+    "Funded by CRUK (CRUK/12/CRUK/AB).",
   ])(
     "leaves a CRUK- form with a part of no digit, or a part that is a year: %j",
     (text) => {
