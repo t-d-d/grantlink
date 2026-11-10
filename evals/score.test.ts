@@ -144,6 +144,13 @@ describe("finding which linked grants a paper prints", () => {
     ["A12345", "<p>doi.org/10.1038/s41467-020-12345-6</p>"],
     ["A12345", "<p>Version 12345.6 of the tool.</p>"],
     ["A12345", "<p>Samples 4-12345 were run.</p>"],
+    // A middle dot can write a decimal, and a dash the rules read as a
+    // hyphen can write a range or a DOI (#556).
+    ["C1/A23456", "<p>The ratio was 1·23456 overall.</p>"],
+    ["A12345", "<p>Pages 4–12345.</p>"],
+    ["A12345", "<p>Version 12345·6 of the tool.</p>"],
+    ["A12345", "<p>Samples 12345—6 were run.</p>"],
+    ["A12345", "<p>Samples 4−12345 were run.</p>"],
     // A bare number that reads as a year counts only near CRUK (#520).
     ["A2019", "<p>Recruited in 2019.</p>"],
     [

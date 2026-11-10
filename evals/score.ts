@@ -1,5 +1,6 @@
 import {
   ANY_CASE_FUNDER_NAME,
+  DASHES,
   findReferences,
   hasReferenceShape,
   type FundingSections,
@@ -158,10 +159,14 @@ function standingAlone(form: string): RegExp {
 }
 
 // A bare number with a dot or a hyphen and then a digit on either side of
-// it sits in a decimal or a DOI, so it is not printed there (#520).
+// it sits in a decimal, a range or a DOI, so it is not printed there
+// (#520). A middle dot writes a decimal too, and a hyphen may be any dash
+// the rules read as one (#556).
+const JOINER = `[.\u00b7${DASHES}-]`;
+
 function bareNumber(digits: string): RegExp {
   return new RegExp(
-    `(?<![A-Za-z0-9]|\\d[.-])${digits}(?![A-Za-z0-9]|[.-]\\d)`,
+    `(?<![A-Za-z0-9]|\\d${JOINER})${digits}(?![A-Za-z0-9]|${JOINER}\\d)`,
     "giu",
   );
 }
