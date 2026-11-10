@@ -735,6 +735,46 @@ describe("the rules", () => {
     expect(findReferences(sections(text))).toEqual([]);
   });
 
+  // Another funder named after the funder's own name, with "and", "with" or
+  // "&" before it, owns the number that follows (#525).
+  it.each([
+    "Funded by Cancer Research UK (C1234/A5678) and the Wellcome Trust (grant 203141).",
+    "Supported by Cancer Research UK and the European Research Council (grant agreement No 682398).",
+    "Supported by Cancer Research UK and NIH grant 123456.",
+    "Supported by Cancer Research UK with the Example Trust (grant 12345).",
+    "Supported by CRUK & Example Foundation grant 12345.",
+    "Supported by Cancer Research UK (CRUK) and Example Trust grant 12345.",
+    "Funded by Cancer Research UK Example Centre and the Sample Trust grant 12345.",
+    "Funded by Cancer Research UK Programme Grant and the Example Council grant 12345.",
+    "Funded by Cancer Research UK and by the Example Trust grant 12345.",
+    "Funded by Cancer Research UK and from the Example Trust grant 12345.",
+    "Funded by Cancer Research UK as well as the Example Trust grant 12345.",
+    "Funded by Cancer Research UK and  the Example Trust grant 12345.",
+    "Funded by Cancer Research UK funds  and the Example Trust grant 12345.",
+    "Funded by CRUK&Example Foundation grant 12345.",
+  ])("leaves a bare number after another funder's name: %j", (text) => {
+    expect(
+      findReferences(sections(text)).filter(({ format }) => format === "n"),
+    ).toEqual([]);
+  });
+
+  it.each([
+    "Supported by Cancer Research UK with grant 12345.",
+    "Supported by Cancer Research UK and its grant 12345.",
+    "Supported by Cancer Research UK with Grant 12345.",
+    "Supported by Cancer Research UK and Project Grant 12345.",
+    "Supported by Cancer Research UK with Award No. 12345.",
+    "Supported by Cancer Research UK funding with Grant 12345.",
+    "Cancer Research UK (CRUK) Example  and Sample Committee (Award No. 12345).",
+  ])(
+    "reads a bare number after a word that names no other funder: %j",
+    (text) => {
+      expect(findReferences(sections(text))).toEqual([
+        { asWritten: "12345", normalised: "12345", format: "n" },
+      ]);
+    },
+  );
+
   it("leaves a year in the funder's brackets or after a grant word", () => {
     expect(
       findReferences(
