@@ -186,17 +186,20 @@ describe("the eval's read of the live release's report", () => {
 
 // #233: a pull request's tree can hold a live.json. The comment compares
 // with a live report only when the live step read one, and otherwise gives
-// the live step's reason. The node stub records its arguments, and the gh
-// stub finds no earlier comment.
+// the live step's reason. The node stub records its arguments and, like
+// check.ts, reads the live report it is given, and the gh stub finds no
+// earlier comment.
 describe("the eval's comment", () => {
   const run = script(
     evalWorkflow,
     "eval",
     "Comment with CI's scores beside the live release's",
   );
+  const live = script(evalWorkflow, "eval", "live");
   const stubs = {
-    node: 'echo "$*" >> "$RUNNER_TEMP/node-args"',
+    node: 'echo "$*" >> "$RUNNER_TEMP/node-args"\n[ "$4" = --no-live ] || cat "$4" > /dev/null',
     gh: ":",
+    curl: `cat <<'EOF'\n${JSON.stringify({ report: { fingerprint: "live" } })}\nEOF`,
   };
   const inTree = `echo '{"fingerprint":"from-the-tree"}' > live.json`;
   const args = (temp: string) =>
@@ -218,17 +221,34 @@ describe("the eval's comment", () => {
     },
   );
 
+  // The live step runs first, so a change to where it writes the report
+  // fails here rather than on every pull request.
   it("compares with the report the live step wrote, not the tree's", () => {
     const { status, temp } = runStep(
       run,
       stubs,
-      { PR: "1", GITHUB_REPOSITORY: "o/r", NO_LIVE: "" },
-      `${inTree}\necho '{}' > "$RUNNER_TEMP/live.json"`,
+      {
+        PR: "1",
+        GITHUB_REPOSITORY: "o/r",
+        NO_LIVE: "",
+        RELEASE_URL: "https://example.test/release.json",
+      },
+      `${inTree}\n${live}`,
     );
     expect(status).toBe(0);
     expect(args(temp)).toBe(
       `evals/check.ts comment report.json ${join(temp, "live.json")}`,
     );
+  });
+
+  it("fails when the live step gave no reason and wrote no report", () => {
+    const { status } = runStep(
+      run,
+      stubs,
+      { PR: "1", GITHUB_REPOSITORY: "o/r", NO_LIVE: "" },
+      inTree,
+    );
+    expect(status).not.toBe(0);
   });
 });
 
