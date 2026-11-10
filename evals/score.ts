@@ -1,8 +1,8 @@
 import {
   ANY_CASE_FUNDER_NAME,
-  DASHES,
   findReferences,
   hasReferenceShape,
+  UNICODE_DASH,
   type FundingSections,
 } from "../src/extract/rules.ts";
 import type { RowId } from "./floors.ts";
@@ -178,9 +178,6 @@ function bareNumber(digits: string): RegExp {
     "giu",
   );
 }
-
-// Any dash the rules read as a hyphen, as normalise turns it into one.
-const UNICODE_DASH = new RegExp(`[${DASHES}]`, "gu");
 
 // A bare number that could be a year counts only within this many
 // characters of a name the rules read for the funder (#520).

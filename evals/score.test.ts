@@ -161,9 +161,10 @@ describe("finding which linked grants a paper prints", () => {
     ["A12345", "<p>Version 12345·6 of the tool.</p>"],
     ["A12345", "<p>Samples 12345—6 were run.</p>"],
     ["A12345", "<p>Samples 4−12345 were run.</p>"],
-    // The dot operator and the bullet operator can write a decimal too,
-    // and any decimal digit, not only 0 to 9, joins a number, as the rules
-    // read it (#581).
+    // The dot operator and the bullet operator can write a decimal too
+    // (#581). Any decimal digit, not only 0 to 9, joins a number at its
+    // edges, as the rules read one (#368), and beside a decimal point here,
+    // where the rules read only 0 to 9.
     ["A12345", "<p>The ratio was 1\u22c512345 overall.</p>"],
     ["A12345", "<p>The ratio was 1\u221912345 overall.</p>"],
     ["A12345", "<p>Order \u0661\u066212345 arrived.</p>"],
