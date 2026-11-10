@@ -112,21 +112,23 @@ export function stepHelperOf(
 // What an expression reads from a relative module, through the wrappers
 // unwrapped takes off: an identifier's import (importOf), or a name read
 // from a namespace import `<ns>.<name>` or `<ns>["<name>"]`. Null for
-// anything else.
+// anything else. `once` says the expression is read once, as an alias's
+// initial value, which importOf passes on.
 export function bindingOf(
   node: TSESTree.Node,
   resolver: Resolver,
   seen: ReadonlySet<TSESLint.Scope.Variable> = new Set(),
+  once = false,
 ): { module: string; name: string | null } | null {
   const value = unwrapped(node);
   if (value.type === AST_NODE_TYPES.Identifier) {
-    return importOf(value, resolver, seen);
+    return importOf(value, resolver, seen, once);
   }
   if (value.type !== AST_NODE_TYPES.MemberExpression) return null;
   const object = unwrapped(value.object);
   const name = memberName(value);
   if (object.type !== AST_NODE_TYPES.Identifier || name === null) return null;
-  return memberOf(importOf(object, resolver, seen), name);
+  return memberOf(importOf(object, resolver, seen, once), name);
 }
 
 // The expression a TypeScript wrapper or an optional chain holds, with
@@ -178,11 +180,14 @@ function keyName(key: TSESTree.Node, computed: boolean): string | null {
 // `const ask = askEuropePmc`, `const ask = owed.askEuropePmc` or
 // `const { askEuropePmc: ask } = owed`. Null for any other binding,
 // including a destructured name with a default, which may not be the
-// import.
+// import. When `once` is set, the identifier is read once, as another
+// alias's initial value, so a write that can only run after that read
+// does not change what the alias holds (#437).
 export function importOf(
   identifier: TSESTree.Identifier,
   resolver: Resolver,
   seen: ReadonlySet<TSESLint.Scope.Variable> = new Set(),
+  once = false,
 ): { module: string; name: string | null } | null {
   const variable = lookup(
     identifier.name,
@@ -200,7 +205,11 @@ export function importOf(
       resolver,
       new Set([...seen, variable]),
     );
-    return alias === null || reassigned(variable) ? null : alias;
+    if (alias === null) return null;
+    const writtenBefore = once
+      ? writtenBeforeRead(variable, identifier, def.node)
+      : reassigned(variable);
+    return writtenBefore ? null : alias;
   }
   if (def?.parent?.type !== AST_NODE_TYPES.ImportDeclaration) return null;
   const module = moduleOf(def.parent.source.value, resolver);
@@ -217,6 +226,62 @@ function reassigned(variable: TSESLint.Scope.Variable): boolean {
   return variable.references.some((ref) => ref.isWrite() && !ref.init);
 }
 
+// True when a write other than its declaration may run before this read of
+// the variable. It counts none only when every such write follows the read
+// in the same function that declares the variable, and no loop around the
+// read lacks the declaration in its body. A write in a nested function may
+// run at any time, a read in a function the variable outlives may run after
+// any write, and a loop runs a later write before its next read.
+function writtenBeforeRead(
+  variable: TSESLint.Scope.Variable,
+  identifier: TSESTree.Identifier,
+  declarator: TSESTree.Node,
+): boolean {
+  const read = variable.references.find((ref) => ref.identifier === identifier);
+  const scope = variable.scope.variableScope;
+  if (read?.from.variableScope !== scope) return true;
+  const writes = variable.references.filter(
+    (ref) => ref.isWrite() && !ref.init,
+  );
+  if (
+    writes.some(
+      (ref) =>
+        ref.from.variableScope !== scope ||
+        ref.identifier.range[0] < identifier.range[1],
+    )
+  ) {
+    return true;
+  }
+  return writes.length > 0 && inLoopWithout(identifier, declarator);
+}
+
+// True when a loop around the node lacks the declarator in its body.
+function inLoopWithout(
+  node: TSESTree.Node,
+  declarator: TSESTree.Node,
+): boolean {
+  // ESLint gives the program a null parent, so the walk stops on either.
+  for (let n = node.parent; n; n = n.parent) {
+    switch (n.type) {
+      case AST_NODE_TYPES.ForStatement:
+      case AST_NODE_TYPES.ForInStatement:
+      case AST_NODE_TYPES.ForOfStatement:
+      case AST_NODE_TYPES.WhileStatement:
+      case AST_NODE_TYPES.DoWhileStatement:
+        if (!within(declarator, n.body)) return true;
+        break;
+      default:
+        break;
+    }
+  }
+  return false;
+}
+
+// True when the node lies inside the other's source range.
+function within(node: TSESTree.Node, outer: TSESTree.Node): boolean {
+  return node.range[0] >= outer.range[0] && node.range[1] <= outer.range[1];
+}
+
 // What a declarator binds `name` to, when it aliases an import: the whole
 // of another identifier, a name read from a namespace import, or a name
 // destructured from one at the top of an object pattern. It reads through
@@ -229,7 +294,7 @@ function aliasOf(
 ): { module: string; name: string | null } | null {
   const { id } = declarator;
   if (declarator.init === null) return null;
-  if (id === name) return bindingOf(declarator.init, resolver, seen);
+  if (id === name) return bindingOf(declarator.init, resolver, seen, true);
   const init = unwrapped(declarator.init);
   if (
     id.type !== AST_NODE_TYPES.ObjectPattern ||
@@ -243,7 +308,7 @@ function aliasOf(
   );
   if (property === undefined) return null;
   return memberOf(
-    importOf(init, resolver, seen),
+    importOf(init, resolver, seen, true),
     keyName(property.key, property.computed),
   );
 }

@@ -192,6 +192,62 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
           await ask(ctx, "paper", "wait", r, async () => readPaper());
         }`,
       },
+      {
+        name: "awaits I/O inside askEuropePmc's read, through an alias read from a namespace local written later",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        let o: any = owed;
+        const ask = o.askEuropePmc;
+        o = null;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
+        name: "awaits I/O inside askEuropePmc's read, through an alias destructured from a namespace local written later",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        let o: any = owed;
+        const { askEuropePmc: ask } = o;
+        o = null;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
+        name: "awaits I/O inside askEuropePmc's read, through a chain of locals each written after the next reads it",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        let o: any = owed;
+        let p: any = o;
+        o = null;
+        const ask = p.askEuropePmc;
+        p = null;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
+      {
+        name: "awaits I/O inside askEuropePmc's read, through an alias in a loop that also declares the namespace local",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          for (const id of ids) {
+            let o: any = owed;
+            const ask = o.askEuropePmc;
+            o = null;
+            await ask(ctx, id, "wait", r, async () => {
+              return await readPaper();
+            });
+          }
+        }`,
+      },
     ],
     invalid: [
       {
@@ -323,6 +379,70 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         const b = a;
         async function run(ctx: any) {
           await a(ctx, "paper", "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits an alias read from a namespace local written before the read",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        let o: any = owed;
+        o = other;
+        const ask = o.askEuropePmc;
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits an alias read inside a function from a namespace local written outside it",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        let o: any = owed;
+        async function run(ctx: any) {
+          const ask = o.askEuropePmc;
+          await ask(ctx, "paper", "wait", r, async () => 1);
+        }
+        o = other;`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits an alias read from a namespace local that a function declared later writes",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        let o: any = owed;
+        swap();
+        const ask = o.askEuropePmc;
+        function swap() { o = other; }
+        async function run(ctx: any) {
+          await ask(ctx, "paper", "wait", r, async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits an alias read in a loop from a namespace local the loop writes",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          let o: any = owed;
+          for (const id of ids) {
+            const ask = o.askEuropePmc;
+            await ask(ctx, id, "wait", r, async () => 1);
+            o = other;
+          }
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits an alias read in a loop from a namespace local its head declares",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          for (let o: any = owed; o !== null; ) {
+            const ask = o.askEuropePmc;
+            await ask(ctx, "paper", "wait", r, async () => 1);
+            o = null;
+          }
         }`,
         errors: [{ messageId: "awaitOutsideStep" }],
       },
