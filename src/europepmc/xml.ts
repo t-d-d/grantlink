@@ -59,6 +59,7 @@ export function parseXml(xml: string): XmlElement {
   let attributes: XmlAttribute[] = [];
   let malformed = false;
   let cdata = false;
+  let openStart = -1;
   let openEnd = -1;
   const parser = new Parser(
     {
@@ -68,8 +69,11 @@ export function parseXml(xml: string): XmlElement {
         else malformed = true;
       },
       onopentag(name) {
+        // After a processing instruction, or a closing tag with white space
+        // before its >, the parser starts the next tag one place early, at
+        // that >, so the tag starts at the first < from there (#386).
         const opened = {
-          ...element(name, parser.startIndex),
+          ...element(name, xml.indexOf("<", parser.startIndex)),
           attributes,
           malformed,
         };
@@ -77,6 +81,7 @@ export function parseXml(xml: string): XmlElement {
         open.push(opened);
         attributes = [];
         malformed = false;
+        openStart = parser.startIndex;
         openEnd = parser.endIndex;
       },
       onclosetag(_name, implied) {
@@ -91,7 +96,7 @@ export function parseXml(xml: string): XmlElement {
             closed.malformed = true;
           }
         } else if (
-          parser.startIndex === closed.start &&
+          parser.startIndex === openStart &&
           parser.endIndex === openEnd
         ) {
           // A self-closing element closes where it opens.

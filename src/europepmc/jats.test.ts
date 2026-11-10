@@ -741,6 +741,14 @@ describe("reading JATS through an XML parser (#343)", () => {
     },
   );
 
+  it.each([
+    ["a processing instruction", "<?pi?>"],
+    ["a closing tag with white space before its >", "<label>1</label >"],
+  ])("finds a funding section by its < after %s (#386)", (_after, before) => {
+    const xml = `<body>${before}<sec sec-type="funding"><p>A1.</p></sec></body>`;
+    expect(isFundingSectionAt(xml, xml.indexOf("<sec"))).toBe(true);
+  });
+
   it("strips a title in any case (#292)", () => {
     expect(
       fundingSections(
