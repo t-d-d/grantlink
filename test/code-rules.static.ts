@@ -41,6 +41,21 @@ describe("fitness: durable bodies stay deterministic (durable-execution.md)", ()
   });
 });
 
+describe("fitness: a step helper is reached only from its own module (durable-execution.md)", () => {
+  const rule = "grantlink/no-step-helper-re-export";
+
+  it.each(["src/run/handler.ts", "src/pipeline/steps.ts", "src/index.ts"])(
+    "is an error in %s",
+    async (path) => {
+      expect(await severity(path, rule)).toBe(ERROR);
+    },
+  );
+
+  it("is off for a test", async () => {
+    expect(await severity("src/run/owed.int.ts", rule)).toBeUndefined();
+  });
+});
+
 describe("fitness: one way in to each store (storage.md)", () => {
   const rule = "grantlink/only-owner-imports";
 

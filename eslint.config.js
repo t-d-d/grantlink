@@ -85,6 +85,9 @@ export default defineConfig(
       ],
       // No text in logs (docs/constraints/personal-data.md).
       "grantlink/no-banned-log-fields": "error",
+      // A step helper is reached only from its own module, so the durable
+      // rules can see it (docs/constraints/durable-execution.md).
+      "grantlink/no-step-helper-re-export": "error",
     },
   },
   {
