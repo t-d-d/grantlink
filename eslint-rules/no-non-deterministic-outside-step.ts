@@ -696,9 +696,9 @@ export const noNonDeterministicOutsideStep = createRule({
             if (inner.type !== AST_NODE_TYPES.ObjectPattern) return false;
             const op = keys.map(opOf).find((found) => found !== undefined);
             if (op !== undefined) {
-              report(property.key, op);
+              report(property.key, op, false);
             } else if (keys.some(namesDate) && callsThrough(inner)) {
-              report(property.key, "Date");
+              report(property.key, "Date", false);
             }
             return false;
           },
