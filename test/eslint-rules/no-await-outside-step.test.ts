@@ -21,6 +21,20 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
           await ctx.step("fetch", async () => { return await fetchPaper(); });
         }`,
       },
+      {
+        name: "awaits askEuropePmc, whose only await is its step",
+        code: `async function run(ctx: any) {
+          const asked = await askEuropePmc(ctx, "paper", "wait", r, async () => readPaper());
+        }`,
+      },
+      {
+        name: "awaits I/O inside askEuropePmc's read, which runs as its step",
+        code: `async function run(ctx: any) {
+          await askEuropePmc(ctx, "paper", "wait", r, async () => {
+            return await readPaper();
+          });
+        }`,
+      },
     ],
     invalid: [
       {
@@ -41,6 +55,13 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         name: "awaits I/O in a step's name, which the body evaluates",
         code: `async function run(ctx: any) {
           await ctx.step(await nameFor(), async () => 1);
+        }`,
+        errors: [{ messageId: "awaitOutsideStep" }],
+      },
+      {
+        name: "awaits I/O in askEuropePmc's step name, which the body evaluates",
+        code: `async function run(ctx: any) {
+          await askEuropePmc(ctx, await nameFor(), "wait", r, async () => 1);
         }`,
         errors: [{ messageId: "awaitOutsideStep" }],
       },

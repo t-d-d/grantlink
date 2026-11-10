@@ -15,6 +15,14 @@ describe("fitness: no durable operation inside its own context's operation (dura
           });
         }`,
       },
+      {
+        name: "asks Europe PMC on a child context",
+        code: `async function run(ctx: any) {
+          await ctx.runInChildContext("paper", async (child: any) => {
+            await askEuropePmc(child, "fetch", "wait", r, async () => 1);
+          });
+        }`,
+      },
     ],
     invalid: [
       {
@@ -22,6 +30,24 @@ describe("fitness: no durable operation inside its own context's operation (dura
         code: `async function run(ctx: any) {
           await ctx.step("outer", async () => {
             await ctx.step("inner", async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
+        name: "calls a step on the same context inside askEuropePmc's read",
+        code: `async function run(ctx: any) {
+          await askEuropePmc(ctx, "paper", "wait", r, async () => {
+            await ctx.step("inner", async () => 1);
+          });
+        }`,
+        errors: [{ messageId: "sameContextUsage" }],
+      },
+      {
+        name: "asks Europe PMC on the same context inside a step",
+        code: `async function run(ctx: any) {
+          await ctx.step("outer", async () => {
+            await askEuropePmc(ctx, "paper", "wait", r, async () => 1);
           });
         }`,
         errors: [{ messageId: "sameContextUsage" }],

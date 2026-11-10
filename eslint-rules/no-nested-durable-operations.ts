@@ -5,6 +5,7 @@ import {
   createRule,
   DURABLE_METHODS,
   isMethodCallIn,
+  isStepHelperCall,
   lookup,
 } from "./create-rule.ts";
 
@@ -14,7 +15,9 @@ import {
 // same context replays out of step with the parent's checkpoints. Nest
 // through `runInChildContext` and use the child it hands you. The rule
 // follows `const` aliases, so `const same = ctx` is the same context, and
-// resolves by binding, so a shadowing parameter is a different one.
+// resolves by binding, so a shadowing parameter is a different one. A step
+// helper such as askEuropePmc counts as an operation on the context it is
+// given first.
 function aliasRoot(variable: TSESLint.Scope.Variable): TSESLint.Scope.Variable {
   const seen = new Set<TSESLint.Scope.Variable>();
   let current = variable;
@@ -55,16 +58,23 @@ export const noNestedDurableOperations = createRule({
     const { sourceCode } = context;
     const stack: (TSESLint.Scope.Variable | null)[] = [];
     const receiverRoot = (
-      receiver: TSESTree.Expression,
+      receiver: TSESTree.Node,
     ): TSESLint.Scope.Variable | null => {
       if (receiver.type !== AST_NODE_TYPES.Identifier) return null;
       const variable = lookup(receiver.name, sourceCode.getScope(receiver));
       return variable === null ? null : aliasRoot(variable);
     };
+    // The context a durable operation or a step helper uses, if the call is
+    // one.
+    const contextOf = (node: TSESTree.CallExpression): TSESTree.Node | null => {
+      if (isMethodCallIn(node, DURABLE_METHODS)) return node.callee.object;
+      if (isStepHelperCall(node)) return node.arguments[0] ?? null;
+      return null;
+    };
     return {
       CallExpression(node) {
-        if (!isMethodCallIn(node, DURABLE_METHODS)) return;
-        const receiver = node.callee.object;
+        const receiver = contextOf(node);
+        if (receiver === null) return;
         const root = receiverRoot(receiver);
         if (root !== null && stack.includes(root)) {
           context.report({
@@ -76,7 +86,7 @@ export const noNestedDurableOperations = createRule({
         stack.push(root);
       },
       "CallExpression:exit"(node: TSESTree.CallExpression) {
-        if (isMethodCallIn(node, DURABLE_METHODS)) stack.pop();
+        if (contextOf(node) !== null) stack.pop();
       },
     };
   },

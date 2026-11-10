@@ -3,6 +3,7 @@ import {
   DURABLE_METHODS,
   insideCheckpointedCallback,
   isMethodCallIn,
+  isStepHelperCall,
 } from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
@@ -11,11 +12,13 @@ import {
 // they are not the same set:
 //
 // 1. At the call site: `await ctx.step(...)` and the other durable
-//    operations. The SDK checkpoints the result.
+//    operations. The SDK checkpoints the result. A step helper such as
+//    askEuropePmc counts too: its only await is its step.
 // 2. As an ancestor of an inner await: only the callback of an operation
 //    that checkpoints it as a unit (CHECKPOINTS_CALLBACK). A child context,
 //    parallel and map run their callbacks again on every replay, so an await
-//    inside one needs its own step.
+//    inside one needs its own step. An argument a step helper runs inside
+//    its step counts as a step's callback.
 //
 // `for await` reads an async source on every pass, so it counts as an await.
 
@@ -39,6 +42,7 @@ export const noAwaitOutsideStep = createRule({
     return {
       AwaitExpression(node) {
         if (isMethodCallIn(node.argument, DURABLE_METHODS)) return;
+        if (isStepHelperCall(node.argument)) return;
         if (insideCheckpointedCallback(node, sourceCode)) return;
         context.report({ node, messageId: "awaitOutsideStep" });
       },

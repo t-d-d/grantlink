@@ -1,6 +1,11 @@
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
-import { createRule, isMethodCallIn, lookup } from "./create-rule.ts";
+import {
+  createRule,
+  isMethodCallIn,
+  isStepHelperCallback,
+  lookup,
+} from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
 //
@@ -121,12 +126,15 @@ export const noClosureInDurableOperations = createRule({
     // The innermost durable callback each write sits in owns the report, so
     // a write inside nested callbacks reports once. A callback is a function
     // passed to a durable operation directly, or inside an array or object
-    // literal argument, as parallel's branches are.
+    // literal argument, as parallel's branches are, or an argument a step
+    // helper such as askEuropePmc runs inside its step.
     const innermostCallback = (node: TSESTree.Node): Callback | undefined => {
       const ancestors = sourceCode.getAncestors(node);
       for (let i = ancestors.length - 1; i >= 0; i--) {
         const fn = ancestors[i];
         if (fn === undefined || !isCallback(fn)) continue;
+        const call = ancestors[i - 1];
+        if (call !== undefined && isStepHelperCallback(call, fn)) return fn;
         let j = i - 1;
         let parent = ancestors[j];
         while (parent !== undefined && isLiteralWrapper(parent)) {
