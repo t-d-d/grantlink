@@ -199,6 +199,30 @@ describe("the rules", () => {
     ]);
   });
 
+  // Names funder.json did not list, as gold set A's papers write them
+  // (#510). "CR UK" with a space is read by the rules only.
+  it.each(["Cancer Research United Kingdom", "Cancer Research U.K", "CR UK"])(
+    "reads a C/A pair after %j",
+    (name) => {
+      expect(
+        findReferences(sections(`Funded by ${name} grant C1234/A56789.`)),
+      ).toEqual([
+        {
+          asWritten: "C1234/A56789",
+          normalised: "C1234/A56789",
+          format: "Cn/An",
+        },
+      ]);
+    },
+  );
+
+  it.each(["SCR UK (C1234/A56789).", "CR UKE (C1234/A56789)."])(
+    "leaves a C/A pair after CR UK inside a longer word in %j",
+    (text) => {
+      expect(findReferences(sections(`Funded by ${text}`))).toEqual([]);
+    },
+  );
+
   // A Unicode hyphen or dash (U+2010 to U+2015) in the funder's name (#201).
   it.each(["\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2015"])(
     "reads an A number after CR%sUK",

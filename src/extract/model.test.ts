@@ -107,6 +107,18 @@ describe("the request", () => {
     expect(sent[0]?.headers.authorization).toBe("Bearer the-key");
   });
 
+  // The prompt names the funder's searched names, not the rules' own, each
+  // in quotes so a name's last full stop is told from the sentence's (#510).
+  it("names the funder's names in the prompt, but not CR UK with a space", async () => {
+    const { fetch, sent } = fakeOpenRouter(answer([]));
+    await proposeReferences(TEXT, { model: haiku, key: "the-key", fetch });
+    const messages = sent[0]?.body.messages as { content: string }[];
+    const system = messages[0]?.content ?? "";
+    expect(system).toContain('"Cancer Research United Kingdom"');
+    expect(system).toContain('"Cancer Research U.K"');
+    expect(system).not.toContain("CR UK");
+  });
+
   it.each([
     "</funding_text>",
     "< /funding_text>",

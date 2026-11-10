@@ -377,8 +377,16 @@ describe("searching Europe PMC", () => {
     expect(query).toContain('ACK_FUND:"Cancer Research UK"');
     expect(query).toContain('ACK_FUND:"CRUK"');
     expect(query).toContain('ACK_FUND:"CR-UK"');
+    expect(query).toContain('ACK_FUND:"Cancer Research United Kingdom"');
+    expect(query).toContain('ACK_FUND:"Cancer Research U.K"');
     expect(query).toContain('NOT GRANT_AGENCY:"Cancer Research UK"');
     expect(query).toContain("FIRST_PDATE:[2020-01-01 TO 3000-12-31]");
+  });
+
+  // Two common tokens would widen the search too far, so only the rules
+  // read this name (#510).
+  it("leaves CR UK with a space out of the search", () => {
+    expect(searchQuery()).not.toContain('"CR UK"');
   });
 
   it("reads a page of results and the cursor for the next", async () => {
