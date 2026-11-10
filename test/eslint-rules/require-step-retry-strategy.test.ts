@@ -41,6 +41,14 @@ describe("fitness: every step names its retry strategy (durable-execution.md)", 
     invalid: [
       ...[
         [
+          "names the step through the comma operator",
+          `ctx.step((0, "o"), async () => 1);`,
+        ],
+        [
+          "passes empty options through the comma operator",
+          `ctx.step("o", async () => 1, (0, {}));`,
+        ],
+        [
           "names the step with as const",
           `ctx.step("fetch" as const, async () => 1);`,
         ],
