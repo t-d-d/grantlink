@@ -669,7 +669,7 @@ describe("reading an element by its name", () => {
   });
 
   it("reads a self-closing element by its whole name too", () => {
-    expect(acks("<ack-x/><ack/><ack>x</ack>")).toEqual(["x"]);
+    expect(acks("<ack-x/>a<ack/>b<ack>x</ack>")).toEqual(["x"]);
   });
 
   // XML allows white space before a closing tag's > (#217).

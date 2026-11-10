@@ -45,7 +45,9 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
     expect(text).not.toMatch(/<abstract\b/u);
     // Every section, nested ones too, is one the cutter reads as funding
     // (#159). Each <sec tag must open an element the parser reads, so one
-    // inside a comment or CDATA counts against the fixture too.
+    // inside a comment or CDATA counts against the fixture too. It must close
+    // too: the cutter drops a section never closed, so its text is kept
+    // unread.
     const elements = new Map(
       [...descendants(parseXml(text))].map((element) => [
         element.start,
@@ -55,7 +57,7 @@ describe("fitness: no real text in the repo (personal-data.md)", () => {
     for (const section of text.matchAll(/<sec\b[^>]*>/gu)) {
       const element = elements.get(section.index);
       expect(
-        element !== undefined && isFundingSection(element),
+        element?.close !== undefined && isFundingSection(element),
         section[0],
       ).toBe(true);
     }
