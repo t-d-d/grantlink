@@ -347,14 +347,15 @@ const noteContent = (note: XmlElement): XmlNode[] =>
       )
     : note.children;
 
-// A note's own words, which it is read by when it has no type or title: its
-// content less its sections, whose titles say what they are about.
-const ownWords = (note: XmlElement): string =>
-  plain(
-    noteContent(note).filter(
-      (child) => child.kind !== "element" || !isSection(child),
-    ),
+// A note's own content: what it holds that is read with it, less its
+// sections, whose titles say what they are about.
+const ownContent = (note: XmlElement): XmlNode[] =>
+  noteContent(note).filter(
+    (child) => child.kind !== "element" || !isSection(child),
   );
+
+// A note's own words, which it is read by when it has no type or title.
+const ownWords = (note: XmlElement): string => plain(ownContent(note));
 
 // A note's title, which may follow a label, or undefined if it has none. A
 // self-closing title names nothing, as in a section (#221).
@@ -395,6 +396,22 @@ export const isFundingNote = (element: XmlElement, parent: string): boolean => {
   return namesFunder(ownWords(element));
 };
 
+// Whether a funding note or footnote is one kept for naming the funder in
+// its own words: it has no funding type and no title.
+const keptForOwnWords = (note: XmlElement): boolean =>
+  !anyAttribute(note, NOTE_TYPE[note.name] ?? "", (value) =>
+    FUNDING_NOTE_TYPES.includes(value),
+  ) && noteTitle(note) === undefined;
+
+// What the cut keeps of a funding note or footnote. One marked as funding by
+// its type or title is read whole, less the notes inside it. One kept for
+// its own words is about funding only in those words, so its sections are
+// left out: author contributions or a data statement there name people or
+// say nothing of funding. A funding section among them is found by its
+// type or title, as every funding section is (#526).
+const notePart = (note: XmlElement): XmlNode[] =>
+  keptForOwnWords(note) ? ownContent(note) : noteContent(note);
+
 // The element's funding notes and footnotes, at any depth, so one nested in
 // a note that is not about funding is found too.
 const fundingNotes = (element: XmlElement): XmlElement[] =>
@@ -430,7 +447,7 @@ export function fundingSections(paper: string): FundingSections {
     ...outermost(tree, named("ack")).flatMap(({ children }) =>
       paragraphs(children),
     ),
-    ...fundingNotes(tree).flatMap((note) => paragraphs(noteContent(note))),
+    ...fundingNotes(tree).flatMap((note) => paragraphs(notePart(note))),
   ].filter((paragraph) => paragraph !== "");
   return { text: [...new Set(text)], awards };
 }
