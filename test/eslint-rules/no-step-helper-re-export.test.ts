@@ -5,6 +5,21 @@ import { WRAPPED_STEP_HELPERS } from "./wrapped-step-helpers.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
 
+// Ways for owed.ts to wrap its own askEuropePmc when it aliases it locally
+// (#436): each gives the wrapper's description and the alias's initialiser.
+const OWN_MODULE_WRAPPERS: readonly (readonly [string, string])[] = [
+  ["asserted with as", "askEuropePmc as typeof askEuropePmc"],
+  ["asserted with angle brackets", "<typeof askEuropePmc>askEuropePmc"],
+  ["checked with satisfies", "askEuropePmc satisfies typeof askEuropePmc"],
+  ["with a non-null assertion", "askEuropePmc!"],
+  ["given type arguments", "askEuropePmc<number>"],
+  ["in brackets", "(askEuropePmc)"],
+  [
+    "in brackets and asserted with as",
+    "((askEuropePmc) as typeof askEuropePmc)",
+  ],
+];
+
 describe("fitness: a step helper is reached only from its own module (durable-execution.md)", () => {
   tester.run("no-step-helper-re-export", noStepHelperReExport, {
     valid: [
@@ -87,6 +102,25 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         export const exported = ${shape.callee};`,
         errors: [{ messageId: "reExport" as const }],
       })),
+      ...OWN_MODULE_WRAPPERS.flatMap(([wrapper, init]) => [
+        {
+          name: `exports a local alias of askEuropePmc ${wrapper} from its own module`,
+          filename: "src/run/owed.ts",
+          code: `async function askEuropePmc() {}
+        const ask = ${init};
+        export { ask };`,
+          errors: [{ messageId: "reExport" as const }],
+        },
+        {
+          name: `exports an alias of a local alias of askEuropePmc ${wrapper} as the default from its own module`,
+          filename: "src/run/owed.ts",
+          code: `async function askEuropePmc() {}
+        const first = ${init};
+        const ask = first;
+        export default ask;`,
+          errors: [{ messageId: "reExport" as const }],
+        },
+      ]),
       {
         name: "re-exports askEuropePmc from its module",
         filename: "src/run/run.ts",

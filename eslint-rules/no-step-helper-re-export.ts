@@ -48,10 +48,11 @@ export const noStepHelperReExport = createRule({
       context.report({ node, messageId: "reExport", data: { module } });
     };
     // This module's own helper that an identifier names, directly or through
-    // a chain of local aliases such as `const ask = askEuropePmc`. Any name
-    // along the chain counts, so an alias of askEuropePmc counts even when
-    // askEuropePmc is itself an alias. A later write to an alias does not
-    // stop the chain: the rule refuses what the export may pass on.
+    // a chain of local aliases such as `const ask = askEuropePmc`, read
+    // through any wrapper that unwrapped takes off. Any name along the chain
+    // counts, so an alias of askEuropePmc counts even when askEuropePmc is
+    // itself an alias. A later write to an alias does not stop the chain:
+    // the rule refuses what the export may pass on.
     const localHelper = (
       identifier: TSESTree.Identifier,
       seen: ReadonlySet<TSESLint.Scope.Variable> = new Set(),
@@ -69,11 +70,13 @@ export const noStepHelperReExport = createRule({
         variable.defs.length !== 1 ||
         def?.type !== TSESLint.Scope.DefinitionType.Variable ||
         def.node.id !== def.name ||
-        def.node.init?.type !== AST_NODE_TYPES.Identifier
+        def.node.init === null
       ) {
         return null;
       }
-      return localHelper(def.node.init, new Set([...seen, variable]));
+      const init = unwrapped(def.node.init);
+      if (init.type !== AST_NODE_TYPES.Identifier) return null;
+      return localHelper(init, new Set([...seen, variable]));
     };
     // The module whose helper an exported value passes on under a name of
     // its own choosing, or null. That is an imported helper, a namespace
