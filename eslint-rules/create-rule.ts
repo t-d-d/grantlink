@@ -457,46 +457,21 @@ function aliasOf(
 // level: `{ now }` or `{ now: at }`. A name with a default, `{ now = f }`,
 // may not hold what it reads, so only `with-default` counts it, for a rule
 // that only refuses. Null for a computed key that is not a constant, or for
-// a name the pattern destructures from a nested pattern, which
-// destructuredPath follows.
+// a name the pattern destructures from a nested pattern, which this does not
+// follow.
 export function destructuredKey(
   pattern: TSESTree.ObjectPattern,
   name: TSESTree.Identifier,
   defaults: "exact" | "with-default",
 ): string | null {
-  const path = destructuredPath(pattern, name, defaults);
-  return path?.length === 1 ? (path[0] ?? null) : null;
-}
-
-// The constant keys an object pattern destructures `name` through, from its
-// top level down any nested object patterns: `{ now }` gives `now`, and
-// `{ Date: { now: at } }` gives `Date`, `now`. A default, on the name or on
-// a nested pattern, `{ Date: { now } = D }`, counts only under
-// `with-default`, as destructuredKey says. Null when the name is not in the
-// pattern, or sits under a key that is not a constant.
-function destructuredPath(
-  pattern: TSESTree.ObjectPattern,
-  name: TSESTree.Identifier,
-  defaults: "exact" | "with-default",
-): readonly string[] | null {
   for (const property of pattern.properties) {
     if (property.type !== AST_NODE_TYPES.Property) continue;
-    let value = property.value;
-    if (
+    const value =
       defaults === "with-default" &&
-      value.type === AST_NODE_TYPES.AssignmentPattern
-    ) {
-      value = value.left;
-    }
-    const rest =
-      value === name
-        ? []
-        : value.type === AST_NODE_TYPES.ObjectPattern
-          ? destructuredPath(value, name, defaults)
-          : null;
-    if (rest === null) continue;
-    const key = keyName(property.key, property.computed);
-    return key === null ? null : [key, ...rest];
+      property.value.type === AST_NODE_TYPES.AssignmentPattern
+        ? property.value.left
+        : property.value;
+    if (value === name) return keyName(property.key, property.computed);
   }
   return null;
 }
