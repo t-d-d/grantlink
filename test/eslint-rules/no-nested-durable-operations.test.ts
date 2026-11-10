@@ -51,20 +51,26 @@ describe("fitness: no durable operation inside its own context's operation (dura
 
       ...[
         ["asserted with as", "ctx as Context"],
+        ["asserted with angle brackets", "<Context>ctx"],
         ["checked with satisfies", "ctx satisfies Context"],
         ["behind a non-null assertion", "ctx!"],
         ["through the comma operator", "(0, ctx)"],
-      ].map(([what, given]) => ({
-        name: `asks Europe PMC on the same context ${String(what)} inside a step`,
-        filename: "src/run/run.ts",
-        code: `import { askEuropePmc } from "./owed.ts";
+      ].flatMap(([what, given]) =>
+        [
+          ["asks Europe PMC", "askEuropePmc"],
+          ["asks Europe PMC through an optional call", "askEuropePmc?."],
+        ].map(([how, callee]) => ({
+          name: `${String(how)} on the same context ${String(what)} inside a step`,
+          filename: "src/run/run.ts",
+          code: `import { askEuropePmc } from "./owed.ts";
         async function run(ctx: any) {
           await ctx.step("outer", async () => {
-            await askEuropePmc(${String(given)}, "paper", "wait", r, async () => 1);
+            await ${String(callee)}(${String(given)}, "paper", "wait", r, async () => 1);
           }, { retryStrategy: r });
         }`,
-        errors: [{ messageId: "sameContextUsage" as const }],
-      })),
+          errors: [{ messageId: "sameContextUsage" as const }],
+        })),
+      ),
 
       {
         name: "waits on the same context inside a step, both reached through a non-null assertion",
