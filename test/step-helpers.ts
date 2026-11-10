@@ -7,10 +7,12 @@ import { root } from "./repo.ts";
 // parameter is function-typed when the type checker gives its type, or one
 // member of its union, a call signature, so an alias such as
 // `type Log = () => void` counts. A parameter whose type does not resolve is
-// reported, since the check cannot tell what it is. A rest parameter whose
-// element type is a function is reported wherever it sits and whether or not
-// it is listed, since the table lists single positions and cannot describe it
-// (#480). The source is checked as if it sat at `path` in the repo, under the
+// reported, since the check cannot tell what it is. A parameter whose type,
+// or one member of its union, is an array or a tuple that holds a function is
+// reported wherever it sits and whether or not it is listed, since the table
+// lists single positions and cannot describe it. A rest parameter's type is
+// such an array, so a rest parameter of functions is reported the same way
+// (#480, #498). The source is checked as if it sat at `path` in the repo, under the
 // repo's tsconfig.json, so its relative and package imports resolve as they
 // do for the real module.
 export function callbackMismatches(
@@ -55,14 +57,10 @@ export function callbackMismatches(
     const rest = parameter.dotDotDotToken !== undefined;
     if (position === 0 && !listed && !rest) return;
     const label = `${name}'s parameter ${String(position)} (${parameter.name.getText()})`;
-    const type = checker.getTypeAtLocation(parameter);
-    const element = rest
-      ? checker.getIndexTypeOfType(type, ts.IndexKind.Number)
-      : type;
-    const kind = element ? kindOf(element) : "unread";
-    if (rest && kind === "function")
+    const kind = kindOf(checker, checker.getTypeAtLocation(parameter));
+    if (kind === "functions")
       problems.push(
-        `${label} is a rest parameter of functions, which the table cannot list`,
+        `${label} is ${rest ? "a rest parameter" : "an array"} of functions, which the table cannot list`,
       );
     else if (kind === "unread")
       problems.push(`${label} has a type the check cannot read`);
@@ -130,12 +128,36 @@ function exportedFunction(
   return undefined;
 }
 
-// Whether a parameter's type is a function, another type, or one the checker
-// could not resolve, which it reads as `any`.
-function kindOf(type: ts.Type): "function" | "other" | "unread" {
+// Whether a parameter's type is a function, an array or tuple that holds a
+// function, another type, or one the checker could not resolve, which it
+// reads as `any`. An array or tuple is read by its elements, so one whose
+// elements do not resolve is unread too.
+function kindOf(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+): "function" | "functions" | "other" | "unread" {
   if (type.flags & ts.TypeFlags.Any) return "unread";
   const members = type.isUnion() ? type.types : [type];
-  return members.some((member) => member.getCallSignatures().length > 0)
-    ? "function"
-    : "other";
+  const kinds = members.map((member) =>
+    checker.isArrayType(member) || checker.isTupleType(member)
+      ? elementsKind(checker, member)
+      : member.getCallSignatures().length > 0
+        ? "function"
+        : "other",
+  );
+  for (const kind of ["functions", "unread", "function"] as const)
+    if (kinds.includes(kind)) return kind;
+  return "other";
+}
+
+// What an array or a tuple holds: functions if any element may be one.
+function elementsKind(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+): "functions" | "other" | "unread" {
+  const elements = checker.getTypeArguments(type as ts.TypeReference);
+  const kinds = elements.map((element) => kindOf(checker, element));
+  if (kinds.some((kind) => kind === "function" || kind === "functions"))
+    return "functions";
+  return kinds.includes("unread") ? "unread" : "other";
 }
