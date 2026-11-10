@@ -57,9 +57,12 @@ export type ModelResult =
 // OpenRouter refused the request, or failed. It names the status only: the
 // reply's body may quote the text sent.
 export class ModelRefused extends Error {
-  constructor(readonly status: number) {
+  readonly status: number;
+
+  constructor(status: number) {
     super(`OpenRouter refused the request with status ${String(status)}`);
     this.name = "ModelRefused";
+    this.status = status;
   }
 }
 
