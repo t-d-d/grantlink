@@ -49,18 +49,26 @@ export type Reference = z.infer<typeof referenceSchema>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 // A hyphen, in a name or a reference, may be written as a Unicode hyphen or
-// dash (U+2010 to U+2015) (#201). The class holds the characters themselves,
-// not \u escapes, so the any-case pass below finds no letter in it.
-const DASH = `[-${String.fromCodePoint(0x2010)}-${String.fromCodePoint(0x2015)}]`;
-const NAMES = funder.names
-  .map((name) => escape(name).replace(/-/gu, DASH))
-  .join("|");
-// The names again, matching in any case without the `i` flag, for a pattern
+// dash (U+2010 to U+2015) (#201).
+const DASH = String.raw`[-\u2010-\u2015]`;
+
+// The names as one pattern, built a character at a time from each raw name,
+// so only the name's own letters ever become any-case classes (#271). The
+// any-case form matches in any case without the `i` flag, for a pattern
 // whose own letters must keep their case.
-const ANY_CASE_NAMES = NAMES.replace(
-  /[A-Za-z]/gu,
-  (letter) => `[${letter.toUpperCase()}${letter.toLowerCase()}]`,
-);
+export function namesPattern(names: string[], anyCase: boolean): string {
+  const char = (c: string) => {
+    if (c === "-") return DASH;
+    if (anyCase && /[A-Za-z]/u.test(c)) {
+      return `[${c.toUpperCase()}${c.toLowerCase()}]`;
+    }
+    return escape(c);
+  };
+  return names.map((name) => Array.from(name, char).join("")).join("|");
+}
+
+const NAMES = namesPattern(funder.names, false);
+const ANY_CASE_NAMES = namesPattern(funder.names, true);
 const funderName = new RegExp(`(?:^|[^A-Za-z])(?:${NAMES})(?![A-Za-z])`, "iu");
 
 // A separator may be written as a slash, a backslash or the set minus sign.
