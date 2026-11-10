@@ -12,7 +12,9 @@ interface Hooks {
 //
 // `cwd` is the directory ESLint runs in, which the tester otherwise takes
 // from the process. A case's relative filename is relative to it, as it is
-// for `cd <cwd> && npx eslint <filename>`.
+// for `cd <cwd> && npx eslint <filename>`. The tester reads it from
+// tsconfigRootDir, and ignores it for a filename that is absolute or starts
+// with `..`: it then runs from the filesystem's root.
 export function ruleTester(
   { afterAll, describe, it }: Hooks,
   { cwd }: { cwd?: string } = {},
