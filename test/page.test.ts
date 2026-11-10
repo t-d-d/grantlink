@@ -75,4 +75,19 @@ describe("reading a page's footer", () => {
   it("returns nothing for a page without a footer", () => {
     expect(footerOf(`<a href="mailto:${CONTACT}">Write</a>`)).toBe("");
   });
+
+  it("reads the page's footer, not an earlier one inside an article", () => {
+    const html = `<main><article><p>Paper</p><footer>Card</footer></article></main><footer><a href="mailto:${CONTACT}">Write</a></footer>`;
+    expect(footerOf(html)).toContain(`mailto:${CONTACT}`);
+  });
+
+  it("ignores a footer that is commented out", () => {
+    const html = `<!-- <footer><a href="mailto:${CONTACT}">Write</a></footer> --><footer>Notice</footer>`;
+    expect(footerOf(html)).not.toContain(`mailto:${CONTACT}`);
+  });
+
+  it("reads a footer tag in capitals", () => {
+    const html = `<FOOTER><a href="mailto:${CONTACT}">Write</a></FOOTER>`;
+    expect(footerOf(html)).toContain(`mailto:${CONTACT}`);
+  });
 });

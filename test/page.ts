@@ -26,9 +26,12 @@ export function textOf(html: string): string {
 // The markup inside the page's footer, or "" when it has none. The notice
 // and the address for corrections belong there (independence.md), and the
 // line under the headline (#588) repeats the notice, so a check reads the
-// footer alone.
+// footer alone. An article may have a footer of its own, so the page's
+// footer is the last one, and a commented-out footer does not count.
 export function footerOf(html: string): string {
-  return /<footer\b[^>]*>([\s\S]*?)<\/footer>/u.exec(html)?.[1] ?? "";
+  const live = html.replace(/<!--[\s\S]*?-->/gu, "");
+  const footers = [...live.matchAll(/<footer\b[^>]*>([\s\S]*?)<\/footer>/giu)];
+  return footers.at(-1)?.[1] ?? "";
 }
 
 // Every URL the page makes the browser fetch by itself: scripts, styles,

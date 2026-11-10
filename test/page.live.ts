@@ -33,11 +33,14 @@ describe("fitness: the page carries the notice and the credit (independence.md)"
   });
 
   it("carries the independence notice, the credit and the contact", () => {
-    expect(textOf(html)).toMatch(NOTICE);
+    // The notice and the address belong in the footer (#593). The line
+    // under the headline (#588) repeats the notice, so read the footer.
+    const footer = footerOf(html);
+    expect(footer).not.toBe("");
+    expect(textOf(footer)).toMatch(NOTICE);
     expect(html).toMatch(CREDIT);
     expect(html).toMatch(TERMS);
-    // The address for corrections belongs in the footer (#593).
-    expect(footerOf(html)).toContain(`mailto:${CONTACT}`);
+    expect(footer).toContain(`href="mailto:${CONTACT}"`);
   });
 });
 

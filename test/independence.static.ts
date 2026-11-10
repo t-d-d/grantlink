@@ -19,10 +19,11 @@ describe("fitness: every view carries the independence notice (independence.md)"
       const html = readRepoFile(path);
       // The notice and the address belong in the footer (#593).
       const footer = footerOf(html);
+      expect(footer).not.toBe("");
       expect(textOf(footer)).toMatch(NOTICE);
       expect(html).toMatch(CREDIT);
       expect(html).toMatch(TERMS);
-      expect(footer).toContain(`mailto:${CONTACT}`);
+      expect(footer).toContain(`href="mailto:${CONTACT}"`);
     },
   );
 
