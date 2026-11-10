@@ -69,7 +69,7 @@ describe("the deploy workflow", () => {
     const accountMask = assumeRun.search(/::add-mask::\$account\b/u);
     expect(accountMask).toBeGreaterThan(-1);
     // Nothing after the role is assumed runs before the mask is set.
-    expect(accountMask).toBeLessThan(assumeRun.indexOf("GITHUB_ENV"));
+    expect(accountMask).toBeLessThan(assumeRun.indexOf("GITHUB_OUTPUT"));
   });
 
   it("names the deploy job so governor sees each deploy", () => {
@@ -183,7 +183,11 @@ describe("the deploy and the run (#19)", () => {
     const publishAt = at(/^scripts\/publish-page\.sh$/u);
     expect(publishAt).toBeGreaterThan(at(/\bsls deploy\b/u));
     expect(publishAt).toBeLessThan(at(/npm run test:live/u));
-    expect(all[publishAt]?.env).toEqual({
+    // The role's credentials are checked in their own describe below.
+    const env = Object.entries(all[publishAt]?.env ?? {}).filter(
+      ([, value]) => !value.includes("steps.assume.outputs."),
+    );
+    expect(Object.fromEntries(env)).toEqual({
       BUCKET: "${{ steps.stack.outputs.bucket }}",
       DISTRIBUTION: "${{ steps.stack.outputs.distribution }}",
     });
@@ -256,5 +260,80 @@ describe("fitness: the eval gates every deploy (deploy-gates.md)", () => {
       "FINGERPRINT",
       "REPORT",
     ]);
+  });
+});
+
+// The deploy role's credentials go only to the steps that call AWS, as
+// step env, so code those steps do not run never holds them. The live tier
+// reads the page as a visitor would and gets none (#259). The tests match
+// the credentials by the assume step's outputs, as no test in the gate
+// names a key (code-and-tests.md).
+describe("the deploy role's credentials", () => {
+  const all = steps("deploy");
+  const assume = all.find((step) => step.name === "Assume the deploy role");
+  const credentials = (step: Step): string[] =>
+    Object.values(step.env ?? {}).filter((value) =>
+      value.includes("steps.assume.outputs."),
+    );
+  const given = all.filter((step) => credentials(step).length > 0);
+
+  it("are handed on as the assume step's outputs, not through GITHUB_ENV", () => {
+    expect(assume?.id).toBe("assume");
+    expect(assume?.run).toContain('>> "$GITHUB_OUTPUT"');
+    expect(runs("deploy")).not.toContain("GITHUB_ENV");
+  });
+
+  it("are masked before the step writes them out", () => {
+    const run = assume?.run ?? "";
+    const written = run.indexOf("GITHUB_OUTPUT");
+    for (const name of ["key", "secret", "session"]) {
+      const mask = run.indexOf(`::add-mask::$${name}"`);
+      expect(mask).toBeGreaterThan(-1);
+      expect(mask).toBeLessThan(written);
+    }
+  });
+
+  it("go only to the steps that call AWS", () => {
+    expect(given.map((step) => step.name)).toEqual([
+      "Check the app stack",
+      "Keep the first run's time",
+      "Deploy the app stack",
+      "Read the stack's outputs",
+      "Publish the page",
+    ]);
+  });
+
+  it("go whole to each of those steps", () => {
+    for (const step of given) {
+      expect(credentials(step).sort()).toEqual([
+        "${{ steps.assume.outputs.key }}",
+        "${{ steps.assume.outputs.secret }}",
+        "${{ steps.assume.outputs.session }}",
+      ]);
+    }
+  });
+
+  it("are read nowhere but in those steps' env", () => {
+    const deployJob = jobs.deploy;
+    const rest = {
+      ...deploy,
+      jobs: {
+        ...jobs,
+        deploy: {
+          ...deployJob,
+          steps: all.map((step) => ({ ...step, env: {} })),
+        },
+      },
+    };
+    expect(JSON.stringify(rest)).not.toContain("steps.assume.outputs");
+  });
+
+  it("are not given to the step that reads the live page", () => {
+    const live = all.find((step) =>
+      (step.run ?? "").includes("npm run test:live"),
+    );
+    expect(live?.env).toEqual({
+      PAGE_URL: "${{ steps.stack.outputs.url }}",
+    });
   });
 });

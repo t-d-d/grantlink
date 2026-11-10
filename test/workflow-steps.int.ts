@@ -379,11 +379,15 @@ describe.each([
     title: "the eval's role step",
     run: script(evalWorkflow, "eval", "Assume the eval role"),
     extra: [`grantlink-text-${account}`],
+    to: "env",
   },
   {
     title: "the deploy's role step",
     run: script(deploy, "deploy", "Assume the deploy role"),
     extra: [],
+    // The deploy hands its credentials to the steps that call AWS as
+    // step outputs, so no other step holds them (#259).
+    to: "output",
   },
   // #188: the third copy of the step, which had neither fix.
   {
@@ -394,14 +398,21 @@ describe.each([
       "Assume the conformance role",
     ),
     extra: [`grantlink-text-${account}`],
+    to: "env",
   },
-])("$title", ({ run, extra }) => {
+] as const)("$title", ({ run, extra, to }) => {
+  // Where the step writes the credentials, and where it must write none.
+  const written = (result: { env: string; output: string }) => result[to];
+  const other = (result: { env: string; output: string }) =>
+    to === "env" ? result.output : result.env;
+
   // The values only: no test in the gate names the variables that hold a
   // key (code-and-tests.md), and the static tests read the names.
   it("writes the credentials STS gave it", () => {
-    const { status, env } = assumeRole(run, stsReply());
-    expect(status).toBe(0);
-    const values = env
+    const result = assumeRole(run, stsReply());
+    expect(result.status).toBe(0);
+    expect(other(result)).toBe("");
+    const values = written(result)
       .trimEnd()
       .split("\n")
       .map((line) => line.slice(line.indexOf("=") + 1));
@@ -414,9 +425,9 @@ describe.each([
   });
 
   it.each(missingFields)("fails when the reply has no %s", (field) => {
-    const { status, env } = assumeRole(run, stsReply(field));
-    expect(status).not.toBe(0);
-    expect(env).toBe("");
+    const result = assumeRole(run, stsReply(field));
+    expect(result.status).not.toBe(0);
+    expect(written(result)).toBe("");
   });
 
   // #160: jq -e fails on a missing field, but says nothing on its own.
@@ -434,13 +445,10 @@ describe.each([
   it.each(Object.entries(fieldPaths))(
     "fails, naming %s, when the reply's is empty",
     (field, path) => {
-      const { status, env, stderr } = assumeRole(
-        run,
-        stsReply(undefined, field),
-      );
-      expect(status).not.toBe(0);
-      expect(env).toBe("");
-      expect(stderr).toMatch(namesPath(path));
+      const result = assumeRole(run, stsReply(undefined, field));
+      expect(result.status).not.toBe(0);
+      expect(written(result)).toBe("");
+      expect(result.stderr).toMatch(namesPath(path));
     },
   );
 
@@ -454,11 +462,11 @@ describe.each([
   ])(
     "fails before it calls STS, naming .value, when the OIDC reply %s",
     (_, oidc) => {
-      const { status, env, stderr } = assumeRole(run, stsReply(), oidc);
-      expect(status).not.toBe(0);
-      expect(env).toBe("");
-      expect(stderr).not.toContain("aws-called");
-      expect(stderr).toMatch(/^::error::.*\.value\b/mu);
+      const result = assumeRole(run, stsReply(), oidc);
+      expect(result.status).not.toBe(0);
+      expect(written(result)).toBe("");
+      expect(result.stderr).not.toContain("aws-called");
+      expect(result.stderr).toMatch(/^::error::.*\.value\b/mu);
     },
   );
 });
