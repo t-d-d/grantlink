@@ -195,7 +195,7 @@ export function makeRun(deps: Deps) {
     try {
       ({ snapshot, owed: last } = await ctx.runInChildContext(
         "snapshot",
-        async (child) => takeSnapshot(child, deps, owed),
+        async (child) => takeSnapshot(child, deps, runId, owed),
       ));
     } catch (error) {
       snapshot = { taken: false, reason: "failed" };
