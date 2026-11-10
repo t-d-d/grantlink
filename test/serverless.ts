@@ -52,12 +52,51 @@ export function mergeOver<T extends object>(target: T, source: object): T {
 const READ_KEYS = ["Parameters", "Resources", "Outputs"];
 
 // What the app stack declares besides serverless.yml's inline entries: the
-// templates' resources and outputs, and the functions osls makes resources
-// for.
+// templates' resources and outputs, the fields of each template parameter,
+// and the functions osls makes resources for.
 export interface DeclaredElsewhere {
   declared: readonly string[];
   outputs: readonly string[];
+  parameters: Readonly<Record<string, readonly string[]>>;
   functions: readonly string[];
+}
+
+// The fields of each parameter the templates declare. osls merges the
+// templates field by field, so a Default an earlier template sets still
+// counts when a later one declares the same parameter without it (#322).
+export function templateParameterFields(
+  templates: readonly { Parameters?: Record<string, unknown> }[],
+): Record<string, string[]> {
+  const merged = templates.reduce<Plain>(
+    (fields, template) => mergeOver(fields, template.Parameters ?? {}),
+    {},
+  );
+  return Object.fromEntries(
+    Object.entries(merged).map(([id, fields]) => [
+      id,
+      isPlain(fields) ? Object.keys(fields) : [],
+    ]),
+  );
+}
+
+// Each way an inline parameter changes a template's parameter beyond giving
+// it a Default it lacks. osls merges the entry over the template's
+// parameter field by field, so a Type, an AllowedValues or a second Default
+// would pass the static checks unseen (#322).
+function changedFields(
+  at: string,
+  id: string,
+  fields: readonly string[],
+  value: unknown,
+): string[] {
+  if (!isPlain(value))
+    return [`${at} changes the parameter ${id}, which a template declares`];
+  return Object.keys(value)
+    .filter((field) => field !== "Default" || fields.includes("Default"))
+    .map(
+      (field) =>
+        `${at} changes the parameter ${id}'s ${field}, which a template declares`,
+    );
 }
 
 // The logical ids osls gives what it generates: one fixed set for the
@@ -234,7 +273,8 @@ export function mergeKeysIn(value: unknown): string[] {
 // Nor may it change an output a template declares or osls generates, since
 // the deploy reads the stack's outputs (#243), or change a resource or an
 // output an earlier inline entry declares, which osls would merge over it
-// (#261), or a parameter an earlier inline entry declares (#297), or hold a
+// (#261), or a parameter an earlier inline entry declares (#297), or change a
+// template's parameter beyond giving it a Default it lacks (#322), or hold a
 // section that is not a map, which osls would merge over the whole section.
 // No inline parameter may share its name with any resource (#323).
 // It may use no variable but the cf and env ones.
@@ -304,9 +344,16 @@ export function unreadResources(
           inline.set(id, at);
           return [];
         });
-      // An inline parameter may set a template's parameter, as serverless.yml
-      // sets the dns stack's values as defaults, so only an earlier inline
-      // entry's parameter counts.
+      // An inline parameter may give a template's parameter a Default it
+      // lacks, as serverless.yml sets the dns stack's values as defaults, and
+      // nothing else (#322). An earlier inline entry's parameter counts too.
+      const templateParameters = Object.entries(
+        isPlain(entry.Parameters) ? entry.Parameters : {},
+      ).flatMap(([id, value]): string[] =>
+        Object.hasOwn(elsewhere.parameters, id)
+          ? changedFields(at, id, elsewhere.parameters[id] ?? [], value)
+          : [],
+      );
       const changedParameters = changes(
         entry.Parameters,
         [],
@@ -333,6 +380,7 @@ export function unreadResources(
       );
       return [
         ...keys,
+        ...templateParameters,
         ...changedParameters,
         ...changed,
         ...changedOutputs,

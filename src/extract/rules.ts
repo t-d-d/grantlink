@@ -95,6 +95,10 @@ const ANY_CASE_NAMES = namesPattern(funder.names, true);
 const EDGE = String.raw`[\p{L}\p{M}]`;
 const funderName = new RegExp(`(?<!${EDGE})(?:${NAMES})(?!${EDGE})`, "iu");
 
+// Whether text names the funder. Gold set B's draw reads names with this
+// too, so its hard cases match what the rules read (#338).
+export const namesFunder = (text: string): boolean => funderName.test(text);
+
 // A reference's edges. Any letter or combining mark joined to a reference,
 // not only A to Z, makes it part of a longer word, as at the funder's name
 // (#339). So does a digit 0 to 9 or an underscore, as \b had it.
