@@ -943,6 +943,20 @@ describe("the eval snapshot (evals.md)", () => {
     ]);
   });
 
+  it("logs once that gold set A's search found and skipped nothing when Europe PMC refuses its first page (#307)", async () => {
+    const fake = fakeDeps({
+      goldSearch: () => reply("", 429, { "Retry-After": "300" }),
+    });
+    const { result } = await runWith(fake);
+    expect(result?.snapshot).toEqual({
+      taken: false,
+      reason: "Europe PMC refused gold set A's search",
+    });
+    expect(logged("snapshot-search-ended")).toEqual([
+      expect.objectContaining({ found: 0, skipped: 0, refused: true }),
+    ]);
+  });
+
   it("publishes the page even when the snapshot fails, and leaves it for the next run", async () => {
     const fake = fakeDeps();
     fake.deps.text.hasSnapshot = () =>

@@ -81,8 +81,9 @@ export function logSearchEnded(
 
 // Logs the totals of gold set A's search once each time a run searches
 // for the snapshot, before it is judged, as the run's search does (#279).
-// When Europe PMC refuses a later page, `refused` is true and the totals
-// are those of the pages read before it (#307).
+// When Europe PMC refuses a page, `refused` is true and the totals are
+// those of the pages read before it, which are none when it refuses the
+// first (#307).
 export function logGoldSearchEnded(
   runId: string,
   snapshotId: string,
