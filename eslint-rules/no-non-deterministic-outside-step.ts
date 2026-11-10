@@ -491,18 +491,23 @@ function exportedSource(
   resolver: Resolver,
   holder = false,
 ): boolean {
-  const value = heldBy(outermost(node));
+  const source = outermost(node);
+  const value = heldBy(source);
   const assigned = assignedTo(value);
   if (assigned !== null) return assignsExported(assigned, resolver);
   // Inside a literal the pattern takes the literal apart, not the source,
-  // so any name it declares may carry the source.
+  // so any name it declares may carry the source. A literal or a
+  // conditional names no source, so checkDefault does not report a name
+  // that holds one and is exported by default, `export default o` after
+  // `const o = { m: Math }`, and that export counts here.
+  const byDefault = value.node !== source;
   const passes = (
     declarator: TSESTree.VariableDeclarator,
     pattern: TSESTree.Node,
   ): boolean =>
     value.literal
-      ? exportsName(declarator, resolver)
-      : exportsPassed(declarator, pattern, resolver, holder);
+      ? exportsName(declarator, resolver, byDefault)
+      : exportsPassed(declarator, pattern, resolver, holder, byDefault);
   const outer = value.node;
   const parent = outer.parent;
   switch (parent?.type) {
@@ -667,14 +672,20 @@ function exportedVariable(variable: TSESLint.Scope.Variable): boolean {
 }
 
 // True when a declarator exports a name it declares, in its declaration or
-// later, `export { m }`.
+// later, `export { m }`, or with `byDefault` set, by default, `export
+// default m`.
 function exportsName(
   declarator: TSESTree.VariableDeclarator,
   resolver: Resolver,
+  byDefault = false,
 ): boolean {
   return resolver.sourceCode
     .getDeclaredVariables(declarator)
-    .some((declared) => exported(declarator, declared));
+    .some(
+      (declared) =>
+        exported(declarator, declared) ||
+        (byDefault && exportedByDefault(declared)),
+    );
 }
 
 // True when a declarator exports a name that carries the value a pattern
@@ -686,17 +697,20 @@ function exportsName(
 // Another name the pattern takes, `export { foo }`, does not carry it. Any
 // other pattern, or a plain alias, carries it in any name the declarator
 // declares, and an alias exported by default reports at the export instead.
+// With `byDefault` set, for a value that names no source, which
+// checkDefault leaves alone, such a name exported by default counts too.
 function exportsPassed(
   declarator: TSESTree.VariableDeclarator,
   pattern: TSESTree.Node,
   resolver: Resolver,
   holder: boolean,
+  byDefault = false,
 ): boolean {
   if (
     pattern.type !== AST_NODE_TYPES.ObjectPattern ||
     !(callsThrough(pattern) || (holder && copiesRest(pattern)))
   ) {
-    return exportsName(declarator, resolver);
+    return exportsName(declarator, resolver, byDefault);
   }
   const carriers = new Set<TSESTree.Node>(
     pattern.properties.flatMap((property) => {

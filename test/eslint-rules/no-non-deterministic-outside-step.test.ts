@@ -786,26 +786,24 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
         {
           name: "exports Math held in an array literal in its declaration",
           filename: "src/run/run.ts",
-          code: `declare const cond: boolean;
-          export const a = [Math];`,
+          code: `export const a = [Math];`,
           errors: [
             {
               messageId: "exportedOutsideStep",
               data: { op: "Math" },
-              line: 2,
+              line: 1,
             },
           ],
         },
         {
           name: "exports a copy of Math made through a rest from an array literal in its declaration",
           filename: "src/run/run.ts",
-          code: `declare const cond: boolean;
-          export const [{ ...m }] = [Math];`,
+          code: `export const [{ ...m }] = [Math];`,
           errors: [
             {
               messageId: "exportedOutsideStep",
               data: { op: "Math" },
-              line: 2,
+              line: 1,
             },
           ],
         },
@@ -825,13 +823,12 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
         {
           name: "exports Math held in a logical expression in its declaration",
           filename: "src/run/run.ts",
-          code: `declare const cond: boolean;
-          export const l = Math || 1;`,
+          code: `export const l = Math || 1;`,
           errors: [
             {
               messageId: "exportedOutsideStep",
               data: { op: "Math" },
-              line: 2,
+              line: 1,
             },
           ],
         },
@@ -852,14 +849,78 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
         {
           name: "exports a copy of Math made through a rest in a for-of target",
           filename: "src/run/run.ts",
-          code: `declare const cond: boolean;
-          export let m;
+          code: `export let m;
           for ({ ...m } of [Math]);`,
           errors: [
             {
               messageId: "exportedOutsideStep",
               data: { op: "Math" },
-              line: 3,
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in an object literal by default after its declaration",
+          filename: "src/run/run.ts",
+          code: `const o = { m: Math };
+          export default o;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in a conditional by default after its declaration",
+          filename: "src/run/run.ts",
+          code: `declare const cond: boolean;
+          const c = cond ? Math : 1;
+          export default c;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in a literal by default",
+          filename: "src/run/run.ts",
+          code: `export default { m: Math };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in the right of a nullish coalescing in its declaration",
+          filename: "src/run/run.ts",
+          code: `declare const x: object | null;
+          export const q = x ?? Math;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "keeps Math held in a conditional in a declaration nothing exports",
+          filename: "src/run/run.ts",
+          code: `declare const cond: boolean;
+          const c = cond ? Math : 1;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
             },
           ],
         },
