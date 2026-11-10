@@ -1533,9 +1533,50 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export const { Math: { ...m } } = globalThis;`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Math" },
               column: 16,
+            },
+          ],
+        },
+        {
+          name: "exports by name the rest of Math destructured from globalThis in a nested pattern",
+          filename: "src/run/run.ts",
+          code: `const { Math: { ...m } } = globalThis; export { m };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              column: 9,
+            },
+          ],
+        },
+        {
+          name: "exports the rest of Math destructured from globalThis in a nested pattern with a default Math",
+          filename: "src/run/run.ts",
+          code: `export const { Math: { ...m } = Math } = globalThis;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              column: 16,
+            },
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              column: 33,
+            },
+          ],
+        },
+        {
+          name: "exports another name beside the rest of Math destructured from globalThis in a nested pattern",
+          filename: "src/run/run.ts",
+          code: `const { Math: { ...m }, x } = globalThis; export { x };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              column: 9,
             },
           ],
         },

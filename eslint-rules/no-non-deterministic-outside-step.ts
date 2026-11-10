@@ -525,6 +525,27 @@ function samePath(
   return a !== null && b !== null && a.join(".") === b.join(".");
 }
 
+// True when the name a pattern's rest declares is exported, in the
+// declaration, `export const { Math: { ...m } } = globalThis`, or by name,
+// `export { m }`, so the copy passes to another module.
+function restExported(
+  pattern: TSESTree.ObjectPattern,
+  declarator: TSESTree.VariableDeclarator,
+  resolver: Resolver,
+): boolean {
+  const rest = pattern.properties.find(
+    (property) => property.type === AST_NODE_TYPES.RestElement,
+  );
+  if (rest === undefined) return false;
+  return resolver.sourceCode
+    .getDeclaredVariables(declarator)
+    .some(
+      (variable) =>
+        variable.identifiers[0] === rest.argument &&
+        exported(declarator, variable),
+    );
+}
+
 // True when a pattern ends in a rest, `{ a, ...rest }`, which copies the
 // object's other members.
 function copiesRest(pattern: TSESTree.ObjectPattern): boolean {
@@ -763,7 +784,8 @@ export const noNonDeterministicOutsideStep = createRule({
       // member that calls `Date` from it, `{ Date: { bind } } = globalThis`,
       // or copies the rest of an object that holds a source,
       // `{ Math: { ...m } } = globalThis`, since the name the rest declares
-      // carries the source on unseen.
+      // carries the source on unseen. When that name is exported, the
+      // report says the copy passes to another module.
       // Destructuring that member straight from `Date`, or from a default
       // `Date`, reports at `Date`, as passedOn says.
       VariableDeclarator(node) {
@@ -787,7 +809,13 @@ export const noNonDeterministicOutsideStep = createRule({
               const holder = keys
                 .map(holderOf)
                 .find((found) => found !== undefined);
-              if (holder !== undefined) report(property.key, holder, false);
+              if (holder !== undefined) {
+                report(
+                  property.key,
+                  holder,
+                  restExported(inner, node, context),
+                );
+              }
             }
             return false;
           },
