@@ -55,12 +55,21 @@ const DASH = `[-${String.fromCodePoint(0x2010)}-${String.fromCodePoint(0x2015)}]
 const NAMES = funder.names
   .map((name) => escape(name).replace(/-/gu, DASH))
   .join("|");
-// The names again, matching in any case without the `i` flag, for a pattern
-// whose own letters must keep their case.
-const ANY_CASE_NAMES = NAMES.replace(
-  /[A-Za-z]/gu,
-  (letter) => `[${letter.toUpperCase()}${letter.toLowerCase()}]`,
-);
+// Turns each letter of a pattern into a class of its upper and lower case,
+// so it matches in any case without the `i` flag, inside a pattern whose
+// own letters must keep their case. Any letter folds, not only A to Z, as
+// the `i` flag does (#301). A case that is more than one character, as
+// "SS" is for "ß", is left out of the class.
+export const anyCase = (pattern: string) =>
+  pattern.replace(/\p{L}/gu, (letter) => {
+    const cases = new Set(
+      [letter, letter.toUpperCase(), letter.toLowerCase()].filter(
+        (form) => [...form].length === 1,
+      ),
+    );
+    return cases.size === 1 ? letter : `[${[...cases].join("")}]`;
+  });
+const ANY_CASE_NAMES = anyCase(NAMES);
 const funderName = new RegExp(`(?:^|[^A-Za-z])(?:${NAMES})(?![A-Za-z])`, "iu");
 
 // A separator may be written as a slash, a backslash or the set minus sign.

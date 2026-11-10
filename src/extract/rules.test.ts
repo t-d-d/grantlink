@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { findReferences, referenceSchema, RULES_VERSION } from "./rules.ts";
+import {
+  anyCase,
+  findReferences,
+  referenceSchema,
+  RULES_VERSION,
+} from "./rules.ts";
 
 // Every reference here is made up in the shape of one the PRD (#1) quotes.
 const sections = (...text: string[]) => ({ text, awards: [] });
@@ -98,6 +103,16 @@ describe("the rules", () => {
     ).toEqual([
       { asWritten: "G123/45", normalised: "G123/45", format: "Gn/n" },
     ]);
+  });
+
+  // A made-up name with a capital outside A to Z, as funder.json holds
+  // only ASCII names today (#301).
+  it("reads a G number after a non-ASCII name written in lower case", () => {
+    const name = new RegExp(
+      String.raw`(?<=${anyCase("Élan Trust")} \()G\d+`,
+      "u",
+    );
+    expect("Funded by élan trust (G123/45).".match(name)?.[0]).toBe("G123");
   });
 
   it("leaves a G number in another funder's brackets", () => {
