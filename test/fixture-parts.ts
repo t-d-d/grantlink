@@ -247,31 +247,29 @@ function strayAttributes(element: Element, path: string): string[] {
   ];
 }
 
-// The same for the element and everything inside it.
-function strayAttributesWithin(element: Element, path: string): string[] {
-  return [
-    ...strayAttributes(element, path),
-    ...element.children.flatMap((child) =>
-      strayAttributesWithin(child, `${path}/${child.name}`),
-    ),
-  ];
-}
-
-// The attributes in a paragraph of a part, as for strayAttributesWithin,
-// and each <sec-meta> at any depth inside it, named whole. The cutter drops
-// every <sec-meta> in a part, in any case, wherever it stands, so what one
-// holds is kept without being read (#416).
-function strayInParagraph(element: Element, path: string): string[] {
+// The same for the element and everything inside it, but an element the
+// test picks out, at any depth, is named whole.
+function strayAttributesWithin(
+  element: Element,
+  path: string,
+  whole: (child: Element) => boolean = () => false,
+): string[] {
   return [
     ...strayAttributes(element, path),
     ...element.children.flatMap((child) => {
       const childPath = `${path}/${child.name}`;
-      return child.name.toLowerCase() === "sec-meta"
+      return whole(child)
         ? [childPath]
-        : strayInParagraph(child, childPath);
+        : strayAttributesWithin(child, childPath, whole);
     }),
   ];
 }
+
+// The cutter drops every <sec-meta> in a part, in any case, wherever it
+// stands, so what one inside a paragraph holds is kept without being read.
+// It is named whole (#416).
+const isSecMeta = (element: Element): boolean =>
+  element.name.toLowerCase() === "sec-meta";
 
 function strayInPart(part: Element, path: string): string[] {
   const paragraphs = part.children.some(
@@ -285,7 +283,7 @@ function strayInPart(part: Element, path: string): string[] {
       if (!PART_CHILDREN.includes(child.name)) return [childPath];
       // A heading's children are named whole by strayInHeadings.
       return child.name === "p"
-        ? strayInParagraph(child, childPath)
+        ? strayAttributesWithin(child, childPath, isSecMeta)
         : strayAttributes(child, childPath);
     }),
     ...strayInHeadings(part, path),
