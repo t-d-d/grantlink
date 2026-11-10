@@ -87,10 +87,10 @@ export function sameGrant(found: string, expected: string): boolean {
 
 // CRUK's reference forms (#503): a C/A pair; an award number of 4 to 6
 // digits, with or without its A; a Crick core funding number; a newer
-// code of the shape the rules read, 4 to 12 capitals, then a hyphen and
-// a suffix of 2 to 8 capitals and digits or a month and year written
-// straight on, then a slash and a number of six digits that starts with 1
-// (#583); or one that starts with CRUK and is, whole, a shape the rules
+// code of the shape the rules read, 4 to 12 capitals, then perhaps a
+// suffix, which is 2 to 8 capitals and digits after a hyphen or a month
+// and year written straight on, then a slash and a number of six digits
+// that starts with 1 (#583); or one that starts with CRUK and is, whole, a shape the rules
 // read, so it has a digit after the CRUK (#532). Only that last form takes
 // an id that starts with CRUK, so the scorer never takes a CRUK id the
 // rules refuse, such as CRUK/2019 (#575). A C part alone names a

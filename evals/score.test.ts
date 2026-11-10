@@ -67,6 +67,12 @@ describe("telling a CRUK reference from another linked id", () => {
     "CRUK-Nov21/100001",
     // A month written straight onto the code, as the rules read it.
     "CTRQQRMar21/100010",
+    "DRCDDRPGMApr2020\\100002",
+    // A code at the edges the rules allow: 4 and 12 capitals, and a
+    // suffix of 8 (#583).
+    "ABCD/100010",
+    "ABCDEFGHIJKL/100010",
+    "ABCD-ABCDEFGH/100010",
   ])("takes %s", (id) => {
     expect(crukReference(id)).toBe(true);
   });
@@ -110,6 +116,8 @@ describe("telling a CRUK reference from another linked id", () => {
     "DRCPGM/1000150",
     "ABCDEFGHIJKLM/100010",
     "CTRQQR2021/100010",
+    // A suffix of 9 (#583).
+    "ABCD-ABCDEFGHI/100010",
   ])("refuses %s", (id) => {
     expect(crukReference(id)).toBe(false);
   });
