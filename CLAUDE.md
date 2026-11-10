@@ -50,6 +50,7 @@ grantlink finds research papers that say Cancer Research UK funded them but that
 - Given an issue number, run the `fetch-ticket` skill first.
 - Labels: `type: …` and `mode: afk`, `mode: hitl` or `mode: human`. An issue is picked up as soon as it is labelled `mode: afk` and its blockers are closed, and goes from its text to a pull request without stopping to ask.
 - Blockers are GitHub's own issue dependencies, not lines in the body.
+- To hold a ticket until a date, start its body with the line `Blocked until: YYYY-MM-DD`, with a reason after the date if you like. Governor starts nothing on it before 00:00 UTC that day. It links the ticket as blocked by the wait ticket, #460, so the sidebar shows the hold, and takes the link off when the date passes. To end a wait early, delete the line. Never link a ticket to the wait ticket by hand.
 - Anything only the owner can do is not yours: a secret, a repository variable, an AWS setting, the registrar, a GitHub setting. Say what is needed and stop.
 - When your pull request has merged or closed, or you are done and have none, make the last line of your reply `Signing off.` or `Signing off: <reason>`. That archives the session. Do not sign off while the owner is working with you.
 

@@ -55,9 +55,11 @@ A pass merges the pull request.
    in `scripts/`, the live tests in `**/*.live.ts` with `test/tiers.ts`
    and `vitest.config.ts` that pick them out, the eval set in `evals/`, and
    the dependencies in `package.json` and `package-lock.json`. The deploy
-   job runs the scripts and the live tests with the deploy role's
-   credentials. A pull request that changes one waits for the owner, with
-   the entry's reason. Governor checks this in code.
+   job runs the scripts with the deploy role's credentials. It runs the
+   live tests without them, but it may ask GitHub for a token, and the
+   deploy role trusts that token, so the live tests' code could assume the
+   role. A pull request that changes one waits for the owner, with the
+   entry's reason. Governor checks this in code.
 
 9. **No required status check is red on its head.** Governor checks this in
    code, and a push that turns the check green meets it.
