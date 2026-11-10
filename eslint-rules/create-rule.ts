@@ -444,7 +444,7 @@ function aliasOf(
   ) {
     return null;
   }
-  const key = destructuredKey(id, name, "with-default");
+  const key = destructuredKey(id, name);
   if (key === null) return null;
   const member = memberOf(importOf(init, resolver, seen, true), key);
   // A name with a default may hold the default instead, so it binds the
@@ -454,26 +454,28 @@ function aliasOf(
 }
 
 // The constant key an object pattern destructures `name` from, at its top
-// level: `{ now }` or `{ now: at }`. A name with a default, `{ now = f }`,
-// may not hold what it reads, so only `with-default` counts it, for a rule
-// that only refuses. Null for a computed key that is not a constant, or for
-// a name the pattern destructures from a nested pattern, which this does not
-// follow.
-export function destructuredKey(
+// level: `{ now }`, `{ now: at }` or `{ now = f }`. A name with a default
+// may not hold what it reads, so aliasOf marks it inexact. Null for a
+// computed key that is not a constant, or for a name the pattern does not
+// destructure at its top level, such as one in a nested pattern.
+function destructuredKey(
   pattern: TSESTree.ObjectPattern,
   name: TSESTree.Identifier,
-  defaults: "exact" | "with-default",
 ): string | null {
-  for (const property of pattern.properties) {
-    if (property.type !== AST_NODE_TYPES.Property) continue;
-    const value =
-      defaults === "with-default" &&
-      property.value.type === AST_NODE_TYPES.AssignmentPattern
-        ? property.value.left
-        : property.value;
-    if (value === name) return keyName(property.key, property.computed);
-  }
-  return null;
+  const property = pattern.properties.find(
+    (p): p is TSESTree.Property =>
+      p.type === AST_NODE_TYPES.Property && withoutDefault(p.value) === name,
+  );
+  return property === undefined
+    ? null
+    : keyName(property.key, property.computed);
+}
+
+// A pattern's target without the default it may give, `{ now = f }`.
+export function withoutDefault(
+  value: TSESTree.Property["value"],
+): TSESTree.Node {
+  return value.type === AST_NODE_TYPES.AssignmentPattern ? value.left : value;
 }
 
 // The named import a member of a namespace import gives.

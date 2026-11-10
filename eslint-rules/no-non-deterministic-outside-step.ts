@@ -11,6 +11,7 @@ import {
   memberName,
   unwrapped,
   walkAliases,
+  withoutDefault,
 } from "./create-rule.ts";
 import type { Resolver } from "./create-rule.ts";
 
@@ -238,11 +239,6 @@ function eachProperty(
     }
   }
   return false;
-}
-
-// A pattern's target without the default it may give, `{ now = f }`.
-function withoutDefault(value: TSESTree.Property["value"]): TSESTree.Node {
-  return value.type === AST_NODE_TYPES.AssignmentPattern ? value.left : value;
 }
 
 // The global path a name destructured from an object pattern reads, from
