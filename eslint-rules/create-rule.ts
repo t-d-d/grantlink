@@ -1,4 +1,14 @@
-import { posix, relative, resolve, sep } from "node:path";
+import { realpathSync } from "node:fs";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  posix,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AST_NODE_TYPES,
@@ -313,14 +323,39 @@ export function lookup(
 }
 
 // The repo's root: the directory that holds eslint.config.js and this
-// folder of rules.
+// folder of rules. Node takes it from the rules' real path.
 const root = fileURLToPath(new URL("..", import.meta.url));
 
 // The file's path from the repo's root, with forward slashes, wherever
 // ESLint runs. A relative filename is relative to the directory ESLint runs
-// in, so it is resolved from there first.
+// in, so it is resolved from there first. ESLint gives the path the editor
+// or shell used, which may reach the repo through a symlink (#402). When
+// that path falls outside the root, both are compared again as real paths.
+// Only then does it read the disk, so a file named from the root costs
+// nothing, and the last answer is kept because the rules ask for the same
+// file many times.
+let last: { filename: string; cwd: string; path: string } | undefined;
 export function repoPath(context: { filename: string; cwd: string }): string {
-  return relative(root, resolve(context.cwd, context.filename))
-    .split(sep)
-    .join("/");
+  const { filename, cwd } = context;
+  if (last?.filename !== filename || last.cwd !== cwd) {
+    const file = resolve(cwd, filename);
+    let path = relative(root, file);
+    if (path.startsWith("..") || isAbsolute(path)) {
+      path = relative(realPath(root), realPath(file));
+    }
+    last = { filename, cwd, path: path.split(sep).join("/") };
+  }
+  return last.path;
+}
+
+// An absolute path with every symlink resolved. An editor lints a buffer
+// that may not be saved yet, so a file or folder that is not on disk keeps
+// its name under its parent's real path.
+function realPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(realPath(parent), basename(path));
+  }
 }
