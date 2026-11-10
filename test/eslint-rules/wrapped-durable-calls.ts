@@ -6,8 +6,9 @@
 //
 // The comma operator around the callee, `(0, ctx.step)(...)`, is not listed.
 // It calls the method with no `this`, and the SDK's operations read their
-// context from `this`, so the call throws before it runs anything. There is
-// no durable call there for a rule to treat as one.
+// context from `this`, so the call throws before it runs anything. The rules
+// still read through it, as unwrapped does on any callee, and treat it as the
+// durable call. No test pins that either way, since no real call is there.
 export interface WrappedDurableCall {
   name: string;
   call: (method: string, args: string) => string;
@@ -65,6 +66,10 @@ export const WRAPPED_DURABLE_CALLS: readonly WrappedDurableCall[] = [
   {
     name: "a call asserted with as after the comma operator",
     call: (m, a) => `(0, ctx.${m}(${a}) as Promise<number>)`,
+  },
+  {
+    name: "the comma operator asserted with as around a call",
+    call: (m, a) => `((0, ctx.${m}(${a})) as Promise<number>)`,
   },
   {
     name: "layers of wrappers on the call and the callee",

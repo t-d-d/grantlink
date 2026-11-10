@@ -499,18 +499,18 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
         errors: [{ messageId: "awaitOutsideStep" }],
       },
       {
-        name: "awaits I/O ahead of a step's callback in the comma operator, which the body evaluates",
+        name: "awaits I/O ahead of a step's callback in the comma operator, which the body evaluates, and inside the callback, which the step runs",
         code: `async function run(ctx: any) {
-          await ctx.step("s", (await fetchPaper(), async () => 1), { retryStrategy: r });
+          await ctx.step("s", (await fetchPaper(), async () => { await readPaper(); }), { retryStrategy: r });
         }`,
         errors: [{ messageId: "awaitOutsideStep" }],
       },
       {
-        name: "awaits I/O ahead of askEuropePmc's read in the comma operator, which the body evaluates",
+        name: "awaits I/O ahead of askEuropePmc's read in the comma operator, which the body evaluates, and inside the read, which the step runs",
         filename: "src/run/run.ts",
         code: `import { askEuropePmc } from "./owed.ts";
         async function run(ctx: any) {
-          await askEuropePmc(ctx, "paper", "wait", r, (await fetchPaper(), async () => 1));
+          await askEuropePmc(ctx, "paper", "wait", r, (await fetchPaper(), async () => { await readPaper(); }));
         }`,
         errors: [{ messageId: "awaitOutsideStep" }],
       },

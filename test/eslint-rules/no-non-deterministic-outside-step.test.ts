@@ -102,9 +102,9 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           errors: [{ messageId: "nonDeterministicOutsideStep" }],
         },
         {
-          name: "reads the clock ahead of a step's callback in the comma operator, which the body evaluates",
+          name: "reads the clock ahead of a step's callback in the comma operator, which the body evaluates, and inside the callback, which the step runs",
           code: `async function run(ctx: any) {
-            await ctx.step("s", (Date.now(), async () => 1), { retryStrategy: r });
+            await ctx.step("s", (Date.now(), async () => Date.now()), { retryStrategy: r });
           }`,
           errors: [
             {
@@ -114,11 +114,11 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
-          name: "reads the clock ahead of askEuropePmc's read in the comma operator, which the body evaluates",
+          name: "reads the clock ahead of askEuropePmc's read in the comma operator, which the body evaluates, and inside the read, which the step runs",
           filename: "src/run/run.ts",
           code: `import { askEuropePmc } from "./owed.ts";
           async function run(ctx: any) {
-            await askEuropePmc(ctx, "paper", "wait", r, (Date.now(), async () => 1));
+            await askEuropePmc(ctx, "paper", "wait", r, (Date.now(), async () => Date.now()));
           }`,
           errors: [
             {
