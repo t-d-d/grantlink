@@ -207,10 +207,13 @@ function paragraphs(part: XmlNode[]): string[] {
 // What counts as a funding part, read here by the cutter and by the check on
 // recorded fixtures (test/fixture-parts.ts), so the two agree (#159).
 
-// Whether a footnote's type marks it as funding text.
+// Whether a footnote's type marks it as funding text. A type written twice
+// is not XML, and either value counts, as before #343 (#354).
 export const FUNDING_FOOTNOTE = (element: XmlElement): boolean =>
-  ["financial-disclosure", "funding", "supported-by"].includes(
-    attribute(element, "fn-type") ?? "",
+  element.attributes.some(
+    ({ name, value }) =>
+      name === "fn-type" &&
+      ["financial-disclosure", "funding", "supported-by"].includes(value),
   );
 
 // What sits between a section's opening tag, its sec-meta, its label and its
