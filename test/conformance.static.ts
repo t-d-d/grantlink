@@ -72,9 +72,11 @@ describe("the scheduled conformance run", () => {
   });
 
   // Checkout needs contents: read. The repository's record and the wait
-  // ticket need no permission while the repository is public. The prod
-  // environment and its branch policies need actions: read. The OIDC token
-  // for the conformance role needs id-token: write.
+  // ticket need no permission while the repository is public. If it goes
+  // private, the wait ticket's read fails until this list and the
+  // workflow grant issues: read. The prod environment and its branch
+  // policies need actions: read. The OIDC token for the conformance role
+  // needs id-token: write.
   it("gives the token only the permissions the files need", () => {
     expect(workflow.permissions).toEqual({
       contents: "read",
