@@ -149,7 +149,7 @@ function parse(xml: string): Element {
 // people (#222), is named with the rest (#215). So is one in the
 // acknowledgements, and a section inside them is named whole, with any
 // <sec-meta> it holds, though the cutter now drops every <sec-meta> it reads
-// (#229).
+// (#229). One inside a paragraph is named too, at any depth (#416).
 const PART_CHILDREN = ["p", "title", "label"];
 
 const hasText = (element: Element): boolean =>
@@ -257,6 +257,22 @@ function strayAttributesWithin(element: Element, path: string): string[] {
   ];
 }
 
+// The attributes in a paragraph of a part, as for strayAttributesWithin,
+// and each <sec-meta> at any depth inside it, named whole. The cutter drops
+// every <sec-meta> in a part, in any case, wherever it stands, so what one
+// holds is kept without being read (#416).
+function strayInParagraph(element: Element, path: string): string[] {
+  return [
+    ...strayAttributes(element, path),
+    ...element.children.flatMap((child) => {
+      const childPath = `${path}/${child.name}`;
+      return child.name.toLowerCase() === "sec-meta"
+        ? [childPath]
+        : strayInParagraph(child, childPath);
+    }),
+  ];
+}
+
 function strayInPart(part: Element, path: string): string[] {
   const paragraphs = part.children.some(
     (child) => child.name === "p" && hasText(child),
@@ -269,7 +285,7 @@ function strayInPart(part: Element, path: string): string[] {
       if (!PART_CHILDREN.includes(child.name)) return [childPath];
       // A heading's children are named whole by strayInHeadings.
       return child.name === "p"
-        ? strayAttributesWithin(child, childPath)
+        ? strayInParagraph(child, childPath)
         : strayAttributes(child, childPath);
     }),
     ...strayInHeadings(part, path),
