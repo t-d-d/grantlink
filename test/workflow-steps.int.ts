@@ -269,7 +269,7 @@ describe("the eval's comment, when gh finds more than one earlier comment", () =
   );
   const gh = [
     'if [ "$2" = -X ]; then echo "$*" >> "$RUNNER_TEMP/gh-args"; exit 0; fi',
-    "for ((i = 101; i < 30101; i++)); do echo \"$i\"; done",
+    'for ((i = 101; i < 30101; i++)); do echo "$i"; done',
   ].join("\n");
 
   it("succeeds and updates the first one", () => {
