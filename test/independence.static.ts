@@ -17,7 +17,11 @@ describe("fitness: every view carries the independence notice (independence.md)"
     "%s carries the notice, the credit and the contact",
     (path) => {
       const html = readRepoFile(path);
-      expect(textOf(html)).toMatch(NOTICE);
+      // The notice belongs in the footer. The line under the headline
+      // (#588) carries the same words, so read the footer alone.
+      const footer = /<footer\b[^>]*>([\s\S]*?)<\/footer>/u.exec(html);
+      expect(footer).not.toBeNull();
+      expect(textOf(footer?.[1] ?? "")).toMatch(NOTICE);
       expect(html).toMatch(CREDIT);
       expect(html).toMatch(TERMS);
       expect(html).toContain(`mailto:${CONTACT}`);
@@ -28,6 +32,18 @@ describe("fitness: every view carries the independence notice (independence.md)"
     expect(readRepoFile("README.md")).toMatch(
       /not affiliated with or endorsed by Cancer Research UK/u,
     );
+  });
+});
+
+// On a phone a reader may see only the headline and the count, so the
+// first screen says the page is independent too, as well as the footer
+// (#588). Nothing may come between the headline and that line.
+describe("the first screen says the page is independent (#588)", () => {
+  it("puts the independence line straight after the headline", () => {
+    const html = readRepoFile("site/index.html");
+    const afterHeadline = /<\/h1>\s*(<p\b[^>]*>[\s\S]*?<\/p>)/u.exec(html);
+    expect(afterHeadline).not.toBeNull();
+    expect(textOf(afterHeadline?.[1] ?? "")).toMatch(NOTICE);
   });
 });
 

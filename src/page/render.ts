@@ -42,7 +42,7 @@ export function renderFound(found: Found): string {
   const cards: [number, string][] = [
     [
       counts.papers,
-      "papers found that name Cancer Research UK but are linked to none of its grants",
+      "papers that name Cancer Research UK as a funder but are not yet linked to one of its grants in Europe PMC",
     ],
     [counts.processed, "papers read"],
     [counts.withReference, "papers that give a grant reference"],
