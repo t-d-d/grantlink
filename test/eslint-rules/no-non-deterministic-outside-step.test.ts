@@ -814,6 +814,65 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "exports an object literal that holds Math by assignment",
+          filename: "src/run/run.ts",
+          code: `export let m;
+          m = { x: Math };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest from a member of an object literal by assignment",
+          filename: "src/run/run.ts",
+          code: `export let m;
+          ({ a: { ...m } } = { a: Math });`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "copies Math through a rest in a nested default to a name it does not export, beside one it does",
+          filename: "src/run/run.ts",
+          code: `export let a;
+          let m;
+          ({ a, x: { ...m } = Math } = globalThis);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "globalThis" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "exports by default a name an assignment gives Math",
+          filename: "src/run/run.ts",
+          code: `let m;
+          m = Math;
+          export default m;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
           name: "exports bind destructured from Date",
           code: `export const { bind } = Date;`,
           errors: [

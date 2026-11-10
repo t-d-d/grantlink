@@ -416,11 +416,13 @@ function exported(
   declarator: TSESTree.VariableDeclarator,
   variable: TSESLint.Scope.Variable,
 ): boolean {
-  return (
-    declarator.parent.parent.type === AST_NODE_TYPES.ExportNamedDeclaration ||
-    variable.references.some(
-      (ref) => ref.identifier.parent.type === AST_NODE_TYPES.ExportSpecifier,
-    )
+  return exportedDeclaration(declarator) || exportedByName(variable);
+}
+
+// True when an export names a variable after its declaration, `export { m }`.
+function exportedByName(variable: TSESLint.Scope.Variable): boolean {
+  return variable.references.some(
+    (ref) => ref.identifier.parent.type === AST_NODE_TYPES.ExportSpecifier,
   );
 }
 
@@ -476,15 +478,15 @@ function exportsUnfollowed(
 // Date.now`, `const D = Date` and then `export { D }`, a copy made through
 // a rest, `export const { ...m } = Math` or `export const { foo: { ...m } =
 // Math } = x`, or a member that calls `Date`, `export const { bind } =
-// Date`, or a value an assignment gives an exported name, as assignmentOf
+// Date`, or a value an assignment gives an exported name, as assignedTo
 // and assignsExported read it, `D = Date` or `({ ...m } = Math)` after
-// `export let m`. Its report stands for the export. A call is never one,
-// since `export const d = new Date()` passes on the value it read and not
-// the source.
+// `export let m`, or `export default m` after `m = Math`. Its report stands
+// for the export. A call is never one, since `export const d = new Date()`
+// passes on the value it read and not the source.
 function exportedSource(node: TSESTree.Node, resolver: Resolver): boolean {
   const outer = outermost(node);
-  const assignment = assignmentOf(outer);
-  if (assignment !== null) return assignsExported(assignment, resolver);
+  const assigned = assignedTo(outer);
+  if (assigned !== null) return assignsExported(assigned, resolver);
   const parent = outer.parent;
   switch (parent?.type) {
     case AST_NODE_TYPES.ExportDefaultDeclaration:
@@ -508,14 +510,14 @@ function exportedSource(node: TSESTree.Node, resolver: Resolver): boolean {
 // a new value and not the source.
 const PASSES_VALUE = new Set(["=", "||=", "&&=", "??="]);
 
-// The assignment that gives a value to names: the value is its right side,
-// `m = Math`, an element or member of a literal there, `[{ ...m }] =
-// [Math]`, or a default in its pattern, `({ x: { ...m } = Math } =
-// globalThis)`. Null for anything else, such as a declaration, which
-// exportsName reads, or a parameter's default.
-function assignmentOf(
-  outer: TSESTree.Node,
-): TSESTree.AssignmentExpression | null {
+// The target of an assignment that gives the value to names: its left side
+// when the value is its right side, `m = Math`, or an element or member of
+// a literal there, `[{ ...m }] = [Math]` or `m = { x: Math }`, and the
+// pattern a default fills when the value is a default in its left side,
+// `{ ...m }` in `({ a, x: { ...m } = Math } = globalThis)`. Null for
+// anything else, such as a declaration, which exportsName reads, or a
+// parameter's default.
+function assignedTo(outer: TSESTree.Node): TSESTree.Node | null {
   let n = outer;
   while (
     n.parent?.type === AST_NODE_TYPES.ArrayExpression ||
@@ -523,22 +525,21 @@ function assignmentOf(
     (n.parent?.type === AST_NODE_TYPES.Property &&
       n.parent.value === n &&
       n.parent.parent.type === AST_NODE_TYPES.ObjectExpression) ||
-    (n.parent?.type === AST_NODE_TYPES.ObjectExpression &&
-      n.type !== AST_NODE_TYPES.Property)
+    n.parent?.type === AST_NODE_TYPES.ObjectExpression
   ) {
     n = outermost(n.parent);
   }
   const parent = n.parent;
   if (parent?.type === AST_NODE_TYPES.AssignmentExpression) {
     return parent.right === n && PASSES_VALUE.has(parent.operator)
-      ? parent
+      ? parent.left
       : null;
   }
   if (parent?.type !== AST_NODE_TYPES.AssignmentPattern || parent.right !== n) {
     return null;
   }
-  // Up through the pattern the default sits in, to the assignment whose
-  // left side it is.
+  // Up through the pattern the default sits in, to check that an
+  // assignment's left side holds it.
   let target: TSESTree.Node = parent;
   for (;;) {
     const above: TSESTree.Node = target.parent;
@@ -556,19 +557,16 @@ function assignmentOf(
     }
     return above.type === AST_NODE_TYPES.AssignmentExpression &&
       above.left === target
-      ? above
+      ? parent.left
       : null;
   }
 }
 
-// True when an assignment writes to an exported name: a name its left side
-// gives a value, `({ ...m } = Math)` after `export let m`, or the object
-// it writes a member of, `({ ...o.m } = Math)` after `export const o = {}`.
-function assignsExported(
-  assignment: TSESTree.AssignmentExpression,
-  resolver: Resolver,
-): boolean {
-  return targets(assignment.left).some((target) => {
+// True when an assignment target writes to an exported name: a name it
+// gives a value, `{ ...m }` after `export let m`, or the object it writes a
+// member of, `{ ...o.m }` after `export const o = {}`.
+function assignsExported(left: TSESTree.Node, resolver: Resolver): boolean {
+  return targets(left).some((target) => {
     const root = rootIdentifier(target);
     if (root === undefined) return false;
     const variable = lookup(root.name, resolver.sourceCode.getScope(root));
@@ -578,12 +576,20 @@ function assignsExported(
 
 // True when a module exports a variable: its declaration is exported,
 // `export let m`, `export function m() {}` or `export class m {}`, or a
-// later `export { m }` names it.
+// later export names it, `export { m }`, `export default m` or `export =
+// m`.
 function exportedVariable(variable: TSESLint.Scope.Variable): boolean {
   return (
-    variable.references.some(
-      (ref) => ref.identifier.parent.type === AST_NODE_TYPES.ExportSpecifier,
-    ) ||
+    exportedByName(variable) ||
+    variable.references.some(({ identifier }) => {
+      const parent = identifier.parent;
+      return (
+        (parent.type === AST_NODE_TYPES.ExportDefaultDeclaration &&
+          parent.declaration === identifier) ||
+        (parent.type === AST_NODE_TYPES.TSExportAssignment &&
+          parent.expression === identifier)
+      );
+    }) ||
     variable.defs.some((def) => {
       const declaration =
         def.node.type === AST_NODE_TYPES.VariableDeclarator
