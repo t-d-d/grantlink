@@ -608,7 +608,7 @@ async function refusingLast() {
   dry.deps.text.hasSnapshot = () => Promise.resolve(true);
   await runWith(dry);
   const last = order.at(-1);
-  expect(last).toBeDefined();
+  if (last === undefined) throw new Error("the dry run read no paper");
 
   const fake = fakeDeps();
   const real = fake.deps.europePmc;
@@ -644,7 +644,7 @@ async function refusingLast() {
     seen.publishedAt = Date.now();
     return publish(files);
   };
-  return { fake, seen };
+  return { fake, seen, last };
 }
 
 describe("fitness: a step Europe PMC refused waits before asking again (europe-pmc.md)", () => {
@@ -747,6 +747,39 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
     expect(retryDelays("snapshot-failed")).not.toEqual([]);
     expect(logged("snapshot-failed")).toEqual([]);
     expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
+    expect(seen.notBefore).toBeGreaterThan(0);
+    expect(ended).toBeGreaterThanOrEqual(seen.notBefore);
+  });
+
+  it.each(["recordSearch", "publish"] as const)(
+    "fails only once a refusal on its last paper has been waited out, when %s fails after its retries (#412)",
+    async (method) => {
+      const { fake, seen } = await refusingLast();
+      const failing = () => Promise.reject(new Error("S3 answered 503"));
+      if (method === "publish") fake.deps.site.publish = failing;
+      else fake.deps.table.recordSearch = failing;
+      const { status, error, ended, retryDelays } = await runWith(fake);
+      expect(status).toBe("FAILED");
+      expect(error).toContain("S3 answered 503");
+      expect(
+        retryDelays(method === "publish" ? "publish" : "searched"),
+      ).not.toEqual([]);
+      expect(seen.notBefore).toBeGreaterThan(0);
+      expect(ended).toBeGreaterThanOrEqual(seen.notBefore);
+    },
+  );
+
+  it("fails only once a refusal on its last paper has been waited out, when marking that paper failed fails after its retries (#412)", async () => {
+    const { fake, seen, last } = await refusingLast();
+    const markFailed = fake.deps.table.markFailed.bind(fake.deps.table);
+    fake.deps.table.markFailed = (pmcid) =>
+      pmcid === last
+        ? Promise.reject(new Error("DynamoDB answered 503"))
+        : markFailed(pmcid);
+    const { status, error, ended, retryDelays } = await runWith(fake);
+    expect(status).toBe("FAILED");
+    expect(error).toContain("DynamoDB answered 503");
+    expect(retryDelays(`failed-${last}`)).not.toEqual([]);
     expect(seen.notBefore).toBeGreaterThan(0);
     expect(ended).toBeGreaterThanOrEqual(seen.notBefore);
   });
