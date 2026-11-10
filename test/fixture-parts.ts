@@ -61,8 +61,8 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
   "article/front/article-meta": (child) =>
     ["article-id", "permissions", group].includes(child.name),
   "article/front/article-meta/permissions": (child) => child.name === "license",
-  [GROUP]: (child) => [statement, award].includes(child.name),
-  [`${GROUP}/${award}`]: (child) => [source, id].includes(child.name),
+  [GROUP]: (child) => child.name === statement || child.name === award,
+  [`${GROUP}/${award}`]: (child) => child.name === source || child.name === id,
   "article/body": isFundingSection,
   "article/back": (child) =>
     child.name === "ack" ||
