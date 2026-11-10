@@ -7,9 +7,12 @@ import { root } from "./repo.ts";
 // parameter is function-typed when the type checker gives its type, or one
 // member of its union, a call signature, so an alias such as
 // `type Log = () => void` counts. A parameter whose type does not resolve is
-// reported, since the check cannot tell what it is. The source is checked as
-// if it sat at `path` in the repo, under the repo's tsconfig.json, so its
-// relative and package imports resolve as they do for the real module.
+// reported, since the check cannot tell what it is. A rest parameter whose
+// element type is a function is reported wherever it sits and whether or not
+// it is listed, since the table lists single positions and cannot describe it
+// (#480). The source is checked as if it sat at `path` in the repo, under the
+// repo's tsconfig.json, so its relative and package imports resolve as they
+// do for the real module.
 export function callbackMismatches(
   source: string,
   name: string,
@@ -49,10 +52,19 @@ export function callbackMismatches(
     .map((position) => `${name} has no parameter ${String(position)}`);
   fn.parameters.forEach((parameter, position) => {
     const listed = callbacks.includes(position);
-    if (position === 0 && !listed) return;
+    const rest = parameter.dotDotDotToken !== undefined;
+    if (position === 0 && !listed && !rest) return;
     const label = `${name}'s parameter ${String(position)} (${parameter.name.getText()})`;
-    const kind = kindOf(checker.getTypeAtLocation(parameter));
-    if (kind === "unread")
+    const type = checker.getTypeAtLocation(parameter);
+    const element = rest
+      ? checker.getIndexTypeOfType(type, ts.IndexKind.Number)
+      : type;
+    const kind = element ? kindOf(element) : "unread";
+    if (rest && kind === "function")
+      problems.push(
+        `${label} is a rest parameter of functions, which the table cannot list`,
+      );
+    else if (kind === "unread")
       problems.push(`${label} has a type the check cannot read`);
     else if (listed && kind === "other")
       problems.push(`${label} is not a function`);
