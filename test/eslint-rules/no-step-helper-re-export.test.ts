@@ -91,13 +91,13 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         const ask = somethingElse;
         export { ask };`,
       },
-      {
-        name: "exports a local alias of askEuropePmc asserted with as under the helper's own name from its own module",
+      ...OWN_MODULE_WRAPPERS.map(([wrapper, init]) => ({
+        name: `exports a local alias of askEuropePmc ${wrapper} under the helper's own name from its own module`,
         filename: "src/run/owed.ts",
         code: `async function askEuropePmc() {}
-        const impl = askEuropePmc as typeof askEuropePmc;
+        const impl = ${init};
         export { impl as askEuropePmc };`,
-      },
+      })),
       {
         name: "exports a local alias of another function asserted as askEuropePmc's type in the helper's module",
         filename: "src/run/owed.ts",
@@ -276,14 +276,6 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         let impl = askEuropePmc;
         impl = somethingElse;
         export { impl as askEuropePmc };`,
-        errors: [{ messageId: "reExport" }],
-      },
-      {
-        name: "exports a local alias of askEuropePmc through a type assertion from its own module",
-        filename: "src/run/owed.ts",
-        code: `async function askEuropePmc() {}
-        const ask = askEuropePmc as typeof askEuropePmc;
-        export { ask };`,
         errors: [{ messageId: "reExport" }],
       },
       {

@@ -212,17 +212,8 @@ describe("fitness: no durable operation inside its own context's operation (dura
         }`,
         errors: [{ messageId: "sameContextUsage" }],
       },
-      {
-        name: "reaches the same context through an alias with a non-null assertion",
-        code: `async function run(ctx: any) {
-          const same = ctx!;
-          await ctx.runInChildContext("paper", async () => {
-            await same.wait("pause", { seconds: 1 });
-          });
-        }`,
-        errors: [{ messageId: "sameContextUsage" }],
-      },
       ...[
+        ["with a non-null assertion", "ctx!"],
         ["asserted with as", "ctx as Context"],
         ["asserted with angle brackets", "<Context>ctx"],
         ["checked with satisfies", "ctx satisfies Context"],
