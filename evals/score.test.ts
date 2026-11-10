@@ -126,6 +126,10 @@ describe("finding which linked grants a paper prints", () => {
     ["A1234", "<p>Recruited with grant 1234.</p>"],
     // A DOI ends at a space, so a grant after it still reads (#597).
     ["A12345", "<p>Data at 10.7554/eLife.1. Funded by grant 12345.</p>"],
+    // A DOI also ends at a character no DOI holds, such as a comma or the
+    // ampersand that starts an entity (#597).
+    ["A12345", "<p>Cancer Research UK (10.13039/501100000289,12345)</p>"],
+    ["A12345", "<p>Data at 10.5061/dryad.1&#x000a0;12345.</p>"],
     // A year reads near any name the rules read for the funder (#520).
     ["A2019", "<p>Funded by Cancer Research U.K. grant 2019.</p>"],
     ["A2019", "<p>Funded by CR-UK grant 2019.</p>"],
