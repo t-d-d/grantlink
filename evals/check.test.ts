@@ -111,8 +111,8 @@ describe("the pull request's comment", () => {
       JSON.stringify({ ...older, rows: older.rows.slice(0, -1) }),
       () => undefined,
     );
-    expect(live).not.toBe("older-format");
-    if (live === "older-format") return;
+    expect(live).not.toBe("unreadable");
+    if (live === "unreadable") return;
     const text = comment(report({ "recall-a": 0.96, spend: 0.5 }), live);
     expect(text).toContain(
       "| Recall | Gold set A | 95% or more | 96.0% | 90.0% | go |",
@@ -141,8 +141,8 @@ describe("the pull request's comment", () => {
       }),
       () => undefined,
     );
-    expect(live).not.toBe("older-format");
-    if (live === "older-format") return;
+    expect(live).not.toBe("unreadable");
+    if (live === "unreadable") return;
     const text = comment(report({ "recall-a": 0.96, spend: 0 }), live);
     expect(text).toContain(
       "| Recall | Gold set A | 95% or more | 96.0% | 90.0% | go |",
@@ -168,8 +168,8 @@ describe("the pull request's comment", () => {
       }),
       () => undefined,
     );
-    expect(live).not.toBe("older-format");
-    if (live === "older-format") return;
+    expect(live).not.toBe("unreadable");
+    if (live === "unreadable") return;
     const text = comment(report({ "recall-a": 0.96, spend: 0 }), live);
     expect(text).toContain(
       "| Recall | Gold set A | 95% or more | 96.0% | 90.0% | go |",
@@ -218,7 +218,7 @@ describe("the pull request's comment", () => {
       JSON.stringify(change(report({ "recall-a": 0.9, spend: 0 }))),
       () => undefined,
     );
-    expect(live).toBe("older-format");
+    expect(live).toBe("unreadable");
     const text = comment(report({ "recall-a": 0.96, spend: 0 }), live);
     expect(text).toContain(
       "| Recall | Gold set A | 95% or more | 96.0% | - | go |",
@@ -248,8 +248,8 @@ describe("the pull request's comment", () => {
       JSON.stringify({ ...report({ spend: 0 }), snapshot }),
       () => undefined,
     );
-    expect(live).not.toBe("older-format");
-    if (live === "older-format") return;
+    expect(live).not.toBe("unreadable");
+    if (live === "unreadable") return;
     expect(live.snapshot).toBeNull();
   });
 
@@ -263,8 +263,8 @@ describe("the pull request's comment", () => {
       }),
       () => undefined,
     );
-    expect(live).not.toBe("older-format");
-    if (live === "older-format") return;
+    expect(live).not.toBe("unreadable");
+    if (live === "unreadable") return;
     const text = comment(
       { ...report({ "recall-a": 0.9, spend: 0 }), snapshot: s3 },
       live,
@@ -282,8 +282,8 @@ describe("the pull request's comment", () => {
       JSON.stringify({ ...report({ spend: 0 }), snapshot: null }),
       () => undefined,
     );
-    expect(live).not.toBe("older-format");
-    if (live === "older-format") return;
+    expect(live).not.toBe("unreadable");
+    if (live === "unreadable") return;
     const text = comment({ ...report({ spend: 0 }), snapshot: s3 }, live);
     expect(text).toContain(
       "The live release was scored on no snapshot and this pull request on snapshot s3, so their scores do not compare.",
@@ -302,7 +302,7 @@ describe("the pull request's comment", () => {
         ...report({ spend: 0 }),
         snapshot: { ...s2, id },
       });
-      expect(readLive(live, () => undefined)).toBe("older-format");
+      expect(readLive(live, () => undefined)).toBe("unreadable");
     },
   );
 
@@ -311,14 +311,14 @@ describe("the pull request's comment", () => {
       JSON.stringify({ ...report({ spend: 0 }), snapshot: s3 }),
       () => undefined,
     );
-    expect(live).not.toBe("older-format");
-    if (live === "older-format") return;
+    expect(live).not.toBe("unreadable");
+    if (live === "unreadable") return;
     const text = comment({ ...report({ spend: 0 }), snapshot: s3 }, live);
     expect(text).not.toContain("do not compare");
   });
 
   it("treats a live report that is not JSON as one it cannot read", () => {
-    expect(readLive("{", () => undefined)).toBe("older-format");
+    expect(readLive("{", () => undefined)).toBe("unreadable");
   });
 
   // The comment shows only that the live report could not be read. The
