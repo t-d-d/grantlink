@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import { findReferences } from "../extract/rules.ts";
 import {
   elements,
+  FUNDING_TITLES,
   FUNDING_FOOTNOTE,
   fundingSections,
   isFundingSectionAt,
+  normaliseTitle,
 } from "./jats.ts";
 
 const fixture = (pmcid: string) =>
@@ -162,6 +164,7 @@ describe("cutting a paper to its funding sections", () => {
         "<sec><label>5.</label><title>ACKNOWLEDGEMENTS</title><p>Grant A1.</p></sec>",
       ],
       ["<sec><title>Support</title><p>Grant A1.</p></sec>"],
+      ["<sec><title>Role of the funder/sponsor</title><p>Grant A1.</p></sec>"],
       [
         "<sec><sec-meta><kwd-group><kwd>k</kwd></kwd-group></sec-meta><title>Funding</title><p>Grant A1.</p></sec>",
       ],
@@ -233,6 +236,79 @@ describe("cutting a paper to its funding sections", () => {
     ])("nor a body section whose title goes on past Support, %s", (section) => {
       expect(fundingSections(paper(section)).text).toEqual([]);
     });
+
+    // A title counts only when the whole of it, normalised, is a heading on
+    // the list, so a body section whose title only begins with a funding
+    // word is not kept (#239).
+    it.each([
+      ["Funding models for new drugs"],
+      ["Funding sources in oncology"],
+      ["Acknowledgements of uncertainty"],
+      ["Financial support for patients"],
+      ["Grant support systems"],
+    ])("nor a body section titled %s", (title) => {
+      expect(
+        fundingSections(
+          `<body><sec><title>${title}</title><p>Body of the paper.</p></sec></body>`,
+        ).text,
+      ).toEqual([]);
+    });
+
+    // The headings #239 names. Gold sets A and B add their own to the list.
+    const HEADINGS = [
+      "funding",
+      "funding information",
+      "funding statement",
+      "funding sources",
+      "source of funding",
+      "sources of funding",
+      "role of the funding source",
+      "financial support",
+      "grant support",
+      "support",
+      "acknowledgement",
+      "acknowledgements",
+      "acknowledgment",
+      "acknowledgments",
+      "acknowledgements and funding",
+      "funding and acknowledgements",
+    ];
+
+    it("lists each heading #239 names, in normal form", () => {
+      for (const heading of HEADINGS) {
+        expect(FUNDING_TITLES.has(heading)).toBe(true);
+      }
+      for (const heading of FUNDING_TITLES) {
+        expect(normaliseTitle(heading)).toBe(heading);
+      }
+    });
+
+    const title = (words: string) =>
+      words.replace(/\b\w/gu, (letter) => letter.toUpperCase());
+    const variants = (heading: string) => [
+      heading,
+      heading.toUpperCase(),
+      `${title(heading)}:`,
+      `${title(heading)}.`,
+      ` ${heading.replaceAll(" ", "  ")} `,
+      heading.replaceAll(" ", " "),
+      `${heading.replaceAll(" ", "&#160;")}&#x2014;`,
+      `(${heading})`,
+    ];
+
+    it.each([...new Set([...HEADINGS, ...FUNDING_TITLES])])(
+      "and keeps a section titled %s, whatever its case, punctuation and spacing",
+      (heading) => {
+        for (const written of variants(heading)) {
+          expect(
+            fundingSections(
+              paper(`<sec><title>${written}</title><p>Grant A1.</p></sec>`),
+            ).text,
+            written,
+          ).toEqual(["Grant A1."]);
+        }
+      },
+    );
 
     // A section's body runs to the closing tag that balances its opening
     // tag, not to the first closing tag of a subsection (#189).
