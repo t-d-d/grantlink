@@ -820,6 +820,57 @@ describe("fitness: no invented references (model-calls.md)", () => {
     ).toEqual(written);
     expect(result.status === "read" && result.rejected).toBe(0);
   });
+
+  it("rejects a bare number cut from the back of a longer one, as the rules read none (#571)", async () => {
+    // A separator, a hyphen or a digit and a decimal point before the
+    // number makes it the end of a longer one. The text is made up.
+    const text = [
+      "Funded by CRUK (12/345678).",
+      "Funded by CRUK (ABC-123456).",
+      "Funded by CRUK grant 1.23456.",
+      "Funded by CRUK (12/456789-01).",
+    ];
+    const written = ["345678", "123456", "23456", "456789-01"];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(text, {
+      model: haiku,
+      key: "k",
+      fetch,
+    });
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(written.length);
+    expect(findReferences({ text, awards: [] })).toEqual([]);
+  });
+
+  it("keeps a bare number after a space, an opening bracket or a colon (#571)", async () => {
+    // The text is made up.
+    const written = ["123456", "234567", "345678", "45678"];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const text = [
+      "Funded by CRUK grant 123456.",
+      "Funded by CRUK (234567).",
+      "Funded by CRUK grant number:345678.",
+      "Funded by CRUK grant no.45678.",
+    ];
+    const result = await proposeReferences(text, {
+      model: haiku,
+      key: "k",
+      fetch,
+    });
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(written);
+    expect(result.status === "read" && result.rejected).toBe(0);
+    // The rules read each of these too, so the two passes agree.
+    expect(
+      findReferences({ text, awards: [] }).map(({ asWritten }) => asWritten),
+    ).toEqual(written);
+  });
 });
 
 describe("fitness: no lost papers (model-calls.md)", () => {

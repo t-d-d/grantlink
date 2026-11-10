@@ -334,15 +334,22 @@ const BARE_SUFFIX = String.raw`${DASH}\d{2}`;
 // Any bare number a reply may be, of the n shape's four digits or of BARE's
 // five to seven, with or without its suffix.
 const BARE_REPLY = new RegExp(String.raw`^\d+(?:${BARE_SUFFIX})?$`, "u");
+// What may not come before a bare number, so it is not the end of a longer
+// one, as in 12/345678, ABC-123456 or 1.23456. The rules' n shape reads a
+// bare number from the text only after a bracket, a tie word, a colon or a
+// hash, so it never reads one there (#571).
+const NUMBER_BEFORE = String.raw`(?<!${SEP}|${DASH}|\d\.)`;
 
 // A reference as written, between the edges above. A bare number of any
-// length counts only where the text does not go on past it, as the rules
-// read one (#567).
-const wholeReference = (reference: string): RegExp =>
-  new RegExp(
-    `${START}${escape(reference)}${END}${BARE_REPLY.test(reference) ? NUMBER_AFTER : ""}`,
+// length counts only where the text neither runs into it nor goes on past
+// it, as the rules read one (#567, #571).
+const wholeReference = (reference: string): RegExp => {
+  const bare = BARE_REPLY.test(reference);
+  return new RegExp(
+    `${bare ? NUMBER_BEFORE : ""}${START}${escape(reference)}${END}${bare ? NUMBER_AFTER : ""}`,
     "u",
   );
+};
 
 // Whether a reference, as written with plain spaces, is a shape the rules
 // read, in capitals but for a month in a code, or a bare number with an
