@@ -7,8 +7,8 @@ import { getRepo } from "./github.ts";
 // the repository, so an id typed wrongly in both the template and
 // test/github-oidc.static.ts, or a rename or a transfer, fails here and not
 // only at a deploy (#52). GitHub answers a renamed or transferred
-// repository's old name with its new record, so the name here can go stale
-// without hiding a change. test/github.ts names it.
+// repository's old name with its new record, so the name test/github.ts
+// asks for can go stale without hiding a change.
 const Repository = z.object({
   id: z.number().int().positive(),
   name: z.string().min(1),

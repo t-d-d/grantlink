@@ -20,25 +20,27 @@ const { GITHUB_TOKEN } = z
 
 // Reads a path under the repository, or the repository's own record when
 // the path is empty, and fails unless GitHub answers 200. The caller parses
-// the reply with its own schema.
+// the reply with its own schema. fetch follows GitHub's redirects, and the
+// callers rely on that: a renamed or transferred repository's old name and
+// a moved issue's old number answer with the new record.
 export async function getRepo(path = ""): Promise<unknown> {
-  const response = await fetch(
-    `https://api.github.com/repos/${repository}${path === "" ? "" : `/${path}`}`,
-    {
-      headers: {
-        Accept: "application/vnd.github+json",
-        ...(GITHUB_TOKEN === undefined
-          ? {}
-          : { Authorization: `Bearer ${GITHUB_TOKEN}` }),
-      },
+  const url = `https://api.github.com/repos/${repository}${path === "" ? "" : `/${path}`}`;
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      ...(GITHUB_TOKEN === undefined
+        ? {}
+        : { Authorization: `Bearer ${GITHUB_TOKEN}` }),
     },
-  );
+  });
   // GitHub's reply says why a call failed, such as a bad token or the rate
   // limit, so a failure shows it. A helper imports no test runner
   // (test/code-and-tests.static.ts), so this throws rather than asserts.
   const reply = await response.text();
   if (response.status !== 200) {
-    throw new Error(`GitHub answered ${String(response.status)}: ${reply}`);
+    throw new Error(
+      `GitHub answered ${String(response.status)} for ${url}: ${reply}`,
+    );
   }
   return JSON.parse(reply);
 }

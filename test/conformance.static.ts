@@ -143,11 +143,21 @@ describe("a red scheduled run starts a governor session", () => {
 describe("one GitHub fetch for the conformance files", () => {
   const files = repoFiles().filter((path) => path.endsWith(".conformance.ts"));
 
-  it("finds the helper and the files that use it", () => {
+  const users = [
+    "test/github-oidc.conformance.ts",
+    "test/environments.conformance.ts",
+    "test/governor.conformance.ts",
+  ];
+
+  it("finds the helper", () => {
     expect(repoFiles()).toContain("test/github.ts");
-    expect(files).toContain("test/github-oidc.conformance.ts");
-    expect(files).toContain("test/environments.conformance.ts");
-    expect(files).toContain("test/governor.conformance.ts");
+  });
+
+  it.each(users)("%s reads GitHub through the helper", (path) => {
+    expect(files).toContain(path);
+    expect(readRepoFile(path)).toMatch(
+      /^import \{ getRepo \} from "\.\/github\.ts";$/mu,
+    );
   });
 
   it.each(files)(
