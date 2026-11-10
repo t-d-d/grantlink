@@ -158,14 +158,25 @@ describe("the rules", () => {
     "Funded by CRUK (CRUK-2019).",
     "Funded by CRUK (CRUK/12/2019).",
     "Funded by CRUK (CRUK/AB12/SMITH/2).",
-    // A form that goes on past its fourth part is not read in part.
-    "Funded by CRUK (CRUK/12/34/56/78/90).",
   ])(
     "leaves a CRUK- form with a part of no digit, or a part that is a year: %j",
     (text) => {
       expect(findReferences(sections(text))).toEqual([]);
     },
   );
+
+  // As the model pass keeps it (#561).
+  it("reads the first four parts of a CRUK- form that runs on past them", () => {
+    expect(
+      findReferences(sections("Funded by CRUK (CRUK/12/34/56/78/90).")),
+    ).toEqual([
+      {
+        asWritten: "CRUK/12/34/56/78",
+        normalised: "CRUK/12/34/56/78",
+        format: "CRUK-X",
+      },
+    ]);
+  });
 
   it("reads a CRUK- form whose last part has no digit, or holds a year and more", () => {
     expect(

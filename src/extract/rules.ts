@@ -207,7 +207,8 @@ const CAPITAL_SUFFIX = `[A-Z0-9]{2,8}|${MONTH_YEAR}`;
 // A CRUK- form's parts follow a hyphen or a slash, and a part that is a
 // year alone is none of them (#514).
 const CRUK_SEP = `(?:${DASH}|/)`;
-const NOT_YEAR = "(?!(?:19|20)\\d{2}(?![A-Z0-9]))";
+const YEAR_PART = String.raw`(?:19|20)\d{2}(?![A-Z0-9])`;
+const NOT_YEAR = `(?!${YEAR_PART})`;
 
 const SHAPES: readonly Shape[] = [
   {
@@ -227,11 +228,13 @@ const SHAPES: readonly Shape[] = [
     // the C/A pattern, so a C/A pair after CRUK/ is read as the pair alone.
     // Every part after the CRUK but the last holds a digit, and no part is
     // a year alone, so a name in capitals, as in CRUK/SMITH/2, or a year,
-    // as in CRUK/2019, is not one. A form that goes on past its fourth part
-    // is not read in part (#514).
+    // as in CRUK/2019, is not one. Nor is the front of a form that goes on
+    // to a year, as CRUK/12 is of CRUK/12/2019, or to a part of no digit
+    // with another part after it, as CRUK/AB12 and CRUK/AB12/SMITH are of
+    // CRUK/AB12/SMITH/2 (#514).
     format: "CRUK-X",
     shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:${CRUK_SEP}${NOT_YEAR}(?=[A-Z0-9]*\d)[A-Z0-9]{1,8}){0,3}${CRUK_SEP}${NOT_YEAR}[A-Z0-9]{1,8}(?<=CRUK[A-Z0-9/${DASHES}-]*\d[A-Z0-9/${DASHES}-]*)`,
-    after: `(?!${CRUK_SEP}[A-Z0-9])`,
+    after: `(?!${CRUK_SEP}${YEAR_PART})(?!(?<=${CRUK_SEP}[A-Z]{1,8})${CRUK_SEP}[A-Z0-9])(?!${CRUK_SEP}[A-Z]{1,8}${CRUK_SEP}[A-Z0-9])`,
     readWhole: true,
     sentenceOnly: false,
   },
