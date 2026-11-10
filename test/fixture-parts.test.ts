@@ -255,8 +255,7 @@ describe("strayParts", () => {
     [
       "a comment beside the paragraphs of a funding footnote",
       {
-        back:
-          '<fn-group><fn fn-type="funding"><!-- <name>A</name> --><p>Funded.</p></fn></fn-group>',
+        back: '<fn-group><fn fn-type="funding"><!-- <name>A</name> --><p>Funded.</p></fn></fn-group>',
       },
       "article/back/fn-group/fn (text)",
     ],
