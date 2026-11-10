@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  conformanceWorkflow,
-  evalWorkflow,
-  type Step,
-  type Workflow,
-} from "./app.ts";
+import { conformanceWorkflow, evalWorkflow, type Step } from "./app.ts";
 
 // The eval and conformance roles' credentials go only to the steps that
 // call AWS, as step env, so code those steps do not run never holds them.
