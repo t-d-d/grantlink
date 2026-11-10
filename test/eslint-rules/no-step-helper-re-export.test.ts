@@ -295,6 +295,33 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         errors: [{ messageId: "reExport" }],
       },
       {
+        name: "exports a constant that aliases askEuropePmc when askEuropePmc is itself an alias of an import in its own module",
+        filename: "src/run/owed.ts",
+        code: `import { impl } from "./impl.ts";
+        export const askEuropePmc = impl;
+        export const ask = askEuropePmc;`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports a local alias of askEuropePmc when askEuropePmc reads a name from a namespace import in its own module",
+        filename: "src/run/owed.ts",
+        code: `import * as other from "./impl.ts";
+        const askEuropePmc = other.impl;
+        const ask = askEuropePmc;
+        export { ask };`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports under the helper's own name an alias of an import that is written again later, from its own module",
+        filename: "src/run/owed.ts",
+        code: `import { impl } from "./impl.ts";
+        function somethingElse() {}
+        let askEuropePmc = impl;
+        askEuropePmc = somethingElse;
+        export { askEuropePmc };`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
         name: "exports a constant that aliases a local alias of askEuropePmc from its own module",
         filename: "src/run/owed.ts",
         code: `async function askEuropePmc() {}

@@ -83,9 +83,9 @@ export const noStepHelperReExport = createRule({
             ? holdsStepHelper(binding.module)
             : helperNamed(binding.module, binding.name) !== null);
         if (passes) return binding.module;
-        // A chain that ends at an import that is not a helper may still
-        // pass through this module's own helper on the way (#517), as in
-        // `import { impl } ...; const askEuropePmc = impl`.
+        // A chain that ends at no import, or at an import that is not a
+        // helper, may still pass through this module's own helper on the
+        // way (#517), as in `import { impl } ...; const askEuropePmc = impl`.
         return localHelper(value) === null ? null : here;
       }
       const binding = bindingOf(value, context);
