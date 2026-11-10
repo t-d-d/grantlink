@@ -232,10 +232,17 @@ export const FUNDING_FOOTNOTE = wholeAttribute(
 // as a label is: to its own closing tag, or only itself when self-closing
 // (#227). A <sec-meta> is part of the match whether the section is found by
 // its type or its title, so it is not kept, since it can name people (#222).
+// Between a section's opening tag, its sec-meta, its label and its title may
+// sit white space, comments and processing instructions, and so may they
+// inside the title before the words that name it, so neither hides a
+// section. The cutter has dropped the comments by then, but the check on
+// recorded fixtures reads the raw XML (#230). Each comment or instruction
+// ends at its own close, so one cannot run on past a title into another.
+const GAP = String.raw`(?:\s|<!--(?:(?!-->)[\s\S])*-->|<\?(?:(?!\?>)[\s\S])*\?>)*`;
 const leading = (name: string) =>
-  String.raw`(?:<${name}${NAME_END}(?:[^>]*\/>|[^>]*(?<!\/)>(?:(?!<\/${name}>)[\s\S])*<\/${name}>)\s*)?`;
+  String.raw`(?:<${name}${NAME_END}(?:[^>]*\/>|[^>]*(?<!\/)>(?:(?!<\/${name}>)[\s\S])*<\/${name}>)${GAP})?`;
 const SEC_META = leading("sec-meta");
-const FUNDING_SECTION_START = String.raw`<sec${NAME_END}(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*(?<!\/)>\s*${SEC_META}|[^>]*(?<!\/)>\s*${SEC_META}${leading("label")}<title${NAME_END}[^>]*(?<!\/)>\s*(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
+const FUNDING_SECTION_START = String.raw`<sec${NAME_END}(?:[^>]*sec-type="(?:funding|ack|acknowledge?ments?)"[^>]*(?<!\/)>${GAP}${SEC_META}|[^>]*(?<!\/)>${GAP}${SEC_META}${leading("label")}<title${NAME_END}[^>]*(?<!\/)>${GAP}(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*<\/title>))`;
 
 const FUNDING_SECTION_AT = new RegExp(FUNDING_SECTION_START, "iuy");
 

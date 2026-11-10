@@ -52,6 +52,22 @@ describe("strayParts", () => {
     ).toEqual([]);
   });
 
+  // The check reads the raw XML, so a comment or a processing instruction
+  // before a section's title must not hide the section from it either (#230).
+  it("passes a funding section with a processing instruction or an empty comment before its title", () => {
+    expect(
+      strayParts(
+        paper({
+          body:
+            "<body><sec><?pi x?><title>Funding</title><p>Funded.</p></sec>" +
+            "<sec><label>5.</label><!----><title>Funding</title><p>Funded.</p></sec>" +
+            "<sec><title><!----><?pi x?>Funding</title><p>Funded.</p></sec>" +
+            "<sec><?pi a>b?><title>Funding</title><p>Funded.</p></sec></body>",
+        }),
+      ),
+    ).toEqual([]);
+  });
+
   it.each([
     [
       "a body section whose title only starts with Support",
@@ -267,6 +283,27 @@ describe("strayParts", () => {
         back: '<fn fn-type="funding"><p>Funded.</p><list><list-item>A</list-item></list></fn>',
       },
       "article/back/fn/list",
+    ],
+    [
+      "a comment holding text before the title of a funding section, not the section (#230)",
+      {
+        body: "<body><sec><!-- x --><title>Funding</title><p>Funded.</p></sec></body>",
+      },
+      "article/body/sec (text)",
+    ],
+    [
+      "a comment holding text in a funding section with no paragraphs, which the cutter drops",
+      {
+        body: "<body><sec><!-- x --><title>Funding</title>Funded.</sec></body>",
+      },
+      "article/body/sec (text)",
+    ],
+    [
+      "a comment holding text inside the title of a funding section",
+      {
+        body: "<body><sec><title><!-- x -->Funding</title><p>Funded.</p></sec></body>",
+      },
+      "article/body/sec (text)",
     ],
     [
       "a comment beside the paragraphs of a funding footnote",
