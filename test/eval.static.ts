@@ -63,13 +63,9 @@ describe("the eval workflow", () => {
     expect(fromSecrets).toHaveLength(1);
   });
 
-  it("builds the private bucket's name from the account it assumed the role in", () => {
-    const assume = steps[at(/assume-role-with-web-identity/u)]?.run ?? "";
-    const mask = assume.indexOf('::add-mask::$account"');
-    const bucket = assume.indexOf('echo "bucket=grantlink-text-$account"');
-    expect(mask).toBeGreaterThan(-1);
-    expect(bucket).toBeGreaterThan(mask);
-    expect(assume.indexOf("GITHUB_OUTPUT", bucket)).toBeGreaterThan(bucket);
+  // test/role-credentials.static.ts checks the assume step builds the
+  // bucket's name after it masks the account.
+  it("takes the private bucket's name from the assume step, not a variable", () => {
     expect(readRepoFile("scripts/eval-snapshot.sh")).not.toContain(
       "PRIVATE_BUCKET_NAME",
     );
