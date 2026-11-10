@@ -72,7 +72,7 @@ function ambient(node: TSESTree.Node): boolean {
         n.type === AST_NODE_TYPES.TSModuleDeclaration ||
         n.type === AST_NODE_TYPES.ClassDeclaration ||
         n.type === AST_NODE_TYPES.TSDeclareFunction) &&
-      n.declare === true
+      n.declare
     ) {
       return true;
     }
