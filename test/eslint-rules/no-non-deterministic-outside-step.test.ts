@@ -796,6 +796,95 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "exports by default, through a cast, bind destructured from Date",
+          code: `const { bind } = Date;
+          export default (bind as any);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default bind destructured from Date given as a nested pattern's default",
+          code: `const { foo: { bind } = Date } = globalThis;
+          export default bind;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default a sibling of bind destructured from Date",
+          code: `const { foo, bind } = Date;
+          export default foo;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by name a sibling of bind destructured from Date",
+          code: `const { foo, bind } = Date;
+          export { foo };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default a sibling of a pattern that destructures bind from a default Date",
+          code: `const { foo: { bind } = Date, bar } = globalThis;
+          export default bar;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a name nested beside bind destructured from Date",
+          code: `const { Date: { bind, foo: { x } } } = globalThis;
+          export { x };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default the clock beside bind destructured from Date, reported once as an export",
+          code: `const { Date: { bind, now } } = globalThis;
+          export default now;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date.now" },
+              line: 2,
+            },
+          ],
+        },
+        {
           name: "exports by default a sibling of bind destructured from Date in a nested pattern",
           code: `const { foo, Date: { bind } } = globalThis;
           export default foo;`,

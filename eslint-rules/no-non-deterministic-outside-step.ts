@@ -544,67 +544,25 @@ function exportedBinding(
 }
 
 // True when a declarator exports a name it declares, in its declaration or
-// later, `export { m }`. A name a pattern declares counts when it is exported
-// by default too, `export default bind` after `const { bind } = Date`, since
-// nothing reports at that export. A plain alias exported by default, `const
-// now = Date.now` and then `export default now`, reports at the export.
+// later, `export { m }`.
 function exportsName(
   declarator: TSESTree.VariableDeclarator,
   resolver: Resolver,
 ): boolean {
-  const pattern = declarator.id.type !== AST_NODE_TYPES.Identifier;
   return resolver.sourceCode
     .getDeclaredVariables(declarator)
-    .some(
-      (declared) =>
-        exported(declarator, declared) ||
-        (pattern && exportedByDefault(declared)),
-    );
-}
-
-// True when a declarator exports a name a nested pattern declares, `export {
-// bind }`, `export default bind` or `export = bind` after `const { Date: {
-// bind } } = globalThis`. Another name the declarator exports does not count.
-function exportsWithin(
-  declarator: TSESTree.VariableDeclarator,
-  pattern: TSESTree.ObjectPattern,
-  resolver: Resolver,
-): boolean {
-  const [start, end] = pattern.range;
-  return resolver.sourceCode
-    .getDeclaredVariables(declarator)
-    .some(
-      (declared) =>
-        declared.identifiers.some(
-          (identifier) =>
-            identifier.range[0] >= start && identifier.range[1] <= end,
-        ) &&
-        (exported(declarator, declared) || exportedByDefault(declared)),
-    );
-}
-
-// True when a variable is exported by default, `export default m`, or by
-// an export assignment, `export = m`, through the wrappers unwrapped takes
-// off, `export default (m as T)`. exported leaves these out, since
-// checkDefault reports an alias exported this way at the export.
-function exportedByDefault(variable: TSESLint.Scope.Variable): boolean {
-  return variable.references.some((ref) => {
-    const outer = outermost(ref.identifier);
-    const parent = outer.parent;
-    return (
-      (parent?.type === AST_NODE_TYPES.ExportDefaultDeclaration &&
-        parent.declaration === outer) ||
-      (parent?.type === AST_NODE_TYPES.TSExportAssignment &&
-        parent.expression === outer)
-    );
-  });
+    .some((declared) => exported(declarator, declared));
 }
 
 // True when a declarator exports a name that carries the value a pattern
-// takes. For an object that holds a source, destructured into a pattern
-// with a rest, `const { foo, ...m } = Math`, that is the rest's own name,
-// unless the pattern also takes a member that calls through. Otherwise it
-// is any name the declarator declares.
+// takes. A pattern that takes a member that calls through, `const { bind } =
+// Date`, or, for an object that holds a source, copies a rest, `const { foo,
+// ...m } = Math`, carries it in the names under those members and in the
+// rest. Those count whether exported by name, `export { bind }`, or by
+// default, `export default bind`, since nothing reports at that export.
+// Another name the pattern takes, `export { foo }`, does not carry it. Any
+// other pattern, or a plain alias, carries it in any name the declarator
+// declares, and an alias exported by default reports at the export instead.
 function exportsPassed(
   declarator: TSESTree.VariableDeclarator,
   pattern: TSESTree.Node,
@@ -612,38 +570,55 @@ function exportsPassed(
   holder: boolean,
 ): boolean {
   if (
-    holder &&
-    pattern.type === AST_NODE_TYPES.ObjectPattern &&
-    copiesRest(pattern) &&
-    !callsThrough(pattern)
+    pattern.type !== AST_NODE_TYPES.ObjectPattern ||
+    !(callsThrough(pattern) || (holder && copiesRest(pattern)))
   ) {
-    return exportsRest(declarator, pattern, resolver);
+    return exportsName(declarator, resolver);
   }
-  return exportsName(declarator, resolver);
-}
-
-// True when a declarator exports the name a pattern's rest declares,
-// `export const { Math: { ...m } } = globalThis`, `export { m }` later, or
-// `export default m` or `export = m`.
-// Another name the declarator exports, `export { foo }` after `const { foo,
-// Math: { ...m } } = globalThis`, does not carry the rest.
-function exportsRest(
-  declarator: TSESTree.VariableDeclarator,
-  pattern: TSESTree.ObjectPattern,
-  resolver: Resolver,
-): boolean {
-  const rests = new Set<TSESTree.Node>(
-    pattern.properties.flatMap((property) =>
-      property.type === AST_NODE_TYPES.RestElement ? [property.argument] : [],
-    ),
+  const carriers = new Set<TSESTree.Node>(
+    pattern.properties.flatMap((property) => {
+      if (property.type === AST_NODE_TYPES.RestElement) {
+        return holder ? declaredIn(property.argument) : [];
+      }
+      const key = keyName(property.key, property.computed);
+      return key === null || CALLS_THROUGH.has(key)
+        ? declaredIn(property.value)
+        : [];
+    }),
   );
   return resolver.sourceCode
     .getDeclaredVariables(declarator)
     .some(
       (declared) =>
-        declared.identifiers.some((identifier) => rests.has(identifier)) &&
+        declared.identifiers.some((identifier) => carriers.has(identifier)) &&
         (exported(declarator, declared) || exportedByDefault(declared)),
     );
+}
+
+// The identifiers a pattern declares, `b` and `c` in `{ a: b, ...c }`.
+function declaredIn(pattern: TSESTree.Node): TSESTree.Node[] {
+  switch (pattern.type) {
+    case AST_NODE_TYPES.Identifier:
+      return [pattern];
+    case AST_NODE_TYPES.AssignmentPattern:
+      return declaredIn(pattern.left);
+    case AST_NODE_TYPES.RestElement:
+      return declaredIn(pattern.argument);
+    case AST_NODE_TYPES.ArrayPattern:
+      return pattern.elements.flatMap((element) =>
+        element === null ? [] : declaredIn(element),
+      );
+    case AST_NODE_TYPES.ObjectPattern:
+      return pattern.properties.flatMap((property) =>
+        declaredIn(
+          property.type === AST_NODE_TYPES.RestElement
+            ? property.argument
+            : property.value,
+        ),
+      );
+    default:
+      return [];
+  }
 }
 
 // True when a variable is exported by default, `export default m`, or by
@@ -939,7 +914,11 @@ export const noNonDeterministicOutsideStep = createRule({
             if (op !== undefined) {
               report(property.key, op, false);
             } else if (keys.some(namesDate) && callsThrough(inner)) {
-              report(property.key, "Date", exportsWithin(node, inner, context));
+              report(
+                property.key,
+                "Date",
+                exportsPassed(node, inner, context, false),
+              );
             } else if (copiesRest(inner)) {
               const holder = keys
                 .map(holderOf)
