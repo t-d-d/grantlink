@@ -215,15 +215,19 @@ describe("fitness: the page shows only titles, links and references (no-republis
     expect(() => foundSchema.parse(extra)).toThrow();
   });
 
-  it("shows each reference as a row of title, reference, normalised reference and status", () => {
+  it("shows each paper in one row of title, references, normalised references and status (#587)", () => {
     const html = renderFound(found);
     const table =
       /<table class="references">([\s\S]*?)<\/table>/u.exec(html)?.[1] ?? "";
     const bodyRows = [...table.matchAll(/<tr>([\s\S]*?)<\/tr>/gu)].slice(1);
-    expect(bodyRows).toHaveLength(3);
+    expect(bodyRows).toHaveLength(2);
     for (const [, cells = ""] of bodyRows) {
       expect(cells.match(/<td\b/gu)).toHaveLength(4);
     }
+    const first = bodyRows[0]?.[1] ?? "";
+    expect(first).toContain("Title of PMC1");
+    expect(first).toContain(">C1234/A56789<br>A 28707</td>");
+    expect(first).toContain(">C1234/A56789<br>A28707</td>");
   });
 });
 
@@ -231,9 +235,10 @@ describe("fitness: links are labelled as proposed by software, with no warranty 
   const html = renderFound(summarise(rows, run));
 
   it("labels every link as proposed by software", () => {
-    expect(
-      html.match(/<td class="status">Proposed by software<\/td>/gu),
-    ).toHaveLength(3);
+    const labels = [...html.matchAll(/<td class="status">(.*?)<\/td>/gu)]
+      .map(([, cell = ""]) => cell.split("<br>"))
+      .flat();
+    expect(labels).toEqual(Array(3).fill("Proposed by software"));
   });
 
   it("says the links are proposed by software and come with no warranty", () => {

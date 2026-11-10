@@ -385,6 +385,12 @@ describe("searching Europe PMC", () => {
 
   // Two common tokens would widen the search too far, so only the rules
   // read this name (#510).
+  // A retracted paper is no finding to show (#587). Europe PMC marks one
+  // in its publication types.
+  it("leaves out papers Europe PMC marks as retracted", () => {
+    expect(searchQuery()).toContain('NOT PUB_TYPE:"retracted publication"');
+  });
+
   it("leaves CR UK with a space out of the search", () => {
     expect(searchQuery()).not.toContain('"CR UK"');
   });

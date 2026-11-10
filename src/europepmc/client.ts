@@ -120,13 +120,15 @@ const quoted = (field: string, value: string) =>
   `${field}:"${value.replace(/"/gu, "")}"`;
 
 // Papers published since the funder's start date, whose acknowledgement or
-// funding text names the funder, and which Europe PMC links to none of its
-// grants. The client keeps every search to open-access papers itself.
+// funding text names the funder, which Europe PMC links to none of its
+// grants, and which it does not mark as retracted. The client keeps every search to open-access papers itself.
 export function searchQuery(): string {
   const names = funder.names.map((name) => quoted("ACK_FUND", name));
   return [
     `(${names.join(" OR ")})`,
     `NOT ${quoted("GRANT_AGENCY", funder.europePmcAgency)}`,
+    // A retracted paper is no finding to show (#587).
+    `NOT ${quoted("PUB_TYPE", "retracted publication")}`,
     `FIRST_PDATE:[${funder.since} TO 3000-12-31]`,
   ].join(" AND ");
 }

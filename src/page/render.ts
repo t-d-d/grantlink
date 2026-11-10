@@ -47,14 +47,18 @@ export function renderFound(found: Found): string {
     [counts.references, "grant references recovered"],
     [counts.pending, "papers not yet read"],
   ];
-  const rows = found.papers.flatMap((paper) =>
-    paper.references.map(
-      (reference) =>
-        `<tr><td class="paper">${paperLink(paper)}</td><td class="ref">${escape(
-          reference.asWritten,
-        )}</td><td class="ref">${escape(reference.normalised)}</td><td class="status">Proposed by software</td></tr>`,
-    ),
-  );
+  // One row per paper, so a paper with two references is listed once
+  // (#587). Each cell holds one line per reference, in the same order, and
+  // each reference keeps its own status (accuracy.md).
+  const rows = found.papers.map(({ references, ...paper }) => {
+    const lines = (text: (reference: (typeof references)[number]) => string) =>
+      references.map(text).join("<br>");
+    return `<tr><td class="paper">${paperLink(paper)}</td><td class="ref">${lines(
+      (reference) => escape(reference.asWritten),
+    )}</td><td class="ref">${lines((reference) =>
+      escape(reference.normalised),
+    )}</td><td class="status">${lines(() => "Proposed by software")}</td></tr>`;
+  });
   const formats = found.formats.map(
     (format) =>
       `<tr><td class="ref">${escape(format.format)}</td><td class="count">${number(
