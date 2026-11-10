@@ -172,6 +172,38 @@ const JOINER = `[.\u00b7${DASHES}-]`;
 // 10.7554/eLife.12345 (#597).
 const IN_DOI = String.raw`\b10\.\d{4,9}/[-.;()/:\w]*`;
 
+// An inline tag, which may fall inside a DOI as in 10.7554/eLife.<italic>
+// 12345</italic>, and a line break after a dot, a slash or a hyphen, where
+// a DOI may wrap. Inside a DOI both are dropped, so it reads whole (#613).
+const INLINE_TAG = String.raw`<\/?(?:italic|bold|sup|sub|sc|monospace|underline|roman|sans-serif|styled-content|named-content)(?=[\s>/])[^>]*>`;
+const SPLIT_DOI = new RegExp(
+  String.raw`\b10\.\d{4,9}\/(?:[-.;()/:\w]|${INLINE_TAG}|(?<=[-./])\s*\n\s*)*`,
+  "gu",
+);
+const INLINE_TAGS = new RegExp(INLINE_TAG, "gu");
+
+// A link whose href holds a DOI and whose text is only part of it, such as
+// eLife.12345, reads as the whole DOI (#613).
+const LINK = /<(ext-link|uri)(?=[\s>])([^>]*)>([\s\S]*?)<\/\1\s*>/gu;
+const DOI_IN_HREF =
+  /\bxlink:href\s*=\s*(["'])[^"']*?\b(10\.\d{4,9}\/[^"'\s<>]*)\1/u;
+
+function withDoisWhole(article: string): string {
+  return article
+    .replace(LINK, (link, _tag, attributes: string, inner: string) => {
+      const doi = DOI_IN_HREF.exec(attributes)?.[2];
+      const shown = inner.replace(/<[^>]*>|\s+/gu, "").toLowerCase();
+      return doi !== undefined &&
+        shown !== "" &&
+        doi.toLowerCase().includes(shown)
+        ? ` ${doi} `
+        : link;
+    })
+    .replace(SPLIT_DOI, (doi) =>
+      doi.replace(INLINE_TAGS, "").replace(/\s+/gu, ""),
+    );
+}
+
 function bareNumber(digits: string): RegExp {
   return new RegExp(
     `(?<![A-Za-z0-9]|\\d${JOINER}|${IN_DOI})${digits}(?![A-Za-z0-9]|${JOINER}\\d)`,
@@ -212,12 +244,13 @@ function printedAs(form: string, text: string, names: Span[]): boolean {
 // joined to a digit by a dot, a middle dot or any dash the rules read as a
 // hyphen, as in a decimal or a range, or anywhere in a DOI, or one that
 // reads as a year far from the funder's name, is not printed (#520, #556,
-// #597).
+// #597). A DOI split by an inline tag or a line break, or shown in part by
+// a link whose href holds it whole, still reads as a DOI (#613).
 export function printedGrants(
   grants: readonly string[],
   article: string,
 ): string[] {
-  const text = withoutReferenceLists(withoutFrontMatter(article))
+  const text = withDoisWhole(withoutReferenceLists(withoutFrontMatter(article)))
     .replace(/<[^>]*>/gu, " ")
     .replace(/\s+/gu, " ");
   const names = [...text.matchAll(FUNDER_NAME)].map((m) => ({
