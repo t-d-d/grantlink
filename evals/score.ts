@@ -64,6 +64,37 @@ export function sameGrant(found: string, expected: string): boolean {
   return [...forms(expected)].some((form) => a.has(form));
 }
 
+// CRUK's reference forms (#503): a C/A pair; an award number of 4 to 6
+// digits, with or without its A; a Crick core funding number; a newer
+// reference of letters, a year or a month, and a number; or one that starts
+// with CRUK. A C part alone names a programme, and another funder's
+// reference or a word is not CRUK's, so none of those is an answer.
+const CRUK_FORMS = [
+  /^C\d+\/A\d+$/u,
+  /^A?\d{4,6}$/u,
+  /^(?:FC|CC)\d+$/u,
+  /^[A-Z]+-?(?:(?:19|20)\d{2}|(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2})\/\d+$/u,
+  /^CRUK/u,
+];
+
+export function crukReference(id: string): boolean {
+  const whole = canonical(id);
+  return CRUK_FORMS.some((form) => form.test(whole));
+}
+
+// The innermost reference list, which a loop removes until none is left, so
+// a list nested in another goes too.
+const REF_LIST = /<ref-list\b(?:(?!<ref-list\b)[\s\S])*?<\/ref-list\s*>/gu;
+
+function withoutReferenceLists(article: string): string {
+  let text = article;
+  for (;;) {
+    const next = text.replace(REF_LIST, " ");
+    if (next === text) return text;
+    text = next;
+  }
+}
+
 // A form as a pattern that ignores case and spaces, with a slash written
 // any way canonical reads one, and nothing alphanumeric either side of it.
 function standingAlone(form: string): RegExp {
@@ -78,14 +109,15 @@ function standingAlone(form: string): RegExp {
 }
 
 // The linked grants a paper prints, in the order given: those with a form
-// sameGrant accepts standing alone in the whole article, ignoring case and
-// spaces (#502). Each markup tag reads as a space, so a tag inside a grant
-// does not hide it.
+// sameGrant accepts standing alone in the whole article less its reference
+// list, ignoring case and spaces (#502, #503). A grant cited only by
+// another paper is not printed. Each markup tag reads as a space, so a tag
+// inside a grant does not hide it.
 export function printedGrants(
   grants: readonly string[],
   article: string,
 ): string[] {
-  const text = article.replace(/<[^>]*>/gu, " ");
+  const text = withoutReferenceLists(article).replace(/<[^>]*>/gu, " ");
   return grants.filter((grant) =>
     [...forms(grant)].some(
       (form) => form !== "" && standingAlone(form).test(text),

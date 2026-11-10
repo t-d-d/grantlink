@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { LARGEST_PAGE_SIZE } from "../europepmc/client.ts";
 import { fundingSections } from "../europepmc/jats.ts";
 import { GRANT, manifest, type Manifest } from "../../evals/gold.ts";
-import { printedGrants } from "../../evals/score.ts";
+import { crukReference, printedGrants } from "../../evals/score.ts";
 import { logger } from "../log.ts";
 import type { Deps } from "./steps.ts";
 
@@ -14,10 +14,10 @@ import type { Deps } from "./steps.ts";
 
 export type Entry = Manifest["papers"][number];
 
-// Cancer Research UK's id in the Crossref Funder Registry. Europe PMC
-// sometimes lists it as a grant, but it names the funder, so it is never
-// an answer (#502).
-export const FUNDER_REGISTRY_ID = "501100000289";
+// An id in the Crossref Funder Registry for a funder outside the US, such
+// as Cancer Research UK's. Europe PMC sometimes lists one as a grant, but
+// it names the funder, so it is never an answer (#502).
+const FUNDER_REGISTRY_ID = /^501100\d{6}$/u;
 
 // A seeded generator (mulberry32), so the same seed gives the same sample.
 function generator(seed: number): () => number {
@@ -81,16 +81,18 @@ export type Taken =
 
 // Reads one gold paper afresh into cache/, and writes its funding sections
 // under the snapshot's own id once. A gold set A paper Europe PMC links to
-// none of the funder's grants, one whose full text prints none of them, or
-// one with no funding text or awards, is passed over, and its sample walks
-// on to the next. A kept gold set A paper's answers are the linked grants
-// its whole article prints, not only its funding sections, so a cutter that
-// dropped text cannot shrink the answers with it (#502). A gold set B paper is always kept,
-// even with empty sections, since its label is scored against what the
-// rules find in it, which may be nothing (#399). A gold set A paper's grants
-// are read first, so a paper with none costs no full text. A grant id the
-// manifest cannot hold, such as one with a space, is left out, or the
-// manifest would refuse the whole snapshot.
+// none of the funder's grants in a CRUK reference form, one whose full text
+// prints none of them, or one with no funding text or awards, is passed
+// over, and its sample walks on to the next. A kept gold set A paper's
+// answers are the linked grants its whole article prints, less its
+// reference list, not only its funding sections, so a cutter that dropped
+// text cannot shrink the answers with it (#502, #503). A funder registry id
+// is never an answer. A gold set B paper is always kept, even with empty
+// sections, since its label is scored against what the rules find in it,
+// which may be nothing (#399). A gold set A paper's grants are read first,
+// so a paper with none costs no full text. A grant id the manifest cannot
+// hold, such as one with a space, is left out, or the manifest would refuse
+// the whole snapshot.
 export async function snapshotPaper(
   deps: Deps,
   pmcid: string,
@@ -100,7 +102,9 @@ export async function snapshotPaper(
     set === "A"
       ? (await deps.europePmc.grants(pmcid)).filter(
           (grant) =>
-            GRANT.safeParse(grant).success && grant !== FUNDER_REGISTRY_ID,
+            GRANT.safeParse(grant).success &&
+            !FUNDER_REGISTRY_ID.test(grant) &&
+            crukReference(grant),
         )
       : [];
   if (set === "A" && grants.length === 0) {

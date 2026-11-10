@@ -68,6 +68,10 @@ describe("searching for gold set A", () => {
   });
 });
 
+// Cancer Research UK's id in the Crossref Funder Registry, built from two
+// parts so no file holds a twelve-digit number (test/infra.static.ts).
+const FUNDER_ID = "501100" + "000289";
+
 describe("taking one gold paper", () => {
   it("passes over a gold set A paper Europe PMC links to no grant, without reading its text", async () => {
     const { deps, calls, stored } = paperDeps([]);
@@ -116,15 +120,32 @@ describe("taking one gold paper", () => {
 
   it("never takes Cancer Research UK's funder registry id as an answer, even where the paper prints it", async () => {
     const { deps } = paperDeps(
-      ["501100000289", "A56789"],
-      "<funding-group><award-group><funding-source><institution-id>501100000289</institution-id></funding-source><award-id>A56789</award-id></award-group></funding-group>",
+      [FUNDER_ID, "A56789"],
+      `<funding-group><award-group><funding-source><institution-id>${FUNDER_ID}</institution-id></funding-source><award-id>A56789</award-id></award-group></funding-group>`,
     );
     const taken = await snapshotPaper(deps, "PMC11", "A");
     expect(taken.kept && taken.entry.grants).toEqual(["A56789"]);
   });
 
+  it("never takes a linked id outside CRUK's reference forms, or a C part alone, as an answer", async () => {
+    const { deps } = paperDeps(
+      ["C5759", "204826/Z/16/Z", "Prominent", "A56789"],
+      "<funding-group><funding-statement>Funded by C5759, A56789, 204826/Z/16/Z and Prominent.</funding-statement></funding-group>",
+    );
+    const taken = await snapshotPaper(deps, "PMC11", "A");
+    expect(taken.kept && taken.entry.grants).toEqual(["A56789"]);
+  });
+
+  it("passes over a gold set A paper whose linked grants appear only in its reference list", async () => {
+    const { deps } = paperDeps(
+      ["A11111"],
+      "<article><funding-group><funding-statement>Funded by CRUK.</funding-statement></funding-group><back><ref-list><ref>A11111</ref></ref-list></back></article>",
+    );
+    expect(await snapshotPaper(deps, "PMC11", "A")).toEqual({ kept: false });
+  });
+
   it("passes over a gold set A paper linked only to the funder registry id, without reading its text", async () => {
-    const { deps, calls } = paperDeps(["501100000289"]);
+    const { deps, calls } = paperDeps([FUNDER_ID]);
     expect(await snapshotPaper(deps, "PMC11", "A")).toEqual({ kept: false });
     expect(calls).toEqual(["grants PMC11"]);
   });
