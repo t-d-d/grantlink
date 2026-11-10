@@ -6,9 +6,8 @@
 # names, which must stay open (#471). A rename, a transfer, a changed
 # setting or a closed wait ticket then turns this run red instead of
 # waiting for a deploy to fail, and governor's redScheduledRun starts a
-# session on the red run. A fix that
-# only the owner can make, such as a GitHub setting, goes from that session
-# to the owner as an issue.
+# session on the red run. A fix that only the owner can make, such as a
+# GitHub setting, goes from that session to the owner as an issue.
 name: conformance
 
 on:
