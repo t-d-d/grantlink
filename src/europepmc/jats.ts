@@ -336,19 +336,28 @@ const NOTE_TYPE: Readonly<Record<string, string>> = Object.freeze({
   notes: "notes-type",
 });
 
-// A note's own parts: all it holds but the sections, in any case as
-// sections are read, and the notes inside it, which are read, or left out,
-// on their own.
-const ownParts = (note: XmlElement): XmlNode[] =>
+// What a note holds that is read with it: all but the notes and footnotes
+// inside it, which are read, or left out, on their own. A footnote is read
+// whole, as before #505.
+const NOTES_WITHIN = new Set(["notes", "fn-group", "fn"]);
+const noteContent = (note: XmlElement): XmlNode[] =>
   note.name === "notes"
     ? note.children.filter(
-        (child) =>
-          child.kind !== "element" ||
-          !(child.name.toLowerCase() === "sec" || child.name === "notes"),
+        (child) => child.kind !== "element" || !NOTES_WITHIN.has(child.name),
       )
     : note.children;
 
-// A note's title, which may follow a label, or undefined if it has none.
+// A note's own words, which it is read by when it has no type or title: its
+// content less its sections, whose titles say what they are about.
+const ownWords = (note: XmlElement): string =>
+  plain(
+    noteContent(note).filter(
+      (child) => child.kind !== "element" || !isSection(child),
+    ),
+  );
+
+// A note's title, which may follow a label, or undefined if it has none. A
+// self-closing title names nothing, as in a section (#221).
 function noteTitle(note: XmlElement): string | undefined {
   const children = note.children;
   let at = 0;
@@ -361,19 +370,18 @@ function noteTitle(note: XmlElement): string | undefined {
     skipGaps();
   }
   const title = children[at];
-  return isTitle(title) ? plain(title.children) : undefined;
+  return isTitle(title) && !title.empty ? plain(title.children) : undefined;
 }
 
 // Whether a note or a footnote is funding text (#505). Its type says so, or
-// else its title does. One with neither a type nor a title is funding text
-// when it names the funder, unless it is an author note, which holds
-// addresses and notes of equal contribution, not funding. A note or footnote
-// that has a type or a title is judged by those alone, so competing
-// interests that name the funder are left out.
-export const isFundingNote = (
-  element: XmlElement,
-  authorNote = false,
-): boolean => {
+// else its title does. One with neither is funding text when it names the
+// funder, but a footnote is read so only in a footnote group: a table
+// footnote, an author note or a contributor's footnote names the funder as
+// a place or a trial. A note or footnote that has a type or a title is
+// judged by those alone, so competing interests that name the funder are
+// left out. An empty type says nothing. The parent is the name of the
+// element the note stands in.
+export const isFundingNote = (element: XmlElement, parent: string): boolean => {
   const type = NOTE_TYPE[element.name];
   if (type === undefined) return false;
   if (
@@ -382,23 +390,22 @@ export const isFundingNote = (
     return true;
   const title = noteTitle(element);
   if (title !== undefined) return isFundingTitle(title);
-  if (authorNote || element.attributes.some(({ name }) => name === type))
-    return false;
-  return namesFunder(plain(ownParts(element)));
+  if (anyAttribute(element, type, (value) => value.trim() !== "")) return false;
+  if (element.name === "fn" && parent !== "fn-group") return false;
+  return namesFunder(ownWords(element));
 };
 
 // The element's funding notes and footnotes, at any depth, so one nested in
 // a note that is not about funding is found too.
-function fundingNotes(element: XmlElement, authorNote = false): XmlElement[] {
-  return element.children.flatMap((child) => {
-    if (child.kind !== "element") return [];
-    const inAuthorNotes = authorNote || child.name === "author-notes";
-    return [
-      ...(isFundingNote(child, inAuthorNotes) ? [child] : []),
-      ...fundingNotes(child, inAuthorNotes),
-    ];
-  });
-}
+const fundingNotes = (element: XmlElement): XmlElement[] =>
+  element.children.flatMap((child) =>
+    child.kind === "element"
+      ? [
+          ...(isFundingNote(child, element.name) ? [child] : []),
+          ...fundingNotes(child),
+        ]
+      : [],
+  );
 
 export function fundingSections(paper: string): FundingSections {
   const tree = read(paper);
@@ -423,7 +430,7 @@ export function fundingSections(paper: string): FundingSections {
     ...outermost(tree, named("ack")).flatMap(({ children }) =>
       paragraphs(children),
     ),
-    ...fundingNotes(tree).flatMap((note) => paragraphs(ownParts(note))),
+    ...fundingNotes(tree).flatMap((note) => paragraphs(noteContent(note))),
   ].filter((paragraph) => paragraph !== "");
   return { text: [...new Set(text)], awards };
 }

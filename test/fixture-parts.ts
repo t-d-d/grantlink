@@ -105,12 +105,7 @@ const ALLOWED: Record<string, (child: Element) => boolean> = {
 // before the root, and what one holds that never ends with ?>, which the
 // parser reads as text (#303).
 function parse(xml: string): Element {
-  const convert = (
-    node: XmlElement,
-    root: boolean,
-    authorNote = false,
-  ): Element => {
-    const inAuthorNotes = authorNote || node.name === "author-notes";
+  const convert = (node: XmlElement, root: boolean, parent = ""): Element => {
     const element: Element = {
       name: node.name,
       attributes: node.attributes,
@@ -120,12 +115,12 @@ function parse(xml: string): Element {
       unread: false,
       funding:
         (node.name === "sec" && isFundingSectionElement(node)) ||
-        isFundingNoteElement(node, authorNote),
+        isFundingNoteElement(node, parent),
     };
     for (const child of node.children) {
       switch (child.kind) {
         case "element":
-          element.children.push(convert(child, false, inAuthorNotes));
+          element.children.push(convert(child, false, node.name));
           break;
         case "instruction": {
           const declaration =
