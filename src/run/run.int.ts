@@ -452,8 +452,10 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
   it("still judges, records and publishes its search when its search-ended step fails (#380)", async () => {
     const fake = fakeDeps();
     failToLog("search-ended");
-    const { status, result } = await runWith(fake);
+    const { status, result, retryDelays } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
+    expect(retryDelays("search-ended")).not.toEqual([]);
+    expect(fake.table.search.latest).toBe(result?.runId);
     expect(result?.published).toMatchObject({ published: true });
     expect(fake.site.files).toBeDefined();
     expect(logged("search-ended")).toEqual([]);
@@ -462,8 +464,9 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
   it("still fails a search that skipped results and found no papers when its search-ended step fails (#380)", async () => {
     const fake = fakeDeps({ search: malformedPage });
     failToLog("search-ended");
-    const { status, error } = await runWith(fake);
+    const { status, error, retryDelays } = await runWith(fake);
     expect(status).toBe("FAILED");
+    expect(retryDelays("search-ended")).not.toEqual([]);
     expect(error).toContain("malformed PMCID");
     expect(fake.site.files).toBeUndefined();
   });
@@ -734,8 +737,10 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
     fake.deps.text.hasSnapshot = () =>
       Promise.reject(new Error("S3 answered 503"));
     failToLog("snapshot-failed");
-    const { status, result, ended } = await runWith(fake);
+    const { status, result, ended, retryDelays } = await runWith(fake);
     expect(status).toBe("SUCCEEDED");
+    expect(retryDelays("snapshot-failed")).not.toEqual([]);
+    expect(logged("snapshot-failed")).toEqual([]);
     expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
     expect(seen.notBefore).toBeGreaterThan(0);
     expect(ended).toBeGreaterThanOrEqual(seen.notBefore);
@@ -792,6 +797,7 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
     const started = Date.now();
     const { status, error, ended, retryDelays } = await runWith(fake);
     expect(status).toBe("FAILED");
+    expect(retryDelays("search-ended")).not.toEqual([]);
     expect(error).toContain("Europe PMC refused the run's search");
     expect(fake.site.files).toBeUndefined();
     const retried = retryDelays("search-0").reduce(
