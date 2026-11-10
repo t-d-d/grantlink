@@ -23,4 +23,14 @@ describe("where parseXml starts an element (#386)", () => {
     expect(b?.start).toBe(xml.indexOf("<b/>"));
     expect(b?.empty).toBe(true);
   });
+
+  it.each([
+    ["a processing instruction", "<a><?pi?></a>"],
+    ["a closing tag with white space before its >", "<a><c></c ></a>"],
+  ])("starts a closing tag at its <, after %s", (_after, xml) => {
+    const a = [...descendants(parseXml(xml))].find(
+      (found) => found.name === "a",
+    );
+    expect(a?.close).toBe(xml.indexOf("</a>"));
+  });
 });
