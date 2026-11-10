@@ -163,6 +163,18 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
         errors: [{ messageId: "closureVariableUsage" as const }],
       })),
       {
+        name: "counts into an outer variable from askEuropePmc's read, reached through an alias written again (#518)",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        async function run(ctx: any, other: any) {
+          let n = 0;
+          let ask = askEuropePmc;
+          if (r) ask = other;
+          void ask(ctx, "s", "w", r, async () => { n += 1; });
+        }`,
+        errors: [{ messageId: "closureVariableUsage", data: { name: "n" } }],
+      },
+      {
         name: "counts into an outer variable from the read of askEuropePmc imported under another name",
         filename: "src/run/run.ts",
         code: `import { askEuropePmc as ask } from "./owed.ts";
