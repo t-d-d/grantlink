@@ -235,13 +235,62 @@ const isGap = (node: XmlNode | undefined): boolean =>
 
 const FUNDING_TYPE = /^(?:funding|ack|acknowledge?ments?)$/iu;
 
-// A title that names a funding section. Europe PMC often marks
+// A section title as the list below holds it: in lower case, with "&" read
+// as "and" and every other mark of punctuation as a space, each run of white
+// space, no-break spaces included, as one space, and no space at either end
+// (#239). So Role of the funder/sponsor and Role of the funder / sponsor
+// read the same.
+export const normaliseTitle = (title: string): string =>
+  title
+    .toLowerCase()
+    .replaceAll("&", " and ")
+    .replace(/\p{P}/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+
+// The titles that name a funding section, normalised. Europe PMC often marks
 // acknowledgements up as a section rather than an <ack>, and one journal
-// titles its funding section Support. Support must be the whole title, so a
-// body section such as Support vector machines is not kept. Which other
-// titles count is #239.
-const FUNDING_TITLE =
-  /^(?:(?:funding|financial support|grant support|acknowledge?ments?)\b|support[\s.:]*$)/iu;
+// titles its funding section Support. A title counts only when the whole of
+// it is on this list, so a body section such as Funding models for new drugs
+// or Support vector machines is not kept (#239). The list holds the headings
+// #239 names and the funding and acknowledgement section titles found in
+// gold sets A and B.
+export const FUNDING_TITLES: ReadonlySet<string> = new Set([
+  "funding",
+  "funding information",
+  "funding statement",
+  "funding sources",
+  "source of funding",
+  "sources of funding",
+  "role of the funding source",
+  "financial support",
+  "grant support",
+  "support",
+  "acknowledgement",
+  "acknowledgements",
+  "acknowledgment",
+  "acknowledgments",
+  "acknowledgements and funding",
+  "funding and acknowledgements",
+  "acknowledgments and funding",
+  "funding and acknowledgments",
+  // Headings the old match on a title's first words kept, which no gold
+  // paper uses.
+  "funding source",
+  "financial support and sponsorship",
+  "funding sources and disclosures",
+  "acknowledgements and disclosures",
+  "acknowledgments and disclosures",
+  // Found in gold sets A and B.
+  "funding and organization",
+  "grants",
+  "role of funders",
+  "role of funding source",
+  "role of the funder sponsor",
+]);
+
+const isFundingTitle = (title: string): boolean =>
+  FUNDING_TITLES.has(normaliseTitle(title));
 
 // What a funding section holds after its heading, or undefined if the
 // element is not one. A section is found by its type or by its title, and
@@ -271,7 +320,7 @@ function fundingContent(section: XmlElement): XmlNode[] | undefined {
   }
   const title = children[at];
   if (!isTitle(title) || title.empty) return undefined;
-  return FUNDING_TITLE.test(plain(title.children))
+  return isFundingTitle(plain(title.children))
     ? children.slice(at + 1)
     : undefined;
 }

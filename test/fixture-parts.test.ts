@@ -77,6 +77,13 @@ describe("strayParts", () => {
       "article/body/sec",
     ],
     [
+      "a body section whose title only begins with Funding (#239)",
+      {
+        body: "<body><sec><title>Funding models for new drugs</title><p>M</p></sec></body>",
+      },
+      "article/body/sec",
+    ],
+    [
       "a labelled body section followed by a labelled funding section",
       {
         body:
