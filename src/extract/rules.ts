@@ -8,7 +8,7 @@ import funderFile from "./funder.json" with { type: "json" };
 
 // Bump this whenever a pattern, or which references the rules keep,
 // changes, so every stored result says which rules made it.
-export const RULES_VERSION = "rules-9";
+export const RULES_VERSION = "rules-10";
 
 export const funder = z
   .object({
@@ -104,8 +104,9 @@ export const namesFunder = (text: string): boolean => funderName.test(text);
 
 // A reference's edges. Any letter or combining mark joined to a reference,
 // not only A to Z, makes it part of a longer word, as at the funder's name
-// (#339). So does a digit 0 to 9 or an underscore, as \b had it.
-const WORD = String.raw`[\p{L}\p{M}\w]`;
+// (#339). So does any decimal digit, not only 0 to 9 (#368), and an
+// underscore, as \b had it.
+const WORD = String.raw`[\p{L}\p{M}\p{Nd}_]`;
 const START = `(?<!${WORD})`;
 const END = `(?!${WORD})`;
 
@@ -236,7 +237,7 @@ function scan(text: string, keep: "long" | "short" | "all"): Reference[] {
 // A bare number is common in any text, so it counts only when the metadata
 // gives it to the funder as a whole award id and the paper's own funding or
 // acknowledgement text gives the same number, standing alone (#97). A number
-// joined to a letter, a digit or a separator is part of a longer reference.
+// joined to a letter, any decimal digit or a separator is part of a longer reference.
 const BARE_NUMBER = /^\d{5,7}$/u;
 
 function confirmedNumber(id: string, text: readonly string[]): boolean {

@@ -220,6 +220,28 @@ describe("the rules", () => {
     ).toEqual([]);
   });
 
+  // Any decimal digit joined to a reference, not only 0 to 9, makes it part
+  // of a longer number (#368).
+  it.each([
+    ["an Arabic-Indic digit after an A number", "A12345١"],
+    ["a fullwidth digit after an A number", "A12345１"],
+    ["a Devanagari digit before an A number", "१A12345"],
+    ["an Arabic-Indic digit after a G number", "G123/45١"],
+  ])("leaves a reference with %s", (_, reference) => {
+    expect(findReferences(sections(`Funded by CRUK (${reference}).`))).toEqual(
+      [],
+    );
+  });
+
+  it("leaves a bare number the text gives only with a digit outside 0 to 9 joined to it", () => {
+    expect(
+      findReferences({
+        text: ["Funded by the Example Trust (١12345 and 12345１)."],
+        awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
+      }),
+    ).toEqual([]);
+  });
+
   it("leaves a lowercase g number", () => {
     expect(findReferences(sections("Cancer Research UK (g123/45)."))).toEqual(
       [],
