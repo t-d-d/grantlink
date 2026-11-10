@@ -54,15 +54,15 @@ describe("strayParts", () => {
 
   // The check reads the raw XML, so a comment or a processing instruction
   // before a section's title must not hide the section from it either (#230).
-  it("passes a funding section with a processing instruction or an empty comment before its title", () => {
+  // One holding text is named (#303), so these hold none.
+  it("passes a funding section with an empty processing instruction or an empty comment before its title", () => {
     expect(
       strayParts(
         paper({
           body:
-            "<body><sec><?pi x?><title>Funding</title><p>Funded.</p></sec>" +
+            "<body><sec><?pi?><title>Funding</title><p>Funded.</p></sec>" +
             "<sec><label>5.</label><!----><title>Funding</title><p>Funded.</p></sec>" +
-            "<sec><title><!----><?pi x?>Funding</title><p>Funded.</p></sec>" +
-            "<sec><?pi a>b?><title>Funding</title><p>Funded.</p></sec></body>",
+            "<sec><title><!----><?pi ?>Funding</title><p>Funded.</p></sec></body>",
         }),
       ),
     ).toEqual([]);
@@ -185,6 +185,37 @@ describe("strayParts", () => {
       "a comment in the article-meta",
       { meta: "<!-- <contrib-group>A</contrib-group> -->" },
       "article/front/article-meta (text)",
+    ],
+    [
+      "a processing instruction holding text in the article-meta (#303)",
+      { meta: "<?x Somebody?>" },
+      "article/front/article-meta (text)",
+    ],
+    [
+      "a processing instruction holding text in the body (#303)",
+      { body: "<body><?x Somebody?></body>" },
+      "article/body (text)",
+    ],
+    [
+      "a processing instruction holding text in a funding statement, whose element the check does not otherwise read (#303)",
+      {
+        meta: "<funding-group><funding-statement>Funded.<?x Somebody?></funding-statement></funding-group>",
+      },
+      "article/front/article-meta/funding-group/funding-statement (text)",
+    ],
+    [
+      "a processing instruction holding text in the licence (#303)",
+      {
+        meta: "<permissions><license><p>CC BY</p><?x Somebody?></license></permissions>",
+      },
+      "article/front/article-meta/permissions/license (text)",
+    ],
+    [
+      "a comment holding text in a funding statement (#303)",
+      {
+        meta: "<funding-group><funding-statement>Funded.<!-- Somebody --></funding-statement></funding-group>",
+      },
+      "article/front/article-meta/funding-group/funding-statement (text)",
     ],
   ])("names %s", (_what, parts, stray) => {
     expect(strayParts(paper(parts))).toEqual([stray]);
@@ -313,6 +344,71 @@ describe("strayParts", () => {
       "article/back/fn-group/fn (text)",
     ],
     [
+      "a processing instruction holding text beside the paragraphs of a funding section (#303)",
+      { back: '<sec sec-type="funding"><p>Funded.</p><?x Somebody?></sec>' },
+      "article/back/sec (text)",
+    ],
+    [
+      "a processing instruction holding text inside a paragraph of a funding section (#303)",
+      { back: '<sec sec-type="funding"><p>Funded.<?x Somebody?></p></sec>' },
+      "article/back/sec (text)",
+    ],
+    [
+      "a processing instruction holding text in a funding section with no paragraphs (#303)",
+      {
+        back: '<sec sec-type="funding"><title>Funding</title>Funded.<?x Somebody?></sec>',
+      },
+      "article/back/sec (text)",
+    ],
+    [
+      "a processing instruction holding text before the title of a funding section, not the section (#303)",
+      {
+        body: "<body><sec><?pi x?><title>Funding</title><p>Funded.</p></sec></body>",
+      },
+      "article/body/sec (text)",
+    ],
+    [
+      "a processing instruction holding a > before the title of a funding section, which does not end it (#303)",
+      {
+        body: "<body><sec><?pi a>b?><title>Funding</title><p>Funded.</p></sec></body>",
+      },
+      "article/body/sec (text)",
+    ],
+    [
+      "a processing instruction holding text inside the title of a funding section (#303)",
+      {
+        body: "<body><sec><title><?pi x?>Funding</title><p>Funded.</p></sec></body>",
+      },
+      "article/body/sec (text)",
+    ],
+    [
+      "a processing instruction holding text in a funding footnote (#303)",
+      {
+        back: '<fn-group><fn fn-type="funding"><p>Funded.</p><?x Somebody?></fn></fn-group>',
+      },
+      "article/back/fn-group/fn (text)",
+    ],
+    [
+      "a processing instruction holding text in the acknowledgements (#303)",
+      { back: "<ack><p>Thanks.</p><?x Somebody?></ack>" },
+      "article/back/ack (text)",
+    ],
+    [
+      "a processing instruction with the target xml holding text in a part, which is no XML declaration (#303)",
+      { back: "<ack><p>Thanks.</p><?xml Somebody?></ack>" },
+      "article/back/ack (text)",
+    ],
+    [
+      "a processing instruction holding text after a ? that ends its target (#303)",
+      { back: "<ack><p>Thanks.</p><?x?Somebody?></ack>" },
+      "article/back/ack (text)",
+    ],
+    [
+      "a processing instruction holding text that never ends with ?> (#303)",
+      { back: "<ack><p>Thanks.</p><?x Somebody</ack>" },
+      "article/back/ack (text)",
+    ],
+    [
       "a paragraph inside the title of a funding section, which the cutter reads in place of the bare text",
       { back: '<sec sec-type="funding"><title><p>X</p></title>Somebody</sec>' },
       "article/back/sec/title/p",
@@ -349,6 +445,82 @@ describe("strayParts", () => {
     expect(strayParts(paper(parts))).toEqual([stray]);
   });
 
+  // #275: in a funding group the cutter reads each funding statement whole,
+  // and in each award group each funding source and award id whole. The
+  // check names anything else inside the group.
+  const GROUP = "article/front/article-meta/funding-group";
+
+  it("passes a funding group's statements, and its award groups' funding sources and award ids", () => {
+    const meta =
+      '<funding-group specific-use="FundRef">' +
+      "<funding-statement>Funded by <named-content>X</named-content>.</funding-statement>" +
+      '<award-group id="g1"><funding-source id="s1"><institution-wrap>' +
+      '<institution-id institution-id-type="DOI">10.1/x</institution-id>' +
+      "<institution>X</institution></institution-wrap></funding-source>" +
+      '<award-id rid="s1">A2</award-id></award-group><award-group/>' +
+      "</funding-group>";
+    expect(strayParts(paper({ meta }))).toEqual([]);
+  });
+
+  it.each([
+    [
+      "a principal award recipient in an award group",
+      "<award-group><award-id>A2</award-id><principal-award-recipient><name>A</name>" +
+        "</principal-award-recipient></award-group>",
+      `${GROUP}/award-group/principal-award-recipient`,
+    ],
+    [
+      "a principal investigator in an award group",
+      "<award-group><award-id>A2</award-id><principal-investigator><name>A</name>" +
+        "</principal-investigator></award-group>",
+      `${GROUP}/award-group/principal-investigator`,
+    ],
+    [
+      "an award description in an award group",
+      "<award-group><award-id>A2</award-id><award-desc>Somebody</award-desc></award-group>",
+      `${GROUP}/award-group/award-desc`,
+    ],
+    [
+      "an open access statement in a funding group",
+      "<open-access><p>Somebody</p></open-access>",
+      `${GROUP}/open-access`,
+    ],
+    [
+      "text in a funding group beside its statements",
+      "Somebody<funding-statement>Funded.</funding-statement>",
+      `${GROUP} (text)`,
+    ],
+    [
+      "text in an award group beside its award ids",
+      "<award-group>Somebody<award-id>A2</award-id></award-group>",
+      `${GROUP}/award-group (text)`,
+    ],
+    [
+      "a comment holding text in a funding group",
+      "<!-- <name>A</name> --><funding-statement>Funded.</funding-statement>",
+      `${GROUP} (text)`,
+    ],
+    [
+      "a comment holding text in a funding statement, which the cutter drops",
+      "<funding-statement>Funded.<!-- <name>A</name> --></funding-statement>",
+      `${GROUP}/funding-statement (text)`,
+    ],
+    [
+      "a comment holding text in a funding source",
+      "<award-group><funding-source>X<!-- A --></funding-source></award-group>",
+      `${GROUP}/award-group/funding-source (text)`,
+    ],
+    [
+      "a comment holding text in an award id",
+      "<award-group><award-id>A2<!-- A --></award-id></award-group>",
+      `${GROUP}/award-group/award-id (text)`,
+    ],
+  ])("names %s (#275)", (_what, inner, stray) => {
+    expect(
+      strayParts(paper({ meta: `<funding-group>${inner}</funding-group>` })),
+    ).toEqual([stray]);
+  });
+
   // #304: an attribute keeps text the cutter never reads, so the check names
   // any it does not expect, by its element's path and its own name. It does
   // not print the value, which could be a name.
@@ -360,7 +532,7 @@ describe("strayParts", () => {
       '<p><ext-link ext-link-type="uri" xlink:href="https://creativecommons.org/licenses/by/4.0/">CC BY</ext-link></p></license></permissions>' +
       '<funding-group specific-use="FundRef"><award-group id="gs1"><funding-source id="sp1">' +
       '<institution-wrap><institution-id institution-id-type="DOI">10.1/x</institution-id></institution-wrap></funding-source>' +
-      '<award-id rid="sp1">A1</award-id><principal-award-recipient><name name-style="western"><surname>S</surname></name></principal-award-recipient>' +
+      '<award-id rid="sp1">A1</award-id>' +
       "</award-group></funding-group></article-meta></front>" +
       '<body><sec id="s5" sec-type="funding"><title>Funding</title><p id="P12">Funded.</p></sec></body>' +
       '<back><fn-group><fn id="fn1" fn-type="financial-disclosure"><p>Funded.</p></fn></fn-group></back></article>';
@@ -501,5 +673,9 @@ describe("strayParts", () => {
 
   it("names text outside the root", () => {
     expect(strayParts(`${paper()}\nSomebody`)).toEqual(["(text)"]);
+  });
+
+  it("names a processing instruction holding text outside the root, but not the XML declaration (#303)", () => {
+    expect(strayParts(`${paper()}\n<?x Somebody?>`)).toEqual(["(text)"]);
   });
 });

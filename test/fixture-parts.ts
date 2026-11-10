@@ -9,13 +9,18 @@
 // definitions the cutter in src/europepmc/jats.ts exports, so the two agree
 // (#159). Inside a part it allows, the check names anything the cutter does
 // not read but one title and one label, each holding only its own text
-// (#215). Two differences stay, where the check is stricter than the
-// cutter. The cutter finds a funding section nested in another section,
-// but the check refuses the outer section, whose other parts can carry
-// names: a recording keeps only the funding section, moved up into the body
-// or the back. And in a part with no paragraphs the cutter reads the whole
-// text, but the check names any element there other than a label, a title
-// or an empty paragraph.
+// (#215). Inside the funding metadata it names anything the cutter does not
+// read: a funding group may hold its funding statements and award groups,
+// and an award group its funding sources and award ids, so a principal award
+// recipient or investigator, which names people, is named (#275). Three
+// differences stay, where the check is stricter than the cutter. The cutter
+// finds a funding section nested in another section, but the check refuses
+// the outer section, whose other parts can carry names: a recording keeps
+// only the funding section, moved up into the body or the back. In a part
+// with no paragraphs the cutter reads the whole text, but the check names
+// any element there other than a label, a title or an empty paragraph. And
+// the cutter finds a funding statement, funding source or award id at any
+// depth in its group, but the check names one anywhere but its own place.
 //
 // The cutter reads no attribute values but the ids and types it matches on,
 // so a value can keep a name nobody reads. On every element a recording
@@ -37,8 +42,9 @@ interface Element {
   malformed: boolean;
   children: Element[];
   text: boolean;
-  // Whether it holds a comment with text, which the cutter drops unread.
-  comment: boolean;
+  // Whether it holds a comment or a processing instruction with text, which
+  // the cutter drops unread.
+  unread: boolean;
   // Whether the cutter reads the element as a funding section or footnote.
   funding: boolean;
 }
@@ -51,13 +57,19 @@ const isFundingFootnote = (element: Element): boolean =>
   element.name === "fn" && element.funding;
 
 // For each element whose children are checked, which children it may hold.
-// The children of an element allowed here, but not listed, are not checked.
+// The children of an element allowed here, but not listed, are not checked,
+// but a comment or a processing instruction with text anywhere inside it is
+// named, since the cutter drops it unread (#303).
 const ALLOWED: Record<string, (child: Element) => boolean> = {
   article: (child) => ["front", "body", "back"].includes(child.name),
   "article/front": (child) => child.name === "article-meta",
   "article/front/article-meta": (child) =>
     ["article-id", "permissions", "funding-group"].includes(child.name),
   "article/front/article-meta/permissions": (child) => child.name === "license",
+  "article/front/article-meta/funding-group": (child) =>
+    ["funding-statement", "award-group"].includes(child.name),
+  "article/front/article-meta/funding-group/award-group": (child) =>
+    ["funding-source", "award-id"].includes(child.name),
   "article/body": isFundingSection,
   "article/back": (child) =>
     child.name === "ack" ||
@@ -88,11 +100,13 @@ function attributesOf(tag: string): {
   return { attributes, malformed: tag.slice(end).trim() !== "" };
 }
 
-// The XML's elements as a tree, under a root with no name. Declarations and
-// processing instructions are dropped. A processing instruction ends at its
-// own ?>, as in the pattern that finds a funding section, so a > inside it
-// does not end it. CDATA and comments count as text, since a comment can
-// hold a cut part kept by mistake.
+// The XML's elements as a tree, under a root with no name. Declarations are
+// dropped. A processing instruction ends at its own ?>, as in the pattern
+// that finds a funding section, so a > inside it does not end it. CDATA and
+// comments count as text, since a comment can hold a cut part kept by
+// mistake. So does what a processing instruction holds after its target,
+// other than the XML declaration's before the root, and what one holds that
+// never ends with ?> (#303).
 function parse(xml: string): Element {
   const root: Element = {
     name: "",
@@ -100,7 +114,7 @@ function parse(xml: string): Element {
     malformed: false,
     children: [],
     text: false,
-    comment: false,
+    unread: false,
     funding: false,
   };
   const stack = [root];
@@ -110,11 +124,22 @@ function parse(xml: string): Element {
     const [whole, close, name, attributes = "", empty] = match;
     const parent = stack.at(-1) ?? root;
     if (name === undefined) {
-      if (/^(?:<!\[CDATA\[|<!--|[^<])/u.test(whole)) {
+      const instruction = /^<\?([^\s?>]*)([\s\S]*?)\??>$/u.exec(whole);
+      if (instruction !== null) {
+        const [, target = "", data = ""] = instruction;
+        const declaration =
+          target.toLowerCase() === "xml" &&
+          parent === root &&
+          root.children.length === 0;
+        if (!declaration && data.trim() !== "") {
+          parent.text = true;
+          parent.unread = true;
+        }
+      } else if (/^(?:<!\[CDATA\[|<!--|[^<])/u.test(whole)) {
         const text = whole.replace(/^(?:<!\[CDATA\[|<!--)|(?:\]\]|--)>$/gu, "");
         if (text.trim() !== "") {
           parent.text = true;
-          if (whole.startsWith("<!--")) parent.comment = true;
+          if (whole.startsWith("<!--")) parent.unread = true;
         }
       }
     } else if (close === "/") {
@@ -133,7 +158,7 @@ function parse(xml: string): Element {
         ...attributesOf(attributes),
         children: [],
         text: false,
-        comment: false,
+        unread: false,
         funding,
       };
       parent.children.push(element);
@@ -161,11 +186,12 @@ const PART_CHILDREN = ["p", "title", "label"];
 const hasText = (element: Element): boolean =>
   element.text || element.children.some(hasText);
 
-// A comment with text anywhere in a part is named, even in a part with no
-// paragraphs, whose other text the cutter reads: the cutter drops comments,
-// so what one holds is kept without being read (#230).
-const hasComment = (element: Element): boolean =>
-  element.comment || element.children.some(hasComment);
+// A comment or a processing instruction with text anywhere in a part is
+// named, even in a part with no paragraphs, whose other text the cutter
+// reads: the cutter drops both, so what one holds is kept without being read
+// (#230, #303).
+const hasUnread = (element: Element): boolean =>
+  element.unread || element.children.some(hasUnread);
 
 // Whether the cutter reads the element as a funding part: a funding section,
 // a funding footnote or the acknowledgements. Where each may stand is for
@@ -234,7 +260,6 @@ const ATTRIBUTES = new Map<string, (value: string) => boolean>(
         value,
       ),
     "institution-id-type": oneOf("DOI", "FundRef", "ROR", "Ringgold", "ISNI"),
-    "name-style": oneOf("western", "eastern", "given-only", "islensk"),
     id: (value) => ID.test(value),
     rid: (value) => value.split(/\s+/u).every((id) => ID.test(id)),
     // As the cutter reads them, in src/europepmc/jats.ts.
@@ -269,9 +294,7 @@ function strayInPart(part: Element, path: string): string[] {
   );
   return [
     ...strayAttributes(part, path),
-    ...((paragraphs && part.text) || hasComment(part)
-      ? [`${path} (text)`]
-      : []),
+    ...((paragraphs && part.text) || hasUnread(part) ? [`${path} (text)`] : []),
     ...part.children.flatMap((child) => {
       const childPath = `${path}/${child.name}`;
       if (!PART_CHILDREN.includes(child.name)) return [childPath];
@@ -284,12 +307,28 @@ function strayInPart(part: Element, path: string): string[] {
   ];
 }
 
+// What the cutter reads whole inside a funding group: each funding
+// statement, and each funding source and award id in an award group. Any
+// element inside one is read with it, but a comment is dropped unread, so a
+// comment with text is named (#275).
+const READ_WHOLE = new Set(
+  [
+    "funding-group/funding-statement",
+    "funding-group/award-group/funding-source",
+    "funding-group/award-group/award-id",
+  ].map((path) => `article/front/article-meta/${path}`),
+);
+
 function stray(element: Element, path: string): string[] {
   if (isPart(element)) return strayInPart(element, path);
-  const allowed = ALLOWED[path];
-  // The children of an element whose children are not checked are kept, so
+  // The cutter reads each element below these, but no attribute's value, so
   // their attributes are checked.
-  if (allowed === undefined) return strayAttributesWithin(element, path);
+  if (READ_WHOLE.has(path) || ALLOWED[path] === undefined)
+    return [
+      ...(hasUnread(element) ? [`${path} (text)`] : []),
+      ...strayAttributesWithin(element, path),
+    ];
+  const allowed = ALLOWED[path];
   return [
     ...strayAttributes(element, path),
     ...(element.text ? [`${path} (text)`] : []),

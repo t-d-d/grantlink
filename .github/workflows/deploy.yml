@@ -107,8 +107,12 @@ jobs:
       # Assumes the deploy role through GitHub's OIDC token, with the AWS
       # CLI the runner ships, so no outside action holds the credentials.
       # The account id, the token and the credentials are masked before
-      # anything else runs, so no later line prints them.
+      # anything else runs, so no later line prints them. The credentials
+      # are this step's outputs, and only the steps that call AWS name them
+      # in their env, so no other step's code holds them. The step that
+      # reads the live page gets none (#259).
       - name: Assume the deploy role
+        id: assume
         env:
           ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
         run: |
@@ -149,16 +153,20 @@ jobs:
           echo "::add-mask::$secret"
           echo "::add-mask::$session"
           {
-            echo "AWS_ACCESS_KEY_ID=$key"
-            echo "AWS_SECRET_ACCESS_KEY=$secret"
-            echo "AWS_SESSION_TOKEN=$session"
-          } >> "$GITHUB_ENV"
+            echo "key=$key"
+            echo "secret=$secret"
+            echo "session=$session"
+          } >> "$GITHUB_OUTPUT"
 
       # CloudFormation refuses to update a stack stuck in cleanup or
       # rollback, and to create a bucket that is already there. This stops
       # the deploy first, with a message that names the resource and says
       # what to do, and never prints the account id (#89).
       - name: Check the app stack
+        env:
+          AWS_ACCESS_KEY_ID: ${{ steps.assume.outputs.key }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.assume.outputs.secret }}
+          AWS_SESSION_TOKEN: ${{ steps.assume.outputs.session }}
         run: scripts/check-stack.sh
 
       # The first run over the back catalogue starts from a one-time
@@ -167,6 +175,10 @@ jobs:
       # they start no second run.
       - name: Keep the first run's time
         id: first
+        env:
+          AWS_ACCESS_KEY_ID: ${{ steps.assume.outputs.key }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.assume.outputs.secret }}
+          AWS_SESSION_TOKEN: ${{ steps.assume.outputs.session }}
         run: |
           set -euo pipefail
           # Only a stack that does not exist yet gets a new time. Any other
@@ -192,11 +204,18 @@ jobs:
       # the page at grantlink.uk (#44).
       - name: Deploy the app stack
         env:
+          AWS_ACCESS_KEY_ID: ${{ steps.assume.outputs.key }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.assume.outputs.secret }}
+          AWS_SESSION_TOKEN: ${{ steps.assume.outputs.session }}
           FIRST_RUN_AT: ${{ steps.first.outputs.at }}
         run: npx sls deploy
 
       - name: Read the stack's outputs
         id: stack
+        env:
+          AWS_ACCESS_KEY_ID: ${{ steps.assume.outputs.key }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.assume.outputs.secret }}
+          AWS_SESSION_TOKEN: ${{ steps.assume.outputs.session }}
         run: |
           set -euo pipefail
           outputs="$(aws cloudformation describe-stacks --stack-name grantlink-prod \
@@ -217,6 +236,9 @@ jobs:
       # and keeps a page a run publishes during the deploy (#46).
       - name: Publish the page
         env:
+          AWS_ACCESS_KEY_ID: ${{ steps.assume.outputs.key }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.assume.outputs.secret }}
+          AWS_SESSION_TOKEN: ${{ steps.assume.outputs.session }}
           BUCKET: ${{ steps.stack.outputs.bucket }}
           DISTRIBUTION: ${{ steps.stack.outputs.distribution }}
         run: scripts/publish-page.sh
