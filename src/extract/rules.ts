@@ -97,7 +97,7 @@ const funderName = new RegExp(`(?<!${EDGE})(?:${NAMES})(?!${EDGE})`, "iu");
 
 // A reference's edges. Any letter or combining mark joined to a reference,
 // not only A to Z, makes it part of a longer word, as at the funder's name
-// (#339). So does a digit or an underscore, as \b had it.
+// (#339). So does a digit 0 to 9 or an underscore, as \b had it.
 const WORD = String.raw`[\p{L}\p{M}\w]`;
 const START = `(?<!${WORD})`;
 const END = `(?!${WORD})`;
