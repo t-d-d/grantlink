@@ -165,6 +165,9 @@ describe("cutting a paper to its funding sections", () => {
       ],
       ["<sec><title>Support</title><p>Grant A1.</p></sec>"],
       ["<sec><title>Role of the funder/sponsor</title><p>Grant A1.</p></sec>"],
+      // The joined headings take either spelling, as the single words do.
+      ["<sec><title>Acknowledgments and Funding</title><p>Grant A1.</p></sec>"],
+      ["<sec><title>Funding and Acknowledgments</title><p>Grant A1.</p></sec>"],
       [
         "<sec><sec-meta><kwd-group><kwd>k</kwd></kwd-group></sec-meta><title>Funding</title><p>Grant A1.</p></sec>",
       ],

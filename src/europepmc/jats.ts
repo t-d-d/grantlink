@@ -265,6 +265,9 @@ export const FUNDING_TITLES: ReadonlySet<string> = new Set([
   "acknowledgments",
   "acknowledgements and funding",
   "funding and acknowledgements",
+  // The joined headings in the other spelling, as the single words have.
+  "acknowledgments and funding",
+  "funding and acknowledgments",
   // Found in gold sets A and B.
   "funding and organization",
   "grants",
