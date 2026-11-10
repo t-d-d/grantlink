@@ -132,6 +132,11 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         filename: "src/run/owed.ts",
         code: `export default async function somethingElse() {}`,
       },
+      {
+        name: "exports an anonymous default function declaration from the helper's module",
+        filename: "src/run/owed.ts",
+        code: `export default async function () {}`,
+      },
     ],
     invalid: [
       ...WRAPPED_STEP_HELPERS.filter(
