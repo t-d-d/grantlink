@@ -302,25 +302,30 @@ const headingStart = (section: XmlElement): number => {
     : at;
 };
 
-// The title that stands here, after a label if there is one, and where it
-// stands, or undefined if there is none. A self-closing title names nothing
-// (#221).
+// The text of the title that stands here, after a label if there is one,
+// and where it stands, or undefined if there is none. A self-closing title
+// names nothing (#221), and neither does one whose text is empty or blank,
+// as a blank type says nothing (#600), or one of punctuation alone, which
+// normalises to nothing as the funding titles are matched (#614).
 function titleFrom(
   children: XmlNode[],
   from: number,
-): { title: XmlElement; at: number } | undefined {
+): { text: string; at: number } | undefined {
   const at = isLabel(children[from]) ? pastGaps(children, from + 1) : from;
   const title = children[at];
-  return isTitle(title) && !title.empty ? { title, at } : undefined;
+  if (!isTitle(title) || title.empty) return undefined;
+  const text = plain(title.children);
+  return normaliseTitle(text) === "" ? undefined : { text, at };
 }
 
 // What a funding section holds after its heading, or undefined if the
 // element is not one. A section is found by its type or by its title, and
 // may open with a <sec-meta> and then a label before its title. Its
 // <sec-meta> is not part of what it holds, since it can name people (#222).
-// A self-closing section is empty, and a self-closing title names nothing,
-// so neither makes a funding section (#221). The title is read as text, so
-// inline markup around its words does not hide it (#240).
+// A self-closing section is empty, and a self-closing, empty or blank title,
+// or one of punctuation alone, names nothing, so neither makes a funding
+// section (#221, #600, #614). The title is read as text, so inline markup
+// around its words does not hide it (#240).
 function fundingContent(section: XmlElement): XmlNode[] | undefined {
   if (!isSection(section) || section.empty) return undefined;
   const children = section.children;
@@ -334,9 +339,7 @@ function fundingContent(section: XmlElement): XmlNode[] | undefined {
   }
   const found = titleFrom(children, start);
   if (found === undefined) return undefined;
-  return isFundingTitle(plain(found.title.children))
-    ? children.slice(found.at + 1)
-    : undefined;
+  return isFundingTitle(found.text) ? children.slice(found.at + 1) : undefined;
 }
 
 // Whether the element is a funding section.
@@ -419,11 +422,12 @@ const ownContent = (note: XmlElement): XmlNode[] =>
 const ownWords = (note: XmlElement): string => plain(ownContent(note));
 
 // A note's title, which may follow a label, or undefined if it has none. A
-// self-closing title names nothing, as in a section (#221).
+// self-closing, empty or blank title, or one of punctuation alone, names
+// nothing, as in a section (#221, #600, #614).
 function noteTitle(note: XmlElement): string | undefined {
   const children = note.children;
   const found = titleFrom(children, pastGaps(children, 0));
-  return found === undefined ? undefined : plain(found.title.children);
+  return found?.text;
 }
 
 // Whether a note or a footnote is funding text (#505), and why: "marked"
@@ -462,10 +466,12 @@ export const isFundingNote = (element: XmlElement, parent: string): boolean =>
 // as funding by its type or title is read whole, less the notes inside it
 // and its sections titled or typed as something other than funding (#541,
 // #563). One kept for its own words is about funding only in those words,
-// so its sections, at any depth, are left out: author contributions or a
-// data statement there name people or say nothing of funding. A funding
+// so the sections it holds directly are left out: author contributions or
+// a data statement there name people or say nothing of funding. A funding
 // section among them is found by its type or title, as every funding
-// section is (#526).
+// section is (#526). A section wrapped in another element inside the note
+// is kept with the note's words, unless its title or type names something
+// other than funding, as in a marked note (#565).
 const fundingNoteParts = (element: XmlElement): XmlNode[][] =>
   element.children.flatMap((child) => {
     if (child.kind !== "element") return [];

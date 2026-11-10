@@ -33,8 +33,9 @@ describe("fitness: the page carries the notice and the credit (independence.md)"
   });
 
   it("carries the independence notice, the credit and the contact", () => {
-    // The notice and the address belong in the footer (#593). The line
-    // under the headline (#588) repeats the notice, so read the footer.
+    // The footer alone: the line under the headline carries the same words
+    // (#588), and the notice (#590) and the address (#593) belong in the
+    // footer.
     const footer = footerOf(html);
     expect(footer, "the page has no footer").not.toBe("");
     expect(textOf(footer)).toMatch(NOTICE);

@@ -1,8 +1,25 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { found } from "./found.ts";
+import { found, leaveOut, withoutNotices } from "./found.ts";
 import { release } from "./release.ts";
 import { buildPage } from "./render.ts";
+
+// Papers Europe PMC marks as retracted that the old search returned, as of
+// 10 November 2026. The run's search now leaves such papers out, but the
+// deploy builds the page from the last run's found.json, which may still
+// hold them, so the page leaves them out too (#587).
+export const retracted: ReadonlySet<string> = new Set([
+  "PMC7424394",
+  "PMC7944367",
+  "PMC7945676",
+  "PMC8250430",
+  "PMC8383320",
+  "PMC8461250",
+  "PMC8473924",
+  "PMC8555415",
+  "PMC8585997",
+  "PMC8762289",
+]);
 
 // Builds the page again at deploy: from the data the last run published,
 // so a deploy that changes the template keeps the findings, and from the
@@ -21,7 +38,10 @@ export function rebuild(
 ): string {
   return buildPage(
     template,
-    data === null ? null : found.parse(JSON.parse(data)),
+    // A correction notice an older run published goes too (#660).
+    data === null
+      ? null
+      : withoutNotices(leaveOut(found.parse(JSON.parse(data)), retracted)),
     record === null ? null : release.parse(JSON.parse(record)),
   );
 }

@@ -19,6 +19,8 @@ export const RULES_VERSIONS: readonly Version[] = [
   { number: 14, issue: 514 },
   { number: 15, issue: 573 },
   { number: 16, issue: 560 },
+  { number: 17, issue: 598 },
+  { number: 18, issue: 642 },
 ];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
@@ -146,6 +148,18 @@ const SEP = String.raw`\s?[/\\∖]\s?`;
 // one, as in 12345/2, 12345-67 or 1234.5.
 const NUMBER_AFTER = String.raw`(?!${SEP}|${DASH}\d|\.\d)`;
 
+// An A number inside another funder's reference, with letters and a slash
+// before it and a slash and more after it, as in CAN/A00004/1, is part of
+// that reference, not the funder's (#642). A slash here is written straight
+// against both its neighbours, so a list spaced with slashes is not one,
+// and another A number after it makes a list too, as in grant/A12345/A23456.
+// Read at the A, before the shape.
+const TIGHT_SEP = String.raw`[/\\∖]`;
+const NOT_INSIDE_REFERENCE = String.raw`(?:(?<!\p{L}${TIGHT_SEP})|(?!A\s?\d+${TIGHT_SEP}(?!A\s?\d)${WORD}))`;
+
+// An A number, as the An shape reads it.
+const A_SHAPE = String.raw`A(?:\s?\d{5}|\d{4}${END}(?!${SEP}A\s?\d))`;
+
 interface Shape {
   format: string | ((match: RegExpMatchArray) => string);
   // The reference alone, built from the pieces below. The rules read it
@@ -158,9 +172,10 @@ interface Shape {
   before?: string;
   after?: string;
   // Whether the model pass keeps a reply of this shape only where the
-  // rules' own pattern reads that reply, and no more or less, in the text.
+  // rules' own scan reads that reply, and no more or less, in the text.
   // A form with a prefix and up to four parts may run on past a reply, as
-  // CRUK/12/34 does past CRUK/12 (#561).
+  // CRUK/12/34 does past CRUK/12 (#561), and an earlier pattern may take
+  // part of it, as the C/A pattern does in CRUK/C1234/A56789 (#599).
   readWhole?: true;
   // A short number such as an A number is common, so it counts only in a
   // sentence that names the funder.
@@ -219,7 +234,12 @@ const CRUK_DIGIT_PART = String.raw`${CRUK_SEP}(?=[A-Z]*\d)(?!${A_YEAR}(?![A-Z0-9
 const CRUK_LETTER_PART = String.raw`${CRUK_SEP}[A-Z]{1,2}(?![A-Z0-9])`;
 const CRUK_PART = `(?:${CRUK_DIGIT_PART}|${CRUK_LETTER_PART})`;
 // No part of any kind follows, so a read is the whole form, not its front.
-const NO_MORE_PARTS = String.raw`(?!${CRUK_SEP}[A-Z0-9]{1,8}(?![A-Z0-9]))`;
+// Besides a hyphen or a slash, a part may follow a backslash, the set minus
+// sign, or a slash with a space on one side of it (#598). A slash with a
+// space on each side parts a list of references, as in
+// "CRUK-A12345 / CRUK-A23456", so it ends the form.
+const NEXT_PART_SEP = String.raw`(?:${DASH}|[/\\∖]\s?|\s[/\\∖](?!\s))`;
+const NO_MORE_PARTS = String.raw`(?!${NEXT_PART_SEP}[A-Z0-9]{1,8}(?![A-Z0-9]))`;
 // One to four parts, read whole. A form that runs on past four parts reads
 // its first four, as the model pass keeps them (#561), unless the fourth
 // has no digit and another part follows it.
@@ -250,7 +270,9 @@ const SHAPES: readonly Shape[] = [
     // as in CRUK/2019, is not one. The form is read whole or not at all, so
     // CRUK/12 is not read from CRUK/12/2019, nor CRUK/AB12 from
     // CRUK/AB12/SMITH/2 (#514). A last part with no digit holds at most
-    // two capitals, so CRUK/12/JONES is not one either (#560).
+    // two capitals, so CRUK/12/JONES is not one either (#560). Nor is
+    // CRUK/12 read from CRUK/12\2019 or CRUK/12 /2019, where the next part
+    // follows a backslash or a slash spaced on one side (#598).
     format: "CRUK-X",
     shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:${CRUK_PARTS})`,
     readWhole: true,
@@ -306,7 +328,8 @@ const SHAPES: readonly Shape[] = [
     // four-digit A before another A number, as in A1234/A56789, is the C
     // part of a misprinted C/A pair, which is left to the model (#177).
     format: "An",
-    shape: String.raw`A(?:\s?\d{5}|\d{4}${END}(?!${SEP}A\s?\d))`,
+    shape: A_SHAPE,
+    before: `${START}${NOT_INSIDE_REFERENCE}`,
     sentenceOnly: true,
   },
   {
@@ -350,10 +373,12 @@ const NUMBER_BEFORE = String.raw`(?<!${SEP}|${DASH}|\d\.)`;
 // A reference as written, between the edges above. A bare number of any
 // length counts only where the text neither runs into it nor goes on past
 // it, as the rules read one (#567, #571).
+const A_REPLY = new RegExp(`^${A_SHAPE}$`, "u");
 const wholeReference = (reference: string): RegExp => {
   const bare = BARE_REPLY.test(reference);
+  const aNumber = A_REPLY.test(reference);
   return new RegExp(
-    `${bare ? NUMBER_BEFORE : ""}${START}${escape(reference)}${END}${bare ? NUMBER_AFTER : ""}`,
+    `${bare ? NUMBER_BEFORE : ""}${START}${aNumber ? NOT_INSIDE_REFERENCE : ""}${escape(reference)}${END}${bare ? NUMBER_AFTER : ""}`,
     "u",
   );
 };
@@ -370,34 +395,26 @@ const READ_SHAPE = new RegExp(
 export const hasReferenceShape = (reference: string): boolean =>
   READ_SHAPE.test(reference);
 
-const READ_WHOLE = SHAPES.flatMap(
-  ({ shape, modelShape, before, after, readWhole }) =>
-    readWhole === true
-      ? [
-          {
-            shape: new RegExp(`^(?:${modelShape ?? shape})$`, "u"),
-            pattern: new RegExp(
-              `${before ?? START}${shape}${END}${after ?? ""}`,
-              "gu",
-            ),
-          },
-        ]
-      : [],
+const READ_WHOLE = new RegExp(
+  `^(?:${SHAPES.filter(({ readWhole }) => readWhole === true)
+    .map(({ shape, modelShape }) => modelShape ?? shape)
+    .join("|")})$`,
+  "u",
 );
 
 // Whether a paragraph gives a reference as written whole, between the edges
 // above. The model pass checks its references with this, so the two passes
 // cannot draw a reference's edges differently (#384). A reference of a shape
 // the rules read whole, such as a CRUK- form, counts only where the rules'
-// pattern reads just that reference (#561). Any other counts between the
-// edges above, as wholeReference reads it.
+// own scan reads just that reference (#561). The scan runs every pattern in
+// turn, so where an earlier one takes the text, as the C/A pattern takes
+// C1234/A56789 out of CRUK/C1234/A56789, the CRUK- form is not read (#599).
+// Any other counts between the edges above, as wholeReference reads it.
 export function readsWhole(paragraph: string, reference: string): boolean {
-  const whole = READ_WHOLE.find(({ shape }) => shape.test(reference));
-  if (whole !== undefined) {
-    return Array.from(
-      paragraph.matchAll(whole.pattern),
-      ([match]) => match,
-    ).includes(reference);
+  if (READ_WHOLE.test(reference)) {
+    return scan(paragraph, "long").some(
+      ({ asWritten }) => asWritten === reference,
+    );
   }
   return wholeReference(reference).test(paragraph);
 }

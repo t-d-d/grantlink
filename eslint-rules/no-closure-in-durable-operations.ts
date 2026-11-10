@@ -7,6 +7,8 @@ import {
   outermostWrapper,
   unwrapped,
   methodCallIn,
+  rootIdentifier,
+  targets,
 } from "./create-rule.ts";
 
 // Ported from podstow's rule of the same name (durable-execution.md).
@@ -66,41 +68,6 @@ function isLiteralWrapper(node: TSESTree.Node): boolean {
     node.type === AST_NODE_TYPES.Property ||
     unwrapped(node) !== node
   );
-}
-
-// The variable a write lands in, through members and the wrappers unwrapped
-// takes off: `found` in `found!.push(1)`, `(found as T[]).push(1)` and
-// `totals!.papers += 1`.
-function rootIdentifier(node: TSESTree.Node): TSESTree.Identifier | undefined {
-  let current = unwrapped(node);
-  while (current.type === AST_NODE_TYPES.MemberExpression)
-    current = unwrapped(current.object);
-  return current.type === AST_NODE_TYPES.Identifier ? current : undefined;
-}
-
-// The places an assignment target writes: itself, or each target inside a
-// destructuring pattern.
-function targets(node: TSESTree.Node): TSESTree.Node[] {
-  switch (node.type) {
-    case AST_NODE_TYPES.ArrayPattern:
-      return node.elements.flatMap((element) =>
-        element === null ? [] : targets(element),
-      );
-    case AST_NODE_TYPES.ObjectPattern:
-      return node.properties.flatMap((property) =>
-        targets(
-          property.type === AST_NODE_TYPES.Property
-            ? property.value
-            : property.argument,
-        ),
-      );
-    case AST_NODE_TYPES.AssignmentPattern:
-      return targets(node.left);
-    case AST_NODE_TYPES.RestElement:
-      return targets(node.argument);
-    default:
-      return [node];
-  }
 }
 
 function isWithin(

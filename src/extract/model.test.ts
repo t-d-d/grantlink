@@ -336,6 +336,19 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.rejected).toBe(3);
   });
 
+  it("rejects an A number inside another funder's reference, as the rules do", async () => {
+    // The rules read no A number from CAN/A00004/1 (#642).
+    const { fetch } = fakeOpenRouter(
+      answer([{ asWritten: "A00004", confidence: 0.9 }]),
+    );
+    const result = await proposeReferences(
+      ["Funded by Cancer Research UK and the Example Network (CAN/A00004/1)."],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(1);
+  });
+
   it("rejects a reference a combining mark is joined to, as the rules do", async () => {
     // A combining mark belongs to the letter before it, so a mark joined to
     // a reference makes it part of a longer word (#339, #369). The text is
@@ -689,6 +702,45 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.rejected).toBe(3);
   });
 
+  // The text is made up.
+  it.each([
+    String.raw`Funded by CRUK (CRUK/12\2019).`,
+    "Funded by CRUK (CRUK/12 /2019).",
+    "Funded by CRUK (CRUK/12/ 2019).",
+    String.raw`Funded by CRUK (CRUK/12\SMITH).`,
+  ])(
+    "rejects the front of a CRUK- form whose next part follows a backslash or a spaced slash (#598): %j",
+    async (text) => {
+      const { fetch } = fakeOpenRouter(
+        answer([{ asWritten: "CRUK/12", confidence: 0.9 }]),
+      );
+      const result = await proposeReferences([text], {
+        model: haiku,
+        key: "k",
+        fetch,
+      });
+      expect(result.status === "read" && result.references).toEqual([]);
+      expect(result.status === "read" && result.rejected).toBe(1);
+    },
+  );
+
+  it("keeps each CRUK- form in a list parted by a slash spaced on both sides (#598)", async () => {
+    // The text is made up.
+    const written = ["CRUK-A12345", "CRUK-A23456"];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(
+      ["Funded by CRUK (CRUK-A12345 / CRUK-A23456)."],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(written);
+    expect(result.status === "read" && result.rejected).toBe(0);
+  });
+
   it("rejects the back of a CRUK- form whose prefix the rules read with it (#561)", async () => {
     // The text is made up.
     const { fetch } = fakeOpenRouter(
@@ -700,6 +752,26 @@ describe("fitness: no invented references (model-calls.md)", () => {
       fetch,
     });
     expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(1);
+  });
+
+  it("rejects a CRUK- form where the rules read the C/A pair inside it instead (#599)", async () => {
+    // The rules' C/A pattern runs first and takes the pair, so they read
+    // C1234/A56789 and no CRUK- form here. The text is made up.
+    const { fetch } = fakeOpenRouter(
+      answer([
+        { asWritten: "CRUK/C1234/A56789", confidence: 0.9 },
+        { asWritten: "C1234/A56789", confidence: 0.9 },
+      ]),
+    );
+    const result = await proposeReferences(
+      ["Funded by CRUK (CRUK/C1234/A56789)."],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(["C1234/A56789"]);
     expect(result.status === "read" && result.rejected).toBe(1);
   });
 

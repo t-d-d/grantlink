@@ -9,8 +9,11 @@ import {
   keyName,
   lookup,
   memberName,
+  rootIdentifier,
+  targets,
   unwrapped,
   walkAliases,
+  withoutDefault,
 } from "./create-rule.ts";
 import type { Resolver } from "./create-rule.ts";
 
@@ -240,11 +243,6 @@ function eachProperty(
   return false;
 }
 
-// A pattern's target without the default it may give, `{ now = f }`.
-function withoutDefault(value: TSESTree.Property["value"]): TSESTree.Node {
-  return value.type === AST_NODE_TYPES.AssignmentPattern ? value.left : value;
-}
-
 // The global path a name destructured from an object pattern reads, from
 // what the pattern destructures or from a default, the name's own,
 // `{ foo: M = Math } = globalThis`, or a nested pattern's. Where they
@@ -418,11 +416,13 @@ function exported(
   declarator: TSESTree.VariableDeclarator,
   variable: TSESLint.Scope.Variable,
 ): boolean {
-  return (
-    declarator.parent.parent.type === AST_NODE_TYPES.ExportNamedDeclaration ||
-    variable.references.some(
-      (ref) => ref.identifier.parent.type === AST_NODE_TYPES.ExportSpecifier,
-    )
+  return exportedDeclaration(declarator) || exportedByName(variable);
+}
+
+// True when an export names a variable after its declaration, `export { m }`.
+function exportedByName(variable: TSESLint.Scope.Variable): boolean {
+  return variable.references.some(
+    (ref) => ref.identifier.parent.type === AST_NODE_TYPES.ExportSpecifier,
   );
 }
 
@@ -473,31 +473,406 @@ function exportsUnfollowed(
 
 // True when a source read as a value passes to another module: the value
 // an export default or an export assignment passes on, `export default
-// Date.now`, or the initial value of an alias that is exported, `export const
-// now = Date.now`, or `const D = Date` and then `export { D }`. Its report
-// stands for the export. A call is never one, since `export const d = new
-// Date()` passes on the value it read and not the source.
-function exportedSource(node: TSESTree.Node, resolver: Resolver): boolean {
-  const outer = outermost(node);
+// Date.now`, or the initial value, or a nested pattern's default, of a
+// declaration that exports a name it declares, `export const now =
+// Date.now`, `const D = Date` and then `export { D }`, a copy made through
+// a rest, `export const { ...m } = Math` or `export const { foo: { ...m } =
+// Math } = x`, or a member that calls `Date`, `export const { bind } =
+// Date`, or a value an assignment gives an exported name, as assignedTo
+// and assignsExported read it, `D = Date` or `({ ...m } = Math)` after
+// `export let m`, or `export default m` after `m = Math`. Its report stands
+// for the export. A call is never one, since `export const d = new Date()`
+// passes on the value it read and not the source. With `holder` set, an
+// object that holds a source copied through a rest passes on only when the
+// rest's own name does, so `export { foo }` after `const { foo, ...m } =
+// Math` does not count.
+function exportedSource(
+  node: TSESTree.Node,
+  resolver: Resolver,
+  holder = false,
+): boolean {
+  const source = outermost(node);
+  const value = heldBy(source);
+  const assigned = assignedTo(value);
+  if (assigned !== null) return assignsExported(assigned, resolver);
+  // Inside a literal the pattern takes the literal apart, not the source,
+  // so any name it declares may carry the source. A literal or a
+  // conditional names no source, so checkDefault does not report a name
+  // that holds one and is exported by default, `export default o` after
+  // `const o = { m: Math }`, and that export counts here.
+  const byDefault = value.node !== source;
+  const passes = (
+    declarator: TSESTree.VariableDeclarator,
+    pattern: TSESTree.Node,
+  ): boolean =>
+    value.literal
+      ? exportsName(declarator, resolver, byDefault)
+      : exportsPassed(declarator, pattern, resolver, holder, byDefault);
+  const outer = value.node;
   const parent = outer.parent;
   switch (parent?.type) {
     case AST_NODE_TYPES.ExportDefaultDeclaration:
       return parent.declaration === outer;
     case AST_NODE_TYPES.TSExportAssignment:
       return parent.expression === outer;
-    case AST_NODE_TYPES.VariableDeclarator: {
-      if (
-        parent.init !== outer ||
-        parent.id.type !== AST_NODE_TYPES.Identifier
-      ) {
-        return false;
-      }
-      const [declared] = resolver.sourceCode.getDeclaredVariables(parent);
-      return declared !== undefined && exported(parent, declared);
+    case AST_NODE_TYPES.VariableDeclarator:
+      return parent.init === outer && passes(parent, parent.id);
+    case AST_NODE_TYPES.AssignmentPattern: {
+      if (parent.right !== outer) return false;
+      const declarator = followedDeclarator(parent);
+      return declarator !== null && passes(declarator, parent.left);
     }
     default:
       return false;
   }
+}
+
+// The assignments that put the right side's value in the left side's
+// names, `m = Math` and `m ||= Math`. Another operator, `m += Math`, gives
+// a new value and not the source.
+const PASSES_VALUE = new Set(["=", "||=", "&&=", "??="]);
+
+// The value that holds a source, climbed out through the expressions whose
+// value may be the source or hold it: an element or member of a literal,
+// `[Math]`, `{ m: Math }` or `{ ...Math }`, an arm of a conditional,
+// `cond ? Math : 1`, and a side of a logical expression that it may give,
+// `Math || 1`, but not the left of `&&`, which gives the source only when
+// it is falsy. `literal` says the climb passed through a literal, and
+// `array` that it passed through an array's element, which a for-of hands
+// to its target. `steps` says where in the literals the source sits, as
+// stepInto reads it.
+interface Held {
+  readonly node: TSESTree.Node;
+  readonly literal: boolean;
+  readonly array: boolean;
+  readonly steps: readonly (number | string)[] | null;
+}
+
+function heldBy(outer: TSESTree.Node): Held {
+  let node = outer;
+  let literal = false;
+  let array = false;
+  let steps: (number | string)[] | null = [];
+  for (;;) {
+    const parent = node.parent;
+    if (parent === undefined) return { node, literal, array, steps };
+    switch (parent.type) {
+      case AST_NODE_TYPES.ArrayExpression:
+        array = true;
+        literal = true;
+        break;
+      case AST_NODE_TYPES.ObjectExpression:
+      case AST_NODE_TYPES.SpreadElement:
+        literal = true;
+        break;
+      case AST_NODE_TYPES.Property:
+        if (
+          parent.value !== node ||
+          parent.parent.type !== AST_NODE_TYPES.ObjectExpression
+        ) {
+          return { node, literal, array, steps };
+        }
+        break;
+      case AST_NODE_TYPES.ConditionalExpression:
+        if (parent.test === node) return { node, literal, array, steps };
+        break;
+      case AST_NODE_TYPES.LogicalExpression:
+        if (parent.operator === "&&" && parent.left === node) {
+          return { node, literal, array, steps };
+        }
+        break;
+      default:
+        return { node, literal, array, steps };
+    }
+    if (
+      parent.type === AST_NODE_TYPES.ArrayExpression ||
+      parent.type === AST_NODE_TYPES.ObjectExpression ||
+      parent.type === AST_NODE_TYPES.SpreadElement ||
+      parent.type === AST_NODE_TYPES.Property
+    ) {
+      steps = stepInto(node, parent, steps);
+    }
+    node = outermost(parent);
+  }
+}
+
+// The target of an assignment that gives the held value to names: its left
+// side when the value is its right side, `m = Math`, `[{ ...m }] = [Math]`
+// or `m = cond ? Math : 1`, the target of a for-of when the value is an
+// element of the array it walks, `for ({ ...m } of [Math])`, and the
+// pattern a default fills when the value is a default in its left side,
+// `{ ...m }` in `({ a, x: { ...m } = Math } = globalThis)`. In an
+// assignment, where the value sits in a literal narrows the target to the
+// part it lands in, as landsIn reads it: `m` in `[a, m] = [1, Math]` or in
+// `({ y: [a, m] = [1, Math] } = x)`. Null for anything else, such as a
+// declaration, which exportsName reads, a parameter's default, or an
+// element no name takes, `[a] = [1, Math]`.
+function assignedTo(value: Held): TSESTree.Node | null {
+  const n = value.node;
+  const parent = n.parent;
+  if (parent?.type === AST_NODE_TYPES.AssignmentExpression) {
+    return parent.right === n && PASSES_VALUE.has(parent.operator)
+      ? landsIn(parent.left, value.steps)
+      : null;
+  }
+  if (parent?.type === AST_NODE_TYPES.ForOfStatement) {
+    return value.array &&
+      parent.right === n &&
+      parent.left.type !== AST_NODE_TYPES.VariableDeclaration
+      ? parent.left
+      : null;
+  }
+  if (parent?.type !== AST_NODE_TYPES.AssignmentPattern || parent.right !== n) {
+    return null;
+  }
+  return assignmentHolding(parent) === null
+    ? null
+    : landsIn(parent.left, value.steps);
+}
+
+// The step from a literal into the node it holds, put in front of the steps
+// already taken: an element's index, `1` for `Math` in `[a, Math]`, or a
+// member's key, `x` in `{ x: Math }`. Null when it is unknown, as past a
+// spread, `[...xs, Math]`, or under a computed key. A conditional or a
+// logical expression between them adds no step.
+function stepInto(
+  node: TSESTree.Node,
+  parent: TSESTree.Node,
+  steps: (number | string)[] | null,
+): (number | string)[] | null {
+  if (steps === null) return null;
+  if (parent.type === AST_NODE_TYPES.ArrayExpression) {
+    const index = parent.elements.indexOf(node as TSESTree.Expression);
+    const spread = parent.elements
+      .slice(0, index + 1)
+      .some((element) => element?.type === AST_NODE_TYPES.SpreadElement);
+    return index < 0 || spread ? null : [index, ...steps];
+  }
+  if (parent.type === AST_NODE_TYPES.Property) {
+    const key = keyName(parent.key, parent.computed);
+    return key === null ? null : [key, ...steps];
+  }
+  // An object literal adds no step past its member's, and a spread leaves
+  // the place unknown.
+  return parent.type === AST_NODE_TYPES.ObjectExpression ? steps : null;
+}
+
+// The part of an assignment's left side that the steps into its right side
+// reach: `b` for `[1]` in `[a, b]`, `m` for `x` in `{ x: m }`. It stops at
+// whatever no further step lines up with, such as a rest, a name, or a
+// pattern of the other shape, and gives that. Null when nothing takes the
+// value, `[a]` for `[1]`, or `{ y }` for `x`.
+function landsIn(
+  left: TSESTree.Node,
+  steps: readonly (number | string)[] | null,
+): TSESTree.Node | null {
+  let target = left;
+  for (const step of steps ?? []) {
+    const inner = withoutDefault(target);
+    if (
+      typeof step === "number" &&
+      inner.type === AST_NODE_TYPES.ArrayPattern
+    ) {
+      const rest = inner.elements.findIndex(
+        (element) => element?.type === AST_NODE_TYPES.RestElement,
+      );
+      if (rest >= 0 && rest <= step) return inner.elements[rest] ?? null;
+      const element = inner.elements[step];
+      if (element === undefined || element === null) return null;
+      target = element;
+    } else if (
+      typeof step === "string" &&
+      inner.type === AST_NODE_TYPES.ObjectPattern
+    ) {
+      let found: TSESTree.Node | null = null;
+      for (const property of inner.properties) {
+        if (property.type === AST_NODE_TYPES.RestElement) {
+          found ??= property;
+          continue;
+        }
+        const key = keyName(property.key, property.computed);
+        // A key the rule cannot name may be this one, and a key the
+        // pattern repeats gives the value to more than one name.
+        if (key === null || (key === step && found !== null)) return target;
+        if (key === step) found = property.value;
+      }
+      if (found === null) return null;
+      if (found.type === AST_NODE_TYPES.RestElement) return found;
+      target = found;
+    } else {
+      return target;
+    }
+  }
+  return target;
+}
+
+// The assignment whose left side holds a default, `({ foo: { PI } = Math }
+// = globalThis)`, found by climbing the patterns the default sits in. Null
+// when no assignment's left side holds it, as for a declaration's or a
+// parameter's default.
+function assignmentHolding(
+  node: TSESTree.AssignmentPattern,
+): TSESTree.AssignmentExpression | null {
+  let target: TSESTree.Node = node;
+  for (;;) {
+    const above: TSESTree.Node = target.parent;
+    if (
+      above.type === AST_NODE_TYPES.ObjectPattern ||
+      above.type === AST_NODE_TYPES.ArrayPattern ||
+      above.type === AST_NODE_TYPES.RestElement ||
+      (above.type === AST_NODE_TYPES.Property &&
+        above.value === target &&
+        above.parent.type === AST_NODE_TYPES.ObjectPattern) ||
+      (above.type === AST_NODE_TYPES.AssignmentPattern && above.left === target)
+    ) {
+      target = above;
+      continue;
+    }
+    return above.type === AST_NODE_TYPES.AssignmentExpression &&
+      above.left === target
+      ? above
+      : null;
+  }
+}
+
+// True when an assignment target writes to an exported name: a name it
+// gives a value, `{ ...m }` after `export let m`, or the object it writes a
+// member of, `{ ...o.m }` after `export const o = {}`.
+function assignsExported(left: TSESTree.Node, resolver: Resolver): boolean {
+  return targets(left).some((target) => {
+    const root = rootIdentifier(target);
+    if (root === undefined) return false;
+    const variable = lookup(root.name, resolver.sourceCode.getScope(root));
+    return variable !== null && exportedVariable(variable);
+  });
+}
+
+// True when a module exports a variable: its declaration is exported,
+// `export let m`, `export function m() {}` or `export class m {}`, or a
+// later export names it, `export { m }`, `export default m` or `export =
+// m`.
+function exportedVariable(variable: TSESLint.Scope.Variable): boolean {
+  return (
+    exportedByName(variable) ||
+    exportedByDefault(variable) ||
+    variable.defs.some((def) => {
+      const declaration =
+        def.node.type === AST_NODE_TYPES.VariableDeclarator
+          ? def.node.parent.parent
+          : def.node.type === AST_NODE_TYPES.FunctionDeclaration ||
+              def.node.type === AST_NODE_TYPES.ClassDeclaration
+            ? def.node.parent
+            : undefined;
+      return (
+        declaration?.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+        declaration?.type === AST_NODE_TYPES.ExportDefaultDeclaration
+      );
+    })
+  );
+}
+
+// True when a declarator exports a name it declares, in its declaration or
+// later, `export { m }`, or with `byDefault` set, by default, `export
+// default m`.
+function exportsName(
+  declarator: TSESTree.VariableDeclarator,
+  resolver: Resolver,
+  byDefault = false,
+): boolean {
+  return resolver.sourceCode
+    .getDeclaredVariables(declarator)
+    .some(
+      (declared) =>
+        exported(declarator, declared) ||
+        (byDefault && exportedByDefault(declared)),
+    );
+}
+
+// True when a declarator exports a name that carries the value a pattern
+// takes. A pattern that takes a member that calls through, `const { bind } =
+// Date`, or, for an object that holds a source, copies a rest, `const { foo,
+// ...m } = Math`, carries it in the names under those members and in the
+// rest. Those count whether exported by name, `export { bind }`, or by
+// default, `export default bind`, since nothing reports at that export.
+// Another name the pattern takes, `export { foo }`, does not carry it. Any
+// other pattern, or a plain alias, carries it in any name the declarator
+// declares, and an alias exported by default reports at the export instead.
+// With `byDefault` set, for a value that names no source, which
+// checkDefault leaves alone, such a name exported by default counts too.
+function exportsPassed(
+  declarator: TSESTree.VariableDeclarator,
+  pattern: TSESTree.Node,
+  resolver: Resolver,
+  holder: boolean,
+  byDefault = false,
+): boolean {
+  if (
+    pattern.type !== AST_NODE_TYPES.ObjectPattern ||
+    !(callsThrough(pattern) || (holder && copiesRest(pattern)))
+  ) {
+    return exportsName(declarator, resolver, byDefault);
+  }
+  const carriers = new Set<TSESTree.Node>(
+    pattern.properties.flatMap((property) => {
+      if (property.type === AST_NODE_TYPES.RestElement) {
+        return holder ? declaredIn(property.argument) : [];
+      }
+      const key = keyName(property.key, property.computed);
+      return key === null || CALLS_THROUGH.has(key)
+        ? declaredIn(property.value)
+        : [];
+    }),
+  );
+  return resolver.sourceCode
+    .getDeclaredVariables(declarator)
+    .some(
+      (declared) =>
+        declared.identifiers.some((identifier) => carriers.has(identifier)) &&
+        (exported(declarator, declared) || exportedByDefault(declared)),
+    );
+}
+
+// The identifiers a pattern declares, `b` and `c` in `{ a: b, ...c }`.
+function declaredIn(pattern: TSESTree.Node): TSESTree.Node[] {
+  switch (pattern.type) {
+    case AST_NODE_TYPES.Identifier:
+      return [pattern];
+    case AST_NODE_TYPES.AssignmentPattern:
+      return declaredIn(pattern.left);
+    case AST_NODE_TYPES.RestElement:
+      return declaredIn(pattern.argument);
+    case AST_NODE_TYPES.ArrayPattern:
+      return pattern.elements.flatMap((element) =>
+        element === null ? [] : declaredIn(element),
+      );
+    case AST_NODE_TYPES.ObjectPattern:
+      return pattern.properties.flatMap((property) =>
+        declaredIn(
+          property.type === AST_NODE_TYPES.RestElement
+            ? property.argument
+            : property.value,
+        ),
+      );
+    default:
+      return [];
+  }
+}
+
+// True when a variable is exported by default, `export default m`, or by
+// an export assignment, `export = m`, through the wrappers unwrapped takes
+// off, `export default (m as T)`. exported leaves these out, since
+// checkDefault reports an alias exported this way at the export.
+function exportedByDefault(variable: TSESLint.Scope.Variable): boolean {
+  return variable.references.some((ref) => {
+    const outer = outermost(ref.identifier);
+    const parent = outer.parent;
+    return (
+      (parent?.type === AST_NODE_TYPES.ExportDefaultDeclaration &&
+        parent.declaration === outer) ||
+      (parent?.type === AST_NODE_TYPES.TSExportAssignment &&
+        parent.expression === outer)
+    );
+  });
 }
 
 // True when a declarator sits in an exported declaration,
@@ -539,9 +914,11 @@ function copiesRest(pattern: TSESTree.ObjectPattern): boolean {
 // that gets it may read the source from unseen. The rest of a pattern,
 // `const { ...rest } = c`, copies its members, so it counts. An export by
 // default and an alias whose declaration is exported are left to
-// checkDefault and exportsUnfollowed, which report those.
+// checkDefault and exportsUnfollowed, which report those. `path` is the
+// global path the node reads.
 function passedOn(
   node: TSESTree.Node,
+  path: readonly string[],
   resolver: Resolver,
   holder = false,
 ): boolean {
@@ -578,20 +955,22 @@ function passedOn(
     // a member the pattern destructures, and a holder passes on only
     // through a rest. A name's own default, `const { foo: D = Date } = x` or
     // `const { foo: M = Math } = x`, reports where the name is used, as an
-    // alias does, when the rule follows the name to it. Anywhere else, such
-    // as a parameter's default or an assignment, the rule does not follow
-    // the names it gives, so it counts as passed on.
+    // alias does, when the rule follows the name to it. In an assignment,
+    // the rule does not follow the names it gives, so it counts as passed
+    // on when one of them may get a source, as givesSource reads it,
+    // `({ foo: { random } = Math } = globalThis)`. Anywhere else, such as a
+    // parameter's default, it counts as passed on.
     case AST_NODE_TYPES.AssignmentPattern:
-      if (parent.right !== outer || !inFollowedDeclaration(parent)) {
-        return true;
+      if (parent.right !== outer) return true;
+      if (followedDeclarator(parent) === null) {
+        return (
+          assignmentHolding(parent) === null || givesSource(parent.left, path)
+        );
       }
       return parent.left.type === AST_NODE_TYPES.ObjectPattern
         ? callsThrough(parent.left) || (holder && copiesRest(parent.left))
         : parent.left.type !== AST_NODE_TYPES.Identifier ||
-            !samePath(
-              pathOf(parent.left, resolver, new Set()),
-              pathOf(outer, resolver, new Set()),
-            );
+            !samePath(pathOf(parent.left, resolver, new Set()), path);
     case AST_NODE_TYPES.VariableDeclarator: {
       if (parent.init !== outer) return true;
       if (parent.id.type === AST_NODE_TYPES.ObjectPattern) {
@@ -606,6 +985,17 @@ function passedOn(
         (!holder && exported(parent, declared))
       );
     }
+    // An assignment that destructures, `({ PI } = Math)`, as a statement of
+    // its own. The rule does not follow the names it gives, so it counts as
+    // passed on when one of them may get a source, as givesSource reads it.
+    // Its value used, `f(({ PI } = Math))`, passes the source on whole.
+    case AST_NODE_TYPES.AssignmentExpression:
+      return (
+        parent.right !== outer ||
+        parent.left.type !== AST_NODE_TYPES.ObjectPattern ||
+        outermost(parent).parent?.type !== AST_NODE_TYPES.ExpressionStatement ||
+        givesSource(parent.left, path)
+      );
     case AST_NODE_TYPES.ExportDefaultDeclaration:
     case AST_NODE_TYPES.TSExportAssignment:
       return !holder;
@@ -614,22 +1004,54 @@ function passedOn(
   }
 }
 
-// True when a nested pattern's default sits in an object pattern that a
-// declarator with an initial value declares, `const { foo: { now } = Date }
-// = globalThis`, whose names identifierPath follows. Not for a parameter, an
-// assignment, or a loop's declarator, which has no initial value.
-function inFollowedDeclaration(node: TSESTree.AssignmentPattern): boolean {
+// True when a target that destructures from `base` may give a name a
+// source, `Date` or an object that holds one, the way the rule would follow
+// it in a declaration: a key that reaches one, `{ random }` from `Math` or
+// `{ Math: { random } }` from `globalThis`, a member that calls `Date`,
+// `{ bind }`, a key the rule cannot name, which may be either, or a rest
+// that copies an object holding one, `{ ...m }` from `Math`. A key that
+// reaches nothing, `{ PI }` from `Math` or `{ foo: { PI } = Math }` from
+// `globalThis`, gives none: a nested default reports on its own.
+function givesSource(target: TSESTree.Node, base: readonly string[]): boolean {
+  const inner = withoutDefault(target);
+  if (inner.type !== AST_NODE_TYPES.ObjectPattern) {
+    return (
+      opOf(base) !== undefined ||
+      namesDate(base) ||
+      holderOf(base) !== undefined
+    );
+  }
+  return inner.properties.some((property) => {
+    if (property.type === AST_NODE_TYPES.RestElement) {
+      return !namesDate(base) && holderOf(base) !== undefined;
+    }
+    const key = keyName(property.key, property.computed);
+    if (key === null || (namesDate(base) && CALLS_THROUGH.has(key))) {
+      return true;
+    }
+    const path = normalised([...base, key]);
+    return opOf(path) !== undefined || givesSource(property.value, path);
+  });
+}
+
+// The declarator with an initial value whose object pattern holds a nested
+// pattern's default, `const { foo: { now } = Date } = globalThis`, whose
+// names identifierPath follows. Null for a parameter, an assignment, or a
+// loop's declarator, which has no initial value.
+function followedDeclarator(
+  node: TSESTree.AssignmentPattern,
+): TSESTree.VariableDeclarator | null {
   let n: TSESTree.Node = node;
   for (;;) {
     const parent: TSESTree.Node = n.parent;
     if (parent.type !== AST_NODE_TYPES.Property || parent.value !== n) {
-      return false;
+      return null;
     }
     const pattern: TSESTree.Node = parent.parent;
-    if (pattern.type !== AST_NODE_TYPES.ObjectPattern) return false;
+    if (pattern.type !== AST_NODE_TYPES.ObjectPattern) return null;
     const above: TSESTree.Node = pattern.parent;
     if (above.type === AST_NODE_TYPES.VariableDeclarator) {
-      return above.id === pattern && above.init !== null;
+      return above.id === pattern && above.init !== null ? above : null;
     }
     n =
       above.type === AST_NODE_TYPES.AssignmentPattern && above.left === pattern
@@ -708,8 +1130,12 @@ export const noNonDeterministicOutsideStep = createRule({
     ) => {
       const date = namesDate(path);
       const passed = date ? "Date" : holderOf(path);
-      if (passed !== undefined && passedOn(node, context, !date)) {
-        report(node, passed, exportedSource(node, context));
+      if (
+        passed !== undefined &&
+        path !== null &&
+        passedOn(node, path, context, !date)
+      ) {
+        report(node, passed, exportedSource(node, context, !date));
       }
     };
     return {
@@ -750,7 +1176,12 @@ export const noNonDeterministicOutsideStep = createRule({
       // A pattern that reads a source to destructure from it, `const {
       // now: { call } } = Date`, reports at that key, since the name it
       // declares reads no source itself. So does one that destructures a
-      // member that calls `Date` from it, `{ Date: { bind } } = globalThis`.
+      // member that calls `Date` from it, `{ Date: { bind } } = globalThis`,
+      // or copies the rest of an object that holds a source,
+      // `{ Math: { ...m } } = globalThis`, since the name the rest declares
+      // carries the source on unseen. When the declaration exports that name,
+      // `export const { Math: { ...m } } = globalThis`, the rest passes to
+      // another module, so that report says so.
       // Destructuring that member straight from `Date`, or from a default
       // `Date`, reports at `Date`, as passedOn says.
       VariableDeclarator(node) {
@@ -769,7 +1200,22 @@ export const noNonDeterministicOutsideStep = createRule({
             if (op !== undefined) {
               report(property.key, op, false);
             } else if (keys.some(namesDate) && callsThrough(inner)) {
-              report(property.key, "Date", false);
+              report(
+                property.key,
+                "Date",
+                exportsPassed(node, inner, context, false),
+              );
+            } else if (copiesRest(inner)) {
+              const holder = keys
+                .map(holderOf)
+                .find((found) => found !== undefined);
+              if (holder !== undefined) {
+                report(
+                  property.key,
+                  holder,
+                  exportsPassed(node, inner, context, true),
+                );
+              }
             }
             return false;
           },

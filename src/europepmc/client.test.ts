@@ -389,6 +389,22 @@ describe("searching Europe PMC", () => {
     expect(searchQuery()).toContain('NOT PUB_TYPE:"retracted publication"');
   });
 
+  // A correction notice repeats the funding text of the paper it corrects,
+  // so it is no finding to show (#660). Europe PMC gives one either
+  // publication type, or both.
+  it("leaves out papers Europe PMC marks as correction notices", () => {
+    expect(searchQuery()).toContain('NOT PUB_TYPE:"published erratum"');
+    expect(searchQuery()).toContain(
+      'NOT (PUB_TYPE:"correction" AND NOT PUB_TYPE:"corrected and republished article")',
+    );
+  });
+
+  // Europe PMC also types many a corrected and republished article as
+  // "correction". That is the whole paper again, so it stays (#660).
+  it("keeps a paper corrected and republished", () => {
+    expect(searchQuery()).not.toContain('NOT PUB_TYPE:"correction" AND');
+  });
+
   // Two common tokens would widen the search too far, so only the rules
   // read this name (#510).
   it("leaves CR UK with a space out of the search", () => {
@@ -426,7 +442,7 @@ describe("searching Europe PMC", () => {
       papers: [
         {
           pmcid: "PMC11",
-          title: "One title & more",
+          title: "One <i>title</i> & more",
           firstPublished: "2021-02-03",
         },
         { pmcid: "PMC12", title: "Two" },
@@ -619,6 +635,69 @@ describe("sampling gold set A", () => {
 });
 
 describe("a title as plain text", () => {
+  // Europe PMC's search reply sends a title's inline markup either way:
+  // some titles carry raw tags, others carry them encoded (#619).
+  it("keeps sup, sub, i and b as tags, whether they come raw or encoded", () => {
+    const shown =
+      "[<sup>18</sup>F]FCH in H<sub>2</sub>O, <i>in vivo</i> and <b>bold</b>";
+    expect(
+      plainTitle(
+        "[<sup>18</sup>F]FCH in H<sub>2</sub>O, <i>in vivo</i> and <b>bold</b>",
+      ),
+    ).toBe(shown);
+    expect(
+      plainTitle(
+        "[&lt;sup&gt;18&lt;/sup&gt;F]FCH in H&lt;sub&gt;2&lt;/sub&gt;O, &lt;i&gt;in vivo&lt;/i&gt; and &lt;b&gt;bold&lt;/b&gt;",
+      ),
+    ).toBe(shown);
+    expect(plainTitle("<SUP>18</SUP>F")).toBe("<sup>18</sup>F");
+  });
+
+  it("drops any other tag, and keeps an encoded sign as text", () => {
+    expect(plainTitle('One <span class="x">two</span><br/> three')).toBe(
+      "One two three",
+    );
+    expect(plainTitle("p &lt; 0.05 &amp; &lt;script&gt;")).toBe(
+      "p < 0.05 & <script>",
+    );
+  });
+
+  it("drops a tag left without its pair", () => {
+    expect(plainTitle("One <i>two")).toBe("One two");
+    expect(plainTitle("One</sup> two")).toBe("One two");
+    expect(plainTitle("</i> One <b> two")).toBe("One two");
+  });
+
+  it("reads a tag half raw and half encoded as a tag, so it is paired and cut as one", () => {
+    expect(plainTitle("a &lt;sup>2 b")).toBe("a 2 b");
+    expect(plainTitle("a <sup&gt;2</sup> b")).toBe("a <sup>2</sup> b");
+    expect(plainTitle("a &lt;sup>2&lt;/sup> b")).toBe("a <sup>2</sup> b");
+  });
+
+  it("keeps a raw sign as text, and the words after it", () => {
+    expect(plainTitle("p<0.05 in <i>vivo</i> mice")).toBe(
+      "p<0.05 in <i>vivo</i> mice",
+    );
+  });
+
+  it("never cuts a title inside a tag", () => {
+    expect(plainTitle(`${"x".repeat(497)}<sup>18</sup>F`)).toBe(
+      "x".repeat(497),
+    );
+    expect(plainTitle(`${"x".repeat(490)}<sup>18</sup>F`)).toBe(
+      `${"x".repeat(490)}18`,
+    );
+    expect(plainTitle(`${"x".repeat(487)}<sup>18</sup>F`)).toBe(
+      `${"x".repeat(487)}<sup>18</sup>`,
+    );
+    for (let lead = 480; lead <= 500; lead += 1) {
+      const title = plainTitle(`${"x".repeat(lead)}&lt;sup&gt;18&lt;/sup&gt;F`);
+      expect(title.length).toBeLessThanOrEqual(500);
+      expect(title.replace(/<\/?sup>/gu, "")).not.toMatch(/[<>]/u);
+      expect(title.split("<sup>").length).toBe(title.split("</sup>").length);
+    }
+  });
+
   it("keeps a title of 500 characters whole", () => {
     const title = "€".repeat(500);
     expect(plainTitle(title)).toBe(title);

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { funder } from "../extract/rules.ts";
 import { isPmcid } from "../shared/pmcid.ts";
+import { INLINE_NAMES, paired, titleParts, type Part } from "../title.ts";
 
 // The only module that talks to Europe PMC, and the only outside service a
 // run reads papers from (docs/constraints/public-data.md). It keeps to
@@ -121,7 +122,8 @@ const quoted = (field: string, value: string) =>
 
 // Papers published since the funder's start date, whose acknowledgement or
 // funding text names the funder, which Europe PMC links to none of its
-// grants, and which it does not mark as retracted. The client keeps every
+// grants, and which it does not mark as retracted or as a correction
+// notice. The client keeps every
 // search to open-access papers itself.
 export function searchQuery(): string {
   const names = funder.names.map((name) => quoted("ACK_FUND", name));
@@ -130,6 +132,12 @@ export function searchQuery(): string {
     `NOT ${quoted("GRANT_AGENCY", funder.europePmcAgency)}`,
     // A retracted paper is no finding to show (#587).
     `NOT ${quoted("PUB_TYPE", "retracted publication")}`,
+    // A correction notice repeats the funding text of the paper it
+    // corrects, so its grant is already that paper's (#660). Europe PMC
+    // also types many a corrected and republished article as a
+    // correction, and that is the whole paper again, so it stays.
+    `NOT ${quoted("PUB_TYPE", "published erratum")}`,
+    `NOT (${quoted("PUB_TYPE", "correction")} AND NOT ${quoted("PUB_TYPE", "corrected and republished article")})`,
     `FIRST_PDATE:[${funder.since} TO 3000-12-31]`,
   ].join(" AND ");
 }
@@ -202,22 +210,88 @@ function openAccessOnly(selection: string): string {
   return `(${selection}) AND OPEN_ACCESS:y AND IN_EPMC:y`;
 }
 
-// A title as plain text: Europe PMC's titles may carry inline markup. A
-// control character or half a surrogate pair goes too, as JSON would spell
-// each in six bytes, and a page of titles must fit in one checkpoint.
-export function plainTitle(title: string): string {
-  return title
-    .replace(/<[^>]*>/gu, "")
+// A title as plain text with its inline markup. Europe PMC's search reply
+// sends a title's inline tags (src/title.ts) either as raw tags or encoded
+// (#619), so both come out as the same raw tag, which the page shows as
+// formatting (#606). Any other tag goes. A control character or half a
+// surrogate pair goes too, as JSON would spell each in six bytes, and a page
+// of titles must fit in one checkpoint.
+//
+// A tag holds no "<", so a raw "<" in the text, as in p<0.05, is not read
+// as the start of one and does not take the words up to the next tag. A
+// tag half raw and half encoded is read as a tag, as decoding would make
+// one of it that the page shows. A tag sent encoded with attributes stays
+// text, as reading one as a tag risks taking a real "<" for one (#639).
+const MARKUP = new RegExp(
+  `<(/?)(${INLINE_NAMES})(?:\\s[^<>]*)?(?:>|&gt;)|&lt;(/?)(${INLINE_NAMES})(?:&gt;|>)|<[^<>]*>`,
+  "giu",
+);
+const LIMIT = 500;
+
+const cleanText = (text: string) =>
+  text
     .replace(/&lt;/gu, "<")
     .replace(/&gt;/gu, ">")
     .replace(/&quot;/gu, '"')
     .replace(/&#39;|&apos;/gu, "'")
     .replace(/&amp;/gu, "&")
-    .replace(/[\p{Cc}\p{Cs}]/gu, " ")
+    .replace(/\s+/gu, " ");
+
+// The title split into its kept tags and its text. Another tag is dropped
+// where it stands, so the text either side of it is cleaned as one.
+function rawParts(title: string): Part[] {
+  const parts: Part[] = [];
+  let text = "";
+  let from = 0;
+  for (const match of title.matchAll(MARKUP)) {
+    text += title.slice(from, match.index);
+    from = match.index + match[0].length;
+    const name = (match[2] ?? match[4])?.toLowerCase();
+    if (name === undefined) continue;
+    if (text !== "") parts.push({ text: cleanText(text) });
+    text = "";
+    parts.push({ tag: `<${match[1] ?? match[3] ?? ""}${name}>` });
+  }
+  text += title.slice(from);
+  if (text !== "") parts.push({ text: cleanText(text) });
+  return parts;
+}
+
+export function plainTitle(title: string): string {
+  const parts = rawParts(title.replace(/[\p{Cc}\p{Cs}]/gu, " "));
+  const first = parts[0];
+  if (first && "text" in first) first.text = first.text.trimStart();
+  const last = parts.at(-1);
+  if (last && "text" in last) last.text = last.text.trimEnd();
+  // Cut at 500 characters between tags, never inside one.
+  const kept: string[] = [];
+  let length = 0;
+  for (const part of parts) {
+    const whole = "tag" in part ? part.tag : part.text;
+    if (length + whole.length <= LIMIT) {
+      kept.push(whole);
+      length += whole.length;
+      continue;
+    }
+    if ("tag" in part) break;
+    let text = "";
+    for (const char of part.text) {
+      if (length + char.length > LIMIT) break;
+      text += char;
+      length += char.length;
+    }
+    kept.push(text);
+    break;
+  }
+  // Pair what the page will read. Dropping another tag can join two halves
+  // of text into a tag, as "<" and "i>" either side of a <span>, so the
+  // kept text is read again as the page reads it. A dropped tag can leave a
+  // space at either end or two together.
+  return paired(titleParts(kept.join("")))
+    .map((part) => ("tag" in part ? part.tag : part.text))
+    .join("")
     .replace(/\s+/gu, " ")
-    .trim()
-    .slice(0, 500)
-    .replace(/\p{Cs}$/u, "");
+    .trim();
 }
 
 function retryAfter(response: Response, clock: Clock): number | undefined {

@@ -1,8 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { PaperRow } from "../store/table.ts";
-import { found as foundSchema, summarise } from "./found.ts";
-import { rebuild } from "./build.ts";
+import {
+  found as foundSchema,
+  isNotice,
+  leaveOut,
+  summarise,
+  withoutNotices,
+} from "./found.ts";
+import { rebuild, retracted } from "./build.ts";
 import { buildPage, renderFound } from "./render.ts";
 
 const template = readFileSync(
@@ -162,6 +168,101 @@ describe("a paper the run's search no longer returns", () => {
   });
 });
 
+describe("a correction notice (#660)", () => {
+  // Europe PMC marks a correction notice by its publication types, which
+  // neither the table nor found.json keeps, so the page knows one by the
+  // word its title starts with. Both notices the search returned in
+  // November 2026 start this way, and no paper in it does.
+  const notices = [
+    "Correction: Title of a paper",
+    "Corrigendum to: Title of a paper",
+    "Erratum: Title of a paper",
+    "Author Correction: Title of a paper",
+    "Publisher Correction: Title of a paper",
+    "CORRECTION: Title of a paper",
+    "Correction to Title of a paper",
+  ];
+  const papers = [
+    "A review of attenuation correction methods",
+    "Correction of a defect in DNA repair",
+    "Correctional facilities and cancer screening",
+    "Erratum in the record of a trial",
+    "Correction tools for sequencing errors",
+  ];
+
+  it("is known by its title, and a paper is not", () => {
+    for (const title of notices) expect(isNotice(title)).toBe(true);
+    for (const title of papers) expect(isNotice(title)).toBe(false);
+  });
+
+  const withNotices = [
+    ...rows,
+    { ...done("PMC5", [ca]), title: "Correction: Title of PMC1" },
+    row("PMC6", { title: "Corrigendum to: Title of PMC2" }),
+  ];
+
+  it("is neither listed nor counted by the run", () => {
+    const found = summarise(withNotices, run);
+    expect(found).toEqual(summarise(rows, run));
+  });
+
+  it("is taken off the page at deploy, from a found.json that lists it", () => {
+    const listed = {
+      ...summarise(rows, run),
+      counts: {
+        papers: 6,
+        processed: 4,
+        withReference: 3,
+        references: 6,
+        pending: 2,
+      },
+      papers: [
+        ...summarise(rows, run).papers,
+        {
+          pmcid: "PMC5",
+          title: "Correction: Title of PMC1",
+          references: [
+            { ...an, format: "Notice" },
+            { ...an, format: "Notice" },
+            ca,
+          ],
+        },
+      ],
+      formats: [
+        { format: "Cn/An", count: 3 },
+        { format: "Notice", count: 2 },
+        { format: "An", count: 1 },
+      ],
+      pending: [
+        ...summarise(rows, run).pending,
+        { pmcid: "PMC6", title: "Corrigendum to: Title of PMC2" },
+      ],
+    };
+    expect(rebuild(template, JSON.stringify(listed), null)).toBe(
+      buildPage(template, summarise(rows, run)),
+    );
+  });
+
+  // The schema lets found.json list a paper with no reference, so taking
+  // one off counts only what it gave.
+  it("takes a listed notice with no reference out of the papers read only", () => {
+    const data = summarise(rows, run);
+    const listed = {
+      ...data,
+      counts: {
+        ...data.counts,
+        papers: data.counts.papers + 1,
+        processed: data.counts.processed + 1,
+      },
+      papers: [
+        ...data.papers,
+        { pmcid: "PMC5", title: "Erratum: Title of PMC1", references: [] },
+      ],
+    };
+    expect(withoutNotices(listed)).toEqual(data);
+  });
+});
+
 describe("the search the page lists", () => {
   // Rows keep the mark of the latest-started run that returned them, so a
   // paper the latest complete search returned may carry a later run's mark.
@@ -215,18 +316,17 @@ describe("fitness: the page shows only titles, links and references (no-republis
     expect(() => foundSchema.parse(extra)).toThrow();
   });
 
-  it("shows each paper in one row of title, references, normalised references and status (#587)", () => {
+  it("shows each paper in one row of title, references and status (#587)", () => {
     const html = renderFound(found);
     const table =
       /<table class="references">([\s\S]*?)<\/table>/u.exec(html)?.[1] ?? "";
     const bodyRows = [...table.matchAll(/<tr>([\s\S]*?)<\/tr>/gu)].slice(1);
     expect(bodyRows).toHaveLength(2);
     for (const [, cells = ""] of bodyRows) {
-      expect(cells.match(/<td\b/gu)).toHaveLength(4);
+      expect(cells.match(/<td\b/gu)).toHaveLength(3);
     }
     const first = bodyRows[0]?.[1] ?? "";
     expect(first).toContain("Title of PMC1");
-    expect(first).toContain(">C1234/A56789<br>A 28707</td>");
     expect(first).toContain(">C1234/A56789<br>A28707</td>");
   });
 });
@@ -290,6 +390,82 @@ describe("rendering the page", () => {
     );
   });
 
+  // The page shows each reference in its normal form, as gold set B stores
+  // it. found.json and the table keep the text the paper printed (#606).
+  it("shows each reference in its normal form, not as the paper spaced it (#606)", () => {
+    const spaced = [
+      { asWritten: "C18281 /A19169", normalised: "C18281/A19169" },
+      { asWritten: "C1287/A 10710", normalised: "C1287/A10710" },
+      { asWritten: "C45074 / A26553", normalised: "C45074/A26553" },
+      { asWritten: "CTRQQR-2021\\100012", normalised: "CTRQQR-2021/100012" },
+      { asWritten: "PPRPGM-Nov20∖100002", normalised: "PPRPGM-NOV20/100002" },
+      { asWritten: "C1234\u2212A5", normalised: "C1234-A5" },
+    ].map((reference) => ({ ...reference, format: "Cn/An" }));
+    const published = summarise([done("PMC9", spaced)], run);
+    expect(published.papers[0]?.references.map((r) => r.asWritten)).toEqual(
+      spaced.map((r) => r.asWritten),
+    );
+    const html = renderFound(published);
+    expect(html).toContain(
+      `>${spaced.map((r) => r.normalised).join("<br>")}</td>`,
+    );
+    for (const { asWritten } of spaced) {
+      expect(html).not.toContain(asWritten);
+    }
+    expect(html).not.toContain("as written");
+  });
+
+  describe("a title with inline markup (#606)", () => {
+    const shown = (title: string) =>
+      /<a href="[^"]*">([\s\S]*?)<\/a>/u.exec(
+        renderFound(summarise([{ ...done("PMC9", [ca]), title }], run)),
+      )?.[1];
+
+    it("shows sup, sub, i and b as formatting, not as text", () => {
+      expect(shown("[<sup>18</sup>F]fluoromethyl and H<sub>2</sub>O")).toBe(
+        "[<sup>18</sup>F]fluoromethyl and H<sub>2</sub>O",
+      );
+      expect(shown("<i>BRCA1</i> in <b>mice</b>")).toBe(
+        "<i>BRCA1</i> in <b>mice</b>",
+      );
+      expect(shown("<I>Upper</I> case")).toBe("<i>Upper</i> case");
+    });
+
+    it("nests the tags it shows, and drops any left without its pair, as plainTitle does (#639)", () => {
+      expect(shown("<i>a <sup>b</sup> c</i>")).toBe("<i>a <sup>b</sup> c</i>");
+      expect(shown("<i>open <b>both")).toBe("open both");
+      expect(shown("<i>a <b>b</i> c</b>")).toBe("a <b>b c</b>");
+    });
+
+    it("drops a closing tag with nothing open, rather than show it", () => {
+      expect(shown("a</sup> b")).toBe("a b");
+    });
+
+    it("links by the pmcid when the markup leaves no text to show", () => {
+      expect(shown("<i></i>")).toBe("PMC9");
+      expect(shown("</sup> ")).toBe("PMC9");
+    });
+
+    it("escapes any other markup, and a tag that carries attributes", () => {
+      expect(shown('<sup onclick="x">1</sup>')).toBe(
+        "&lt;sup onclick=&quot;x&quot;&gt;1",
+      );
+      expect(shown("<script>alert(1)</script> <a>b</a>")).toBe(
+        "&lt;script&gt;alert(1)&lt;/script&gt; &lt;a&gt;b&lt;/a&gt;",
+      );
+      expect(shown("<sup>a & b</sup> <5 > 3")).toBe(
+        "<sup>a &amp; b</sup> &lt;5 &gt; 3",
+      );
+    });
+
+    it("shows the markup the same way in the list of papers not yet read", () => {
+      const html = renderFound(
+        summarise([row("PMC8", { title: "H<sub>2</sub>O" })], run),
+      );
+      expect(html).toContain(">H<sub>2</sub>O</a></li>");
+    });
+  });
+
   it("counts the papers as a gap in linking, not a failure (#588)", () => {
     const html = renderFound(summarise(rows, run));
     expect(html).toContain(
@@ -324,6 +500,43 @@ describe("rendering the page", () => {
 
   it("refuses a template without the place for the findings", () => {
     expect(() => buildPage("<html></html>", summarise(rows, run))).toThrow();
+  });
+});
+
+describe("a paper Europe PMC marks as retracted (#587)", () => {
+  const found = summarise(rows, run);
+
+  it("leaves the paper out of the list and the counts", () => {
+    const left = leaveOut(found, new Set(["PMC1"]));
+    expect(left.papers.map((paper) => paper.pmcid)).toEqual(["PMC2"]);
+    expect(left.counts).toEqual({
+      papers: 3,
+      processed: 2,
+      withReference: 1,
+      references: 1,
+      pending: 1,
+    });
+    expect(left.formats).toEqual([{ format: "Cn/An", count: 1 }]);
+  });
+
+  it("leaves a paper not yet read out of the list and the counts", () => {
+    const left = leaveOut(found, new Set(["PMC4"]));
+    expect(left.pending).toEqual([]);
+    expect(left.counts).toEqual({ ...found.counts, papers: 3, pending: 0 });
+  });
+
+  it("changes nothing when no paper listed is retracted", () => {
+    expect(leaveOut(found, new Set(["PMC9"]))).toEqual(found);
+  });
+
+  // The run's search leaves retracted papers out, but the deploy builds the
+  // page from the last run's found.json, which can still hold one.
+  it("leaves a retracted paper out when the deploy builds the page again", () => {
+    const [pmcid = ""] = retracted;
+    const data = summarise([...rows, done(pmcid, [an])], run);
+    const html = rebuild(template, JSON.stringify(data), null);
+    expect(html).not.toContain(pmcid);
+    expect(html).toBe(buildPage(template, summarise(rows, run)));
   });
 });
 
