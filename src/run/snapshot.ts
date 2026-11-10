@@ -102,7 +102,7 @@ async function takeBatch(
     if ("read" in asked) {
       if (asked.read.kept) {
         entries.push(asked.read.entry);
-        if (asked.read.empty === true) empty.push(pmcid);
+        if (asked.read.empty) empty.push(pmcid);
       } else if (set === "B") {
         stopped = pmcid;
         break;
@@ -287,16 +287,14 @@ export async function takeSnapshot(
   }
 
   // The gold set B papers kept with empty sections although their label
-  // lists references, logged once whether there are any or not (#405).
+  // lists references. The snapshot logs them once it is taken, whether
+  // there are any or not (#405).
   const referenced = new Set(
     goldB.papers
       .filter((paper) => paper.references.length > 0)
       .map((paper) => paper.pmcid),
   );
   const missed = empty.filter((pmcid) => referenced.has(pmcid));
-  await logOnly(ctx, "snapshot-b-empty", () => {
-    logGoldBEmpty(runId, deps.gold.snapshotId, missed);
-  });
 
   // A wait can still be owed here when gold set B lists no papers, since
   // nothing then has asked Europe PMC since gold set A's last refusal. If
@@ -308,6 +306,9 @@ export async function takeSnapshot(
       async () => writeManifest(deps, entries),
       { retryStrategy: storeRetry },
     );
+    await logOnly(ctx, "snapshot-b-empty", () => {
+      logGoldBEmpty(runId, deps.gold.snapshotId, missed);
+    });
     return {
       snapshot: { taken: true, papers: entries.length, manifestSha256 },
       owed: due,

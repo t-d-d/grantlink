@@ -133,6 +133,7 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
       reason: "a gold set B paper could not be read",
     });
     expect(fake.text.has(manifestKey(fake))).toBe(false);
+    expect(logged("snapshot-b-empty")).toEqual([]);
   });
 
   it.each([
@@ -198,11 +199,16 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
   });
 
   it("keeps a labelled paper with empty sections whose label lists references, and logs once how many there were (#405)", async () => {
+    // The second labelled paper lists references too, but its sections
+    // are not empty, so it is not counted.
     const { fake } = failingFirstLabelled(
       () => Promise.resolve("<article></article>"),
       fakeDeps({
         gold: {
-          goldB: goldB(LABELLED, { [LABELLED[0] ?? ""]: ["A56789"] }),
+          goldB: goldB(LABELLED, {
+            [LABELLED[0] ?? ""]: ["A56789"],
+            [LABELLED[1] ?? ""]: ["A56789"],
+          }),
         },
       }),
     );

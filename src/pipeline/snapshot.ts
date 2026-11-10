@@ -69,10 +69,9 @@ const sha256 = (text: string) =>
   createHash("sha256").update(text).digest("hex");
 
 // `empty` says the funding-section cutter found no funding text or awards
-// in a kept paper, which only a gold set B paper can be. It is optional so
-// a result checkpointed before it existed still reads (#405).
+// in a kept paper, which only a gold set B paper can be (#405).
 export type Taken =
-  { kept: true; entry: Entry; empty?: boolean } | { kept: false };
+  { kept: true; entry: Entry; empty: boolean } | { kept: false };
 
 // Reads one gold paper afresh into cache/, and writes its funding sections
 // under eval/ once. A gold set A paper Europe PMC links to none of the

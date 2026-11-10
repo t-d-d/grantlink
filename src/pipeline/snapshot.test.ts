@@ -115,4 +115,10 @@ describe("taking one gold paper", () => {
       awards: [],
     });
   });
+
+  it("says a gold set B paper with funding text is not empty (#405)", async () => {
+    const { deps } = paperDeps([]);
+    const taken = await snapshotPaper(deps, "PMC11", "B");
+    expect(taken).toMatchObject({ kept: true, empty: false });
+  });
 });
