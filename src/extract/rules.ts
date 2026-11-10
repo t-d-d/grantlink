@@ -8,7 +8,7 @@ import funderFile from "./funder.json" with { type: "json" };
 
 // Bump this whenever a pattern, or which references the rules keep,
 // changes, so every stored result says which rules made it.
-export const RULES_VERSION = "rules-7";
+export const RULES_VERSION = "rules-8";
 
 export const funder = z
   .object({
@@ -69,7 +69,8 @@ const NAMES = funder.names.map((name) => namePattern(escape(name))).join("|");
 const ANY_CASE_NAMES = funder.names
   .map((name) => namePattern(anyCase(escape(name))))
   .join("|");
-const funderName = new RegExp(`(?:^|[^A-Za-z])(?:${NAMES})(?![A-Za-z])`, "iu");
+// Any letter, not only A to Z, makes a name part of a longer word (#320).
+const funderName = new RegExp(`(?:^|\\P{L})(?:${NAMES})(?!\\p{L})`, "iu");
 
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
@@ -118,7 +119,7 @@ const PATTERNS: Pattern[] = [
     // name, as in "Cancer Research UK (G123/45)".
     format: "Gn/n",
     pattern: new RegExp(
-      String.raw`(?<=(?:^|[^A-Za-z])(?:${ANY_CASE_NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}\b`,
+      String.raw`(?<=(?:^|\P{L})(?:${ANY_CASE_NAMES})\s?\(\s?)G\d{2,4}${SEP}\d{1,4}\b`,
       "gu",
     ),
     sentenceOnly: false,
