@@ -244,8 +244,37 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
             await ctx.step("draw", async () => Math.random(), { retryStrategy: r });
           }`,
         },
+        {
+          name: "tests an object that holds a source, or Date, without passing it on",
+          filename: "src/run/run.ts",
+          code: `const a = "randomUUID" in globalThis.crypto;
+          const b = "now" in Date;
+          if (globalThis.crypto) { x(); }
+          const c = !crypto;
+          const d = performance ? 1 : 2;
+          const e = Date && f();`,
+        },
       ],
       invalid: [
+        {
+          name: "passes on the rest of a namespace import of crypto, or an object that holds a source as a fallback",
+          filename: "src/run/run.ts",
+          code: `import * as c from "node:crypto";
+          const { createHash, ...rest } = c;
+          const p = globalThis.performance ?? fallback;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto" },
+              line: 2,
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "performance" },
+              line: 3,
+            },
+          ],
+        },
         {
           name: "passes an object that holds a source on in an exported object",
           filename: "src/run/o.ts",
