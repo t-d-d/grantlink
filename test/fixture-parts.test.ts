@@ -136,7 +136,7 @@ describe("strayParts", () => {
       {
         back: '<fn-group><fn fn-type="funding"><p>Funded.<SEC-META>B</SEC-META></p></fn></fn-group>',
       },
-      "article/back/fn-group/fn/p/SEC-META",
+      "article/back/fn-group/fn/p/sec-meta",
     ],
     [
       "the author list",
