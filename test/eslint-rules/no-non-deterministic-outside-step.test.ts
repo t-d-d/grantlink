@@ -576,6 +576,40 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "exports a copy of Math made through a rest by name",
+          code: `const { ...m } = Math;
+          export { m };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest in a nested pattern's default",
+          code: `export const { foo: { ...m } = Math } = {};`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports bind destructured from Date",
+          code: `export const { bind } = Date;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
           name: "exports an alias of globalThis, which holds every source",
           code: `const g = globalThis;
           export { g };`,
