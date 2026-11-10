@@ -52,15 +52,15 @@
       },
       {
         "glob": "**/*.live.ts",
-        "reason": "The deploy job runs the live tier with the deploy role's credentials."
+        "reason": "The live tier runs in the deploy job, which may ask GitHub for a token that the deploy role trusts."
       },
       {
         "glob": "test/tiers.ts",
-        "reason": "It sets which files the live tier runs with the deploy role's credentials."
+        "reason": "It sets which files the live tier runs in the deploy job, which may ask GitHub for a token that the deploy role trusts."
       },
       {
         "glob": "vitest.config.ts",
-        "reason": "It sets which files the live tier runs with the deploy role's credentials."
+        "reason": "It sets which files the live tier runs in the deploy job, which may ask GitHub for a token that the deploy role trusts."
       },
       {
         "glob": "evals/**",
