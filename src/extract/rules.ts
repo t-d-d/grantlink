@@ -135,12 +135,6 @@ const WORD = String.raw`[\p{L}\p{M}\p{Nd}_]`;
 const START = `(?<!${WORD})`;
 const END = `(?!${WORD})`;
 
-// A reference as written, between the edges above. The model pass checks
-// its references with this, so the two passes cannot draw a reference's
-// edges differently (#384).
-export const wholeReference = (reference: string): RegExp =>
-  new RegExp(`${START}${escape(reference)}${END}`, "u");
-
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
 
@@ -155,6 +149,10 @@ interface Shape {
   // What must come before and after it in the text, beyond its edges.
   before?: string;
   after?: string;
+  // What, straight after a reference of this shape, would make it a piece
+  // of a longer one the rules read whole. The model pass refuses a reply of
+  // this shape that the text goes on past this way (#561).
+  continues?: string;
   // A short number such as an A number is common, so it counts only in a
   // sentence that names the funder.
   sentenceOnly: boolean;
@@ -203,6 +201,7 @@ const SHAPES: readonly Shape[] = [
     // the C/A pattern, so a C/A pair after CRUK/ is read as the pair alone.
     format: "CRUK-X",
     shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:(?:${DASH}|/)[A-Z0-9]{1,8}){1,4}(?<=CRUK[A-Z0-9/${DASHES}-]*\d[A-Z0-9/${DASHES}-]*)`,
+    continues: `(?:${DASH}|/)[A-Z0-9]`,
     sentenceOnly: false,
   },
   {
@@ -297,6 +296,23 @@ const READ_SHAPE = new RegExp(
 );
 export const hasReferenceShape = (reference: string): boolean =>
   READ_SHAPE.test(reference);
+
+const CONTINUES = SHAPES.flatMap(({ shape, modelShape, continues }) =>
+  continues === undefined
+    ? []
+    : [{ shape: new RegExp(`^(?:${modelShape ?? shape})$`, "u"), continues }],
+);
+
+// A reference as written, between the edges above. The model pass checks
+// its references with this, so the two passes cannot draw a reference's
+// edges differently (#384). A reference of a shape the rules read whole,
+// such as a CRUK- form, must not be followed by another part of it (#561).
+export function wholeReference(reference: string): RegExp {
+  const more = CONTINUES.filter(({ shape }) => shape.test(reference)).map(
+    ({ continues }) => `(?!${continues})`,
+  );
+  return new RegExp(`${START}${escape(reference)}${END}${more.join("")}`, "u");
+}
 
 const UNICODE_DASH = new RegExp(`[${DASHES}]`, "gu");
 

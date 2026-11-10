@@ -37,6 +37,7 @@ export const PROMPT_VERSIONS: readonly Version[] = [
   { number: 4, issue: 467 },
   { number: 5, issue: 492 },
   { number: 6, issue: 510 },
+  { number: 7, issue: 561 },
 ];
 export const PROMPT_VERSION = latest("prompt", PROMPT_VERSIONS);
 
