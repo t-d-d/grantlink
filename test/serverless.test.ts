@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { mergeOver, strayVariablesIn, unreadResources } from "./serverless.ts";
+import { parse } from "yaml";
+import { parseTemplate } from "./cfn.ts";
+import {
+  mergeKeysIn,
+  mergeOver,
+  strayVariablesIn,
+  unreadResources,
+} from "./serverless.ts";
 
 const TEMPLATES = ["infra/site.cfn.yml", "infra/data.cfn.yml"];
 const known = TEMPLATES.map((path) => `\${file(./${path})}`);
@@ -301,5 +308,51 @@ describe("variables inside a template (#166)", () => {
     expect(
       strayVariablesIn({ Outputs: { O: { Value: "${self:custom.x}" } } }),
     ).toEqual(["a variable from self at Outputs.O.Value"]);
+  });
+});
+
+// osls reads YAML with js-yaml, which applies a merge key, while the static
+// checks keep `<<` as an ordinary key. The app uses none, so the gate
+// refuses any (#242).
+describe("YAML merge keys, which osls applies and the static checks do not (#242)", () => {
+  const inline = [
+    "resources:",
+    "  - Resources:",
+    "      Box: { <<: { Type: AWS::EC2::Instance }, Properties: {} }",
+  ].join("\n");
+
+  it("finds a resource whose Type comes from a merge key in serverless.yml", () => {
+    expect(mergeKeysIn(parse(inline))).toEqual([
+      "a merge key at resources.0.Resources.Box",
+    ]);
+  });
+
+  it("finds a merge key from an alias in a template", () => {
+    const template = [
+      "Resources:",
+      "  Base: &role",
+      "    Type: AWS::IAM::Role",
+      "    Properties: {}",
+      "  Other:",
+      "    <<: *role",
+      "    Properties:",
+      "      RoleName: !Sub ${AWS::StackName}-other",
+    ].join("\n");
+    expect(mergeKeysIn(parseTemplate(template))).toEqual([
+      "a merge key at Resources.Other",
+    ]);
+  });
+
+  it("finds a merge key inside a list, and at the top", () => {
+    expect(mergeKeysIn({ "<<": {}, a: [{ b: { "<<": {} } }] })).toEqual([
+      "a merge key at the top",
+      "a merge key at a.0.b",
+    ]);
+  });
+
+  it("finds nothing in YAML without one", () => {
+    expect(
+      mergeKeysIn(parse("Resources:\n  R: { Type: T, Properties: {} }")),
+    ).toEqual([]);
   });
 });

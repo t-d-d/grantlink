@@ -187,6 +187,24 @@ export function strayVariablesIn(value: unknown): string[] {
   return variablesIn(value, []);
 }
 
+// Each YAML merge key `<<` in a parsed value, with where it sits. osls
+// reads serverless.yml and the templates with js-yaml, which applies a
+// merge, while the static checks parse with the yaml package, which keeps
+// `<<` as an ordinary key, so a resource whose Type came from a merge would
+// pass them untyped. The app uses none, so the gate refuses any (#242).
+export function mergeKeysIn(value: unknown, path: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) =>
+      mergeKeysIn(item, [...path, String(index)]),
+    );
+  }
+  if (!isPlain(value)) return [];
+  return Object.entries(value).flatMap(([key, item]) => [
+    ...(key === "<<" ? [`a merge key at ${path.join(".") || "the top"}`] : []),
+    ...mergeKeysIn(item, [...path, key]),
+  ]);
+}
+
 // Each entry of serverless.yml's `resources` that the static checks would
 // not read: the known templates missing from the head of the list or out of
 // order, `extensions`, any key but the three above, and any template but
