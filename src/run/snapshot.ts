@@ -136,11 +136,10 @@ export async function takeSnapshot(
     }
     // Logged before the check, so a search that fails it still says how
     // many results it skipped.
-    const total = found.length;
     await ctx.step(
       "snapshot-search-ended",
       async () => {
-        logGoldSearchEnded(runId, deps.gold.snapshotId, total, skipped);
+        logGoldSearchEnded(runId, deps.gold.snapshotId, found.length, skipped);
         return Promise.resolve();
       },
       { retryStrategy: storeRetry },
