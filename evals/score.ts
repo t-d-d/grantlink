@@ -1,4 +1,8 @@
-import { findReferences, type FundingSections } from "../src/extract/rules.ts";
+import {
+  findReferences,
+  hasReferenceShape,
+  type FundingSections,
+} from "../src/extract/rules.ts";
 import type { RowId } from "./floors.ts";
 
 // Scores the extraction on the gold sets. It reads text already on disk and
@@ -82,22 +86,24 @@ export function sameGrant(found: string, expected: string): boolean {
 // CRUK's reference forms (#503): a C/A pair; an award number of 4 to 6
 // digits, with or without its A; a Crick core funding number; a newer
 // reference of letters, sometimes with a year or a month, then a slash and
-// a number; or one that starts with CRUK and has a digit after it, as the
-// rules read it (#532). A C part alone names a programme, and another
-// funder's reference, a word, a centre or partnership name such as
-// CRUK_Manchester or CRUK/MRC, or the bare abbreviation CRUK is not a CRUK
-// grant, so none of those is an answer.
+// a number; or one that starts with CRUK and is, whole, a shape the rules
+// read, so it has a digit after the CRUK (#532). A C part alone names a
+// programme, and another funder's reference, a word, a centre or
+// partnership name such as CRUK_Manchester or CRUK/MRC, or the bare
+// abbreviation CRUK is not a CRUK grant, so none of those is an answer.
 const CRUK_FORMS = [
   /^C\d+\/A\d+$/u,
   /^A?\d{4,6}$/u,
   /^(?:FC|CC)\d+$/u,
   /^[A-Z]+(?:-?(?:(?:19|20)\d{2}|(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}))?\/\d+$/u,
-  /^CRUK[^0-9]*\d/u,
 ];
 
 export function crukReference(id: string): boolean {
   const whole = canonical(id);
-  return CRUK_FORMS.some((form) => form.test(whole));
+  return (
+    CRUK_FORMS.some((form) => form.test(whole)) ||
+    (whole.startsWith("CRUK") && hasReferenceShape(whole))
+  );
 }
 
 // The innermost reference list, which a loop removes until none is left, so

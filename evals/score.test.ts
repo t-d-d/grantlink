@@ -88,6 +88,10 @@ describe("telling a CRUK reference from another linked id", () => {
     "CRUK/MRC",
     "CRUK-FUNDED",
     "CRUK-MI",
+    "CRUK/MRC/EPSRC/NIHR/BHF/2020",
+    "CRUK2019",
+    "CRUK_2019",
+    "CRUK.12345",
   ])("refuses %s", (id) => {
     expect(crukReference(id)).toBe(false);
   });
