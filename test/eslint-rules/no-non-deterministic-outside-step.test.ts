@@ -164,6 +164,67 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "draws from crypto imported from node:crypto",
+          code: `import crypto from "node:crypto";
+          const a = crypto.randomBytes(8);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto.randomBytes()" },
+            },
+          ],
+        },
+        {
+          name: "draws from crypto imported whole from crypto",
+          code: `import * as crypto from "crypto";
+          const a = crypto.randomInt(8);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto.randomInt()" },
+            },
+          ],
+        },
+        {
+          name: "reads performance imported from node:perf_hooks",
+          code: `import { performance } from "node:perf_hooks";
+          const t = performance.now();`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "performance.now()" },
+            },
+          ],
+        },
+        {
+          name: "reads the global beside a type, an interface and an ambient declaration of its name",
+          code: `interface Math { extra: number }
+          type Date = string;
+          declare const crypto: Crypto;
+          const n = Math.random();
+          const at = Date.now();
+          const today = new Date();
+          const id = crypto.randomUUID();`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math.random()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date.now()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "new Date()" },
+            },
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "crypto.randomUUID()" },
+            },
+          ],
+        },
+        {
           name: "reads the global Math beside a function whose parameter shadows it",
           code: `function f(Math: Rng) { return Math.random(); }
           const n = Math.random();`,

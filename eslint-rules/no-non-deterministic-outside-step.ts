@@ -1,6 +1,6 @@
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
+import { TSESLint } from "@typescript-eslint/utils";
 import type { TSESTree } from "@typescript-eslint/utils";
-import type { TSESLint } from "@typescript-eslint/utils";
 import {
   createRule,
   insideCheckpointedCallback,
@@ -30,25 +30,70 @@ const NON_DETERMINISTIC: Readonly<Record<string, ReadonlySet<string>>> = {
   ]),
 };
 
-function memberOp(node: TSESTree.MemberExpression): string | undefined {
+// The read a member names, such as `Date.now`, and the identifier it reads
+// it from.
+function memberOp(
+  node: TSESTree.MemberExpression,
+): { op: string; object: TSESTree.Identifier } | undefined {
   if (node.computed) return undefined;
   if (node.object.type !== AST_NODE_TYPES.Identifier) return undefined;
   if (node.property.type !== AST_NODE_TYPES.Identifier) return undefined;
   const allowed = NON_DETERMINISTIC[node.object.name];
   return allowed?.has(node.property.name) === true
-    ? `${node.object.name}.${node.property.name}`
+    ? {
+        op: `${node.object.name}.${node.property.name}`,
+        object: node.object,
+      }
     : undefined;
 }
 
-// True when the identifier names something the file declares, such as a
-// parameter or a class called `Math`, rather than the global. A global the
-// config declares has no definition in the file.
+// The Node modules that export the same reads under the global's name, so
+// `import crypto from "node:crypto"` or `import { performance } from
+// "node:perf_hooks"` binds the source the rule refuses, not a stand-in.
+const SAME_SOURCE: Readonly<Record<string, ReadonlySet<string>>> = {
+  crypto: new Set(["crypto", "node:crypto"]),
+  performance: new Set(["perf_hooks", "node:perf_hooks"]),
+};
+
+// True when the identifier names a value the file declares in place of the
+// global, such as a parameter or a class called `Math`. A global the config
+// declares has no definition in the file. A type, an interface, an ambient
+// `declare` and a type-only import declare no value, and an import from a
+// module in SAME_SOURCE is the same source, so none of them shadows it.
 function declaredLocally(
   identifier: TSESTree.Identifier,
   sourceCode: Readonly<TSESLint.SourceCode>,
 ): boolean {
   const variable = lookup(identifier.name, sourceCode.getScope(identifier));
-  return (variable?.defs.length ?? 0) > 0;
+  return variable?.defs.some((def) => shadows(identifier.name, def)) ?? false;
+}
+
+function shadows(name: string, def: TSESLint.Scope.Definition): boolean {
+  switch (def.type) {
+    case TSESLint.Scope.DefinitionType.Type:
+    case TSESLint.Scope.DefinitionType.ImplicitGlobalVariable:
+      return false;
+    case TSESLint.Scope.DefinitionType.ImportBinding: {
+      const declaration = def.parent;
+      if (declaration.type !== AST_NODE_TYPES.ImportDeclaration) return true;
+      if (declaration.importKind === "type") return false;
+      if (
+        def.node.type === AST_NODE_TYPES.ImportSpecifier &&
+        def.node.importKind === "type"
+      ) {
+        return false;
+      }
+      return !(SAME_SOURCE[name]?.has(declaration.source.value) ?? false);
+    }
+    case TSESLint.Scope.DefinitionType.Variable:
+      return !def.parent.declare;
+    case TSESLint.Scope.DefinitionType.ClassName:
+    case TSESLint.Scope.DefinitionType.FunctionName:
+    case TSESLint.Scope.DefinitionType.TSModuleName:
+      return !("declare" in def.node && def.node.declare);
+    default:
+      return true;
+  }
 }
 
 // True when the node is the function a call calls, read through the
@@ -104,15 +149,10 @@ export const noNonDeterministicOutsideStep = createRule({
       // `Math.random` passed as a value each report once. A local that
       // shadows the global, such as a parameter named `Math`, is not read.
       MemberExpression(node) {
-        const op = memberOp(node);
-        if (op === undefined) return;
-        if (
-          node.object.type === AST_NODE_TYPES.Identifier &&
-          declaredLocally(node.object, context.sourceCode)
-        ) {
-          return;
-        }
-        report(node, calledThrough(node) ? `${op}()` : op);
+        const read = memberOp(node);
+        if (read === undefined) return;
+        if (declaredLocally(read.object, context.sourceCode)) return;
+        report(node, calledThrough(node) ? `${read.op}()` : read.op);
       },
     };
   },
