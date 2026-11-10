@@ -58,8 +58,8 @@ const NO_LIVE: Record<NoLive | OlderFormat, string> = {
 // It comes from check.ts, not from eval.yml, so it is not in noLive.
 export type OlderFormat = "older-format";
 
-// What the comparison reads from the live report: its run and each row's
-// score. Older code may have filed it before a row or a field was added, so
+// What the comparison reads from the live report: its run, its snapshot's
+// id and each row's score. Older code may have filed it before a row or a field was added, so
 // unknown keys are dropped and rows are matched by id, not position (#153).
 // CI's own report and the gate keep the strict schema in report.ts.
 // A report that shares no row with this code has nothing to compare, so it
@@ -82,6 +82,12 @@ const knownId = (item: unknown): boolean =>
 const liveReport = z.object({
   // The link goes into the comment, so it must still be an Actions run.
   runUrl: report.shape.runUrl,
+  // Scores compare only on the same snapshot (#232), so its id is kept to
+  // say when they do not. A report from before there was one reads as null.
+  snapshot: z
+    .object({ id: z.string() })
+    .nullish()
+    .transform((snapshot) => snapshot?.id ?? null),
   rows: z.array(z.unknown()).transform((list, ctx) => {
     const kept: z.infer<typeof liveRow>[] = [];
     list.forEach((item, index) => {
@@ -154,6 +160,16 @@ export function comment(
     typeof live === "string"
       ? NO_LIVE[live]
       : `The live release's scores come from [its report's run](${live.runUrl}).`;
+  const named = (id: string | null): string =>
+    id === null ? "no snapshot" : `snapshot ${id}`;
+  const ours = ci.snapshot?.id ?? null;
+  const otherSnapshot =
+    typeof live === "string" || live.snapshot === ours
+      ? []
+      : [
+          "",
+          `The live release was scored on ${named(live.snapshot)} and this pull request on ${named(ours)}, so their scores do not compare.`,
+        ];
   return [
     MARKER,
     `### Eval: ${mine.releasable ? "go" : "no-go"}`,
@@ -163,6 +179,7 @@ export function comment(
     "| Measure | On | Go if | This pull request | Live release | Result |",
     "| --- | --- | --- | --- | --- | --- |",
     ...rows,
+    ...otherSnapshot,
     "",
     ci.snapshot === null
       ? "No snapshot is pinned yet, so the gold sets are not scored."
