@@ -13,8 +13,7 @@ import {
   type Published,
 } from "../pipeline/steps.ts";
 import { batches } from "../shared/batches.ts";
-import { readOrRefused, type Read } from "../pipeline/refused.ts";
-import { owedAfter, type Owed } from "./owed.ts";
+import { askEuropePmc, type Asked, type Owed } from "./owed.ts";
 import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 
@@ -68,20 +67,20 @@ async function readBatch(
   for (const pmcid of pmcids) {
     if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
     due = null;
-    let outcome: Read<{ references: number }> | undefined;
+    let asked: Asked<{ references: number }>;
     try {
-      outcome = await ctx.step(
+      // eslint-disable-next-line grantlink/no-await-outside-step -- askEuropePmc's only await is its step
+      asked = await askEuropePmc(
+        ctx,
         `paper-${pmcid}`,
-        async ({ attempt }) =>
-          readOrRefused(attempt, paperRetry, async () =>
-            readPaper(deps, pmcid, runId),
-          ),
-        { retryStrategy: paperRetry },
+        `wait-${pmcid}`,
+        paperRetry,
+        async () => readPaper(deps, pmcid, runId),
       );
     } catch {
-      outcome = undefined;
+      asked = { owed: null };
     }
-    if (outcome !== undefined && "read" in outcome) {
+    if ("read" in asked) {
       read += 1;
       continue;
     }
@@ -91,7 +90,7 @@ async function readBatch(
     });
     // Europe PMC asked the run to wait before it asks again, so whatever
     // asks it next waits first (docs/constraints/europe-pmc.md).
-    due = owedAfter(`wait-${pmcid}`, outcome);
+    due = asked.owed;
   }
   return { read, failed, owed: due };
 }
