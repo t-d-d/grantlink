@@ -115,7 +115,10 @@ export async function takeSnapshot(
       // ends (#236).
       if ("refused" in outcome) {
         return {
-          snapshot: { taken: false, reason: "failed" },
+          snapshot: {
+            taken: false,
+            reason: "Europe PMC refused gold set A's search",
+          },
           owed: owedAfter(`${name}-wait`, outcome),
         };
       }

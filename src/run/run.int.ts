@@ -598,17 +598,31 @@ describe("fitness: a step Europe PMC refused waits before asking again (europe-p
     expect(ended).toBeGreaterThanOrEqual(seen.notBefore);
   });
 
-  it("ends only once a refusal of gold set A's search has been waited out, when that fails the snapshot (#236)", async () => {
-    const fake = fakeDeps({
-      goldSearch: () => reply("", 429, { "Retry-After": "7200" }),
-    });
-    const started = Date.now();
-    const { status, result, ended } = await runWith(fake);
-    expect(status).toBe("SUCCEEDED");
-    expect(result?.published).toMatchObject({ published: true });
-    expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
-    expect(ended - started).toBeGreaterThanOrEqual(7_200_000);
-  });
+  it.each([300, 7200])(
+    "ends only once a refusal of gold set A's search with a Retry-After of %is has been waited out, when that fails the snapshot (#236)",
+    async (seconds) => {
+      const fake = fakeDeps({
+        goldSearch: () => reply("", 429, { "Retry-After": String(seconds) }),
+      });
+      const started = Date.now();
+      const { status, result, ended, retryDelays } = await runWith(fake);
+      expect(status).toBe("SUCCEEDED");
+      expect(result?.published).toMatchObject({ published: true });
+      expect(result?.snapshot).toEqual({
+        taken: false,
+        reason: "Europe PMC refused gold set A's search",
+      });
+      // The step's own retries wait first, then the run waits out the wait
+      // its last refusal asked for.
+      const retried = retryDelays("snapshot-search-0").reduce(
+        (sum, delay) => sum + delay,
+        0,
+      );
+      expect(ended - started).toBeGreaterThanOrEqual(
+        (retried + seconds) * 1000,
+      );
+    },
+  );
 
   it("never asks again sooner than its first wait, with no Retry-After", async () => {
     const search = await runWith(fakeDeps({ search: () => reply("", 503) }));
