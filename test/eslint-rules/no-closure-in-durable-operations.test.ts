@@ -1,6 +1,7 @@
 import { afterAll, describe, it } from "vitest";
 import { noClosureInDurableOperations } from "../../eslint-rules/no-closure-in-durable-operations.ts";
 import { ruleTester } from "../rule-tester.ts";
+import { WRAPPED_DURABLE_CALLS } from "./wrapped-durable-calls.ts";
 import { WRAPPED_STEP_HELPERS } from "./wrapped-step-helpers.ts";
 
 const tester = ruleTester({ afterAll, describe, it });
@@ -42,6 +43,14 @@ describe("fitness: no outer variable changed inside a step (durable-execution.md
       },
     ],
     invalid: [
+      ...WRAPPED_DURABLE_CALLS.map((shape) => ({
+        name: `counts into an outer variable inside a step written as ${shape.name}`,
+        code: `async function run(ctx: any) {
+          let read = 0;
+          await ${shape.call("step", `"fetch", async () => { read += 1; return 1; }`)};
+        }`,
+        errors: [{ messageId: "closureVariableUsage" as const }],
+      })),
       ...WRAPPED_STEP_HELPERS.map((shape) => ({
         name: `counts into an outer variable from askEuropePmc's read, reached through ${shape.name}`,
         filename: "src/run/run.ts",
