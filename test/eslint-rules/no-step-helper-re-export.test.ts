@@ -42,6 +42,18 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         code: `function askEuropePmc() {}
         export { askEuropePmc };`,
       },
+      {
+        name: "exports a constant from another name in the helper's module",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        export const other = owed.somethingElse;`,
+      },
+      {
+        name: "exports a local function that shares askEuropePmc's name as the default",
+        filename: "src/run/run.ts",
+        code: `function askEuropePmc() {}
+        export default askEuropePmc;`,
+      },
     ],
     invalid: [
       {
@@ -94,6 +106,41 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         filename: "src/run/owed.ts",
         code: `async function askEuropePmc() {}
         export { askEuropePmc as ask };`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports askEuropePmc as the default from its own module",
+        filename: "src/run/owed.ts",
+        code: `async function askEuropePmc() {}
+        export default askEuropePmc;`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports askEuropePmc as a constant under another name from its own module",
+        filename: "src/run/owed.ts",
+        code: `async function askEuropePmc() {}
+        export const ask = askEuropePmc;`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports an imported askEuropePmc as a constant",
+        filename: "src/run/run.ts",
+        code: `import { askEuropePmc } from "./owed.ts";
+        export const ask = askEuropePmc;`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports askEuropePmc read from a namespace import as a constant",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        export const ask = owed.askEuropePmc;`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports askEuropePmc read from a namespace import as the default",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        export default owed["askEuropePmc"];`,
         errors: [{ messageId: "reExport" }],
       },
     ],

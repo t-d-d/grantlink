@@ -111,6 +111,14 @@ describe("fitness: no bare await in a durable body (durable-execution.md)", () =
           await owed["askEuropePmc"](ctx, "paper", "wait", r, async () => readPaper());
         }`,
       },
+      {
+        name: "awaits askEuropePmc reached through a namespace import by a template key",
+        filename: "src/run/run.ts",
+        code: `import * as owed from "./owed.ts";
+        async function run(ctx: any) {
+          await owed[\`askEuropePmc\`](ctx, "paper", "wait", r, async () => readPaper());
+        }`,
+      },
     ],
     invalid: [
       {

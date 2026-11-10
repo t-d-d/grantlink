@@ -77,7 +77,7 @@ export const STEP_HELPERS: readonly StepHelper[] = [
 // The step helper a call calls, if its callee resolves to one: a named
 // import `<name>(...)`, or a namespace import `<ns>.<name>(...)` or
 // `<ns>["<name>"](...)`. A local function, an import from another module or
-// a computed key that is not a string is not one. A re-export would hide the
+// a computed key that is not a constant string is not one. A re-export would hide the
 // helper's module, so no-step-helper-re-export refuses one.
 export function stepHelperOf(
   node: TSESTree.Node,
@@ -103,16 +103,21 @@ export function stepHelperOf(
   return null;
 }
 
-// The name a member expression reads: `a.b` or `a["b"]`.
-function memberName(node: TSESTree.MemberExpression): string | null {
+// The name a member expression reads: `a.b`, `a["b"]` or a template key
+// with nothing interpolated.
+export function memberName(node: TSESTree.MemberExpression): string | null {
+  const { property } = node;
   if (!node.computed) {
-    return node.property.type === AST_NODE_TYPES.Identifier
-      ? node.property.name
+    return property.type === AST_NODE_TYPES.Identifier ? property.name : null;
+  }
+  if (property.type === AST_NODE_TYPES.TemplateLiteral) {
+    return property.expressions.length === 0
+      ? (property.quasis[0]?.value.cooked ?? null)
       : null;
   }
-  return node.property.type === AST_NODE_TYPES.Literal &&
-    typeof node.property.value === "string"
-    ? node.property.value
+  return property.type === AST_NODE_TYPES.Literal &&
+    typeof property.value === "string"
+    ? property.value
     : null;
 }
 
