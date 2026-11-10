@@ -26,6 +26,16 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           }`,
         },
         {
+          name: "reads the clock inside logOnly's log, which runs as its step",
+          filename: "src/run/run.ts",
+          code: `import { logOnly } from "./log-only.ts";
+          async function run(ctx: any) {
+            await logOnly(ctx, "search-ended", () => {
+              logAt(Date.now());
+            });
+          }`,
+        },
+        {
           name: "parses a fixed date",
           code: `const since = new Date("2020-01-01");`,
         },

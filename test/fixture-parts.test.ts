@@ -597,6 +597,23 @@ describe("strayParts", () => {
       { back: '<sec sec-type="funding"><p Somebody>Funded.</p></sec>' },
       "article/back/sec/p (attributes)",
     ],
+    [
+      "a stray / in an opening tag",
+      { back: '<sec sec-type="funding"><p / id="a1">Funded.</p></sec>' },
+      "article/back/sec/p (attributes)",
+    ],
+    [
+      "attributes with no white space between them",
+      { back: '<sec sec-type="funding"><p id="a1"rid="a2">Funded.</p></sec>' },
+      "article/back/sec/p (attributes)",
+    ],
+    [
+      "an attribute written twice",
+      {
+        back: '<fn-group><fn fn-type="funding" fn-type="funding"><p>Funded.</p></fn></fn-group>',
+      },
+      "article/back/fn-group/fn (attributes)",
+    ],
   ])("names %s (#304)", (_what, parts, stray) => {
     expect(strayParts(paper(parts))).toEqual([stray]);
   });
