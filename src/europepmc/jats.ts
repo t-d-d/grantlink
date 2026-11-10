@@ -341,23 +341,62 @@ const NOTE_TYPE: Readonly<Record<string, string>> = Object.freeze({
   notes: "notes-type",
 });
 
+// These nodes less every element at any depth that fails the test, with
+// all it holds.
+const pruned = (
+  nodes: XmlNode[],
+  keep: (element: XmlElement) => boolean,
+): XmlNode[] =>
+  nodes.flatMap((node): XmlNode[] => {
+    if (node.kind !== "element") return [node];
+    return keep(node)
+      ? [{ ...node, children: pruned(node.children, keep) }]
+      : [];
+  });
+
+// Whether a section has a title, which may follow a <sec-meta> and a label.
+// A self-closing title names nothing (#221).
+function hasTitle(section: XmlElement): boolean {
+  const children = section.children;
+  let at = 0;
+  const skipGaps = () => {
+    while (isGap(children[at])) at += 1;
+  };
+  skipGaps();
+  if (isSecMeta(children[at])) {
+    at += 1;
+    skipGaps();
+  }
+  if (isLabel(children[at])) {
+    at += 1;
+    skipGaps();
+  }
+  const title = children[at];
+  return isTitle(title) && !title.empty;
+}
+
 // What a note holds that is read with it: all but the notes and footnotes
 // inside it, which are read, or left out, on their own. A footnote is read
-// whole, as before #505.
+// whole, as before #505. A section in it, at any depth, whose title names
+// something other than funding, such as author contributions, is about that
+// and is left out. An untitled section and a funding section are kept
+// (#541).
 const NOTES_WITHIN = new Set(["notes", "fn-group", "fn"]);
 const noteContent = (note: XmlElement): XmlNode[] =>
-  note.name === "notes"
-    ? note.children.filter(
-        (child) => child.kind !== "element" || !NOTES_WITHIN.has(child.name),
-      )
-    : note.children;
+  pruned(
+    note.name === "notes"
+      ? note.children.filter(
+          (child) => child.kind !== "element" || !NOTES_WITHIN.has(child.name),
+        )
+      : note.children,
+    (element) =>
+      !isSection(element) || !hasTitle(element) || isFundingSection(element),
+  );
 
 // A note's own content: what it holds that is read with it, less its
-// sections, whose titles say what they are about.
+// sections at any depth, whose titles say what they are about (#541).
 const ownContent = (note: XmlElement): XmlNode[] =>
-  noteContent(note).filter(
-    (child) => child.kind !== "element" || !isSection(child),
-  );
+  pruned(noteContent(note), (element) => !isSection(element));
 
 // A note's own words, which it is read by when it has no type or title.
 const ownWords = (note: XmlElement): string => plain(ownContent(note));
@@ -412,10 +451,11 @@ export const isFundingNote = (element: XmlElement, parent: string): boolean =>
 
 // What the cut keeps of each funding note and footnote, at any depth, so
 // one nested in a note that is not about funding is found too. One marked
-// as funding by its type or title is read whole, less the notes inside it.
-// One kept for its own words is about funding only in those words, so its
-// sections are left out: author contributions or a data statement there
-// name people or say nothing of funding. A funding section among them is
+// as funding by its type or title is read whole, less the notes inside it
+// and its sections titled as something other than funding (#541). One kept
+// for its own words is about funding only in those words, so its sections,
+// at any depth, are left out: author contributions or a data statement
+// there name people or say nothing of funding. A funding section among them is
 // found by its type or title, as every funding section is (#526).
 const fundingNoteParts = (element: XmlElement): XmlNode[][] =>
   element.children.flatMap((child) => {
