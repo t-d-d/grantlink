@@ -74,6 +74,48 @@ describe("what the run found", () => {
   });
 });
 
+describe("a reference with a character a later version allows", () => {
+  // A made-up reference in a shape a later version might allow: an
+  // underscore, which referenceSchema does not (#314, #344).
+  const later = { asWritten: "A_12345", normalised: "A_12345", format: "A_n" };
+
+  it("builds the page from a row a later version wrote", () => {
+    const found = summarise([done("PMC1", [later])], run);
+    expect(found.papers).toEqual([
+      { pmcid: "PMC1", title: "Title of PMC1", references: [later] },
+    ]);
+  });
+
+  it("builds the page again at deploy from the found.json a later run published", () => {
+    const found = summarise([done("PMC1", [later])], run);
+    expect(rebuild(template, JSON.stringify(found), null)).toContain("A_12345");
+  });
+
+  it("still checks a reference's length and type, and refuses any other field", () => {
+    const published = (reference: Record<string, unknown>) =>
+      JSON.stringify({
+        ...summarise([done("PMC1", [later])], run),
+        papers: [{ pmcid: "PMC1", title: "Title", references: [reference] }],
+      });
+    expect(() =>
+      rebuild(
+        template,
+        published({ ...later, asWritten: "A".repeat(49) }),
+        null,
+      ),
+    ).toThrow();
+    expect(() =>
+      rebuild(template, published({ ...later, normalised: 12345 }), null),
+    ).toThrow();
+    expect(() =>
+      rebuild(template, published({ ...later, format: "" }), null),
+    ).toThrow();
+    expect(() =>
+      rebuild(template, published({ ...later, text: "A sentence." }), null),
+    ).toThrow();
+  });
+});
+
 describe("a paper the run's search no longer returns", () => {
   // Europe PMC has since linked these to a grant, or dropped them, so the
   // run's search, which asks for papers linked to none, did not return them.

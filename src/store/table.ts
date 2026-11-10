@@ -75,7 +75,7 @@ const lengthOnly = (field: z.ZodString) =>
     .string()
     .min(field.minLength ?? 0)
     .max(field.maxLength ?? Infinity);
-const storedReference = z.object({
+export const storedReference = z.object({
   asWritten: lengthOnly(referenceSchema.shape.asWritten),
   normalised: lengthOnly(referenceSchema.shape.normalised),
   format: lengthOnly(referenceSchema.shape.format),
