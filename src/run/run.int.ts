@@ -210,7 +210,14 @@ describe("a run over the back catalogue", () => {
 
   it("publishes again when a later run reads nothing but the table holds a paper read", async () => {
     const fake = fakeDeps();
-    await runWith(fake);
+    const first = await runWith(fake);
+    // Counted from the first run, so a change to the fixtures or the rules
+    // leaves this test as it is.
+    const before = first.result?.published;
+    if (before?.published !== true)
+      throw new Error("the first run did not publish");
+    expect(before.papers).toBeGreaterThan(0);
+    expect(before.references).toBeGreaterThan(0);
     fake.site.files = undefined;
 
     const again = await runWith(fake);
@@ -218,8 +225,8 @@ describe("a run over the back catalogue", () => {
     expect(again.result?.read).toBe(0);
     expect(again.result?.published).toEqual({
       published: true,
-      papers: 8,
-      references: 8,
+      papers: before.papers,
+      references: before.references,
       page: "written",
     });
     expect(fake.site.files?.["index.html"]).toContain("RRCOER-Jun24/100008");
