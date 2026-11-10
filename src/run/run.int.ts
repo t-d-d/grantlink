@@ -44,6 +44,13 @@ afterAll(() => {
   spy.mockRestore();
 });
 
+// The log lines with event `event`, each parsed.
+function logged(event: string): Record<string, unknown>[] {
+  return logs
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((line) => line.event === event);
+}
+
 async function runWith(fake: ReturnType<typeof fakeDeps>) {
   const runner = new LocalDurableTestRunner<RunSummary>({
     handlerFunction: withDurableExecution(makeRun(fake.deps)),
@@ -339,6 +346,26 @@ describe("a run that fails, finds nothing, or finds no paper read in the table l
       published: { published: true },
     });
     expect(fake.site.files?.["index.html"]).toBeDefined();
+  });
+
+  it("reports how many results it skipped for a malformed PMCID, in its result and once in the logs", async () => {
+    const fake = fakeDeps({
+      search: smallLastPageMalformed(["PMC0000001", "PMC0000002"]),
+    });
+    const { result } = await runWith(fake);
+    expect(result).toMatchObject({ found: 2, skipped: 1 });
+    expect(logged("search-ended")).toEqual([
+      expect.objectContaining({ found: 2, skipped: 1 }),
+    ]);
+  });
+
+  it("logs how many results it skipped for a malformed PMCID before the search fails the run", async () => {
+    const fake = fakeDeps({ search: malformedPage });
+    const { status } = await runWith(fake);
+    expect(status).toBe("FAILED");
+    expect(logged("search-ended")).toEqual([
+      expect.objectContaining({ found: 0, skipped: 2 }),
+    ]);
   });
 
   it("publishes nothing when the search finds nothing", async () => {
@@ -744,6 +771,13 @@ describe("the eval snapshot (evals.md)", () => {
     expect(status).toBe("SUCCEEDED");
     expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
     expect(fake.text.has(MANIFEST)).toBe(false);
+    expect(logged("snapshot-failed")).toEqual([
+      expect.objectContaining({
+        error: expect.stringContaining(
+          "the search skipped 2 results for a malformed PMCID and found no papers",
+        ) as unknown,
+      }),
+    ]);
   });
 
   it("takes the snapshot when a small last page of gold set A's search holds one malformed PMCID alone", async () => {
@@ -769,5 +803,10 @@ describe("the eval snapshot (evals.md)", () => {
     expect(result?.published).toMatchObject({ published: true });
     expect(result?.snapshot).toEqual({ taken: false, reason: "failed" });
     expect(fake.text.has(MANIFEST)).toBe(false);
+    expect(logged("snapshot-failed")).toEqual([
+      expect.objectContaining({
+        error: expect.stringContaining("S3 answered 503") as unknown,
+      }),
+    ]);
   });
 });

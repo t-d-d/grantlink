@@ -57,6 +57,24 @@ export async function searchPage(
   };
 }
 
+// Logs the totals of the run's whole search once, before it is judged, so
+// how many results it skipped for a malformed PMCID can be read without
+// adding up its pages (#198).
+export function logSearchEnded(
+  runId: string,
+  found: number,
+  skipped: number,
+): void {
+  logger.info("search-ended", { runId, found, skipped });
+}
+
+// Logs why the snapshot failed. The error's message is one this code wrote
+// or a store's, made of ids, counts and statuses: no step the snapshot runs
+// puts a paper's text in an error (#198).
+export function logSnapshotFailed(runId: string, error: string): void {
+  logger.warn("snapshot-failed", { runId, error });
+}
+
 // A whole search that skipped results for a malformed PMCID and found no
 // papers at all is taken as Europe PMC changing how it writes PMCIDs, not
 // as a search that found nothing, and fails. A page is not judged alone:
