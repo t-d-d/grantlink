@@ -362,7 +362,17 @@ function exportedDeclaration(declarator: TSESTree.VariableDeclarator): boolean {
 // tests `x instanceof Date` or `typeof Date`, or declares an alias,
 // `const D = Date`, whose own reads the rule follows. A member under a key
 // the rule cannot name, `Date[k]`, may be `call`, so it counts.
-function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
+//
+// With `holder` set, it asks the same of an object that holds a source,
+// such as `helper(Math)`, `{ m: Math }` or `return crypto`, which the code
+// that gets it may read the source from unseen. An export by default and
+// an alias whose declaration is exported are left to checkDefault and
+// exportsUnfollowed, which report those.
+function passedOn(
+  node: TSESTree.Node,
+  resolver: Resolver,
+  holder = false,
+): boolean {
   const outer = outermost(node);
   const parent = outer.parent;
   switch (parent?.type) {
@@ -390,9 +400,12 @@ function passedOn(node: TSESTree.Node, resolver: Resolver): boolean {
         more.length > 0 ||
         declared === undefined ||
         aliasDeclarator(declared) === null ||
-        exported(parent, declared)
+        (!holder && exported(parent, declared))
       );
     }
+    case AST_NODE_TYPES.ExportDefaultDeclaration:
+    case AST_NODE_TYPES.TSExportAssignment:
+      return !holder;
     default:
       return true;
   }
@@ -452,6 +465,16 @@ export const noNonDeterministicOutsideStep = createRule({
     const checkDate = (node: TSESTree.Node, path: readonly string[] | null) => {
       if (namesDate(path) && passedOn(node, context)) report(node, "Date");
     };
+    // An object that holds a source read as a value and passed on, such as
+    // `helper(Math)` or `{ c: globalThis.crypto }`. `Date` is checkDate's.
+    const checkHolder = (
+      node: TSESTree.Node,
+      path: readonly string[] | null,
+    ) => {
+      const holder = holderOf(path);
+      if (holder === undefined || namesDate(path)) return;
+      if (passedOn(node, context, true)) report(node, holder);
+    };
     return {
       NewExpression(node) {
         if (node.arguments.length === 0 && isDate(node.callee)) {
@@ -467,6 +490,7 @@ export const noNonDeterministicOutsideStep = createRule({
         const path = pathOf(node, context, new Set());
         check(node, path);
         checkDate(node, path);
+        checkHolder(node, path);
       },
       // A name passed on from a module that holds a clock or random source,
       // `export { randomUUID } from "node:crypto"`, or an object that holds
@@ -499,8 +523,11 @@ export const noNonDeterministicOutsideStep = createRule({
           report(node, passed);
           return;
         }
-        if (op === undefined) return;
         if (!isRead(node, context)) return;
+        if (op === undefined) {
+          checkHolder(node, path);
+          return;
+        }
         check(node, path);
         checkDate(node, path);
       },
