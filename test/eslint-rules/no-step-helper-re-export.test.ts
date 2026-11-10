@@ -38,6 +38,12 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         }`,
       },
       {
+        name: "exports askEuropePmc under its own name when it is an alias of an import in its own module",
+        filename: "src/run/owed.ts",
+        code: `import { impl } from "./impl.ts";
+        export const askEuropePmc = impl;`,
+      },
+      {
         name: "re-exports a type from the helper's module",
         filename: "src/run/run.ts",
         code: `export type { Owed } from "./owed.ts";`,
@@ -293,6 +299,61 @@ describe("fitness: a step helper is reached only from its own module (durable-ex
         const askEuropePmc = impl;
         const ask = askEuropePmc;
         export { ask };`,
+        errors: [{ messageId: "reExport" }],
+      },
+      // #517: when askEuropePmc aliases an import that is not a helper, the
+      // alias chain ends at that import, and the helper's own name further
+      // up the chain still counts.
+      {
+        name: "exports a local alias of askEuropePmc when askEuropePmc is itself an alias of an import in its own module",
+        filename: "src/run/owed.ts",
+        code: `import { impl } from "./impl.ts";
+        export const askEuropePmc = impl;
+        const ask = askEuropePmc;
+        export { ask };`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports askEuropePmc as the default when it is itself an alias of an import in its own module",
+        filename: "src/run/owed.ts",
+        code: `import { impl } from "./impl.ts";
+        export const askEuropePmc = impl;
+        export default askEuropePmc;`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports askEuropePmc under another name when it is itself an alias of an import in its own module",
+        filename: "src/run/owed.ts",
+        code: `import { impl } from "./impl.ts";
+        const askEuropePmc = impl;
+        export { askEuropePmc as ask };`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports a constant that aliases askEuropePmc when askEuropePmc is itself an alias of an import in its own module",
+        filename: "src/run/owed.ts",
+        code: `import { impl } from "./impl.ts";
+        export const askEuropePmc = impl;
+        export const ask = askEuropePmc;`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports a local alias of askEuropePmc when askEuropePmc reads a name from a namespace import in its own module",
+        filename: "src/run/owed.ts",
+        code: `import * as other from "./impl.ts";
+        const askEuropePmc = other.impl;
+        const ask = askEuropePmc;
+        export { ask };`,
+        errors: [{ messageId: "reExport" }],
+      },
+      {
+        name: "exports under the helper's own name an alias of an import that is written again later, from its own module",
+        filename: "src/run/owed.ts",
+        code: `import { impl } from "./impl.ts";
+        function somethingElse() {}
+        let askEuropePmc = impl;
+        askEuropePmc = somethingElse;
+        export { askEuropePmc };`,
         errors: [{ messageId: "reExport" }],
       },
       {
