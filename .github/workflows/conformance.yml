@@ -1,12 +1,13 @@
 # Runs the conformance tests once a day and on demand (#56). They read setup
 # outside the repo: GitHub's record of the repository, which the roles' OIDC
 # subjects must match (#52), the prod environment's branch rule
-# (deploy-gates.md), and the funding text bucket's settings (storage.md,
-# evals.md). A rename, a transfer or a changed setting then turns this run
-# red instead of waiting for a deploy to fail, and governor's
-# redScheduledRun starts a session on the red run. A fix that only the owner
-# can make, such as a GitHub setting, goes from that session to the owner as
-# an issue.
+# (deploy-gates.md), the funding text bucket's settings (storage.md,
+# evals.md), and governor's wait ticket, an issue that must stay open
+# (#471). A rename, a transfer, a changed setting or a closed wait ticket
+# then turns this run red instead of waiting for a deploy to fail, and
+# governor's redScheduledRun starts a session on the red run. A fix that
+# only the owner can make, such as a GitHub setting, goes from that session
+# to the owner as an issue.
 name: conformance
 
 on:
@@ -14,9 +15,11 @@ on:
     - cron: "17 6 * * *"
   workflow_dispatch:
 
-# Checkout needs contents: read, and the repository's record needs no
-# permission. The prod environment and its branch policies need
-# actions: read. The OIDC token for the conformance role needs
+# Checkout needs contents: read. The repository's record and the wait
+# ticket need no permission while the repository is public. If it goes
+# private, the wait ticket's read gets a 404 and turns the run red until
+# this grants issues: read. The prod environment and its branch policies
+# need actions: read. The OIDC token for the conformance role needs
 # id-token: write.
 permissions:
   contents: read
