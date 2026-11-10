@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
   MODELS,
+  ModelRefused,
   proposeReferences,
   type ModelId,
   type ModelResult,
@@ -29,9 +30,9 @@ import {
 } from "./score.ts";
 
 // The eval runner. It reads the snapshot from a directory laid out as the
-// bucket is, and calls nothing outside the repo: the workflow downloads the
-// snapshot and files the report in its own steps
-// (docs/constraints/evals.md). Run
+// bucket is, and calls nothing outside the repo but the model, through the
+// model module: the workflow downloads the snapshot and files the report in
+// its own steps (docs/constraints/evals.md). Run
 //
 //   node evals/run.ts <snapshot-dir> [<report.json>]
 //
@@ -226,6 +227,32 @@ const ciEnv = z.object({
   RUN_URL: z.string().min(1),
 });
 
+// Asks again, up to three tries in all, when OpenRouter is busy or fails
+// on its side, so one passing refusal among hundreds of calls does not stop
+// the eval. Any other refusal, such as a bad key or no credit left, fails
+// at once, and so does an outage that outlasts the tries.
+const TRIES = 3;
+const passing = (error: unknown): boolean =>
+  error instanceof ModelRefused &&
+  (error.status === 429 || error.status >= 500);
+
+export function retrying(
+  propose: Propose,
+  wait: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
+): Propose {
+  return async (model, text) => {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await propose(model, text);
+      } catch (error) {
+        if (attempt >= TRIES || !passing(error)) throw error;
+        await wait(5_000 * 2 ** (attempt - 1));
+      }
+    }
+  };
+}
+
 // Calls the model through the model module, with the key from the
 // environment. The key is read only when a paper is sent.
 const openRouter: Propose = (model, text) => {
@@ -244,7 +271,7 @@ async function main(dir: string, out: string | undefined): Promise<void> {
     texts,
     ...goldToScore(pinned, goldA.papers, goldB.papers),
     models: MODELS,
-    propose: openRouter,
+    propose: retrying(openRouter),
   });
   const meta = out === undefined ? undefined : ciEnv.parse(process.env);
   const report = makeReport({

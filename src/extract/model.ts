@@ -79,7 +79,8 @@ const SYSTEM = [
 ].join("\n");
 
 // The text may not close its own marker, so it cannot step outside it.
-const markerTag = new RegExp(`</?\\s*${MARKER}\\s*>`, "giu");
+// Any tag with the marker's name goes, whatever its spaces or attributes.
+const markerTag = new RegExp(`<\\s*/?\\s*${MARKER}\\b[^>]*>`, "giu");
 
 function request(model: ModelId, text: readonly string[]) {
   const data = text.map((paragraph) => paragraph.replace(markerTag, ""));
@@ -165,10 +166,26 @@ function readAnswer(body: unknown): Answer | undefined {
 // the rules keep it (#269). Nothing else about the text changes.
 const plainSpaces = (text: string) => text.replace(/\s/gu, " ");
 
-// Keeps a reference only if the text gives it as written, it is made of the
-// characters a reference is made of, and it holds a digit, as every
-// reference does, so a name cannot pass. The check
-// runs before the reference is normalised.
+// Whether the paragraph gives the reference whole: not cut out of a longer
+// run of letters and digits, as "A5678" is out of "A56789".
+const alnum = /[\p{L}\p{N}]/u;
+function givesWhole(paragraph: string, reference: string): boolean {
+  for (
+    let at = paragraph.indexOf(reference);
+    at !== -1;
+    at = paragraph.indexOf(reference, at + 1)
+  ) {
+    const before = paragraph[at - 1] ?? "";
+    const after = paragraph[at + reference.length] ?? "";
+    if (!alnum.test(before) && !alnum.test(after)) return true;
+  }
+  return false;
+}
+
+// Keeps a reference only if the text gives it whole as written, it is made
+// of the characters a reference is made of, and it holds a digit, as every
+// reference does, so a name cannot pass. Any space in it reads as a plain
+// one, as in the text. The check runs before the reference is normalised.
 function check(
   given: Answer["references"],
   text: readonly string[],
@@ -176,12 +193,14 @@ function check(
   const source = text.map(plainSpaces);
   const kept = new Map<string, ProposedReference>();
   let rejected = 0;
-  for (const { asWritten, confidence } of given) {
+  for (const reply of given) {
+    const asWritten = plainSpaces(reply.asWritten);
+    const { confidence } = reply;
     const written = referenceSchema.shape.asWritten.safeParse(asWritten);
     if (
       !written.success ||
       !/\d/u.test(asWritten) ||
-      !source.some((paragraph) => paragraph.includes(asWritten))
+      !source.some((paragraph) => givesWhole(paragraph, asWritten))
     ) {
       rejected += 1;
       continue;

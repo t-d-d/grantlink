@@ -44,7 +44,10 @@ describe("the eval workflow", () => {
   it("reads nothing from GitHub but the eval role's ARN and one model key", () => {
     const names = secretNames(readRepoFile(".github/workflows/eval.yml"));
     expect(names).toContain(ROLE);
-    expect(names.filter((name) => name !== ROLE)).toHaveLength(1);
+    const others = names.filter((name) => name !== ROLE);
+    expect(others).toHaveLength(1);
+    // The key is a secret, never a repository variable.
+    expect(others.every((name) => name.startsWith("secrets."))).toBe(true);
   });
 
   it("gives the model key to the eval's run alone, as an environment variable", () => {

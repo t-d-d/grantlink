@@ -3,8 +3,18 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { ModelId, ModelResult } from "../src/extract/model.ts";
-import { evaluate, goldToScore, loadSnapshot, type Propose } from "./run.ts";
+import {
+  ModelRefused,
+  type ModelId,
+  type ModelResult,
+} from "../src/extract/model.ts";
+import {
+  evaluate,
+  goldToScore,
+  loadSnapshot,
+  retrying,
+  type Propose,
+} from "./run.ts";
 
 // The runner against a snapshot written to a directory, laid out as the
 // bucket is.
@@ -206,5 +216,75 @@ describe("the rules, then each model", () => {
     for (const candidate of result.candidates) {
       expect(candidate.rows.every((r) => r.score === null)).toBe(true);
     }
+  });
+});
+
+describe("a refusal that passes", () => {
+  const read: ModelResult = {
+    status: "read",
+    references: [],
+    rejected: 0,
+    spend: 0,
+  };
+  const model = "anthropic/claude-haiku-5.5" as ModelId;
+  const failing = (...errors: Error[]) => {
+    let calls = 0;
+    const propose: Propose = () => {
+      calls += 1;
+      const error = errors.shift();
+      return error === undefined
+        ? Promise.resolve(read)
+        : Promise.reject(error);
+    };
+    return { propose, calls: () => calls };
+  };
+  const noWait = () => Promise.resolve();
+
+  it.each([429, 500, 502, 503])(
+    "asks again after a %i, and takes the answer",
+    async (status) => {
+      const { propose, calls } = failing(
+        new ModelRefused(status),
+        new ModelRefused(status),
+      );
+      await expect(retrying(propose, noWait)(model, ["t"])).resolves.toEqual(
+        read,
+      );
+      expect(calls()).toBe(3);
+    },
+  );
+
+  it("stops after three tries, so a long outage fails the eval", async () => {
+    const { propose, calls } = failing(
+      new ModelRefused(503),
+      new ModelRefused(503),
+      new ModelRefused(503),
+    );
+    await expect(retrying(propose, noWait)(model, ["t"])).rejects.toThrow(
+      ModelRefused,
+    );
+    expect(calls()).toBe(3);
+  });
+
+  it.each([400, 401, 402, 403])(
+    "fails at once on a %i, such as a bad key or no credit",
+    async (status) => {
+      const { propose, calls } = failing(new ModelRefused(status));
+      await expect(retrying(propose, noWait)(model, ["t"])).rejects.toThrow(
+        ModelRefused,
+      );
+      expect(calls()).toBe(1);
+    },
+  );
+
+  it("waits longer before each try", async () => {
+    const waits: number[] = [];
+    const { propose } = failing(new ModelRefused(429), new ModelRefused(429));
+    await retrying(propose, (ms) => {
+      waits.push(ms);
+      return Promise.resolve();
+    })(model, ["t"]);
+    expect(waits).toHaveLength(2);
+    expect(waits[1]).toBeGreaterThan(waits[0] ?? Infinity);
   });
 });
