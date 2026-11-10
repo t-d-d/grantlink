@@ -4,16 +4,6 @@ import { found, leaveOut } from "./found.ts";
 import { release } from "./release.ts";
 import { buildPage } from "./render.ts";
 
-// Builds the page again at deploy: from the data the last run published,
-// so a deploy that changes the template keeps the findings, and from the
-// release record, so the page shows the release it is.
-// scripts/publish-page.sh runs it on a copy of site/, which it rewrites in
-// place:
-//
-//   node src/page/build.ts <copy of site>/index.html <release.json> [<found.json>]
-//
-// Before the first run there is no found.json, and the page shows no
-// findings yet. A deploy always writes the release record first.
 // Papers Europe PMC marks as retracted that the old search returned, as of
 // 10 November 2026. The run's search now leaves such papers out, but the
 // deploy builds the page from the last run's found.json, which may still
@@ -31,6 +21,16 @@ export const retracted: ReadonlySet<string> = new Set([
   "PMC8762289",
 ]);
 
+// Builds the page again at deploy: from the data the last run published,
+// so a deploy that changes the template keeps the findings, and from the
+// release record, so the page shows the release it is.
+// scripts/publish-page.sh runs it on a copy of site/, which it rewrites in
+// place:
+//
+//   node src/page/build.ts <copy of site>/index.html <release.json> [<found.json>]
+//
+// Before the first run there is no found.json, and the page shows no
+// findings yet. A deploy always writes the release record first.
 export function rebuild(
   template: string,
   data: string | null,

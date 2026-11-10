@@ -122,7 +122,9 @@ function formatCounts(
 }
 
 // The same findings without the papers named, read or not, as if the
-// search had not returned them (#587).
+// search had not returned them (#587). found.json lists only papers with a
+// reference and papers not yet read, so a named paper read with no
+// reference cannot be found here and stays in the counts.
 export function leaveOut(data: Found, pmcids: ReadonlySet<string>): Found {
   const papers = data.papers.filter((paper) => !pmcids.has(paper.pmcid));
   const pending = data.pending.filter((paper) => !pmcids.has(paper.pmcid));
