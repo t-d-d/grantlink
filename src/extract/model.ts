@@ -44,6 +44,7 @@ export const PROMPT_VERSIONS: readonly Version[] = [
   { number: 11, issue: 560 },
   { number: 12, issue: 599 },
   { number: 13, issue: 598 },
+  { number: 14, issue: 710 },
 ];
 export const PROMPT_VERSION = latest("prompt", PROMPT_VERSIONS);
 
@@ -168,17 +169,23 @@ const answer = z
 
 type Answer = z.infer<typeof answer>;
 
-// A reply may come wrapped in a code fence.
-const FENCE = /^```(?:json)?\s*([\s\S]*?)\s*```$/u;
+// Where the answer's object starts in a reply. A reply may be bare JSON, or
+// wrap it in a code fence, or put prose before or after it (#710).
+// Only the spaces JSON allows count, so the start and the parser agree.
+const START = /\{[ \t\n\r]*"references"[ \t\n\r]*:/u;
 
+// Reads the answer from the text from its object's start to the last "}".
+// The prose around it is dropped here, and kept, logged or returned nowhere
+// (docs/constraints/personal-data.md). The schema and the check still hold.
 function readAnswer(body: unknown): Answer | undefined {
   const parsed = envelope.safeParse(body);
   if (!parsed.success) return undefined;
-  const content = parsed.data.choices[0]?.message.content.trim() ?? "";
-  const unwrapped = FENCE.exec(content)?.[1] ?? content;
+  const content = parsed.data.choices[0]?.message.content ?? "";
+  const start = START.exec(content)?.index;
+  if (start === undefined) return undefined;
   let json: unknown;
   try {
-    json = JSON.parse(unwrapped);
+    json = JSON.parse(content.slice(start, content.lastIndexOf("}") + 1));
   } catch {
     return undefined;
   }
