@@ -115,11 +115,23 @@ export interface Table {
   recordSearch(runId: string): Promise<void>;
   // The run whose search is the latest complete one, or null before any.
   latestSearch(): Promise<string | null>;
-  processed(pmcids: string[]): Promise<Set<string>>;
+  // The rules version that read each processed paper, null for one whose
+  // row records none, or an empty string for one this version cannot read
+  // (#686).
+  rulesRead(pmcids: string[]): Promise<Map<string, string | null>>;
   // Why each paper not yet processed last failed, for those that hold a
   // reason this version reads.
   lastFailures(pmcids: string[]): Promise<Map<string, LastFailure>>;
   markProcessed(pmcid: string, result: Result): Promise<void>;
+  // Writes the result of re-running the rules on a processed paper, only
+  // while the rules version that read it is still `from` (null for none) or
+  // already the result's own. Returns false, and writes nothing, when
+  // another version has read it since. Safe to run twice (#686).
+  replaceReferences(
+    pmcid: string,
+    from: string | null,
+    result: Result,
+  ): Promise<boolean>;
   // Counts a failure, and keeps why, or no reason when none is known.
   markFailed(pmcid: string, why?: LastFailure): Promise<void>;
   all(): Promise<PaperRow[]>;
@@ -318,13 +330,28 @@ export function dynamoTable(
       return reply.Item?.runId ?? null;
     },
 
-    async processed(pmcids) {
-      const done = new Set<string>();
-      for (const item of await getMany(pmcids)) {
-        const row = z.object({ pmcid: PMCID, status: z.string() }).parse(item);
-        if (row.status === "processed") done.add(row.pmcid);
+    async rulesRead(pmcids) {
+      const read = new Map<string, string | null>();
+      for (const item of await getMany(pmcids, ["versions"])) {
+        const row = z
+          .object({
+            pmcid: PMCID,
+            status: z.string(),
+            // A row a later version wrote may hold more, or a shape this
+            // version does not know. That reads as an empty version, which
+            // olderRules counts as not older, so the row stays as it is.
+            // Only a row with no versions at all reads as none.
+            versions: z
+              .object({ rules: versions.shape.rules })
+              .optional()
+              .catch({ rules: "" }),
+          })
+          .parse(item);
+        if (row.status === "processed") {
+          read.set(row.pmcid, row.versions?.rules ?? null);
+        }
       }
-      return done;
+      return read;
     },
 
     async lastFailures(pmcids) {
@@ -366,6 +393,46 @@ export function dynamoTable(
           },
         }),
       );
+    },
+
+    async replaceReferences(pmcid, from, given) {
+      const checked = result.parse(given);
+      const was =
+        from === null
+          ? "attribute_not_exists(versions.rules)"
+          : "versions.rules = :from";
+      try {
+        await send(
+          new UpdateCommand({
+            TableName: name,
+            Key: { pmcid: PMCID.parse(pmcid) },
+            ConditionExpression: `#status = :processed AND (${was} OR versions.rules = :to)`,
+            UpdateExpression:
+              "SET #references = :references, versions = :versions, processedAt = :processedAt, runId = :runId",
+            ExpressionAttributeNames: {
+              "#status": "status",
+              "#references": "references",
+            },
+            ExpressionAttributeValues: {
+              ":processed": "processed",
+              ...(from === null
+                ? {}
+                : { ":from": versions.shape.rules.parse(from) }),
+              ":to": checked.versions.rules,
+              ":references": checked.references,
+              ":versions": checked.versions,
+              ":processedAt": checked.processedAt,
+              ":runId": checked.runId,
+            },
+          }),
+        );
+        return true;
+      } catch (error) {
+        // Another rules version has read the paper since, and its result
+        // stays.
+        if (!(error instanceof ConditionalCheckFailedException)) throw error;
+        return false;
+      }
     },
 
     async markFailed(pmcid, why) {

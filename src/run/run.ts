@@ -5,16 +5,19 @@ import {
 import {
   checkWholeSearch,
   logSearchEnded,
+  logRerunFailed,
   logSnapshotFailed,
   snapshotFailure,
   markFailed,
   publish,
   readPaper,
   recordPage,
+  rereadPaper,
   recordSearch,
   searchPage,
   type Deps,
   type Published,
+  type ToRerun,
 } from "../pipeline/steps.ts";
 import { batches } from "../shared/batches.ts";
 import { logOnly } from "./log-only.ts";
@@ -52,6 +55,9 @@ export interface RunSummary {
   skipped: number;
   read: number;
   failed: number;
+  // Papers an older rules version read whose references the current rules
+  // replaced, from the text in cache/ (#686).
+  reread: number;
   published: Published;
   snapshot: SnapshotSummary;
 }
@@ -129,6 +135,36 @@ async function readBatch(
   return { read, failed, owed: due };
 }
 
+// Re-runs the current rules on a batch of papers an older rules version
+// read, from their text in cache/, with no request to Europe PMC (#686).
+// A paper whose step fails after its retries keeps its row for the next
+// run, and the batch carries on. Returns how many it re-read.
+async function rerunBatch(
+  ctx: DurableContext,
+  deps: Deps,
+  papers: ToRerun[],
+  runId: string,
+): Promise<number> {
+  let reread = 0;
+  for (const paper of papers) {
+    try {
+      const done = await ctx.step(
+        `rerun-${paper.pmcid}`,
+        async () => rereadPaper(deps, paper, runId),
+        { retryStrategy: storeRetry },
+      );
+      if ("reread" in done) reread += 1;
+    } catch (error) {
+      // An error the SDK raises for itself is thrown as it is.
+      if (!(error instanceof DurableOperationError)) throw error;
+      await logOnly(ctx, `rerun-failed-${paper.pmcid}`, () => {
+        logRerunFailed(paper.pmcid);
+      });
+    }
+  }
+  return reread;
+}
+
 export function makeRun(deps: Deps) {
   return async (_event: unknown, ctx: DurableContext): Promise<RunSummary> => {
     const { runId } = await ctx.step(
@@ -143,6 +179,7 @@ export function makeRun(deps: Deps) {
     let skipped = 0;
     let read = 0;
     let failed = 0;
+    let reread = 0;
     let owed: Owed = null;
     // How the search stopped early, if it did: a refused page leaves the
     // wait Europe PMC asked for, and a page that failed after its retries
@@ -177,13 +214,23 @@ export function makeRun(deps: Deps) {
       const result = searched.read;
       // The table's own step, so a failure to write or read it is retried
       // under the store's strategy and never asks Europe PMC again.
-      const { todo, once } = await ctx.step(
+      const { todo, once, rerun } = await ctx.step(
         `record-${String(page)}`,
         async () => recordPage(deps, result.papers, runId),
         { retryStrategy: storeRetry },
       );
       found += result.papers.length;
       skipped += result.skipped;
+      // No paper here asks Europe PMC, so none waits on a wait still owed.
+      // The list comes from the record step's result
+      // (docs/constraints/durable-execution.md).
+      for (const [index, batch] of batches(rerun, BATCH).entries()) {
+        const name = `rerun-${String(page)}-${String(index)}`;
+        reread += await ctx.runInChildContext(name, async (child) =>
+          rerunBatch(child, deps, batch, runId),
+        );
+        await ctx.wait(`rest-${name}`, { seconds: 1 });
+      }
       for (const [index, batch] of batches(todo, BATCH).entries()) {
         const name = `papers-${String(page)}-${String(index)}`;
         const outcome = await ctx.runInChildContext(name, async (child) =>
@@ -286,6 +333,15 @@ export function makeRun(deps: Deps) {
     // A wait still owed is waited out before the run ends, so a run started
     // after this one never asks Europe PMC before it has passed.
     if (last !== null) await ctx.wait(last.name, { seconds: last.seconds });
-    return { runId, found, skipped, read, failed, published, snapshot };
+    return {
+      runId,
+      found,
+      skipped,
+      read,
+      failed,
+      reread,
+      published,
+      snapshot,
+    };
   };
 }

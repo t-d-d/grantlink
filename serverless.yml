@@ -20,9 +20,9 @@ provider:
     # the account the deploy runs in and is not copied into GitHub (#43).
     deploymentRole: arn:aws:iam::${aws:accountId}:role/grantlink-deploy-execution
     # What the run may do, and nothing more: read and write the results
-    # table, write funding text under cache/, take the eval snapshot under
-    # eval/ once, read the live release record, and publish the page. It
-    # never reaches the eval reports, which only CI writes (#9).
+    # table, read and write funding text under cache/, take the eval
+    # snapshot under eval/ once, read the live release record, and publish
+    # the page. It never reaches the eval reports, which only CI writes (#9).
     role:
       # The roles stack's boundary, which the execution role requires on
       # every role it creates (#33).
@@ -37,8 +37,13 @@ provider:
             - dynamodb:UpdateItem
           Resource:
             Fn::GetAtt: [ResultsTable, Arn]
+        # A run reads a paper's funding text back to re-run newer rules on
+        # it (#686). It may not list cache/, so a missing paper may read as
+        # refused, and that paper waits for the next run.
         - Effect: Allow
-          Action: s3:PutObject
+          Action:
+            - s3:GetObject
+            - s3:PutObject
           Resource:
             Fn::Sub: arn:${AWS::Partition}:s3:::grantlink-text-${AWS::AccountId}/cache/*
         # The bucket's policy refuses a write under eval/ that could

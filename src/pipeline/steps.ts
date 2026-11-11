@@ -176,11 +176,39 @@ export function checkWholeSearch(found: number, skipped: number): void {
   }
 }
 
-// The papers a page leaves to read, and those of them whose full text
-// answered 500 when they last failed, which the run asks for once (#504).
+// The number of a rules version, `rules-<number>`, or null for a version
+// this code cannot read the number of.
+function rulesNumber(version: string): number | null {
+  const match = /^rules-(\d+)$/u.exec(version);
+  return match?.[1] === undefined ? null : Number(match[1]);
+}
+
+// Whether the rules version that read a paper, or null for none recorded,
+// is older than `current`. Versions compare by number, not as strings, and
+// a version whose number cannot be read counts as not older, so the row
+// stays as it is (#686).
+export function olderRules(read: string | null, current: string): boolean {
+  if (read === null) return true;
+  const was = rulesNumber(read);
+  const now = rulesNumber(current);
+  return was !== null && now !== null && was < now;
+}
+
+// A paper an older rules version read, and that version, or null for none
+// recorded.
+export interface ToRerun {
+  pmcid: string;
+  from: string | null;
+}
+
+// The papers a page leaves to read, those of them whose full text answered
+// 500 when they last failed, which the run asks for once (#504), and the
+// papers an older rules version read, which the run re-runs the rules on
+// from cache/ (#686).
 export interface ToRead {
   todo: string[];
   once: string[];
+  rerun: ToRerun[];
 }
 
 // Records each paper a page of the run's search found, and that this run's
@@ -194,16 +222,20 @@ export async function recordPage(
 ): Promise<ToRead> {
   await deps.table.addFound(papers, deps.now(), runId);
   const ids = papers.map((paper) => paper.pmcid);
-  const done = await deps.table.processed(ids);
+  const done = await deps.table.rulesRead(ids);
   const todo = ids.filter((pmcid) => !done.has(pmcid));
   const failed = await deps.table.lastFailures(todo);
   const once = todo.filter((pmcid) => failed.get(pmcid) === 500);
+  const rerun = [...done]
+    .filter(([, from]) => olderRules(from, RULES_VERSION))
+    .map(([pmcid, from]) => ({ pmcid, from }));
   logger.info("page-recorded", {
     found: ids.length,
     todo: todo.length,
     once: once.length,
+    rerun: rerun.length,
   });
-  return { todo, once };
+  return { todo, once, rerun };
 }
 
 // Reads one paper: fetches its full text, keeps its funding sections in the
@@ -229,6 +261,51 @@ export async function readPaper(
   });
   logger.info("paper-read", { pmcid, references: references.length });
   return { references: references.length };
+}
+
+// What re-running the rules on a paper did: replaced its references,
+// found no text for it in cache/, or found another rules version had read it
+// since, whose result stays.
+export type Reread =
+  { reread: { references: number } } | { noText: true } | { left: true };
+
+// Re-runs the current rules on a paper an older rules version read, from its
+// funding sections in cache/, and asks Europe PMC nothing (#686,
+// docs/constraints/europe-pmc.md). A paper with no text there stays as it
+// is. Safe to run twice.
+export async function rereadPaper(
+  deps: Deps,
+  { pmcid, from }: ToRerun,
+  runId: string,
+): Promise<Reread> {
+  const sections = await deps.text.getFundingText(pmcid);
+  if (sections === null) {
+    logger.warn("paper-reread-no-text", { pmcid });
+    return { noText: true };
+  }
+  const references = findReferences(sections);
+  const written = await deps.table.replaceReferences(pmcid, from, {
+    references,
+    versions: { rules: RULES_VERSION, code: deps.codeVersion },
+    processedAt: deps.now(),
+    runId,
+  });
+  if (!written) {
+    logger.info("paper-reread-left", { pmcid });
+    return { left: true };
+  }
+  logger.info("paper-reread", {
+    pmcid,
+    from: from ?? "none",
+    references: references.length,
+  });
+  return { reread: { references: references.length } };
+}
+
+// Logs a paper whose re-run failed after its retries. Its row stays as it
+// was, for the next run (#686).
+export function logRerunFailed(pmcid: string): void {
+  logger.warn("paper-reread-failed", { pmcid });
 }
 
 // Records the run's search as the latest complete one, once it has ended,
