@@ -146,6 +146,105 @@ describe("gold set A2 in the pull request's comment", () => {
   });
 });
 
+// Gold set B2's precision and recall, the rules alone and one model.
+const both = (precision: number | null, recall: number | null, n = 100) => ({
+  precision: { score: precision, n },
+  recall: { score: recall, n },
+});
+const goldB2 = (precision: number, recall: number) => ({
+  rules: both(precision, recall),
+  models: [
+    {
+      modelId: "anthropic/claude-haiku-5.5",
+      alone: both(0.8, 0.7, 99),
+      rulesThen: both(0.9, 0.95),
+      unprocessed: 1,
+      read: 99,
+    },
+  ],
+});
+
+describe("fitness: a gold set B2 row below any floor fails no gate (evals.md)", () => {
+  it("passes a report whatever gold set B2 scores", () => {
+    const result = gate(
+      JSON.stringify({
+        ...report({
+          "precision-b": 0.97,
+          "recall-b": 0.9,
+          "recall-a": 0.96,
+          spend: 0,
+        }),
+        goldB2: goldB2(0, 0),
+      }),
+      "a".repeat(64),
+    );
+    expect(result.pass).toBe(true);
+    expect(result.lines.join("\n")).not.toContain("no-go");
+  });
+});
+
+describe("gold set B2 in the pull request's comment", () => {
+  const withB2 = (b2: Report["goldB2"]): Report => ({
+    ...report({ "precision-b": 0.97, "recall-b": 0.92, spend: 0 }),
+    candidates: [
+      {
+        modelId: "anthropic/claude-haiku-5.5",
+        rows: rows({ "precision-b": 0.96, "recall-b": 0.94, spend: 0.4 }),
+        alone: rows({ "precision-b": 0.9, "recall-b": 0.91, spend: 0.4 }),
+        unprocessed: [],
+        read: { goldA: 300, goldB: 100 },
+      },
+    ],
+    goldB2: b2,
+  });
+
+  it("shows gold set B2's precision and recall beside gold set B's, and says how its labels were made and that nobody tuned on it", () => {
+    const text = comment(withB2(goldB2(0.93, 0.85)), "no-deploy");
+    expect(text).toContain(
+      "#### Precision and recall on gold set B and held-out gold set B2",
+    );
+    expect(text).toContain(
+      "| On | Measure | Rules alone | anthropic/claude-haiku-5.5 alone | Rules then anthropic/claude-haiku-5.5 |",
+    );
+    expect(text).toContain(
+      "| Gold set B | Precision | 97.0% | 90.0% | 96.0% |",
+    );
+    expect(text).toContain("| Gold set B | Recall | 92.0% | 91.0% | 94.0% |");
+    expect(text).toContain(
+      "| Gold set B2, held out | Precision | 93.0% | 80.0% | 90.0% |",
+    );
+    expect(text).toContain(
+      "| Gold set B2, held out | Recall | 85.0% | 70.0% | 95.0% |",
+    );
+    expect(text).toContain(
+      "A Claude model proposed gold set B2's labels and the owner checked them.",
+    );
+    expect(text).toContain(
+      "Nobody tuned the rules or the prompt on gold set B2.",
+    );
+    expect(text).toContain("Gold set B2 gates nothing.");
+    expect(text).toContain(
+      "anthropic/claude-haiku-5.5 left 1 gold set B2 paper unread. It is out of its scores alone, and scores what the rules found after the rules.",
+    );
+    expect(text).toContain("99 of 100 in gold set B2");
+  });
+
+  it("says gold set B2 waits for its snapshot while it has no score", () => {
+    const text = comment(
+      withB2({ rules: both(null, null, 0), models: [] }),
+      "no-deploy",
+    );
+    expect(text).toContain(
+      "| Gold set B2, held out | Precision | awaiting snapshot |",
+    );
+  });
+
+  it("shows no gold set B2 table for a report filed before it joined", () => {
+    const text = comment(report({ spend: 0 }), "no-deploy");
+    expect(text).not.toContain("gold set B2");
+  });
+});
+
 describe("the pull request's comment", () => {
   it("shows CI's scores beside the live release's, with the runs behind each", () => {
     const text = comment(report({ "recall-a": 0.96, spend: 0 }), {

@@ -107,6 +107,18 @@ describe("the gold sets and the pin", () => {
     });
   });
 
+  it("reads gold set B2's papers in a manifest, with no grant ids", () => {
+    const taken = {
+      id: "s5",
+      createdAt: "2026-11-12T12:00:00.000Z",
+      goldA: { query: goldA.query, seed: goldA.seed, size: goldA.size },
+      papers: [
+        { pmcid: "PMC1", set: "B2", sha256: "a".repeat(64), grants: [] },
+      ],
+    };
+    expect(manifest.parse(taken)).toEqual(taken);
+  });
+
   // A snapshot taken before #128 joins an award group's sources with "; ".
   it("reads a paper file that joins an award group's sources in one string", () => {
     expect(

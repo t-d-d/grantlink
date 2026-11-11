@@ -365,3 +365,74 @@ describe("fitness: no paper in gold set A2 is in gold set A (evals.md)", () => {
     expect(asked.every(isGoldSearch)).toBe(true);
   });
 });
+
+describe("fitness: a snapshot keeps every gold set B2 paper, even with empty sections (evals.md)", () => {
+  // Gold set B2 takes the first labelled paper, whose full text the snapshot
+  // finds empty, and gold set B the other two.
+  const heldOutDeps = () =>
+    fakeDeps({
+      gold: {
+        goldB: goldB(LABELLED.slice(1)),
+        goldB2: goldB([LABELLED[0] ?? ""], {
+          [LABELLED[0] ?? ""]: ["A56789"],
+        }),
+      },
+    });
+  const manifestOf = (fake: ReturnType<typeof fakeDeps>) =>
+    JSON.parse(String(fake.text.get(manifestKey(fake)))) as {
+      papers: { pmcid: string; set: string; grants: string[] }[];
+    };
+
+  it("keeps a gold set B2 paper with no funding text or awards, as set B2", async () => {
+    const { fake, asked } = failingFirstLabelled(
+      () => Promise.resolve("<article></article>"),
+      heldOutDeps(),
+    );
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toMatchObject({
+      taken: true,
+      papers: 2 + LABELLED.length,
+    });
+    expect(asked.sort()).toEqual([...LABELLED].sort());
+    const papers = manifestOf(fake).papers;
+    expect(papers).toContainEqual(
+      expect.objectContaining({ pmcid: LABELLED[0], set: "B2", grants: [] }),
+    );
+    expect(
+      papers.filter((paper) => paper.set === "B").map((p) => p.pmcid),
+    ).toEqual(LABELLED.slice(1));
+    expect(
+      JSON.parse(
+        String(
+          fake.text.get(
+            snapshotKeys.paper(fake.deps.gold.snapshotId, LABELLED[0] ?? ""),
+          ),
+        ),
+      ),
+    ).toEqual({ pmcid: LABELLED[0], text: [], awards: [] });
+    // Gold set B's line counts gold set B's papers alone, and gold set
+    // B2's has its own.
+    expect(logged("snapshot-b-empty")).toEqual([
+      expect.objectContaining({ count: 0, pmcids: "" }),
+      expect.objectContaining({ set: "B2", count: 1, pmcids: LABELLED[0] }),
+    ]);
+  });
+
+  it("leaves the snapshot for the next run when a gold set B2 paper cannot be read", async () => {
+    const { fake } = failingFirstLabelled(
+      () => Promise.reject(new EuropePmcError("Europe PMC answered 404", 404)),
+      heldOutDeps(),
+    );
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toEqual({
+      taken: false,
+      reason: "a gold set B2 paper could not be read",
+    });
+    expect(fake.text.has(manifestKey(fake))).toBe(false);
+    expect(logged("snapshot-failed")).toContainEqual(
+      expect.objectContaining({ pmcid: LABELLED[0], set: "B2" }),
+    );
+  });
+});

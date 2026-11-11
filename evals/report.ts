@@ -75,6 +75,38 @@ export const goldA2Scores = z
 
 export type GoldA2Scores = z.infer<typeof goldA2Scores>;
 
+// A held-out set's precision and recall, as gold set B's rows give them.
+const heldOutBoth = z
+  .object({ precision: heldOutRow, recall: heldOutRow })
+  .strict();
+
+// Gold set B2's precision and recall for the rules alone, and for each
+// model alone and after the rules. It gates nothing and lists no misses
+// (#695). A report filed before gold set B2 joined the eval has none, and
+// still reads.
+export const goldB2Scores = z
+  .object({
+    rules: heldOutBoth,
+    models: z.array(
+      z
+        .object({
+          modelId: z.string().min(1).max(100),
+          alone: heldOutBoth,
+          rulesThen: heldOutBoth,
+          // How many papers' replies could not be read, not named.
+          unprocessed: z.number().int().nonnegative(),
+          // How many papers the model alone read. Its scores alone are over
+          // these, and after the rules an unread paper scores the rules'
+          // references (#696).
+          read: z.number().int().nonnegative(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export type GoldB2Scores = z.infer<typeof goldB2Scores>;
+
 export const report = z
   .object({
     fingerprint: HEX(64),
@@ -124,6 +156,7 @@ export const report = z
       .optional(),
     missedA: z.array(PMCID),
     goldA2: goldA2Scores.optional(),
+    goldB2: goldB2Scores.optional(),
   })
   .strict();
 
@@ -176,6 +209,9 @@ export function readAlone(given: Report): string[] {
     const a2 = given.goldA2?.models.find(
       (model) => model.modelId === candidate.modelId,
     );
+    const b2 = given.goldB2?.models.find(
+      (model) => model.modelId === candidate.modelId,
+    );
     const sets = [
       ...(candidate.read === undefined
         ? []
@@ -194,6 +230,15 @@ export function readAlone(given: Report): string[] {
       ...(a2?.read === undefined || given.goldA2 === undefined
         ? []
         : [{ on: "gold set A2", read: a2.read, of: given.goldA2.rules.n }]),
+      ...(b2 === undefined || given.goldB2 === undefined
+        ? []
+        : [
+            {
+              on: "gold set B2",
+              read: b2.read,
+              of: given.goldB2.rules.recall.n,
+            },
+          ]),
     ].filter((set) => set.of > 0);
     if (sets.length === 0) return [];
     const counts = sets.map(

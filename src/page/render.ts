@@ -3,6 +3,7 @@ import {
   readAlone,
   RULES_ALONE,
   verdict,
+  type GoldB2Scores,
   type Report,
 } from "../../evals/report.ts";
 import type { Found } from "./found.ts";
@@ -284,6 +285,46 @@ function heldOutA2(report: Report): string {
         </div>`;
 }
 
+// Gold set B2's precision and recall beside gold set B's, for the rules
+// alone, each model alone and the rules then each model (#695). It gates
+// nothing. A report filed before gold set B2 joined, or before it has a
+// score, shows nothing.
+function heldOutB2(report: Report): string {
+  const b2 = report.goldB2;
+  if (
+    b2 === undefined ||
+    (b2.rules.precision.score === null && b2.rules.recall.score === null)
+  ) {
+    return "";
+  }
+  const count = (id: RowId, score: number | null) =>
+    `<td class="count">${escape(shownScore(id, score))}</td>`;
+  const line = (
+    name: string,
+    rows: Report["rows"] | undefined,
+    held: GoldB2Scores["rules"],
+  ) =>
+    `<tr><th scope="row">${name}</th>${count("precision-b", rows === undefined ? null : scoreOf(rows, "precision-b"))}${count("precision-b", held.precision.score)}${count("recall-b", rows === undefined ? null : scoreOf(rows, "recall-b"))}${count("recall-b", held.recall.score)}</tr>`;
+  const models = b2.models.flatMap((model) => {
+    const candidate = (report.candidates ?? []).find(
+      (c) => c.modelId === model.modelId,
+    );
+    const name = `<code class="ref">${escape(model.modelId)}</code>`;
+    return [
+      line(`${name} alone`, candidate?.alone, model.alone),
+      line(`Rules then ${name}`, candidate?.rows, model.rulesThen),
+    ];
+  });
+  return `
+        <p class="note">Gold set B2 is ${escape(String(b2.rules.recall.n))} more papers drawn at random from the live search, less gold set B's papers. A Claude model proposed gold set B2's labels and the owner checked them, as for gold set B. Nobody tuned the rules or the prompt on gold set B2, so its scores show how they read papers they were not tuned on. Gold set B2 gates nothing. <a href="https://github.com/t-d-d/grantlink/issues/695">The decision record</a> says why.</p>
+        <div class="table-scroll">
+          <table class="held-out-b2">
+            <tr><th scope="col">Read by</th><th scope="col">Precision on gold set B</th><th scope="col">Precision on gold set B2, held out</th><th scope="col">Recall on gold set B</th><th scope="col">Recall on gold set B2, held out</th></tr>
+            ${[line("Rules alone", report.baseline, b2.rules), ...models].join("\n            ")}
+          </table>
+        </div>`;
+}
+
 // How it's run: the go/no-go table for the live release beside the rules
 // alone, the runs that deployed and scored it, and the snapshot it was
 // scored on (docs/constraints/deploy-gates.md).
@@ -339,7 +380,7 @@ export function renderRun(release: Release): string {
             <tr><th scope="col">Measure</th><th scope="col">On</th><th scope="col">Go if</th><th scope="col">Gates a release</th><th scope="col">This release</th><th scope="col">Rules alone</th><th scope="col">Result</th></tr>
             ${rows.join("\n            ")}
           </table>
-        </div>${alone ? rulesAloneNote(report) : ""}${heldOutA2(report)}
+        </div>${alone ? rulesAloneNote(report) : ""}${heldOutA2(report)}${heldOutB2(report)}
         <p class="note">${snapshot}</p>${goldB}
       </section>`;
 }

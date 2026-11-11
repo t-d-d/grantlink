@@ -135,22 +135,27 @@ describe("which gold papers are scored", () => {
   const a = [{ pmcid: "PMC1", grants: ["A11111"] }];
   const b = [{ pmcid: "PMC2", references: [] }];
   const a2 = [{ pmcid: "PMC3", grants: ["A22222"] }];
+  const b2 = [{ pmcid: "PMC4", references: [] }];
 
   it("scores every gold set against a pinned snapshot", () => {
-    expect(goldToScore({ manifestSha256: "a".repeat(64) }, a, b, a2)).toEqual({
+    expect(
+      goldToScore({ manifestSha256: "a".repeat(64) }, a, b, a2, b2),
+    ).toEqual({
       goldA: a,
       goldB: b,
       goldA2: a2,
+      goldB2: b2,
     });
   });
 
   it("scores nothing while a new snapshot waits to be taken and pinned", () => {
     // A labels pull request names a new snapshot with no pin yet. Its rows
     // wait rather than block, so it can merge, deploy and be taken.
-    expect(goldToScore({ manifestSha256: null }, a, b, a2)).toEqual({
+    expect(goldToScore({ manifestSha256: null }, a, b, a2, b2)).toEqual({
       goldA: [],
       goldB: [],
       goldA2: [],
+      goldB2: [],
     });
   });
 });
@@ -510,6 +515,131 @@ describe("fitness: a report gives gold set A2's recall and no ids of what it mis
           modelId: model,
           alone: { score: null, n: 0 },
           rulesThen: { score: null, n: 0 },
+          unprocessed: 0,
+          read: 0,
+        },
+      ],
+    });
+  });
+});
+
+describe("fitness: a report gives gold set B2's scores and no ids of what it missed (evals.md)", () => {
+  const texts = new Map([
+    ["PMC1", { text: papers.PMC1, awards: [] }],
+    [
+      "PMC6",
+      { text: ["Funded by Cancer Research UK grant A66666."], awards: [] },
+    ],
+    ["PMC7", { text: ["Funded by Cancer Research UK, ref 7 7."], awards: [] }],
+    ["PMC8", { text: ["Funded by Cancer Research UK."], awards: [] }],
+  ]);
+  const model = "anthropic/claude-haiku-5.5" as ModelId;
+  // The model finds PMC7's reference, which the rules cannot, proposes a
+  // wrong one for PMC8, and spends a dollar on each paper.
+  const sent: string[] = [];
+  const propose: Propose = (_model, text) => {
+    const pmcid = [...texts].find(([, s]) => s.text === text)?.[0] ?? "";
+    sent.push(pmcid);
+    const found: Record<string, string> = { PMC7: "77", PMC8: "A88888" };
+    const ref = found[pmcid];
+    return Promise.resolve({
+      status: "read",
+      references:
+        ref === undefined
+          ? []
+          : [{ asWritten: ref, normalised: ref, confidence: 0.9 }],
+      rejected: 0,
+      spend: 1,
+    });
+  };
+  const goldB2 = [
+    { pmcid: "PMC6", references: ["A66666"] },
+    { pmcid: "PMC7", references: ["77"] },
+    { pmcid: "PMC8", references: [] },
+  ];
+
+  it("scores gold set B2's precision and recall for the rules alone, each model alone, and the rules then each model", async () => {
+    sent.length = 0;
+    const result = await evaluate({
+      texts,
+      goldA: [{ pmcid: "PMC1", grants: ["A11111"] }],
+      goldB: [],
+      goldB2,
+      models: [model],
+      propose,
+    });
+    expect(result.goldB2).toEqual({
+      rules: {
+        precision: { score: 1, n: 3 },
+        recall: { score: 0.5, n: 3 },
+      },
+      models: [
+        {
+          modelId: model,
+          alone: {
+            precision: { score: 0.5, n: 3 },
+            recall: { score: 0.5, n: 3 },
+          },
+          rulesThen: {
+            precision: { score: 2 / 3, n: 3 },
+            recall: { score: 1, n: 3 },
+          },
+          unprocessed: 0,
+          read: 3,
+        },
+      ],
+    });
+    // Each paper goes to the model once.
+    expect(sent.sort()).toEqual(["PMC1", "PMC6", "PMC7", "PMC8"]);
+  });
+
+  it("leaves gold set B2's misses out of the report, and its papers out of the gating rows", async () => {
+    const unreadable: Propose = (_model, text) =>
+      text === texts.get("PMC7")?.text
+        ? Promise.resolve({ status: "unprocessed", spend: 1 })
+        : propose(model, text);
+    const result = await evaluate({
+      texts,
+      goldA: [{ pmcid: "PMC1", grants: ["A11111"] }],
+      goldB: [],
+      goldB2,
+      models: [model],
+      propose: unreadable,
+    });
+    const text = JSON.stringify(result);
+    for (const pmcid of ["PMC6", "PMC7", "PMC8"]) {
+      expect(text).not.toContain(pmcid);
+    }
+    expect(result.goldB2.models[0]).toMatchObject({ unprocessed: 1, read: 2 });
+    // Gold set B's rows and the spend row are over gold sets A and B alone.
+    const rows = result.candidates[0]?.rows ?? [];
+    expect(rows.find((row) => row.id === "recall-b")).toMatchObject({
+      score: null,
+      n: 0,
+    });
+    expect(rows.find((row) => row.id === "spend")?.score).toBeCloseTo(1000);
+  });
+
+  it("scores nothing on gold set B2 while it has no papers", async () => {
+    const result = await evaluate({
+      texts,
+      goldA: [],
+      goldB: [],
+      goldB2: [],
+      models: [model],
+      propose,
+    });
+    const none = {
+      precision: { score: null, n: 0 },
+      recall: { score: null, n: 0 },
+    };
+    expect(result.goldB2).toEqual({
+      rules: none,
+      models: [
+        {
+          modelId: model,
+          alone: none,
+          rulesThen: none,
           unprocessed: 0,
           read: 0,
         },

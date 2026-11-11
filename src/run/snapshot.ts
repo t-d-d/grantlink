@@ -34,7 +34,7 @@ import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 // (docs/constraints/evals.md). A run calls this after it publishes, so the
 // page never waits on it. Gold sets A and A2 come from the papers the gold
 // lists, or before there are any, from a sample drawn with the set's query
-// and seed. Gold set B's papers come from its labels.
+// and seed. Gold set B's and B2's papers come from their labels.
 
 export type SnapshotSummary =
   | { taken: true; papers: number; manifestSha256: string }
@@ -54,17 +54,18 @@ function failedAs(reason: KnownSnapshotFailure, error: unknown): never {
 const BATCH = 50;
 
 // Takes a batch of gold papers, first waiting out any wait an earlier
-// refusal left `owed`, as a run's batch does. A gold set B batch stops at
+// refusal left `owed`, as a run's batch does. A gold set B or B2 batch
+// stops at
 // its first paper that fails, since the snapshot is lost then and asking
 // Europe PMC about the rest would be wasted, and names that paper in
-// `stopped`. A gold set B paper is always kept once read (#399), so one
+// `stopped`. A labelled paper is always kept once read (#399), so one
 // that is not kept is a fault, and stops the batch the same way. `empty`
 // names each paper kept with no funding text or awards.
 async function takeBatch(
   ctx: DurableContext,
   deps: Deps,
   pmcids: string[],
-  set: "A" | "A2" | "B",
+  set: "A" | "A2" | "B" | "B2",
   owed: Owed,
 ): Promise<{
   entries: Entry[];
@@ -78,6 +79,7 @@ async function takeBatch(
   let failed = 0;
   let stopped: string | null = null;
   let due = owed;
+  const labelled = set === "B" || set === "B2";
   for (const pmcid of pmcids) {
     if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
     due = null;
@@ -103,7 +105,7 @@ async function takeBatch(
       if (asked.read.kept) {
         entries.push(asked.read.entry);
         if (asked.read.empty) empty.push(pmcid);
-      } else if (set === "B") {
+      } else if (labelled) {
         stopped = pmcid;
         break;
       }
@@ -117,7 +119,7 @@ async function takeBatch(
     // As in a run's batch: nothing more goes to Europe PMC until the wait
     // it asked for has passed.
     due = asked.owed;
-    if (set === "B") {
+    if (labelled) {
       stopped = pmcid;
       break;
     }
@@ -282,7 +284,7 @@ export async function takeSnapshot(
   if (done)
     return { snapshot: { taken: false, reason: "already taken" }, owed };
   let due = owed;
-  const { goldA, goldA2, goldB } = deps.gold;
+  const { goldA, goldA2, goldB, goldB2 } = deps.gold;
 
   // What gold set A's search found, which gold set A2 reuses when it
   // shares gold set A's query, so it does not search again.
@@ -347,49 +349,58 @@ export async function takeSnapshot(
 
   // Every labelled paper must be in the snapshot, or its labels score
   // nothing, so one that cannot be read leaves the snapshot for next time,
-  // and the snapshot asks Europe PMC nothing more.
-  const labelled = goldB.papers.map((paper) => paper.pmcid);
-  const empty: string[] = [];
-  for (let i = 0; i * BATCH < labelled.length; i += 1) {
-    const batch = labelled.slice(i * BATCH, (i + 1) * BATCH);
-    const outcome = await ctx.runInChildContext(
-      `snapshot-b-${String(i)}`,
-      async (child) => takeBatch(child, deps, batch, "B", due),
+  // and the snapshot asks Europe PMC nothing more. Gold set B2's papers
+  // are kept as gold set B's are, even with empty sections (#695).
+  const empty = { B: [] as string[], B2: [] as string[] };
+  for (const set of ["B", "B2"] as const) {
+    const labelled = (set === "B" ? goldB : goldB2).papers.map(
+      (paper) => paper.pmcid,
     );
-    due = outcome.owed;
-    if (outcome.failed > 0 || outcome.entries.length < batch.length) {
-      const { stopped } = outcome;
-      await logOnly(ctx, "snapshot-not-taken", () => {
-        logSnapshotFailed(
-          runId,
-          "gold-paper-failed",
-          stopped === null ? undefined : { pmcid: stopped, set: "B" },
-        );
-      });
-      return {
-        snapshot: {
-          taken: false,
-          reason: "a gold set B paper could not be read",
-        },
-        owed: due,
-      };
+    const prefix = set === "B" ? "snapshot-b" : "snapshot-b2";
+    for (let i = 0; i * BATCH < labelled.length; i += 1) {
+      const batch = labelled.slice(i * BATCH, (i + 1) * BATCH);
+      const outcome = await ctx.runInChildContext(
+        `${prefix}-${String(i)}`,
+        async (child) => takeBatch(child, deps, batch, set, due),
+      );
+      due = outcome.owed;
+      if (outcome.failed > 0 || outcome.entries.length < batch.length) {
+        const { stopped } = outcome;
+        await logOnly(ctx, "snapshot-not-taken", () => {
+          logSnapshotFailed(
+            runId,
+            "gold-paper-failed",
+            stopped === null ? undefined : { pmcid: stopped, set },
+          );
+        });
+        return {
+          snapshot: {
+            taken: false,
+            reason: `a gold set ${set} paper could not be read`,
+          },
+          owed: due,
+        };
+      }
+      entries.push(...outcome.entries);
+      empty[set].push(...outcome.empty);
     }
-    entries.push(...outcome.entries);
-    empty.push(...outcome.empty);
   }
 
-  // The gold set B papers kept with empty sections although their label
-  // lists references. The snapshot logs them once it is taken, whether
-  // there are any or not (#405).
-  const referenced = new Set(
-    goldB.papers
-      .filter((paper) => paper.references.length > 0)
-      .map((paper) => paper.pmcid),
-  );
-  const missed = empty.filter((pmcid) => referenced.has(pmcid));
+  // The labelled papers kept with empty sections although their label
+  // lists references. The snapshot logs gold set B's once it is taken,
+  // whether there are any or not (#405), and gold set B2's in a line of
+  // its own once it has papers.
+  const missed = (labels: typeof goldB, kept: readonly string[]) => {
+    const referenced = new Set(
+      labels.papers
+        .filter((paper) => paper.references.length > 0)
+        .map((paper) => paper.pmcid),
+    );
+    return kept.filter((pmcid) => referenced.has(pmcid));
+  };
 
-  // A wait can still be owed here when gold set B lists no papers, since
-  // nothing then has asked Europe PMC since gold set A's last refusal. If
+  // A wait can still be owed here when gold sets B and B2 list no papers,
+  // since nothing then has asked Europe PMC since gold set A's last refusal. If
   // the manifest write throws, the run loses what this returns, so the
   // snapshot waits that out before it throws (#284).
   try {
@@ -399,8 +410,18 @@ export async function takeSnapshot(
       { retryStrategy: storeRetry },
     );
     await logOnly(ctx, "snapshot-b-empty", () => {
-      logGoldBEmpty(runId, deps.gold.snapshotId, missed);
+      logGoldBEmpty(runId, deps.gold.snapshotId, missed(goldB, empty.B));
     });
+    if (goldB2.papers.length > 0) {
+      await logOnly(ctx, "snapshot-b2-empty", () => {
+        logGoldBEmpty(
+          runId,
+          deps.gold.snapshotId,
+          missed(goldB2, empty.B2),
+          "B2",
+        );
+      });
+    }
     return {
       snapshot: { taken: true, papers: entries.length, manifestSha256 },
       owed: due,
