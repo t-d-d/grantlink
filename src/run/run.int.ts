@@ -17,10 +17,12 @@ import {
   fakeRelease,
   type FakeOptions,
   isGoldSearch,
+  NEWER_RULES,
   reply,
 } from "../../test/fakes.ts";
 import { NAMES, RECORDED } from "../../test/fixtures.ts";
 import { europePmc, EuropePmcError } from "../europepmc/client.ts";
+import { RULES_VERSION } from "../extract/rules.ts";
 import { found } from "../page/found.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
@@ -272,8 +274,6 @@ describe("a run over the back catalogue", () => {
   });
 });
 
-// A deploy can land while a run is reading, and the run stays on the
-// version it started on (#73).
 // A run re-runs the current rules on a paper an older rules version read,
 // from the text in cache/, and asks Europe PMC nothing for it (#686).
 describe("a paper an older rules version read", () => {
@@ -320,7 +320,7 @@ describe("a paper an older rules version read", () => {
         "CTRQQR-2021/100010",
         "A28707",
       ]);
-      expect(row?.versions).toEqual({ rules: "rules-20", code: "test" });
+      expect(row?.versions).toEqual({ rules: RULES_VERSION, code: "test" });
       expect(fullTextAsked(fake, "PMC0000001")).toBe(false);
       expect(logged("paper-reread")).toEqual([
         expect.objectContaining({
@@ -333,8 +333,8 @@ describe("a paper an older rules version read", () => {
   );
 
   it.each([
-    ["the current", "rules-20"],
-    ["a newer", "rules-21"],
+    ["the current", RULES_VERSION],
+    ["a newer", NEWER_RULES],
   ])("leaves a row %s rules version read as it is", async (_case, rules) => {
     const fake = await readBy("PMC0000001", rules);
     const before = fake.table.rows.get("PMC0000001");
@@ -367,10 +367,14 @@ describe("a paper an older rules version read", () => {
     expect(logged("paper-reread-no-text")).toEqual([
       expect.objectContaining({ pmcid: "PMC0000001" }),
     ]);
-    expect(fake.table.rows.get("PMC0000002")?.versions?.rules).toBe("rules-20");
+    expect(fake.table.rows.get("PMC0000002")?.versions?.rules).toBe(
+      RULES_VERSION,
+    );
   });
 });
 
+// A deploy can land while a run is reading, and the run stays on the
+// version it started on (#73).
 describe("a run that finishes after a deploy", () => {
   it("leaves a newer deploy's page, and publishes its data", async () => {
     const fake = fakeDeps();

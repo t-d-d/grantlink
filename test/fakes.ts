@@ -1,7 +1,7 @@
 import { FLOORS } from "../evals/floors.ts";
 import { europePmc, type Clock } from "../src/europepmc/client.ts";
 import { release, type Release } from "../src/page/release.ts";
-import type { FundingSections } from "../src/extract/rules.ts";
+import { RULES_VERSIONS, type FundingSections } from "../src/extract/rules.ts";
 import type { Deps, Gold } from "../src/pipeline/steps.ts";
 import type { PageFiles } from "../src/store/bucket.ts";
 import {
@@ -148,6 +148,11 @@ export function reply(
     json: () => Promise.resolve(JSON.parse(body) as unknown),
   } as unknown as Response;
 }
+
+// A rules version newer than the current one, as a run on a later deploy
+// writes it, so a test does not name the current number and break at the
+// next bump (#686).
+export const NEWER_RULES = `rules-${String((RULES_VERSIONS.at(-1)?.number ?? 0) + 1)}`;
 
 // The papers gold set A's search finds, and the grant each is linked to.
 // PMC0000003 is linked to none, so the snapshot passes it over.

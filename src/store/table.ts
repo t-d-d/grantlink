@@ -115,8 +115,9 @@ export interface Table {
   recordSearch(runId: string): Promise<void>;
   // The run whose search is the latest complete one, or null before any.
   latestSearch(): Promise<string | null>;
-  // The rules version that read each processed paper, or null for one whose
-  // row records none (#686).
+  // The rules version that read each processed paper, null for one whose
+  // row records none, or an empty string for one this version cannot read
+  // (#686).
   rulesRead(pmcids: string[]): Promise<Map<string, string | null>>;
   // Why each paper not yet processed last failed, for those that hold a
   // reason this version reads.
@@ -337,11 +338,13 @@ export function dynamoTable(
             pmcid: PMCID,
             status: z.string(),
             // A row a later version wrote may hold more, or a shape this
-            // version does not know, which reads as no version.
+            // version does not know. That reads as an empty version, which
+            // olderRules counts as not older, so the row stays as it is.
+            // Only a row with no versions at all reads as none.
             versions: z
               .object({ rules: versions.shape.rules })
               .optional()
-              .catch(undefined),
+              .catch({ rules: "" }),
           })
           .parse(item);
         if (row.status === "processed") {

@@ -1,5 +1,6 @@
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { fakeDeps, fakeRelease, reply } from "../../test/fakes.ts";
+import { fakeDeps, fakeRelease, NEWER_RULES, reply } from "../../test/fakes.ts";
+import { RULES_VERSION } from "../extract/rules.ts";
 import { SEARCH_PAGE_SIZE } from "../europepmc/client.ts";
 import { found } from "../page/found.ts";
 import {
@@ -207,8 +208,8 @@ describe("recording a page of the search", () => {
         runId: "run-1",
       });
     await read("PMC41", "rules-9");
-    await read("PMC42", "rules-20");
-    await read("PMC43", "rules-21");
+    await read("PMC42", RULES_VERSION);
+    await read("PMC43", NEWER_RULES);
     await read("PMC44", "rules-9");
     const row = table.rows.get("PMC44");
     if (row === undefined) throw new Error("no row");

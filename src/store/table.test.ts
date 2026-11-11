@@ -391,6 +391,13 @@ describe("the table module", () => {
             status: "processed",
             versions: { rules: "rules-21", code: "b", later: 1 },
           },
+          // A later version's shape this one cannot read. It is not a row
+          // that records no version, so it must not read as older.
+          {
+            pmcid: "PMC15",
+            status: "processed",
+            versions: { code: "c", rulesAt: { number: 22 } },
+          },
         ],
       },
     }));
@@ -399,11 +406,13 @@ describe("the table module", () => {
       "PMC12",
       "PMC13",
       "PMC14",
+      "PMC15",
     ]);
     expect([...read]).toEqual([
       ["PMC11", "rules-9"],
       ["PMC12", null],
       ["PMC14", "rules-21"],
+      ["PMC15", ""],
     ]);
     expect(sent[0]?.input).toMatchObject({
       RequestItems: {
