@@ -243,6 +243,51 @@ describe("how it's run, on the page", () => {
     expect(unscored).not.toContain('<table class="models">');
   });
 
+  describe("a model's unread papers (#696)", () => {
+    const onB = { ...scores, "precision-b": 1, "recall-b": 0.922 };
+    const withRead = (goldB: number) =>
+      renderRun(
+        makeRelease({
+          ...fields,
+          report: {
+            ...report,
+            rows: rows(onB),
+            baseline: rows(onB),
+            candidates: [
+              {
+                ...candidate("anthropic/claude-sonnet-5.5", 0.029, 2.61),
+                alone: rows(
+                  goldB === 0
+                    ? {}
+                    : { "precision-b": 0.957, "recall-b": 0.873 },
+                ),
+                unprocessed: ["PMC7"],
+                read: { goldA: 300, goldB },
+              },
+            ],
+          },
+        }),
+      );
+
+    it("says how many gold papers each model read alone", () => {
+      expect(withRead(299)).toContain(
+        "anthropic/claude-sonnet-5.5 alone read 300 of 300 papers in gold set A and 299 of 300 in gold set B. Its scores alone leave out the papers it did not read.",
+      );
+    });
+
+    it("shows no score alone on a gold set the model read none of", () => {
+      const html = withRead(0);
+      const table =
+        /<table class="models">[\s\S]*?<\/table>/u.exec(html)?.[0] ?? "";
+      expect(table).toContain(
+        '<tr><th scope="row"><code class="ref">anthropic/claude-sonnet-5.5</code> alone</th><td class="count">-</td><td class="count">-</td><td class="count">2.9 points</td></tr>',
+      );
+      expect(html).toContain("0 of 300 in gold set B");
+      // No 0% precision or recall for the papers it never read.
+      expect(table).not.toContain('<td class="count">0.0%</td>');
+    });
+  });
+
   it("renders a report with no model-alone rows as before", () => {
     expect(rulesAlone).not.toContain('<table class="models">');
     expect(rulesAlone).toContain(
@@ -301,5 +346,70 @@ describe("the page's intro", () => {
       "The rules ship alone, because no model adds 10 points of recall after them.",
     );
     expect(intro).not.toContain("did not find enough more to ship");
+  });
+});
+
+describe("gold set A2 on the page (#706)", () => {
+  const withA2 = (goldA2: Report["goldA2"]) =>
+    renderRun(
+      makeRelease({
+        ...fields,
+        report: {
+          ...report,
+          candidates: [
+            {
+              modelId: "anthropic/claude-haiku-5.5",
+              rows: rows({ ...scores, "recall-a": 0.98, spend: 0.15 }),
+              alone: rows({ "recall-a": 0.9, spend: 0.15 }),
+              unprocessed: [],
+            },
+          ],
+          goldA2,
+        },
+      }),
+    );
+  const scored = withA2({
+    rules: { score: 0.94, n: 300 },
+    models: [
+      {
+        modelId: "anthropic/claude-haiku-5.5",
+        alone: { score: 0.88, n: 300 },
+        rulesThen: { score: 0.96, n: 300 },
+        unprocessed: 0,
+      },
+    ],
+  });
+  const table = (html: string) =>
+    /<table class="held-out">[\s\S]*?<\/table>/u.exec(html)?.[0] ?? "";
+
+  it("shows gold set A2's recall beside gold set A's, for the rules and each model", () => {
+    expect(table(scored)).toContain(
+      '<tr><th scope="col">Read by</th><th scope="col">Recall on gold set A</th><th scope="col">Recall on gold set A2, held out</th></tr>',
+    );
+    expect(table(scored)).toContain(
+      '<tr><th scope="row">Rules alone</th><td class="count">97.0%</td><td class="count">94.0%</td></tr>',
+    );
+    expect(table(scored)).toContain(
+      '<tr><th scope="row"><code class="ref">anthropic/claude-haiku-5.5</code> alone</th><td class="count">90.0%</td><td class="count">88.0%</td></tr>',
+    );
+    expect(table(scored)).toContain(
+      '<tr><th scope="row">Rules then <code class="ref">anthropic/claude-haiku-5.5</code></th><td class="count">98.0%</td><td class="count">96.0%</td></tr>',
+    );
+  });
+
+  it("says nobody tuned the rules or the prompt on gold set A2, and that it gates nothing", () => {
+    expect(scored).toContain(
+      "Nobody tuned the rules or the prompt on gold set A2",
+    );
+    expect(scored).toContain("Gold set A2 gates nothing");
+    expect(scored).toContain(
+      'href="https://github.com/t-d-d/grantlink/issues/695"',
+    );
+  });
+
+  it("shows no gold set A2 table before gold set A2 has a score", () => {
+    const waiting = withA2({ rules: { score: null, n: 0 }, models: [] });
+    expect(table(waiting)).toBe("");
+    expect(table(renderRun(makeRelease(fields)))).toBe("");
   });
 });

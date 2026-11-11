@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { pmcid as PMCID } from "../src/shared/pmcid.ts";
 import goldAFile from "./gold-a.json" with { type: "json" };
+import goldA2File from "./gold-a2.json" with { type: "json" };
 import goldBFile from "./gold-b.json" with { type: "json" };
 import snapshotFile from "./snapshot.json" with { type: "json" };
 
@@ -25,15 +26,21 @@ const sampling = z
   })
   .strict();
 
-export const goldA = sampling
+// Gold set A, and gold set A2, which is drawn as gold set A is with its own
+// seed and held out (#695). Each lists its papers and their answers once
+// a snapshot is pinned.
+const drawnSet = sampling
   .extend({
     about: z.string(),
     papers: z.array(
       z.object({ pmcid: PMCID, grants: z.array(GRANT).min(1) }).strict(),
     ),
   })
-  .strict()
-  .parse(goldAFile);
+  .strict();
+
+export const goldA = drawnSet.parse(goldAFile);
+
+export const goldA2 = drawnSet.parse(goldA2File);
 
 // evals/gold-b.json: each paper's id and its normalised references, and
 // nothing else, so no note, no funded column and no text fits.
@@ -58,17 +65,19 @@ export const pinned = z
   .parse(snapshotFile);
 
 // eval/<id>/manifest.json: each paper in the snapshot, which set it is in,
-// the SHA-256 of its text file, and for gold set A Europe PMC's grant ids.
+// the SHA-256 of its text file, and for gold sets A and A2 Europe PMC's
+// grant ids. A snapshot taken before gold set A2 joined has no draw for it.
 export const manifest = z
   .object({
     id: z.string().regex(/^s\d+$/u),
     createdAt: z.iso.datetime(),
     goldA: sampling,
+    goldA2: sampling.optional(),
     papers: z.array(
       z
         .object({
           pmcid: PMCID,
-          set: z.enum(["A", "B"]),
+          set: z.enum(["A", "A2", "B"]),
           sha256: SHA256,
           grants: z.array(GRANT),
         })

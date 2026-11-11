@@ -1,5 +1,10 @@
 import { shownScore, type RowId } from "../../evals/floors.ts";
-import { RULES_ALONE, verdict, type Report } from "../../evals/report.ts";
+import {
+  readAlone,
+  RULES_ALONE,
+  verdict,
+  type Report,
+} from "../../evals/report.ts";
 import type { Found } from "./found.ts";
 import type { Release } from "./release.ts";
 import { paired, titleParts } from "../title.ts";
@@ -190,16 +195,22 @@ function rulesAloneNote(report: Report): string {
 // Each model's precision and recall on gold set B alone, beside the rules
 // alone and what the model adds after them (#694). It does not gate. A
 // report filed before the eval scored a model alone shows no table, and a
-// model alone with no score on gold set B is left out.
+// model alone with no score on gold set B is left out, unless gold set B
+// was scored and the model read none of it: that row shows no score, and
+// the note says how many papers each model read (#696).
 function aloneTable(report: Report): string {
   const count = (id: RowId, score: number | null) =>
     `<td class="count">${escape(shownScore(id, score))}</td>`;
   const line = (name: string, rows: Report["rows"], adds: number | null) =>
     `<tr><th scope="row">${name}</th>${count("precision-b", scoreOf(rows, "precision-b"))}${count("recall-b", scoreOf(rows, "recall-b"))}${count("model-adds", adds)}</tr>`;
+  const scoredB = report.baseline.some(
+    (row) => row.id === "recall-b" && row.n > 0,
+  );
   const models = (report.candidates ?? []).flatMap((candidate) =>
     candidate.alone === undefined ||
     (scoreOf(candidate.alone, "precision-b") === null &&
-      scoreOf(candidate.alone, "recall-b") === null)
+      scoreOf(candidate.alone, "recall-b") === null &&
+      !(scoredB && candidate.read?.goldB === 0))
       ? []
       : [
           line(
@@ -211,11 +222,56 @@ function aloneTable(report: Report): string {
   );
   if (models.length === 0) return "";
   return `
-        <p class="note">The eval also scores each model alone, on the same papers and from the same replies. Nothing gates on a model alone.</p>
+        <p class="note">${escape(
+          [
+            "The eval also scores each model alone, on the same papers and from the same replies. Nothing gates on a model alone.",
+            ...readAlone(report),
+          ].join(" "),
+        )}</p>
         <div class="table-scroll">
           <table class="models">
             <tr><th scope="col">Read by</th><th scope="col">Precision on gold set B</th><th scope="col">Recall on gold set B</th><th scope="col">Adds after the rules</th></tr>
             ${[line("Rules alone", report.baseline, null), ...models].join("\n            ")}
+          </table>
+        </div>`;
+}
+
+// Gold set A2's recall beside gold set A's, for the rules alone, each model
+// alone and the rules then each model (#695). It gates nothing. A report
+// filed before gold set A2 joined, or before it has a score, shows nothing.
+function heldOutA2(report: Report): string {
+  const a2 = report.goldA2;
+  if (a2?.rules.score === undefined || a2.rules.score === null) return "";
+  const count = (score: number | null) =>
+    `<td class="count">${escape(shownScore("recall-a", score))}</td>`;
+  const line = (name: string, a: number | null, held: number | null) =>
+    `<tr><th scope="row">${name}</th>${count(a)}${count(held)}</tr>`;
+  const models = a2.models.flatMap((model) => {
+    const candidate = (report.candidates ?? []).find(
+      (c) => c.modelId === model.modelId,
+    );
+    const name = `<code class="ref">${escape(model.modelId)}</code>`;
+    return [
+      line(
+        `${name} alone`,
+        candidate?.alone === undefined
+          ? null
+          : scoreOf(candidate.alone, "recall-a"),
+        model.alone.score,
+      ),
+      line(
+        `Rules then ${name}`,
+        candidate === undefined ? null : scoreOf(candidate.rows, "recall-a"),
+        model.rulesThen.score,
+      ),
+    ];
+  });
+  return `
+        <p class="note">Gold set A2 is ${escape(String(a2.rules.n))} more papers drawn as gold set A is, with its own seed, from papers not in gold set A. Nobody tuned the rules or the prompt on gold set A2, so its recall shows how they read papers they were not tuned on. Gold set A2 gates nothing. <a href="https://github.com/t-d-d/grantlink/issues/695">The decision record</a> says why.</p>
+        <div class="table-scroll">
+          <table class="held-out">
+            <tr><th scope="col">Read by</th><th scope="col">Recall on gold set A</th><th scope="col">Recall on gold set A2, held out</th></tr>
+            ${[line("Rules alone", scoreOf(report.baseline, "recall-a"), a2.rules.score), ...models].join("\n            ")}
           </table>
         </div>`;
 }
@@ -275,7 +331,7 @@ export function renderRun(release: Release): string {
             <tr><th scope="col">Measure</th><th scope="col">On</th><th scope="col">Go if</th><th scope="col">Gates a release</th><th scope="col">This release</th><th scope="col">Rules alone</th><th scope="col">Result</th></tr>
             ${rows.join("\n            ")}
           </table>
-        </div>${alone ? rulesAloneNote(report) : ""}
+        </div>${alone ? rulesAloneNote(report) : ""}${heldOutA2(report)}
         <p class="note">${snapshot}</p>${goldB}
       </section>`;
 }
