@@ -274,6 +274,103 @@ describe("a run over the back catalogue", () => {
 
 // A deploy can land while a run is reading, and the run stays on the
 // version it started on (#73).
+// A run re-runs the current rules on a paper an older rules version read,
+// from the text in cache/, and asks Europe PMC nothing for it (#686).
+describe("a paper an older rules version read", () => {
+  // A reference no rules find in the fixtures, so a row that still holds it
+  // was left as it was.
+  const stale = [
+    { asWritten: "C1/A12345", normalised: "C1/A12345", format: "Cn/An" },
+  ];
+
+  // A run over the back catalogue, then `pmcid`'s row as if `rules` had
+  // read it and found only the stale reference. With `rules` undefined,
+  // the row records no versions.
+  async function readBy(pmcid: string, rules: string | undefined) {
+    const fake = fakeDeps();
+    await runWith(fake);
+    const row = fake.table.rows.get(pmcid);
+    if (row === undefined) throw new Error(`no row for ${pmcid}`);
+    fake.table.rows.set(pmcid, {
+      ...row,
+      references: stale,
+      versions: rules === undefined ? undefined : { rules, code: "older" },
+    });
+    fake.requests.length = 0;
+    logs.length = 0;
+    return fake;
+  }
+
+  const fullTextAsked = (fake: ReturnType<typeof fakeDeps>, pmcid: string) =>
+    fake.requests.some((url) => url.pathname.endsWith(`/${pmcid}/fullTextXML`));
+
+  it.each([
+    ["an older version, compared by number", "rules-9"],
+    ["no version", undefined],
+  ])(
+    "gets the current rules' references and versions for a row %s read, with no request to Europe PMC",
+    async (_case, rules) => {
+      const fake = await readBy("PMC0000001", rules);
+      const again = await runWith(fake);
+      expect(again.status).toBe("SUCCEEDED");
+      expect(again.result).toMatchObject({ reread: 1, read: 0 });
+      const row = fake.table.rows.get("PMC0000001");
+      expect(row?.references?.map((r) => r.normalised)).toEqual([
+        "C1234/A56789",
+        "CTRQQR-2021/100010",
+        "A28707",
+      ]);
+      expect(row?.versions).toEqual({ rules: "rules-20", code: "test" });
+      expect(fullTextAsked(fake, "PMC0000001")).toBe(false);
+      expect(logged("paper-reread")).toEqual([
+        expect.objectContaining({
+          pmcid: "PMC0000001",
+          from: rules ?? "none",
+          references: 3,
+        }),
+      ]);
+    },
+  );
+
+  it.each([
+    ["the current", "rules-20"],
+    ["a newer", "rules-21"],
+  ])("leaves a row %s rules version read as it is", async (_case, rules) => {
+    const fake = await readBy("PMC0000001", rules);
+    const before = fake.table.rows.get("PMC0000001");
+    const again = await runWith(fake);
+    expect(again.status).toBe("SUCCEEDED");
+    expect(again.result).toMatchObject({ reread: 0 });
+    expect(fake.table.rows.get("PMC0000001")).toEqual(before);
+    expect(logged("paper-reread")).toEqual([]);
+  });
+
+  it("leaves a row with no text in cache/ as it is, logs its id, and carries on", async () => {
+    const fake = await readBy("PMC0000001", "rules-9");
+    const other = fake.table.rows.get("PMC0000002");
+    if (other === undefined) throw new Error("no row for PMC0000002");
+    fake.table.rows.set("PMC0000002", {
+      ...other,
+      versions: { rules: "rules-9", code: "older" },
+    });
+    fake.text.delete("cache/PMC0000001.json");
+    const before = fake.table.rows.get("PMC0000001");
+
+    const again = await runWith(fake);
+    expect(again.status).toBe("SUCCEEDED");
+    expect(again.result).toMatchObject({
+      reread: 1,
+      published: { published: true },
+    });
+    expect(fake.table.rows.get("PMC0000001")).toEqual(before);
+    expect(fullTextAsked(fake, "PMC0000001")).toBe(false);
+    expect(logged("paper-reread-no-text")).toEqual([
+      expect.objectContaining({ pmcid: "PMC0000001" }),
+    ]);
+    expect(fake.table.rows.get("PMC0000002")?.versions?.rules).toBe("rules-20");
+  });
+});
+
 describe("a run that finishes after a deploy", () => {
   it("leaves a newer deploy's page, and publishes its data", async () => {
     const fake = fakeDeps();
@@ -905,7 +1002,7 @@ describe("a failure to write or read the table is retried apart from Europe PMC'
     ).length;
 
   // A table whose `method` fails `times` times, then works as before.
-  function failingTable(method: "addFound" | "processed", times: number) {
+  function failingTable(method: "addFound" | "rulesRead", times: number) {
     const fake = fakeDeps();
     const real = fake.table[method].bind(fake.table) as (
       ...args: never[]
@@ -935,7 +1032,7 @@ describe("a failure to write or read the table is retried apart from Europe PMC'
     for (const size of sizes) expect(size).toBe("150");
   });
 
-  for (const method of ["addFound", "processed"] as const) {
+  for (const method of ["addFound", "rulesRead"] as const) {
     it(`does not call Europe PMC again or use up its retries when ${method} keeps failing`, async () => {
       const fake = failingTable(method, Infinity);
       const { status, retryDelays } = await runWith(fake);

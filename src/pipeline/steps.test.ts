@@ -4,6 +4,7 @@ import { SEARCH_PAGE_SIZE } from "../europepmc/client.ts";
 import { found } from "../page/found.ts";
 import {
   checkWholeSearch,
+  olderRules,
   publish,
   readPaper,
   recordPage,
@@ -23,6 +24,23 @@ afterEach(() => {
 });
 afterAll(() => {
   spy.mockRestore();
+});
+
+describe("which rules version is older (#686)", () => {
+  it.each([
+    ["rules-9", "rules-20", true],
+    ["rules-19", "rules-20", true],
+    [null, "rules-20", true],
+    ["rules-20", "rules-20", false],
+    ["rules-21", "rules-20", false],
+    ["rules-100", "rules-20", false],
+    // A version this code cannot read the number of is left as it is.
+    ["r", "rules-20", false],
+    ["rules-", "rules-20", false],
+    ["rules-9x", "rules-20", false],
+  ])("reads %s as older than %s: %s", (read, current, older) => {
+    expect(olderRules(read, current)).toBe(older);
+  });
 });
 
 describe("reading a page of the search", () => {
@@ -138,6 +156,7 @@ describe("recording a page of the search", () => {
     expect(todo).toEqual({
       todo: ["PMC31", "PMC32", "PMC33"],
       once: ["PMC31"],
+      rerun: [],
     });
   });
 
@@ -162,7 +181,7 @@ describe("recording a page of the search", () => {
       ],
       "run-2",
     );
-    expect(todo).toEqual({ todo: ["PMC22"], once: [] });
+    expect(todo).toEqual({ todo: ["PMC22"], once: [], rerun: [] });
     expect(table.rows.get("PMC22")).toMatchObject({
       status: "pending",
       foundByRun: "run-2",
@@ -171,6 +190,38 @@ describe("recording a page of the search", () => {
       status: "processed",
       runId: "run-1",
       foundByRun: "run-2",
+    });
+  });
+
+  it("names the papers an older rules version read, or none, with the version each was read by (#686)", async () => {
+    const { deps, table } = fakeDeps();
+    const papers = ["PMC41", "PMC42", "PMC43", "PMC44", "PMC45"].map(
+      (pmcid) => ({ pmcid, title: "A paper" }),
+    );
+    await table.addFound(papers, deps.now(), "run-1");
+    const read = (pmcid: string, rules: string) =>
+      table.markProcessed(pmcid, {
+        references: [],
+        versions: { rules, code: "c" },
+        processedAt: deps.now(),
+        runId: "run-1",
+      });
+    await read("PMC41", "rules-9");
+    await read("PMC42", "rules-20");
+    await read("PMC43", "rules-21");
+    await read("PMC44", "rules-9");
+    const row = table.rows.get("PMC44");
+    if (row === undefined) throw new Error("no row");
+    // A row written before rows recorded their versions.
+    table.rows.set("PMC44", { ...row, versions: undefined });
+    const todo = await recordPage(deps, papers, "run-2");
+    expect(todo).toEqual({
+      todo: ["PMC45"],
+      once: [],
+      rerun: [
+        { pmcid: "PMC41", from: "rules-9" },
+        { pmcid: "PMC44", from: null },
+      ],
     });
   });
 });

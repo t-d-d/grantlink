@@ -1,6 +1,7 @@
 import { FLOORS } from "../evals/floors.ts";
 import { europePmc, type Clock } from "../src/europepmc/client.ts";
 import { release, type Release } from "../src/page/release.ts";
+import type { FundingSections } from "../src/extract/rules.ts";
 import type { Deps, Gold } from "../src/pipeline/steps.ts";
 import type { PageFiles } from "../src/store/bucket.ts";
 import {
@@ -64,10 +65,31 @@ export function memoryTable(): Table & {
     latestSearch() {
       return Promise.resolve(search.latest);
     },
-    processed(pmcids) {
+    rulesRead(pmcids) {
       return Promise.resolve(
-        new Set(pmcids.filter((id) => rows.get(id)?.status === "processed")),
+        new Map(
+          pmcids.flatMap((id): [string, string | null][] => {
+            const row = rows.get(id);
+            return row?.status === "processed"
+              ? [[id, row.versions?.rules ?? null]]
+              : [];
+          }),
+        ),
       );
+    },
+    // As the real table: writes only while the rules version that read the
+    // paper is still `from`, or already the result's own.
+    replaceReferences(pmcid, from, result) {
+      const row = rows.get(pmcid);
+      const held = row?.versions?.rules ?? null;
+      if (
+        row?.status !== "processed" ||
+        (held !== from && held !== result.versions.rules)
+      ) {
+        return Promise.resolve(false);
+      }
+      rows.set(pmcid, paperRow.parse({ ...row, ...result }));
+      return Promise.resolve(true);
     },
     markProcessed(pmcid, result) {
       rows.set(
@@ -300,6 +322,12 @@ export function fakeDeps(options: FakeOptions = {}) {
       putFundingText(pmcid, sections) {
         text.set(`cache/${pmcid}.json`, sections);
         return Promise.resolve();
+      },
+      getFundingText(pmcid) {
+        const held = text.get(`cache/${pmcid}.json`);
+        return Promise.resolve(
+          held === undefined ? null : (held as FundingSections),
+        );
       },
       hasSnapshot(id) {
         return Promise.resolve(text.has(`eval/${id}/manifest.json`));

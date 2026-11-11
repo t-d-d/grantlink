@@ -48,6 +48,65 @@ describe("the funding text bucket", () => {
   });
 });
 
+describe("reading funding text back from cache/ (#686)", () => {
+  const replying = (reply: () => unknown) => {
+    const sent: Record<string, unknown>[] = [];
+    const client = {
+      send: (command: { input: object }) => {
+        sent.push(command.input as Record<string, unknown>);
+        return Promise.resolve().then(reply);
+      },
+    };
+    return { client, sent };
+  };
+
+  it("reads a paper's funding sections from cache/", async () => {
+    const { client, sent } = replying(() => ({
+      Body: {
+        transformToString: () =>
+          Promise.resolve(
+            JSON.stringify({ pmcid: "PMC11", text: ["t"], awards: [] }),
+          ),
+      },
+    }));
+    expect(await textBucket("b", client).getFundingText("PMC11")).toEqual({
+      text: ["t"],
+      awards: [],
+    });
+    expect(sent).toEqual([{ Bucket: "b", Key: "cache/PMC11.json" }]);
+  });
+
+  it("reads a paper with no text in cache/ as null", async () => {
+    const { client } = replying(() => {
+      throw Object.assign(new Error("missing"), { name: "NoSuchKey" });
+    });
+    expect(await textBucket("b", client).getFundingText("PMC11")).toBeNull();
+  });
+
+  it("fails on any other error, and on text it does not recognise", async () => {
+    const denied = replying(() => {
+      throw Object.assign(new Error("denied"), { name: "AccessDenied" });
+    });
+    await expect(
+      textBucket("b", denied.client).getFundingText("PMC11"),
+    ).rejects.toThrow("denied");
+    const odd = replying(() => ({
+      Body: { transformToString: () => Promise.resolve('{"text":"t"}') },
+    }));
+    await expect(
+      textBucket("b", odd.client).getFundingText("PMC11"),
+    ).rejects.toThrow();
+  });
+
+  it("refuses a key that is not a PMCID", async () => {
+    const { client, sent } = replying(() => ({}));
+    await expect(
+      textBucket("b", client).getFundingText("../eval/x"),
+    ).rejects.toThrow();
+    expect(sent).toEqual([]);
+  });
+});
+
 describe("the page's bucket", () => {
   it("publishes the page and its data, cached for five minutes", async () => {
     const { client, sent } = recorder();

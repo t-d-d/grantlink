@@ -20,6 +20,9 @@ const defaultClient = () => new S3Client({ region: "eu-west-2" });
 
 export interface TextBucket {
   putFundingText(pmcid: string, sections: FundingSections): Promise<void>;
+  // A paper's funding sections as the cutter last cut them into cache/, or
+  // null when cache/ holds none (#686).
+  getFundingText(pmcid: string): Promise<FundingSections | null>;
   // The eval snapshot under eval/ (docs/constraints/evals.md). Each write
   // happens once: a second write keeps the first copy and returns it.
   hasSnapshot(id: string): Promise<boolean>;
@@ -28,6 +31,14 @@ export interface TextBucket {
 }
 
 const SNAPSHOT_ID = /^s\d+$/u;
+
+// What putFundingText writes under cache/.
+const cachedText = z.object({
+  text: z.array(z.string()),
+  awards: z.array(
+    z.object({ sources: z.array(z.string()), ids: z.array(z.string()) }),
+  ),
+});
 
 const listReply = z.object({
   Contents: z.array(z.object({ Key: z.string().optional() })).optional(),
@@ -64,6 +75,22 @@ export function textBucket(
           Body: JSON.stringify({ pmcid, ...sections }),
         }),
       );
+    },
+
+    // The run's role may not list cache/, so S3 may refuse a read of a
+    // missing key as AccessDenied, which fails like any other error. Only
+    // NoSuchKey reads as no text.
+    async getFundingText(pmcid) {
+      if (!isPmcid(pmcid)) throw new Error("not a PMCID");
+      let body: string;
+      try {
+        body = await read(`cache/${pmcid}.json`);
+      } catch (error) {
+        if (errorName(error) === "NoSuchKey") return null;
+        throw error;
+      }
+      const { text, awards } = cachedText.parse(JSON.parse(body));
+      return { text, awards };
     },
 
     // Lists the manifest's key as a prefix. The run's role may list only
