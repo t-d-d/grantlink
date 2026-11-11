@@ -60,16 +60,24 @@ const DATE = new Intl.DateTimeFormat("en-GB", {
 
 export function renderFound(found: Found): string {
   const { counts } = found;
-  const cards: [number, string][] = [
+  // The papers not yet read are a line in the papers read card, not a card
+  // of their own, and the line goes when every paper has been read (#724).
+  const unread =
+    counts.pending > 0 ? `${number(counts.pending)} not yet read` : "";
+  const cards: [number, string, string][] = [
     [
       counts.papers,
       "papers that name Cancer Research UK as a funder but are not yet linked to one of its grants in Europe PMC",
+      "",
     ],
-    [counts.processed, "papers read"],
-    [counts.withReference, "papers that give a grant reference"],
-    [counts.references, "grant references recovered"],
-    [counts.pending, "papers not yet read"],
+    [counts.processed, "papers read", unread],
+    [counts.withReference, "papers that give a grant reference", ""],
+    [counts.references, "grant references recovered", ""],
   ];
+  const card = ([n, label, more]: [number, string, string]) =>
+    `<p class="card stat"><span class="value">${number(n)}</span> ${escape(label)}${
+      more === "" ? "" : ` <span class="more">${escape(more)}</span>`
+    }</p>`;
   // One row per paper, so a paper with two references is listed once
   // (#587). Each cell holds one line per reference, in the same order, and
   // each reference keeps its own status (accuracy.md). A paper with no
@@ -101,7 +109,7 @@ export function renderFound(found: Found): string {
           <time datetime="${escape(found.finishedAt)}">${DATE.format(new Date(found.finishedAt))}</time>.
         </p>
         <div class="cards">
-${cards.map(([n, label]) => `          <p class="card stat"><span class="value">${number(n)}</span> ${escape(label)}</p>`).join("\n")}
+${cards.map((c) => `          ${card(c)}`).join("\n")}
         </div>
 
         <h3>Reference formats</h3>
