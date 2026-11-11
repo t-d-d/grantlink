@@ -21,7 +21,8 @@ export const RULES_VERSIONS: readonly Version[] = [
   { number: 16, issue: 560 },
   { number: 17, issue: 598 },
   { number: 18, issue: 642 },
-  { number: 19, issue: 579 },
+  { number: 19, issue: 577 },
+  { number: 20, issue: 579 },
 ];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
@@ -475,17 +476,17 @@ function scan(text: string, keep: "long" | "short" | "all"): Reference[] {
 
 // A bare number is common in any text, so it counts only when the metadata
 // gives it to the funder as a whole award id and the paper's own funding or
-// acknowledgement text gives the same number, standing alone (#97). A number
-// joined to a letter, any decimal digit or a separator, or after a hyphen or
-// a digit and a decimal point, is part of a longer reference (#573).
+// acknowledgement text gives the same number, standing alone (#97). It needs
+// the edges a model reply needs, as wholeReference draws them, so the two
+// passes agree: a number joined to a letter, any decimal digit or a
+// separator, after a hyphen or a digit and a decimal point (#573), or before
+// a hyphen and a digit or a decimal point and a digit (#577), is part of a
+// longer reference.
 const BARE_NUMBER = new RegExp(`^${BARE}$`, "u");
 
 function confirmedNumber(id: string, text: readonly string[]): boolean {
   if (!BARE_NUMBER.test(id)) return false;
-  const alone = new RegExp(
-    `${NUMBER_BEFORE}${START}${id}(?!${WORD}|${SEP})`,
-    "u",
-  );
+  const alone = wholeReference(id);
   return text.some((paragraph) => alone.test(paragraph));
 }
 
