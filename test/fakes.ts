@@ -79,10 +79,11 @@ export function memoryTable(): Table & {
       );
     },
     // As the real table: writes only while the rules version that read the
-    // paper is still `from`, or already the result's own.
+    // paper is still `from`, null while the row holds no versions at all, or
+    // already the result's own.
     replaceReferences(pmcid, from, result) {
       const row = rows.get(pmcid);
-      const held = row?.versions?.rules ?? null;
+      const held = row?.versions === undefined ? null : row.versions.rules;
       if (
         row?.status !== "processed" ||
         (held !== from && held !== result.versions.rules)
