@@ -191,22 +191,36 @@ export function comment(
   ].join("\n");
 }
 
-// The rules alone beside the rules and then each model the eval compares
-// (#329). They do not gate: rules ship alone (#330), and the eval scores
-// each model to show what it would add. A row with no score says what it
-// waits for.
+// The rules alone beside each model alone and the rules then each model
+// (#329, #694). They do not gate: rules ship alone (#330), and the eval
+// scores each model to show what it would add. A row with no score says
+// what it waits for. A model alone adds nothing after the rules, so that
+// cell is a dash. A report filed before the eval scored a model alone gives
+// that model one column, the rules then the model.
 function models(ci: Report): string[] {
   const candidates = ci.candidates ?? [];
   if (candidates.length === 0) return [];
   const cell = (id: (typeof FLOORS)[number]["id"], score: number | null) =>
     score === null ? judge(id, null) : shownScore(id, score);
   const scoreIn = (rows: Report["rows"], i: number) => rows[i]?.score ?? null;
+  const columns = candidates.flatMap((c) =>
+    c.alone === undefined
+      ? [{ name: c.modelId, rows: c.rows, alone: false }]
+      : [
+          { name: `${c.modelId} alone`, rows: c.alone, alone: true },
+          { name: `Rules then ${c.modelId}`, rows: c.rows, alone: false },
+        ],
+  );
   const rows = FLOORS.map((floor, i) =>
     [
       floor.measure,
       floor.on,
       cell(floor.id, scoreIn(ci.baseline, i)),
-      ...candidates.map((c) => cell(floor.id, scoreIn(c.rows, i))),
+      ...columns.map((column) =>
+        column.alone && floor.id === "model-adds"
+          ? "-"
+          : cell(floor.id, scoreIn(column.rows, i)),
+      ),
     ].join(" | "),
   );
   const left = candidates
@@ -217,10 +231,10 @@ function models(ci: Report): string[] {
     );
   return [
     "",
-    "#### The rules alone and with each model",
+    "#### The rules alone, each model alone, and the rules then each model",
     "",
-    `| Measure | On | Rules alone | ${candidates.map((c) => c.modelId).join(" | ")} |`,
-    `| --- | --- | --- | ${candidates.map(() => "---").join(" | ")} |`,
+    `| Measure | On | Rules alone | ${columns.map((c) => c.name).join(" | ")} |`,
+    `| --- | --- | --- | ${columns.map(() => "---").join(" | ")} |`,
     ...rows.map((row) => `| ${row} |`),
     ...(left.length === 0 ? [] : ["", ...left]),
   ];

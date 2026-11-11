@@ -64,6 +64,44 @@ describe("fitness: every score names what produced it (evals.md)", () => {
     expect(makeReport(withModels)).toEqual(withModels);
   });
 
+  it("takes each candidate's rows for the model alone", () => {
+    const withAlone: Report = {
+      ...good,
+      candidates: [
+        {
+          modelId: "anthropic/claude-haiku-5.5",
+          rows: rows({ "recall-b": 0.96, spend: 0.4 }),
+          alone: rows({ "recall-b": 0.92, spend: 0.4 }),
+          unprocessed: [],
+        },
+      ],
+    };
+    expect(makeReport(withAlone)).toEqual(withAlone);
+    expect(() =>
+      makeReport({
+        ...withAlone,
+        candidates: [
+          {
+            modelId: "anthropic/claude-haiku-5.5",
+            rows: rows(),
+            alone: rows().slice(1),
+            unprocessed: [],
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("takes a candidate filed before the eval scored a model alone", () => {
+    const candidate = {
+      modelId: "anthropic/claude-haiku-5.5",
+      rows: rows({ spend: 0.4 }),
+      unprocessed: [],
+    };
+    const parsed = makeReport({ ...good, candidates: [candidate] });
+    expect(parsed.candidates?.[0]?.alone).toBeUndefined();
+  });
+
   it("takes a report filed before the eval scored any model", () => {
     expect(makeReport(good).candidates).toBeUndefined();
   });

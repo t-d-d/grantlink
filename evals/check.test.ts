@@ -106,6 +106,39 @@ describe("the pull request's comment", () => {
     );
   });
 
+  it("gives each model a column alone and one after the rules", () => {
+    const text = comment(
+      {
+        ...report({ "recall-a": 0.96, spend: 0 }),
+        candidates: [
+          {
+            modelId: "anthropic/claude-haiku-5.5",
+            rows: rows({ "recall-a": 0.98, spend: 0.4 }),
+            alone: rows({ "recall-a": 0.9, spend: 0.4 }),
+            unprocessed: [],
+          },
+          {
+            modelId: "anthropic/claude-sonnet-5.5",
+            rows: rows({ "recall-a": 0.99, spend: 4.2 }),
+            alone: rows({ "recall-a": 0.93, spend: 4.2 }),
+            unprocessed: [],
+          },
+        ],
+      },
+      "no-deploy",
+    );
+    expect(text).toContain(
+      "| Measure | On | Rules alone | anthropic/claude-haiku-5.5 alone | Rules then anthropic/claude-haiku-5.5 | anthropic/claude-sonnet-5.5 alone | Rules then anthropic/claude-sonnet-5.5 |",
+    );
+    expect(text).toContain(
+      "| Recall | Gold set A | 96.0% | 90.0% | 98.0% | 93.0% | 99.0% |",
+    );
+    // Nothing alone adds anything after the rules.
+    expect(text).toContain(
+      "| What the model adds | Gold set B | not measured yet | - | not measured yet | - | not measured yet |",
+    );
+  });
+
   it("shows no model table for a report with no candidates", () => {
     const text = comment(report({ spend: 0 }), "no-deploy");
     expect(text).not.toContain("Rules alone");

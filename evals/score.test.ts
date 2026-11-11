@@ -326,6 +326,44 @@ describe("scoring the rules on the gold sets", () => {
     expect(both.rows["precision-b"]).toEqual({ score: 2 / 3, n: 2 });
   });
 
+  it("scores a model alone, counting only its references, on both gold sets", () => {
+    // The rules find C1234/A56789 in PMC1 and A22222 in PMC4. The model,
+    // alone, finds A77777 in PMC5 and a wrong B1 in PMC1, and nothing else.
+    const withPMC5 = new Map([
+      ...texts,
+      ["PMC5", paper(["Funded by CRUK award ref X1."])],
+    ]);
+    const result = score({
+      texts: withPMC5,
+      goldA: [
+        { pmcid: "PMC1", grants: ["A56789"] },
+        { pmcid: "PMC5", grants: ["A77777"] },
+      ],
+      goldB: [
+        { pmcid: "PMC1", references: ["C1234/A56789"] },
+        { pmcid: "PMC4", references: ["A22222"] },
+        { pmcid: "PMC5", references: ["A77777"] },
+      ],
+      model: {
+        found: new Map([
+          ["PMC1", ["B1"]],
+          ["PMC5", ["A77777"]],
+        ]),
+        spend: 0.005,
+      },
+      rules: false,
+    });
+    expect(result.rows["recall-a"]).toEqual({ score: 1 / 2, n: 2 });
+    expect(result.missedA).toEqual(["PMC1"]);
+    // Found in gold set B: B1 and A77777, one of them true, and one of the
+    // three true references.
+    expect(result.rows["precision-b"]).toEqual({ score: 1 / 2, n: 3 });
+    expect(result.rows["recall-b"]).toEqual({ score: 1 / 3, n: 3 });
+    expect(result.rows["model-adds"].score).toBeNull();
+    // $0.005 over 5 papers is $1 per 1,000, the model's own spend.
+    expect(result.rows.spend.score).toBeCloseTo(1);
+  });
+
   it("counts a reference the rules and the model both found once", () => {
     const result = score({
       texts,

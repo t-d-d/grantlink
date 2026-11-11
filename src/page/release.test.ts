@@ -177,6 +177,59 @@ describe("how it's run, on the page", () => {
     expect(partial).not.toContain("per 1,000 papers");
   });
 
+  it("gives each model's precision and recall on gold set B alone, beside the rules alone", () => {
+    const onB = {
+      ...scores,
+      "precision-b": 1,
+      "recall-b": 0.922,
+    };
+    const scoredB = {
+      ...report,
+      rows: rows(onB),
+      baseline: rows(onB),
+    };
+    const withAlone = renderRun(
+      makeRelease({
+        ...fields,
+        report: {
+          ...scoredB,
+          candidates: [
+            {
+              ...candidate("anthropic/claude-haiku-5.5", 0.039, 0.15),
+              alone: rows({ "precision-b": 0.98, "recall-b": 0.912 }),
+            },
+            {
+              ...candidate("anthropic/claude-sonnet-5.5", 0.029, 2.61),
+              alone: rows({ "precision-b": 0.957, "recall-b": 0.873 }),
+            },
+          ],
+        },
+      }),
+    );
+    const table =
+      /<table class="models">[\s\S]*?<\/table>/u.exec(withAlone)?.[0] ?? "";
+    expect(table).toContain(
+      '<tr><th scope="row">Rules alone</th><td class="count">100.0%</td><td class="count">92.2%</td><td class="count">-</td></tr>',
+    );
+    expect(table).toContain(
+      '<tr><th scope="row"><code class="ref">anthropic/claude-haiku-5.5</code> alone</th><td class="count">98.0%</td><td class="count">91.2%</td><td class="count">3.9 points</td></tr>',
+    );
+    expect(table).toContain(
+      '<tr><th scope="row"><code class="ref">anthropic/claude-sonnet-5.5</code> alone</th><td class="count">95.7%</td><td class="count">87.3%</td><td class="count">2.9 points</td></tr>',
+    );
+    // The note on gold set B's labels covers the model-alone scores too.
+    expect(withAlone).toContain(
+      "may favour a model over the rules, so read what each model scores alone, and what it adds after the rules, with that in mind.",
+    );
+  });
+
+  it("renders a report with no model-alone rows as before", () => {
+    expect(rulesAlone).not.toContain('<table class="models">');
+    expect(rulesAlone).toContain(
+      "anthropic/claude-haiku-5.5</code> adds 3.9 points of recall on gold set B, for $0.15 per 1,000 papers.",
+    );
+  });
+
   it("says rules ship alone when the eval scored no model", () => {
     expect(section).toContain("Rules ship alone");
     expect(section).toContain("calls no model");
@@ -214,5 +267,19 @@ describe("how it's run, on the page", () => {
     expect(buildPage(template, null, null)).toContain(
       "No release has been recorded yet",
     );
+  });
+});
+
+describe("the page's intro", () => {
+  const intro = template.replace(/\s+/gu, " ");
+
+  it("says the eval scored each model alone and after the rules, and why the rules ship alone", () => {
+    expect(intro).toContain(
+      "Its evaluation scored each model alone and after the rules.",
+    );
+    expect(intro).toContain(
+      "The rules ship alone, because no model adds 10 points of recall after them.",
+    );
+    expect(intro).not.toContain("did not find enough more to ship");
   });
 });

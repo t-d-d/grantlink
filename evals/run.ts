@@ -41,7 +41,7 @@ import {
 // paper ids and scores, never text.
 //
 // It scores the rules alone, then the rules and each model in MODELS on the
-// same papers, and needs OPENROUTER_KEY whenever a gold paper is scored. In
+// same papers, and each model alone from the same replies, and needs OPENROUTER_KEY whenever a gold paper is scored. In
 // CI that is the eval environment's secret. In a session the proxy puts the
 // key in, so any value will do, and NODE_USE_ENV_PROXY=1 sends the calls
 // through it.
@@ -97,6 +97,8 @@ export type Propose = (
 export interface Candidate {
   modelId: ModelId;
   rows: Rows;
+  // The same rows for the model alone, from the same replies.
+  alone: Rows;
   // Papers whose reply could not be read after one retry. Ids only.
   unprocessed: string[];
 }
@@ -194,6 +196,9 @@ export async function evaluate(input: {
       rows: rows.map((row) =>
         row.id === "model-adds" ? { ...row, score: adds } : row,
       ),
+      // The model alone, scored from the same replies, so it costs no
+      // second call (#694).
+      alone: asRows(score({ ...input, model: pass, rules: false })),
       unprocessed: pass.unprocessed,
     });
   }
@@ -295,11 +300,14 @@ async function main(dir: string, out: string | undefined): Promise<void> {
     console.log(`missed in gold set A: ${result.missedA.join(" ")}`);
   }
   for (const candidate of result.candidates) {
-    for (const row of candidate.rows) {
-      const shown = row.score === null ? "-" : row.score.toFixed(4);
-      console.log(
-        `${candidate.modelId}\t${row.id}\t${shown}\tn=${String(row.n)}`,
-      );
+    for (const [label, rows] of [
+      [candidate.modelId, candidate.rows],
+      [`${candidate.modelId} alone`, candidate.alone],
+    ] as const) {
+      for (const row of rows) {
+        const shown = row.score === null ? "-" : row.score.toFixed(4);
+        console.log(`${label}\t${row.id}\t${shown}\tn=${String(row.n)}`);
+      }
     }
     if (candidate.unprocessed.length > 0) {
       console.log(
