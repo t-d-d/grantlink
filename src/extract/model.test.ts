@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   MODELS,
   ModelRefused,
@@ -220,6 +220,67 @@ describe("the reply", () => {
     expect(result.status === "read" && result.references).toEqual([
       { asWritten: "A11111", normalised: "A11111", confidence: 0.5 },
     ]);
+  });
+
+  // Sonnet may write a sentence or two before its JSON (#710).
+  const BARE = '{"references":[{"asWritten":"A11111","confidence":0.5}]}';
+  const PROSE = "Looking at the funding text, Jo Example names one grant.";
+
+  it.each([
+    ["a sentence before its JSON", `${PROSE}\n\n${BARE}`],
+    ["prose before and after its JSON", `${PROSE}\n${BARE}\nThat is all.`],
+    [
+      "prose before its JSON in a code fence",
+      `${PROSE}\n\n\`\`\`json\n${BARE}\n\`\`\``,
+    ],
+    [
+      "a spaced JSON object after prose",
+      `${PROSE}\n{ "references": [ { "asWritten": "A11111", "confidence": 0.5 } ] }`,
+    ],
+  ])(
+    "reads a reply with %s, giving the references the bare JSON gives",
+    async (_, content) => {
+      const bare = await proposeReferences(TEXT, {
+        model: haiku,
+        key: "k",
+        fetch: fakeOpenRouter(reply(BARE)).fetch,
+      });
+      const { fetch, sent } = fakeOpenRouter(reply(content));
+      const result = await proposeReferences(TEXT, {
+        model: haiku,
+        key: "k",
+        fetch,
+      });
+      expect(sent).toHaveLength(1);
+      expect(result).toEqual(bare);
+      expect(result.status === "read" && result.references).toEqual([
+        { asWritten: "A11111", normalised: "A11111", confidence: 0.5 },
+      ]);
+    },
+  );
+
+  it("keeps nothing of the prose around the JSON in the result or a log", async () => {
+    const logged: unknown[] = [];
+    const spies = (["log", "info", "warn", "error", "debug"] as const).map(
+      (level) =>
+        vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+          logged.push(...args);
+        }),
+    );
+    try {
+      const result = await proposeReferences(TEXT, {
+        model: haiku,
+        key: "k",
+        fetch: fakeOpenRouter(reply(`${PROSE}\n${BARE}\nJo Example again.`))
+          .fetch,
+      });
+      expect(result.status).toBe("read");
+      expect(JSON.stringify(result)).not.toContain("Jo Example");
+      expect(JSON.stringify(result)).not.toContain("Looking at");
+      expect(logged).toEqual([]);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
   });
 
   it("finds a reference written across a no-break space in the text", async () => {
@@ -966,6 +1027,27 @@ describe("fitness: no lost papers (model-calls.md)", () => {
   it.each([
     ["not JSON", reply("I found A11111.")],
     ["JSON of the wrong shape", reply('{"refs":["A11111"]}')],
+    [
+      "prose before JSON that does not parse",
+      reply('Here it is: {"references":[{"asWritten":"A11111",}]}'),
+    ],
+    [
+      "prose before JSON of the wrong shape",
+      reply('Here it is: {"references":["A11111"]}'),
+    ],
+    [
+      "prose around JSON with an extra field",
+      reply(
+        'Here it is: {"references":[{"asWritten":"A11111","confidence":0.5,"note":"x"}]} Done.',
+      ),
+    ],
+    [
+      "prose after JSON with a brace of its own",
+      reply(
+        '{"references":[{"asWritten":"A11111","confidence":0.5}]} See {note}.',
+      ),
+    ],
+    ["prose with no references object", reply("The answer is {} here.")],
     [
       "a confidence out of range",
       answer([{ asWritten: "A11111", confidence: 2 }]),
