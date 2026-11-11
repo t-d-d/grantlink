@@ -134,6 +134,13 @@ footer p {
   line-height: 1.2;
 }
 
+.stat .more {
+  color: var(--muted);
+  display: block;
+  font-size: 0.9rem;
+  margin-top: 0.25rem;
+}
+
 .table-scroll {
   background: var(--card);
   border: 1px solid var(--rule);

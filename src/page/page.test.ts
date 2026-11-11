@@ -577,6 +577,33 @@ describe("rendering the page", () => {
   });
 });
 
+describe("the papers not yet read in the counts (#724)", () => {
+  const cards = (html: string) =>
+    [...html.matchAll(/<p class="card stat">(.*?)<\/p>/gu)].map(
+      (match) => match[1] ?? "",
+    );
+  const read = (html: string) =>
+    cards(html).find((card) => card.includes("papers read")) ?? "";
+
+  it("are counted in the papers read card, not in a card of their own", () => {
+    const html = renderFound(summarise(rows, run));
+    expect(cards(html)).toHaveLength(4);
+    expect(cards(html).join("\n")).not.toContain("papers not yet read");
+    expect(read(html)).toContain('<span class="more">1 not yet read</span>');
+  });
+
+  it("go unmentioned in that card when every paper has been read", () => {
+    const html = renderFound(
+      summarise(
+        rows.filter((r) => r.status === "processed"),
+        run,
+      ),
+    );
+    expect(read(html)).toContain("papers read");
+    expect(read(html)).not.toContain("not yet read");
+  });
+});
+
 describe("a paper Europe PMC marks as retracted (#587)", () => {
   const found = summarise(rows, run);
 
