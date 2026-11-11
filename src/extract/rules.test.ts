@@ -233,6 +233,21 @@ describe("the rules", () => {
     },
   );
 
+  // A next part of nine or more capitals or digits is too long to read,
+  // but it is still a part, so the read does not fall back to the front of
+  // the form (#579). The text is made up.
+  it.each([
+    "Funded by CRUK (CRUK/12/MCALLISTER).",
+    "Funded by CRUK (CRUK/12/ABCDEFGHI).",
+    "Funded by CRUK (CRUK/12/123456789).",
+    "Funded by CRUK (CRUK/12/34/MCALLISTER).",
+  ])(
+    "leaves a CRUK- form whose next part is nine or more capitals or digits: %j",
+    (text) => {
+      expect(findReferences(sections(text))).toEqual([]);
+    },
+  );
+
   // A slash with a space on each side parts a list of references, not the
   // parts of one, so each reference in the list is still read (#598).
   it("reads each CRUK- form in a list parted by a slash spaced on both sides", () => {

@@ -22,6 +22,7 @@ export const RULES_VERSIONS: readonly Version[] = [
   { number: 17, issue: 598 },
   { number: 18, issue: 642 },
   { number: 19, issue: 577 },
+  { number: 20, issue: 579 },
 ];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
@@ -235,12 +236,15 @@ const CRUK_DIGIT_PART = String.raw`${CRUK_SEP}(?=[A-Z]*\d)(?!${A_YEAR}(?![A-Z0-9
 const CRUK_LETTER_PART = String.raw`${CRUK_SEP}[A-Z]{1,2}(?![A-Z0-9])`;
 const CRUK_PART = `(?:${CRUK_DIGIT_PART}|${CRUK_LETTER_PART})`;
 // No part of any kind follows, so a read is the whole form, not its front.
-// Besides a hyphen or a slash, a part may follow a backslash, the set minus
-// sign, or a slash with a space on one side of it (#598). A slash with a
+// Here a part is anything that starts with a capital or a digit, however
+// long, so a name of nine or more capitals, too long to be a part the form
+// reads, still does not leave the front to be read (#579). Besides a
+// hyphen or a slash, a part may follow a backslash, the set minus sign, or
+// a slash with a space on one side of it (#598). A slash with a
 // space on each side parts a list of references, as in
 // "CRUK-A12345 / CRUK-A23456", so it ends the form.
 const NEXT_PART_SEP = String.raw`(?:${DASH}|[/\\∖]\s?|\s[/\\∖](?!\s))`;
-const NO_MORE_PARTS = String.raw`(?!${NEXT_PART_SEP}[A-Z0-9]{1,8}(?![A-Z0-9]))`;
+const NO_MORE_PARTS = String.raw`(?!${NEXT_PART_SEP}[A-Z0-9])`;
 // One to four parts, read whole. A form that runs on past four parts reads
 // its first four, as the model pass keeps them (#561), unless the fourth
 // has no digit and another part follows it.
@@ -273,7 +277,8 @@ const SHAPES: readonly Shape[] = [
     // CRUK/AB12/SMITH/2 (#514). A last part with no digit holds at most
     // two capitals, so CRUK/12/JONES is not one either (#560). Nor is
     // CRUK/12 read from CRUK/12\2019 or CRUK/12 /2019, where the next part
-    // follows a backslash or a slash spaced on one side (#598).
+    // follows a backslash or a slash spaced on one side (#598), nor from
+    // CRUK/12/MCALLISTER, where the next part is too long to read (#579).
     format: "CRUK-X",
     shape: String.raw`(?:[A-Z]{2,6}${DASH})?CRUK[A-Z]{0,6}(?:${CRUK_PARTS})`,
     readWhole: true,
