@@ -29,7 +29,7 @@ The live service calls no model, because Haiku added only 3.9 points of recall a
 
 ## How it is built
 
-Each change starts as an issue. Claude Code sessions write the code against it, tests first. `npm run gate` runs format, lint, types and the test tiers, including fitness functions that check the constraints. Governor, the owner's review bot, reviews each pull request against [a checklist](.claude/skills/pr-review/SKILL.md) and merges one that passes. A change to infrastructure, workflows, dependencies, scripts, constraints or the eval waits for the owner.
+Each change starts as an issue. Claude Code sessions write the code against it, tests first. `npm run gate` runs format, lint, types and the test tiers, including fitness functions that check the constraints. Before each push, Claude agents that did not write the change give the whole diff a high-effort code review, and the session fixes each finding, files it as an issue, or shows it is wrong ([pre-push](.claude/skills/pre-push/SKILL.md)). Governor, the owner's review bot, reads no code. It checks each pull request's description, tickets and changed files against [a checklist](.claude/skills/pr-review/SKILL.md) and merges one that passes. A change to infrastructure, workflows, dependencies, scripts, constraints or the eval waits for the owner.
 
 ## Access and data
 
@@ -45,7 +45,7 @@ A failed deploy is fixed forward, and a rollback is a merged revert, so main and
 
 ## How a run works
 
-A run is one Lambda Durable Function execution ([src/run/](src/run/)). The first deploy schedules the first run, and later runs start by hand. A run searches Europe PMC for open-access papers since 2020 whose funding or acknowledgement text names CRUK. It leaves out papers Europe PMC already links to a CRUK grant, and those it marks as retracted or as correction notices.
+A run is one Lambda Durable Function execution ([src/run/](src/run/)). The first deploy schedules the first run, and later runs start by hand until the schedule is enabled ([#27](https://github.com/t-d-d/grantlink/issues/27)). A run searches Europe PMC for open-access papers since 2020 whose funding or acknowledgement text names CRUK. It leaves out papers Europe PMC already links to a CRUK grant, and those it marks as retracted or as correction notices.
 
 The run reads each new paper at about 2 requests a second and keeps only its funding and acknowledgement text in the private bucket. Rules find the references, and a DynamoDB table records each one as written and normalised. When the rules change, the next run applies them to the stored text. The run then publishes the page and its data, `found.json`.
 
