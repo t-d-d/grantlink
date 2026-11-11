@@ -67,6 +67,7 @@ export async function draw(
 export const SHEET_COLUMNS = [
   ...GOLD_B_COLUMNS,
   "passes",
+  "flag",
   "look_in",
   "checked",
 ];
