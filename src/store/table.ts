@@ -64,6 +64,15 @@ const heldRules = z
   .optional()
   .catch({ rules: "" });
 
+// The names markProcessed and replaceReferences write a result through.
+// status, references and rules are DynamoDB reserved words, so an
+// expression names them only through these (#698).
+const RESULT_NAMES = {
+  "#status": "status",
+  "#references": "references",
+  "#rules": "rules",
+};
+
 // How many times markProcessed reads a row that changed under its write
 // before it fails, and the step that called it tries again.
 const MARK_PROCESSED_TRIES = 3;
@@ -427,12 +436,7 @@ export function dynamoTable(
               } OR versions.#rules = :to)`,
               UpdateExpression:
                 "SET #status = :processed, #references = :references, versions = :versions, processedAt = :processedAt, runId = :runId",
-              ExpressionAttributeNames: {
-                "#status": "status",
-                "#references": "references",
-                // rules is a DynamoDB reserved word too (#698).
-                "#rules": "rules",
-              },
+              ExpressionAttributeNames: RESULT_NAMES,
               ExpressionAttributeValues: {
                 ":processed": "processed",
                 ...(seen === null ? {} : { ":seen": seen }),
@@ -490,12 +494,7 @@ export function dynamoTable(
             ConditionExpression: `#status = :processed AND (${was} OR versions.#rules = :to)`,
             UpdateExpression:
               "SET #references = :references, versions = :versions, processedAt = :processedAt, runId = :runId",
-            ExpressionAttributeNames: {
-              "#status": "status",
-              "#references": "references",
-              // rules is a DynamoDB reserved word too (#698).
-              "#rules": "rules",
-            },
+            ExpressionAttributeNames: RESULT_NAMES,
             ExpressionAttributeValues: {
               ":processed": "processed",
               ...(from === null

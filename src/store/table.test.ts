@@ -799,6 +799,11 @@ describe("no reserved word as a bare attribute name (#698)", () => {
     await table.replaceReferences("PMC11", null, result);
     await table.replaceReferences("PMC11", null, result);
     await table.markFailed("PMC11", undefined);
+    // The fake refuses this one, as a mark has no fallback, but its
+    // expression is sent and checked all the same.
+    await expect(table.markFailed("PMC11", 500)).rejects.toThrow(
+      ConditionalCheckFailedException,
+    );
     await table.all();
 
     const sentExpressions = sent.flatMap((command) =>
@@ -811,6 +816,8 @@ describe("no reserved word as a bare attribute name (#698)", () => {
         expect.stringMatching(/versions\.#?rules = :from/u),
         expect.stringContaining("if_not_exists"),
         expect.stringContaining("#status"),
+        expect.stringContaining("SET lastFailure = :why"),
+        expect.stringContaining("REMOVE lastFailure"),
       ]),
     );
     expect(sentExpressions.flatMap(bareReserved)).toEqual([]);

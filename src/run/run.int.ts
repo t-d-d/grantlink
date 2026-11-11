@@ -23,8 +23,8 @@ import {
 import { NAMES, RECORDED } from "../../test/fixtures.ts";
 import { europePmc, EuropePmcError } from "../europepmc/client.ts";
 import { RULES_VERSION } from "../extract/rules.ts";
-import { textBucket } from "../store/bucket.ts";
 import { found } from "../page/found.ts";
+import { textBucket } from "../store/bucket.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
 // A whole run under the SDK's local runner, which replays the body as
@@ -347,11 +347,17 @@ describe("a paper an older rules version read", () => {
       text: held.text,
       awards: held.awards.map(({ ids }) => ({ ids })),
     });
+    // S3 holds the old file for PMC0000001 alone.
     const bucket = textBucket("text", {
-      send: () =>
-        Promise.resolve({
-          Body: { transformToString: () => Promise.resolve(old) },
-        }),
+      send: (command) =>
+        (command as { input: { Key?: string } }).input.Key ===
+        "cache/PMC0000001.json"
+          ? Promise.resolve({
+              Body: { transformToString: () => Promise.resolve(old) },
+            })
+          : Promise.reject(
+              Object.assign(new Error("missing"), { name: "NoSuchKey" }),
+            ),
     });
     fake.deps.text.getFundingText = (pmcid) => bucket.getFundingText(pmcid);
 
