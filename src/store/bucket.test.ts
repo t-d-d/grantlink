@@ -76,6 +76,26 @@ describe("reading funding text back from cache/ (#686)", () => {
     expect(sent).toEqual([{ Bucket: "b", Key: "cache/PMC11.json" }]);
   });
 
+  // A file written before #128 lists each award's ids with no sources.
+  it("reads an award a file written before #128 holds as one with no sources (#698)", async () => {
+    const { client } = replying(() => ({
+      Body: {
+        transformToString: () =>
+          Promise.resolve(
+            JSON.stringify({
+              pmcid: "PMC11",
+              text: ["t"],
+              awards: [{ ids: ["C1/A12345"] }],
+            }),
+          ),
+      },
+    }));
+    expect(await textBucket("b", client).getFundingText("PMC11")).toEqual({
+      text: ["t"],
+      awards: [{ sources: [], ids: ["C1/A12345"] }],
+    });
+  });
+
   it("reads a paper with no text in cache/ as null", async () => {
     const { client } = replying(() => {
       throw Object.assign(new Error("missing"), { name: "NoSuchKey" });

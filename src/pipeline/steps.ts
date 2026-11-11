@@ -284,10 +284,18 @@ export async function rereadPaper(
   return { reread: { references: references.length } };
 }
 
-// Logs a paper whose re-run failed after its retries. Its row stays as it
-// was, for the next run (#686).
-export function logRerunFailed(pmcid: string): void {
-  logger.warn("paper-reread-failed", { pmcid });
+// The shape of an error's name, such as ValidationException or ZodError.
+const ERROR_NAME = /^[A-Za-z][A-Za-z0-9_$.]{0,63}$/u;
+
+// Logs a paper whose re-run failed after its retries, with the name of the
+// error that failed it. Its row stays as it was, for the next run (#686).
+// The error's message may quote what failed, so only its name is logged,
+// and a name that is not shaped like one is logged as unknown (#698).
+export function logRerunFailed(pmcid: string, error: string): void {
+  logger.warn("paper-reread-failed", {
+    pmcid,
+    error: ERROR_NAME.test(error) ? error : "unknown",
+  });
 }
 
 // Records the run's search as the latest complete one, once it has ended,

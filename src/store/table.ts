@@ -423,13 +423,15 @@ export function dynamoTable(
               ConditionExpression: `attribute_exists(pmcid) AND (${
                 seen === null
                   ? "attribute_not_exists(versions)"
-                  : "versions.rules = :seen"
-              } OR versions.rules = :to)`,
+                  : "versions.#rules = :seen"
+              } OR versions.#rules = :to)`,
               UpdateExpression:
                 "SET #status = :processed, #references = :references, versions = :versions, processedAt = :processedAt, runId = :runId",
               ExpressionAttributeNames: {
                 "#status": "status",
                 "#references": "references",
+                // rules is a DynamoDB reserved word too (#698).
+                "#rules": "rules",
               },
               ExpressionAttributeValues: {
                 ":processed": "processed",
@@ -479,18 +481,20 @@ export function dynamoTable(
       const was =
         from === null
           ? "attribute_not_exists(versions)"
-          : "versions.rules = :from";
+          : "versions.#rules = :from";
       try {
         await send(
           new UpdateCommand({
             TableName: name,
             Key: { pmcid: PMCID.parse(pmcid) },
-            ConditionExpression: `#status = :processed AND (${was} OR versions.rules = :to)`,
+            ConditionExpression: `#status = :processed AND (${was} OR versions.#rules = :to)`,
             UpdateExpression:
               "SET #references = :references, versions = :versions, processedAt = :processedAt, runId = :runId",
             ExpressionAttributeNames: {
               "#status": "status",
               "#references": "references",
+              // rules is a DynamoDB reserved word too (#698).
+              "#rules": "rules",
             },
             ExpressionAttributeValues: {
               ":processed": "processed",

@@ -23,6 +23,7 @@ import {
 import { NAMES, RECORDED } from "../../test/fixtures.ts";
 import { europePmc, EuropePmcError } from "../europepmc/client.ts";
 import { RULES_VERSION } from "../extract/rules.ts";
+import { textBucket } from "../store/bucket.ts";
 import { found } from "../page/found.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
@@ -332,6 +333,41 @@ describe("a paper an older rules version read", () => {
     },
   );
 
+  // The first run's fetch wrote cache/ before #128 gave each award its
+  // sources. Such a file reads through the bucket module, and the rules
+  // still read its text (#698).
+  it("gets the current rules' references from a file in cache/ whose awards have no sources", async () => {
+    const fake = await readBy("PMC0000001", "rules-9");
+    const held = fake.text.get("cache/PMC0000001.json") as
+      { text: string[]; awards: { ids: string[] }[] } | undefined;
+    if (held === undefined) throw new Error("no text for PMC0000001");
+    expect(held.awards.length).toBeGreaterThan(0);
+    const old = JSON.stringify({
+      pmcid: "PMC0000001",
+      text: held.text,
+      awards: held.awards.map(({ ids }) => ({ ids })),
+    });
+    const bucket = textBucket("text", {
+      send: () =>
+        Promise.resolve({
+          Body: { transformToString: () => Promise.resolve(old) },
+        }),
+    });
+    fake.deps.text.getFundingText = (pmcid) => bucket.getFundingText(pmcid);
+
+    const again = await runWith(fake);
+    expect(again.status).toBe("SUCCEEDED");
+    expect(again.result).toMatchObject({ reread: 1, read: 0 });
+    const row = fake.table.rows.get("PMC0000001");
+    expect(row?.references?.map((r) => r.normalised)).toEqual([
+      "C1234/A56789",
+      "CTRQQR-2021/100010",
+      "A28707",
+    ]);
+    expect(row?.versions).toEqual({ rules: RULES_VERSION, code: "test" });
+    expect(logged("paper-reread-failed")).toEqual([]);
+  });
+
   it.each([
     ["the current", RULES_VERSION],
     ["a newer", NEWER_RULES],
@@ -401,9 +437,11 @@ describe("a paper an older rules version read", () => {
     expect(again.retryDelays("rerun-PMC0000001")).toHaveLength(2);
     expect(fake.table.rows.get("PMC0000001")).toEqual(before);
     expect(fullTextAsked(fake, "PMC0000001")).toBe(false);
+    // The error's name and not its message, which may hold text (#698).
     expect(logged("paper-reread-failed")).toEqual([
-      expect.objectContaining({ pmcid: "PMC0000001" }),
+      expect.objectContaining({ pmcid: "PMC0000001", error: "AccessDenied" }),
     ]);
+    expect(logs.some((line) => line.includes("Access Denied"))).toBe(false);
     expect(fake.table.rows.get("PMC0000002")?.versions?.rules).toBe(
       RULES_VERSION,
     );

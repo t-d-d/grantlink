@@ -5,6 +5,7 @@ import { SEARCH_PAGE_SIZE } from "../europepmc/client.ts";
 import { found } from "../page/found.ts";
 import {
   checkWholeSearch,
+  logRerunFailed,
   publish,
   readPaper,
   recordPage,
@@ -350,5 +351,24 @@ describe("the reason a failed snapshot logs", () => {
     undefined,
   ])("is unknown for anything else, such as %s", (error) => {
     expect(snapshotFailure(error)).toBe("unknown");
+  });
+});
+
+describe("logging a paper whose re-run failed (#698)", () => {
+  const line = () => JSON.parse(logs.at(-1) ?? "{}") as Record<string, unknown>;
+
+  it("logs the error's name beside the paper's id", () => {
+    logRerunFailed("PMC11", "ValidationException");
+    expect(line()).toMatchObject({
+      event: "paper-reread-failed",
+      pmcid: "PMC11",
+      error: "ValidationException",
+    });
+  });
+
+  it("logs a name not shaped like an error's name as unknown", () => {
+    logRerunFailed("PMC11", "Funded by Cancer Research UK (C1/A12345)");
+    expect(line()).toMatchObject({ pmcid: "PMC11", error: "unknown" });
+    expect(logs.join("\n")).not.toContain("Funded");
   });
 });
