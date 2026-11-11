@@ -1,5 +1,6 @@
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import { describe, expect, it } from "vitest";
+import { RESERVED_WORDS } from "../../test/dynamodb-reserved-words.ts";
 import { dynamoTable, olderRules, paperRow, readRow } from "./table.ts";
 
 const processed = {
@@ -437,7 +438,8 @@ describe("the table module", () => {
     expect(sent[0]?.input).toMatchObject({
       Key: { pmcid: "PMC11" },
       ConditionExpression:
-        "#status = :processed AND (versions.rules = :from OR versions.rules = :to)",
+        "#status = :processed AND (versions.#rules = :from OR versions.#rules = :to)",
+      ExpressionAttributeNames: { "#rules": "rules" },
       ExpressionAttributeValues: {
         ":from": "rules-9",
         ":to": "rules-20",
@@ -447,7 +449,7 @@ describe("the table module", () => {
     });
     expect(sent[1]?.input).toMatchObject({
       ConditionExpression:
-        "#status = :processed AND (attribute_not_exists(versions) OR versions.rules = :to)",
+        "#status = :processed AND (attribute_not_exists(versions) OR versions.#rules = :to)",
     });
   });
 
@@ -609,7 +611,8 @@ describe("recording a paper's result over a row another rules version read (#688
     expect(sent[0]?.input).toMatchObject({
       Key: { pmcid: "PMC11" },
       ConditionExpression:
-        "attribute_exists(pmcid) AND (attribute_not_exists(versions) OR versions.rules = :to)",
+        "attribute_exists(pmcid) AND (attribute_not_exists(versions) OR versions.#rules = :to)",
+      ExpressionAttributeNames: { "#rules": "rules" },
       ExpressionAttributeValues: {
         ":to": "rules-20",
         ":versions": result.versions,
@@ -660,7 +663,7 @@ describe("recording a paper's result over a row another rules version read (#688
     ]);
     expect(sent[2]?.input).toMatchObject({
       ConditionExpression:
-        "attribute_exists(pmcid) AND (versions.rules = :seen OR versions.rules = :to)",
+        "attribute_exists(pmcid) AND (versions.#rules = :seen OR versions.#rules = :to)",
       ExpressionAttributeValues: { ":seen": "rules-9", ":to": "rules-20" },
     });
   });
@@ -688,5 +691,135 @@ describe("recording a paper's result over a row another rules version read (#688
     await expect(
       dynamoTable("results", client).markProcessed("PMC11", result),
     ).rejects.toThrow(ConditionalCheckFailedException);
+  });
+});
+
+// DynamoDB refuses an expression that names one of its reserved words as a
+// bare attribute name, such as `versions.rules`, and the table's commands
+// would fail on every call (#698).
+describe("no reserved word as a bare attribute name (#698)", () => {
+  // The words an expression is written in, which are reserved words too.
+  const SYNTAX = new Set([
+    "SET",
+    "REMOVE",
+    "ADD",
+    "DELETE",
+    "AND",
+    "OR",
+    "NOT",
+    "BETWEEN",
+    "IN",
+  ]);
+  const EXPRESSIONS = [
+    "UpdateExpression",
+    "ConditionExpression",
+    "ProjectionExpression",
+    "KeyConditionExpression",
+    "FilterExpression",
+  ];
+
+  // Every expression a command's input holds, a batch read's included.
+  function expressions(input: Record<string, unknown>): string[] {
+    const own = EXPRESSIONS.map((key) => input[key]).filter(
+      (value): value is string => typeof value === "string",
+    );
+    const nested = Object.values(
+      (input.RequestItems ?? {}) as Record<string, Record<string, unknown>>,
+    ).flatMap(expressions);
+    return [...own, ...nested];
+  }
+
+  // The bare attribute names in an expression that DynamoDB reserves. A
+  // name through #, a value through :, a function and the expression's own
+  // words are left out.
+  function bareReserved(expression: string): string[] {
+    const words = expression
+      .replace(/[#:][A-Za-z0-9_]+/gu, " ")
+      .replace(/[A-Za-z_][A-Za-z0-9_]*\s*\(/gu, " ")
+      .match(/[A-Za-z_][A-Za-z0-9_]*/gu);
+    return (words ?? []).filter(
+      (word) => !SYNTAX.has(word) && RESERVED_WORDS.has(word.toUpperCase()),
+    );
+  }
+
+  it("finds a reserved word named bare, and none named through #", () => {
+    expect(bareReserved("versions.rules = :to")).toEqual(["rules"]);
+    expect(bareReserved("#status = :s AND versions.#rules = :to")).toEqual([]);
+    expect(
+      bareReserved("SET a = if_not_exists(a, :a) REMOVE b ADD c :one"),
+    ).toEqual([]);
+  });
+
+  it("sends no expression that names a reserved word bare", async () => {
+    const refused = () =>
+      new ConditionalCheckFailedException({
+        message: "refused",
+        $metadata: {},
+      });
+    const result = {
+      references: processed.references,
+      versions: { rules: "rules-20", code: "abc123" },
+      processedAt: "2026-11-11T10:00:00.000Z",
+      runId: "run-2",
+    };
+    let conditions = 0;
+    const { client, sent } = recorder((command) => {
+      const input = (command as { input: Record<string, unknown> }).input;
+      if (command.constructor.name === "GetCommand") {
+        const { Key } = input as { Key: { pmcid: string } };
+        if (Key.pmcid !== "PMC11") return {};
+        return {
+          Item: {
+            pmcid: "PMC11",
+            status: "processed",
+            versions: { rules: "rules-9", code: "x" },
+          },
+        };
+      }
+      // Refuses every other conditional write, so each command's fallback
+      // is sent too.
+      if ("ConditionExpression" in input) {
+        conditions += 1;
+        if (conditions % 2 === 1) throw refused();
+      }
+      return {};
+    });
+    const table = dynamoTable("results", client);
+    await table.addFound(
+      [{ pmcid: "PMC11", title: "A title", firstPublished: "2021-02-03" }],
+      "2026-11-09T10:00:00.000Z",
+      "run-2",
+    );
+    await table.recordSearch("run-2");
+    await table.latestSearch();
+    await table.rulesRead(["PMC11"]);
+    await table.lastFailures(["PMC11"]);
+    await table.markProcessed("PMC11", result);
+    await table.replaceReferences("PMC11", "rules-9", result);
+    await table.replaceReferences("PMC11", null, result);
+    await table.replaceReferences("PMC11", null, result);
+    await table.markFailed("PMC11", undefined);
+    // The fake refuses this one, as a mark has no fallback, but its
+    // expression is sent and checked all the same.
+    await expect(table.markFailed("PMC11", 500)).rejects.toThrow(
+      ConditionalCheckFailedException,
+    );
+    await table.all();
+
+    const sentExpressions = sent.flatMap((command) =>
+      expressions(command.input),
+    );
+    // Each kind of expression the module writes is among those checked.
+    expect(sentExpressions).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/versions\.#?rules = :seen/u),
+        expect.stringMatching(/versions\.#?rules = :from/u),
+        expect.stringContaining("if_not_exists"),
+        expect.stringContaining("#status"),
+        expect.stringContaining("SET lastFailure = :why"),
+        expect.stringContaining("REMOVE lastFailure"),
+      ]),
+    );
+    expect(sentExpressions.flatMap(bareReserved)).toEqual([]);
   });
 });
