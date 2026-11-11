@@ -137,7 +137,7 @@ export interface Drawn {
 // How far down a hard case's order the draw reads before it gives up.
 const MAX_READS = 60;
 
-async function everything(
+export async function everything(
   api: EuropePmc,
   query: string,
 ): Promise<{ pmcid: string; year: string }[]> {
@@ -278,9 +278,13 @@ export const SHEET_COLUMNS = [
 
 // The owner's labelling sheet: a paper's id and its link, and empty columns
 // for the labels. It holds no text from the paper.
-export function sheetCsv(pmcids: readonly string[]): string {
+export function sheetCsv(
+  pmcids: readonly string[],
+  columns: readonly string[] = SHEET_COLUMNS,
+): string {
+  const empty = ",".repeat(columns.length - 2);
   const rows = pmcids.map(
-    (pmcid) => `${pmcid},https://europepmc.org/article/PMC/${pmcid},,,,`,
+    (pmcid) => `${pmcid},https://europepmc.org/article/PMC/${pmcid}${empty}`,
   );
-  return [SHEET_COLUMNS.join(","), ...rows, ""].join("\n");
+  return [columns.join(","), ...rows, ""].join("\n");
 }
