@@ -371,6 +371,43 @@ describe("a paper an older rules version read", () => {
       RULES_VERSION,
     );
   });
+
+  it("leaves a row whose cache/ read is refused as it is, after its retries, logs its id, and carries on", async () => {
+    const fake = await readBy("PMC0000001", "rules-9");
+    const other = fake.table.rows.get("PMC0000002");
+    if (other === undefined) throw new Error("no row for PMC0000002");
+    fake.table.rows.set("PMC0000002", {
+      ...other,
+      versions: { rules: "rules-9", code: "older" },
+    });
+    // As S3 answers a missing key when the run's role may not list cache/
+    // (#687).
+    const real = fake.deps.text.getFundingText.bind(fake.deps.text);
+    fake.deps.text.getFundingText = (pmcid) =>
+      pmcid === "PMC0000001"
+        ? Promise.reject(
+            Object.assign(new Error("Access Denied"), { name: "AccessDenied" }),
+          )
+        : real(pmcid);
+    const before = fake.table.rows.get("PMC0000001");
+
+    const again = await runWith(fake);
+    expect(again.status).toBe("SUCCEEDED");
+    expect(again.result).toMatchObject({
+      reread: 1,
+      published: { published: true },
+    });
+    // storeRetry tries three times, so the step waits twice.
+    expect(again.retryDelays("rerun-PMC0000001")).toHaveLength(2);
+    expect(fake.table.rows.get("PMC0000001")).toEqual(before);
+    expect(fullTextAsked(fake, "PMC0000001")).toBe(false);
+    expect(logged("paper-reread-failed")).toEqual([
+      expect.objectContaining({ pmcid: "PMC0000001" }),
+    ]);
+    expect(fake.table.rows.get("PMC0000002")?.versions?.rules).toBe(
+      RULES_VERSION,
+    );
+  });
 });
 
 // A deploy can land while a run is reading, and the run stays on the
