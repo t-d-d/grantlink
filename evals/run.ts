@@ -23,6 +23,7 @@ import {
 } from "./gold.ts";
 import {
   makeReport,
+  readAlone,
   RULES_ALONE,
   verdict,
   type GoldA2Scores,
@@ -108,6 +109,9 @@ export interface Candidate {
   alone: Rows;
   // Papers whose reply could not be read after one retry. Ids only.
   unprocessed: string[];
+  // How many gold papers of each set the model read, so its scores alone
+  // are over these and leave the rest out (#696).
+  read: { goldA: number; goldB: number };
 }
 
 // Runs fn over every item, at most `limit` at a time, keeping their order.
@@ -188,6 +192,10 @@ function recallA2(
   return rows["recall-a"];
 }
 
+// A row's n, how many gold papers its score is over.
+const nOf = (rows: Rows, id: string): number =>
+  rows.find((row) => row.id === id)?.n ?? 0;
+
 export async function evaluate(input: {
   texts: ReadonlyMap<string, FundingSections>;
   goldA: readonly GoldA[];
@@ -223,11 +231,13 @@ export async function evaluate(input: {
       input.texts,
       input.propose,
     );
+    const aloneA2 = recallA2(input.texts, heldOut, passA2, false);
     goldA2Models.push({
       modelId: model,
-      alone: recallA2(input.texts, heldOut, passA2, false),
+      alone: aloneA2,
       rulesThen: recallA2(input.texts, heldOut, passA2),
       unprocessed: passA2.unprocessed.length,
+      read: aloneA2.n,
     });
     const rows = asRows(score({ ...input, model: pass }));
     // What the model adds is its recall on gold set B over the rules'.
@@ -237,15 +247,17 @@ export async function evaluate(input: {
       withModel === null || rulesAlone === null
         ? null
         : Math.max(0, withModel - rulesAlone);
+    // The model alone, scored from the same replies, so it costs no second
+    // call (#694). A paper it left unread is out of these rows (#696).
+    const alone = asRows(score({ ...input, model: pass, rules: false }));
     candidates.push({
       modelId: model,
       rows: rows.map((row) =>
         row.id === "model-adds" ? { ...row, score: adds } : row,
       ),
-      // The model alone, scored from the same replies, so it costs no
-      // second call (#694).
-      alone: asRows(score({ ...input, model: pass, rules: false })),
+      alone,
       unprocessed: pass.unprocessed,
+      read: { goldA: nOf(alone, "recall-a"), goldB: nOf(alone, "recall-b") },
     });
   }
   return {
@@ -385,6 +397,7 @@ async function main(dir: string, out: string | undefined): Promise<void> {
       );
     }
   }
+  for (const line of readAlone(report)) console.log(line);
   if (out !== undefined) writeFileSync(out, `${JSON.stringify(report)}\n`);
 }
 
