@@ -11,10 +11,15 @@ import {
 // text decides whether it joins, so the draw reads no text at all, only
 // ids, and prints nothing from a paper (docs/constraints/personal-data.md).
 
-// The live search, cut off at the day of the draw, so a draw on a later day
-// searches the same papers, less any Europe PMC has since linked or removed.
-export function upTo(query: string, day: string): string {
-  return `(${query}) AND FIRST_PDATE:[1900-01-01 TO ${day}]`;
+// The live search, cut off the day before the draw: Europe PMC may still
+// add papers published on the day itself. A draw on a later day then
+// searches the same papers, less any Europe PMC has since linked or
+// removed.
+export function upTo(query: string, ranOn: string): string {
+  const before = new Date(`${ranOn}T00:00:00Z`);
+  before.setUTCDate(before.getUTCDate() - 1);
+  const last = before.toISOString().slice(0, 10);
+  return `(${query}) AND FIRST_PDATE:[1900-01-01 TO ${last}]`;
 }
 
 // The held-out papers: every paper found, once each, less the excluded
@@ -49,12 +54,11 @@ export async function draw(
   api: EuropePmc,
   plan: Plan,
 ): Promise<{ papers: string[]; population: number }> {
-  const found = new Set(
-    (await everything(api, plan.query)).map(({ pmcid }) => pmcid),
-  );
+  // everything() gives each paper once.
+  const found = (await everything(api, plan.query)).map(({ pmcid }) => pmcid);
   return {
-    papers: heldOut([...found], plan.exclude, plan.seed, plan.size),
-    population: found.size,
+    papers: heldOut(found, plan.exclude, plan.seed, plan.size),
+    population: found.length,
   };
 }
 

@@ -4,7 +4,7 @@ import {
   searchQuery,
   type EuropePmc,
 } from "../../src/europepmc/client.ts";
-import goldB from "../../evals/gold-b.json" with { type: "json" };
+import { goldB } from "../../evals/gold.ts";
 import { draw, sheetCsv, upTo } from "./draw.ts";
 import { record, RECORD, SHEET } from "./record.ts";
 
@@ -19,15 +19,19 @@ import { record, RECORD, SHEET } from "./record.ts";
 //                                           and record the draw and the sheet
 
 const ABOUT =
-  "Gold set B2's sample (#695, #699): ids only, never text. scripts/gold-b2/sample.ts draws it from Europe PMC: every open-access paper the live search (searchQuery() in src/europepmc/client.ts) found, published up to the day it ran, less gold set B's papers (evals/gold-b.json), shuffled with the seed, and the first `size` of them. No check on a paper's text decides whether it joins. population counts the papers the search found, gold set B's among them. Run the script without --write to draw again and compare. The sheet lists the same papers in the same order.";
+  "Gold set B2's sample (#695, #699): ids only, never text. scripts/gold-b2/sample.ts draws it from Europe PMC: every open-access paper the live search (searchQuery() in src/europepmc/client.ts) found, published up to the day before it ran, less gold set B's papers (evals/gold-b.json), shuffled with the seed, and the first `size` of them. No check on a paper's text decides whether it joins. population counts the papers the search found, gold set B's among them. Run the script without --write to draw again and compare. The sheet lists the same papers in the same order.";
 const SEED = 20261111;
 const SIZE = 100;
 
-const write = process.argv.includes("--write");
 const today = new Date().toISOString().slice(0, 10);
-const plan = write
-  ? { query: upTo(searchQuery(), today), seed: SEED, size: SIZE }
+const recorded = process.argv.includes("--write")
+  ? undefined
   : record.parse(JSON.parse(readFileSync(RECORD, "utf8")));
+const plan = recorded ?? {
+  query: upTo(searchQuery(), today),
+  seed: SEED,
+  size: SIZE,
+};
 
 const client = europePmc();
 // Europe PMC can take many seconds a request, so the draw says where it is.
@@ -43,7 +47,7 @@ const drawn = await draw(api, {
   exclude: goldB.papers.map(({ pmcid }) => pmcid),
 });
 
-if (write) {
+if (recorded === undefined) {
   const next = record.parse({
     about: ABOUT,
     query: plan.query,
@@ -62,13 +66,14 @@ if (write) {
     }),
   );
 } else {
-  const want = record.parse(JSON.parse(readFileSync(RECORD, "utf8"))).papers;
+  const want = recorded.papers;
   const missing = want.filter((pmcid) => !drawn.papers.includes(pmcid));
   const extra = drawn.papers.filter((pmcid) => !want.includes(pmcid));
   const orderMatches = JSON.stringify(drawn.papers) === JSON.stringify(want);
   console.log(
     JSON.stringify({
       population: drawn.population,
+      recordedPopulation: recorded.population,
       missing,
       extra,
       orderMatches,

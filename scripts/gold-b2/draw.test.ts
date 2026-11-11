@@ -99,10 +99,15 @@ describe("drawing gold set B2", () => {
 });
 
 describe("the dated query", () => {
-  it("keeps the live search and stops at the day of the draw", () => {
+  it("keeps the live search and stops the day before the draw", () => {
     expect(upTo("A AND B", "2026-11-11")).toBe(
-      "(A AND B) AND FIRST_PDATE:[1900-01-01 TO 2026-11-11]",
+      "(A AND B) AND FIRST_PDATE:[1900-01-01 TO 2026-11-10]",
     );
+  });
+
+  it("stops at the last day of the month or year before", () => {
+    expect(upTo("A", "2026-03-01")).toMatch(/TO 2026-02-28\]$/u);
+    expect(upTo("A", "2027-01-01")).toMatch(/TO 2026-12-31\]$/u);
   });
 });
 

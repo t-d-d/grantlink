@@ -1,10 +1,10 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import goldB from "../../evals/gold-b.json" with { type: "json" };
+import { goldB } from "../../evals/gold.ts";
+import { readRepoFile } from "../../test/repo.ts";
 import { record, RECORD, SHEET } from "./record.ts";
-import { SHEET_COLUMNS, sheetCsv } from "./draw.ts";
+import { SHEET_COLUMNS, sheetCsv, upTo } from "./draw.ts";
 
-const recorded = record.parse(JSON.parse(readFileSync(RECORD, "utf8")));
+const recorded = record.parse(JSON.parse(readRepoFile(RECORD)));
 
 describe("gold set B2's recorded sample", () => {
   it("holds the plan's 100 papers, once each", () => {
@@ -20,16 +20,16 @@ describe("gold set B2's recorded sample", () => {
     expect(recorded.papers.filter((pmcid) => inB.has(pmcid))).toEqual([]);
   });
 
-  it("records a search cut off at the day it ran", () => {
-    expect(recorded.query).toMatch(
-      new RegExp(`FIRST_PDATE:\\[1900-01-01 TO ${recorded.ranOn}\\]$`, "u"),
+  it("records a search cut off the day before it ran", () => {
+    expect(recorded.query.endsWith(upTo("", recorded.ranOn).slice(2))).toBe(
+      true,
     );
   });
 });
 
 describe("gold set B2's labelling sheet", () => {
   it("lists the sample's papers with their links and empty label columns only", () => {
-    const sheet = readFileSync(SHEET, "utf8");
+    const sheet = readRepoFile(SHEET);
     expect(sheet.split("\n")[0]).toBe(SHEET_COLUMNS.join(","));
     expect(sheet).toBe(sheetCsv(recorded.papers));
   });
