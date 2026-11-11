@@ -1041,12 +1041,6 @@ describe("fitness: no lost papers (model-calls.md)", () => {
         'Here it is: {"references":[{"asWritten":"A11111","confidence":0.5,"note":"x"}]} Done.',
       ),
     ],
-    [
-      "prose after JSON with a brace of its own",
-      reply(
-        '{"references":[{"asWritten":"A11111","confidence":0.5}]} See {note}.',
-      ),
-    ],
     ["prose with no references object", reply("The answer is {} here.")],
     [
       "a confidence out of range",

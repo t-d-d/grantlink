@@ -171,7 +171,8 @@ type Answer = z.infer<typeof answer>;
 
 // Where the answer's object starts in a reply. A reply may be bare JSON, or
 // wrap it in a code fence, or put prose before or after it (#710).
-const START = /\{\s*"references"\s*:/u;
+// Only the spaces JSON allows count, so the start and the parser agree.
+const START = /\{[ \t\n\r]*"references"[ \t\n\r]*:/u;
 
 // Reads the answer from the text from its object's start to the last "}".
 // The prose around it is dropped here, and kept, logged or returned nowhere
