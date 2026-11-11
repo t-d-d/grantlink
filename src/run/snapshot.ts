@@ -55,9 +55,8 @@ const BATCH = 50;
 
 // Takes a batch of gold papers, first waiting out any wait an earlier
 // refusal left `owed`, as a run's batch does. A gold set B or B2 batch
-// stops at
-// its first paper that fails, since the snapshot is lost then and asking
-// Europe PMC about the rest would be wasted, and names that paper in
+// stops at its first paper that fails, since the snapshot is lost then and
+// asking Europe PMC about the rest would be wasted, and names that paper in
 // `stopped`. A labelled paper is always kept once read (#399), so one
 // that is not kept is a fault, and stops the batch the same way. `empty`
 // names each paper kept with no funding text or awards.

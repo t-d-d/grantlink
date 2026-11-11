@@ -451,7 +451,7 @@ async function main(dir: string, out: string | undefined): Promise<void> {
     heldB(`rules then ${model.modelId}`, model.rulesThen);
     if (model.unprocessed > 0) {
       console.log(
-        `${model.modelId} left ${String(model.unprocessed)} gold set B2 papers unread`,
+        `${model.modelId} left ${String(model.unprocessed)} gold set B2 ${model.unprocessed === 1 ? "paper" : "papers"} unread`,
       );
     }
   }

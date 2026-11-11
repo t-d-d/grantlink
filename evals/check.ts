@@ -350,11 +350,10 @@ function heldOutB2(ci: Report): string[] {
     "Gold set B2 is drawn at random from the live search, less gold set B's papers. A Claude model proposed gold set B2's labels and the owner checked them. Nobody tuned the rules or the prompt on gold set B2. Gold set B2 gates nothing.",
     ...b2.models
       .filter((model) => model.unprocessed > 0)
-      .map((model) =>
-        model.unprocessed === 1
-          ? `${model.modelId} left 1 gold set B2 paper unread. It is out of its scores alone, and scores what the rules found after the rules.`
-          : `${model.modelId} left ${String(model.unprocessed)} gold set B2 papers unread. They are out of its scores alone, and score what the rules found after the rules.`,
-      ),
+      .map((model) => {
+        const one = model.unprocessed === 1;
+        return `${model.modelId} left ${String(model.unprocessed)} gold set B2 ${one ? "paper" : "papers"} unread. ${one ? "It is" : "They are"} out of its scores alone, and ${one ? "scores" : "score"} what the rules found after the rules.`;
+      }),
   ];
 }
 
