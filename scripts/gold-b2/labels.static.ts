@@ -51,13 +51,11 @@ const passRows = table(PASSES, PASSES_COLUMNS);
 const passesOf = (pmcid: string): [Pass, Pass] => {
   const mine = passRows.filter((row) => row.pmcid === pmcid);
   expect(mine.map((row) => row.pass)).toEqual(["1", "2"]);
-  const [one, two] = mine.map(
-    (row): Pass => ({
-      funded: funded(row.funded),
-      references: list(row.references_normalised),
-      unsure: row.unsure === "yes",
-    }),
-  );
+  const [one, two] = mine.map((row): Pass => ({
+    funded: funded(row.funded),
+    references: list(row.references_normalised),
+    unsure: row.unsure === "yes",
+  }));
   if (one === undefined || two === undefined) throw new Error(pmcid);
   return [one, two];
 };
@@ -146,7 +144,8 @@ describe("gold set B2's proposed labels", () => {
     for (const row of proposed) {
       const flags = list(row.flag);
       if (drawn.has(row.pmcid ?? "")) expect(flags).toEqual([SAMPLED]);
-      else if (flags.includes(SAMPLED)) throw new Error(`${row.pmcid} sampled`);
+      else if (flags.includes(SAMPLED))
+        throw new Error(`${String(row.pmcid)} sampled`);
       else if (flags.length === 0 || flags.includes(NOT_CHECKED)) {
         expect(flags).toEqual([NOT_CHECKED]);
       }

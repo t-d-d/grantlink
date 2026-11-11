@@ -26,4 +26,3 @@ describe("gold set B2's recorded sample", () => {
     );
   });
 });
-

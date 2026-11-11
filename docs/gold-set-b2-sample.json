@@ -106,5 +106,17 @@
     "PMC11226649",
     "PMC7812362",
     "PMC8093233"
-  ]
+  ],
+  "labels": {
+    "labeller": "Claude Opus, two passes",
+    "labelledOn": "2026-11-11",
+    "rules": "rules-20",
+    "prompt": "prompt-13",
+    "models": [
+      "anthropic/claude-haiku-5.5",
+      "anthropic/claude-sonnet-5.5"
+    ],
+    "checkSeed": 7002026,
+    "checkSize": 10
+  }
 }
