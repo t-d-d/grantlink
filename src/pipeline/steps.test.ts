@@ -5,7 +5,6 @@ import { SEARCH_PAGE_SIZE } from "../europepmc/client.ts";
 import { found } from "../page/found.ts";
 import {
   checkWholeSearch,
-  olderRules,
   publish,
   readPaper,
   recordPage,
@@ -25,23 +24,6 @@ afterEach(() => {
 });
 afterAll(() => {
   spy.mockRestore();
-});
-
-describe("which rules version is older (#686)", () => {
-  it.each([
-    ["rules-9", "rules-20", true],
-    ["rules-19", "rules-20", true],
-    [null, "rules-20", true],
-    ["rules-20", "rules-20", false],
-    ["rules-21", "rules-20", false],
-    ["rules-100", "rules-20", false],
-    // A version this code cannot read the number of is left as it is.
-    ["r", "rules-20", false],
-    ["rules-", "rules-20", false],
-    ["rules-9x", "rules-20", false],
-  ])("reads %s as older than %s: %s", (read, current, older) => {
-    expect(olderRules(read, current)).toBe(older);
-  });
 });
 
 describe("reading a page of the search", () => {

@@ -8,7 +8,7 @@ import { summarise } from "../page/found.ts";
 import { deployRun, liveRelease, type Release } from "../page/release.ts";
 import { buildPage } from "../page/render.ts";
 import type { SiteBucket, TextBucket } from "../store/bucket.ts";
-import type { Table } from "../store/table.ts";
+import { olderRules, type Table } from "../store/table.ts";
 
 // The work a run's steps do. Each takes what it needs and no durable
 // context (docs/constraints/durable-execution.md), so a test can call it
@@ -174,24 +174,6 @@ export function checkWholeSearch(found: number, skipped: number): void {
       `the search skipped ${String(skipped)} results for a malformed PMCID and found no papers`,
     );
   }
-}
-
-// The number of a rules version, `rules-<number>`, or null for a version
-// this code cannot read the number of.
-function rulesNumber(version: string): number | null {
-  const match = /^rules-(\d+)$/u.exec(version);
-  return match?.[1] === undefined ? null : Number(match[1]);
-}
-
-// Whether the rules version that read a paper, or null for none recorded,
-// is older than `current`. Versions compare by number, not as strings, and
-// a version whose number cannot be read counts as not older, so the row
-// stays as it is (#686).
-export function olderRules(read: string | null, current: string): boolean {
-  if (read === null) return true;
-  const was = rulesNumber(read);
-  const now = rulesNumber(current);
-  return was !== null && now !== null && was < now;
 }
 
 // A paper an older rules version read, and that version, or null for none
