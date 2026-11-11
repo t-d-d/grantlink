@@ -76,7 +76,8 @@ export function renderFound(found: Found): string {
   // reference has no link to show, so it gets no row. A reference is shown
   // in its normal form, as gold set B stores it, with no stray space and the
   // usual slash and hyphen. found.json keeps it as the paper printed it
-  // (#606).
+  // (#606). The list runs to about 1,000 rows, so it comes last, below the
+  // counts, the formats and the papers not yet read (#674).
   const rows = found.papers
     .filter((paper) => paper.references.length > 0)
     .map((paper) => {
@@ -101,20 +102,6 @@ export function renderFound(found: Found): string {
         </p>
         <div class="cards">
 ${cards.map(([n, label]) => `          <p class="card stat"><span class="value">${number(n)}</span> ${escape(label)}</p>`).join("\n")}
-        </div>
-
-        <h3>Recovered references</h3>
-        <p>
-          These links are proposed by software. No person has checked them
-          yet, and they come with no warranty. Each title opens the paper on
-          Europe PMC, where the reference is in its funding text. Search the
-          list with your browser's find.
-        </p>
-        <div class="table-scroll">
-          <table class="references">
-            <tr><th scope="col">Paper</th><th scope="col">Grant reference</th><th scope="col">Status</th></tr>
-            ${rows.join("\n            ")}
-          </table>
         </div>
 
         <h3>Reference formats</h3>
@@ -144,6 +131,20 @@ ${cards.map(([n, label]) => `          <p class="card stat"><span class="value">
             ${pending.join("\n            ")}
           </ul>
         </details>
+
+        <h3>Recovered references</h3>
+        <p>
+          These links are proposed by software. No person has checked them
+          yet, and they come with no warranty. Each title opens the paper on
+          Europe PMC, where the reference is in its funding text. Search the
+          list with your browser's find.
+        </p>
+        <div class="table-scroll">
+          <table class="references">
+            <tr><th scope="col">Paper</th><th scope="col">Grant reference</th><th scope="col">Status</th></tr>
+            ${rows.join("\n            ")}
+          </table>
+        </div>
       </section>`;
 }
 
