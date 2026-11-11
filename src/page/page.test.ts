@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { CONTACT, NOTICE, footerOf, textOf } from "../../test/page.ts";
 import type { PaperRow } from "../store/table.ts";
 import {
   found as foundSchema,
@@ -364,6 +365,79 @@ describe("fitness: links are labelled as proposed by software, with no warranty 
     const words = template.replace(/\s+/gu, " ");
     expect(words).toMatch(/proposed by software/u);
     expect(words).toMatch(/none comes with a warranty/u);
+  });
+});
+
+// The markup of the element whose start tag carries `attribute`, through its
+// matching end tag, or "" when no element carries it.
+const elementWith = (html: string, attribute: string) => {
+  const from = html.indexOf(attribute);
+  if (from < 0) return "";
+  const at = html.lastIndexOf("<", from);
+  const name = /^<(\w+)/u.exec(html.slice(at))?.[1] ?? "";
+  let depth = 0;
+  for (const tag of html
+    .slice(at)
+    .matchAll(new RegExp(`<(/?)${name}\\b[^>]*>`, "gu"))) {
+    depth += tag[1] === "/" ? -1 : 1;
+    if (depth === 0) return html.slice(at, at + tag.index + tag[0].length);
+  }
+  return "";
+};
+
+// The list runs to about 1,000 rows, so the page splits into two tabs, and
+// How it's run is one click from the top (#674). The page runs no script
+// (no-tracking.md): each tab links to its panel, and the stylesheet shows
+// the panel the address names.
+describe("the page's two tabs (#674)", () => {
+  const pages = {
+    "before any run": template,
+    "after a run": buildPage(template, summarise(rows, run)),
+  };
+
+  for (const [when, page] of Object.entries(pages)) {
+    describe(when, () => {
+      const found = elementWith(page, 'id="what-it-found"');
+      const how = elementWith(page, 'id="how-its-run"');
+
+      it("links a tab to each panel, above both", () => {
+        const tabs = elementWith(page, 'class="tabs"');
+        expect(tabs).toMatch(/^<nav\b/u);
+        expect(tabs).toContain('href="#what-it-found"');
+        expect(tabs).toContain('href="#how-its-run"');
+        expect(page.indexOf(tabs)).toBeLessThan(page.indexOf(found));
+        expect(page.indexOf(found)).toBeLessThan(page.indexOf(how));
+      });
+
+      it("holds the findings in one panel and the release in the other", () => {
+        expect(found).toMatch(/^<div class="panel" /u);
+        expect(how).toMatch(/^<div class="panel" /u);
+        expect(found).toContain("<!-- found -->");
+        expect(found).toContain("<!-- /found -->");
+        expect(how).toContain("<!-- run -->");
+        expect(how).toContain("<!-- /run -->");
+      });
+
+      it("keeps the notice, the contact and the no-warranty line under both tabs", () => {
+        expect(found).not.toBe("");
+        expect(how).not.toBe("");
+        const outside = page.replace(found, "").replace(how, "");
+        expect(textOf(footerOf(outside))).toMatch(NOTICE);
+        expect(footerOf(outside)).toContain(`mailto:${CONTACT}`);
+        expect(outside.replace(/\s+/gu, " ")).toMatch(
+          /proposed by software\. Each shows its status, and none comes with a warranty/u,
+        );
+      });
+    });
+  }
+
+  it("lists the references last in What it found, below the counts, formats and papers not yet read", () => {
+    const html = renderFound(summarise(rows, run));
+    const list = html.indexOf('<table class="references">');
+    expect(list).toBeGreaterThan(html.indexOf('class="cards"'));
+    expect(list).toBeGreaterThan(html.indexOf('<table class="formats">'));
+    expect(list).toBeGreaterThan(html.indexOf('<ul class="pending">'));
+    expect(list).toBeGreaterThan(html.lastIndexOf("<h3>"));
   });
 });
 
