@@ -166,6 +166,7 @@ describe("fitness: a report gives gold set A2's recall and no ids of what it mis
         modelId: "anthropic/claude-haiku-5.5",
         alone: { score: 0.8, n: 300 },
         rulesThen: { score: 0.95, n: 300 },
+        unprocessed: 2,
       },
     ],
   };

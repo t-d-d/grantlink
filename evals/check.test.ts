@@ -65,6 +65,7 @@ const goldA2 = (rules: number, then = rules) => ({
       modelId: "anthropic/claude-haiku-5.5",
       alone: { score: 0.5, n: 300 },
       rulesThen: { score: then, n: 300 },
+      unprocessed: 3,
     },
   ],
 });
@@ -123,6 +124,9 @@ describe("gold set A2 in the pull request's comment", () => {
       "Nobody tuned the rules or the prompt on gold set A2.",
     );
     expect(text).toContain("Gold set A2 gates nothing.");
+    expect(text).toContain(
+      "anthropic/claude-haiku-5.5 left 3 gold set A2 papers unread, and they count as missed.",
+    );
   });
 
   it("says gold set A2 waits for its snapshot while it has no score", () => {

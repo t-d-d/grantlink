@@ -284,9 +284,9 @@ export async function takeSnapshot(
   let due = owed;
   const { goldA, goldA2, goldB } = deps.gold;
 
-  // What each query found, so gold set A2, which shares gold set A's
-  // query, does not search again when gold set A has searched.
-  const searched = new Map<string, string[]>();
+  // What gold set A's search found, which gold set A2 reuses when it
+  // shares gold set A's query, so it does not search again.
+  let foundA: string[] | null = null;
 
   // The order gold set A is drawn in.
   let candidates: string[] = goldA.papers.map((paper) => paper.pmcid);
@@ -295,22 +295,17 @@ export async function takeSnapshot(
     const result = await searchDrawn(ctx, deps, runId, goldA.query, "A", due);
     if ("lost" in result) return result.lost;
     due = result.owed;
-    searched.set(goldA.query, result.found);
+    foundA = result.found;
     candidates = sample(result.found, goldA.seed);
   }
 
-  // eslint-disable-next-line grantlink/no-await-outside-step -- every await in searchDrawn and drawSet is a durable operation or a step helper, so a replay takes the same path, as it did when this code was inline.
-  const drawnA = await drawSet(ctx, deps, candidates, "A", goldA.size, due);
-  due = drawnA.owed;
-  const entries: Entry[] = [...drawnA.entries];
-
-  // Gold set A2 is drawn as gold set A is, with its own seed, and passes
-  // over any candidate in gold set A, as the repo pinned it or as this
-  // snapshot took it (#695).
+  // Gold set A2 is drawn as gold set A is, with its own seed (#695). Its
+  // search comes before any paper is read, so a search Europe PMC refuses
+  // or that fails ends the snapshot before it has cost a paper.
   let candidatesA2: string[] = goldA2.papers.map((paper) => paper.pmcid);
   if (candidatesA2.length === 0) {
-    let found = searched.get(goldA2.query);
-    if (found === undefined) {
+    let found = goldA2.query === goldA.query ? foundA : null;
+    if (found === null) {
       // eslint-disable-next-line grantlink/no-await-outside-step -- every await in searchDrawn and drawSet is a durable operation or a step helper, so a replay takes the same path, as it did when this code was inline.
       const result = await searchDrawn(
         ctx,
@@ -326,6 +321,14 @@ export async function takeSnapshot(
     }
     candidatesA2 = sample(found, goldA2.seed);
   }
+
+  // eslint-disable-next-line grantlink/no-await-outside-step -- every await in searchDrawn and drawSet is a durable operation or a step helper, so a replay takes the same path, as it did when this code was inline.
+  const drawnA = await drawSet(ctx, deps, candidates, "A", goldA.size, due);
+  due = drawnA.owed;
+  const entries: Entry[] = [...drawnA.entries];
+
+  // Gold set A2 passes over any candidate in gold set A, as the repo
+  // pinned it or as this snapshot took it.
   const inA = new Set([
     ...goldA.papers.map((paper) => paper.pmcid),
     ...drawnA.entries.map((entry) => entry.pmcid),

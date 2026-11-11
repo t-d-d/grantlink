@@ -14,7 +14,7 @@ text, so it must not get broad AWS access or see the key.
   once: each gold paper's funding sections at
   `eval/<id>/papers/<pmcid>.json`, under its own snapshot id, and a
   manifest at `eval/<id>/manifest.json` listing each paper, its set, its
-  text's SHA-256 and, for gold set A, its answers.
+  text's SHA-256 and, for gold sets A and A2, its answers.
 - Gold set A is sampled once, with the query, seed and size recorded in
   `evals/gold-a.json`. A candidate joins it only if its full text prints
   at least one of the CRUK grants Europe PMC links it to. Its answers are

@@ -59,6 +59,9 @@ export const goldA2Scores = z
           modelId: z.string().min(1).max(100),
           alone: heldOutRow,
           rulesThen: heldOutRow,
+          // How many papers' replies could not be read. They count as
+          // missed, and are not named.
+          unprocessed: z.number().int().nonnegative(),
         })
         .strict(),
     ),

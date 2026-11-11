@@ -215,7 +215,8 @@ export async function evaluate(input: {
     const pass = await modelPass(model, pmcids, input.texts, input.propose);
     // Gold set A2's papers go to the model in a pass of their own, so the
     // spend row stays over gold sets A and B, as its floor was set. A paper
-    // whose reply could not be read counts as missed, and is not named.
+    // whose reply could not be read counts as missed, and only how many
+    // there were is reported.
     const passA2 = await modelPass(
       model,
       heldOut.map((paper) => paper.pmcid),
@@ -226,6 +227,7 @@ export async function evaluate(input: {
       modelId: model,
       alone: recallA2(input.texts, heldOut, passA2, false),
       rulesThen: recallA2(input.texts, heldOut, passA2),
+      unprocessed: passA2.unprocessed.length,
     });
     const rows = asRows(score({ ...input, model: pass }));
     // What the model adds is its recall on gold set B over the rules'.
@@ -361,6 +363,11 @@ async function main(dir: string, out: string | undefined): Promise<void> {
   for (const model of result.goldA2.models) {
     held(`${model.modelId} alone`, model.alone);
     held(`rules then ${model.modelId}`, model.rulesThen);
+    if (model.unprocessed > 0) {
+      console.log(
+        `${model.modelId} left ${String(model.unprocessed)} gold set A2 papers unread`,
+      );
+    }
   }
   for (const candidate of result.candidates) {
     for (const [label, rows] of [

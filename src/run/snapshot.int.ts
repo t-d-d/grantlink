@@ -10,7 +10,7 @@ import {
   vi,
 } from "vitest";
 import { snapshotKeys } from "../../evals/gold.ts";
-import { FAKE_GOLD, fakeDeps, isGoldSearch } from "../../test/fakes.ts";
+import { FAKE_GOLD, fakeDeps, isGoldSearch, reply } from "../../test/fakes.ts";
 import { EuropePmcError } from "../europepmc/client.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
@@ -330,5 +330,38 @@ describe("fitness: no paper in gold set A2 is in gold set A (evals.md)", () => {
     expect(inSet(fake, "A")).toEqual(["PMC0000001"]);
     expect(inSet(fake, "A2")).toEqual(["PMC0000002"]);
     expect(fake.requests.some(isGoldSearch)).toBe(false);
+  });
+
+  it("searches for gold set A2 before it reads gold set A, so a refused search costs no paper", async () => {
+    const fake = fakeDeps({
+      gold: {
+        goldA: {
+          ...FAKE_GOLD.goldA,
+          papers: [{ pmcid: "PMC0000001", grants: ["A56789"] }],
+        },
+      },
+      goldSearch: () => reply("", 429, { "Retry-After": "300" }),
+    });
+    // The run reads PMC0000001 in its own search, so only what Europe PMC
+    // is asked once the snapshot starts counts.
+    let from = Infinity;
+    const hasSnapshot = fake.deps.text.hasSnapshot.bind(fake.deps.text);
+    fake.deps.text.hasSnapshot = (id) => {
+      from = Math.min(from, fake.requests.length);
+      return hasSnapshot(id);
+    };
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toEqual({
+      taken: false,
+      reason: "Europe PMC refused gold set A2's search",
+    });
+    expect(logged("snapshot-search-ended")).toEqual([
+      expect.objectContaining({ set: "A2", refused: true }),
+    ]);
+    // The snapshot asked about no paper, only for gold set A2's search.
+    const asked = fake.requests.slice(from);
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.every(isGoldSearch)).toBe(true);
   });
 });

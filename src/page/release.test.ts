@@ -330,6 +330,7 @@ describe("gold set A2 on the page (#706)", () => {
         modelId: "anthropic/claude-haiku-5.5",
         alone: { score: 0.88, n: 300 },
         rulesThen: { score: 0.96, n: 300 },
+        unprocessed: 0,
       },
     ],
   });

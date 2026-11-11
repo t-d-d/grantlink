@@ -240,6 +240,12 @@ function heldOutA2(ci: Report): string[] {
     ),
     "",
     "Gold set A2 is drawn as gold set A is, with its own seed, from papers not in gold set A. Nobody tuned the rules or the prompt on gold set A2. Gold set A2 gates nothing.",
+    ...a2.models
+      .filter((model) => model.unprocessed > 0)
+      .map(
+        (model) =>
+          `${model.modelId} left ${String(model.unprocessed)} gold set A2 ${model.unprocessed === 1 ? "paper" : "papers"} unread, and they count as missed.`,
+      ),
   ];
 }
 

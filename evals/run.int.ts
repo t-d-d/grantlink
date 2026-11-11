@@ -394,6 +394,7 @@ describe("fitness: a report gives gold set A2's recall and no ids of what it mis
           modelId: model,
           alone: { score: 0.5, n: 2 },
           rulesThen: { score: 1, n: 2 },
+          unprocessed: 0,
         },
       ],
     });
@@ -422,6 +423,26 @@ describe("fitness: a report gives gold set A2's recall and no ids of what it mis
     expect(rows.find((row) => row.id === "spend")?.score).toBeCloseTo(1000);
   });
 
+  it("counts the gold set A2 papers a model's reply could not be read for, without naming them", async () => {
+    const unreadable: Propose = (_model, text) =>
+      text === texts.get("PMC5")?.text
+        ? Promise.resolve({ status: "unprocessed", spend: 1 })
+        : propose(model, text);
+    const result = await evaluate({
+      texts,
+      goldA: [],
+      goldB: [],
+      goldA2,
+      models: [model],
+      propose: unreadable,
+    });
+    expect(result.goldA2.models[0]).toMatchObject({
+      rulesThen: { score: 0.5, n: 2 },
+      unprocessed: 1,
+    });
+    expect(JSON.stringify(result)).not.toContain("PMC5");
+  });
+
   it("scores nothing on gold set A2 while it has no papers", async () => {
     const result = await evaluate({
       texts,
@@ -438,6 +459,7 @@ describe("fitness: a report gives gold set A2's recall and no ids of what it mis
           modelId: model,
           alone: { score: null, n: 0 },
           rulesThen: { score: null, n: 0 },
+          unprocessed: 0,
         },
       ],
     });
