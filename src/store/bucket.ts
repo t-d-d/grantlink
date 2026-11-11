@@ -32,11 +32,16 @@ export interface TextBucket {
 
 const SNAPSHOT_ID = /^s\d+$/u;
 
-// What putFundingText writes under cache/.
+// What putFundingText writes under cache/. A file written before #128 has
+// no sources on its awards, and each reads as an award with none, which the
+// rules skip (#698).
 const cachedText = z.object({
   text: z.array(z.string()),
   awards: z.array(
-    z.object({ sources: z.array(z.string()), ids: z.array(z.string()) }),
+    z.object({
+      sources: z.array(z.string()).default([]),
+      ids: z.array(z.string()),
+    }),
   ),
 });
 

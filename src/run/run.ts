@@ -157,8 +157,11 @@ async function rerunBatch(
     } catch (error) {
       // An error the SDK raises for itself is thrown as it is.
       if (!(error instanceof DurableOperationError)) throw error;
+      // The step's own error, as the SDK checkpointed it, so a replay
+      // logs the same name.
+      const name = error.cause?.name ?? error.name;
       await logOnly(ctx, `rerun-failed-${paper.pmcid}`, () => {
-        logRerunFailed(paper.pmcid);
+        logRerunFailed(paper.pmcid, name);
       });
     }
   }
