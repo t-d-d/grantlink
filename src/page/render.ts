@@ -64,17 +64,16 @@ export function renderFound(found: Found): string {
   // of their own, and the line goes when every paper has been read (#724).
   const unread =
     counts.pending > 0 ? `${number(counts.pending)} not yet read` : "";
-  const cards: [number, string, string][] = [
+  const cards: [number, string, string?][] = [
     [
       counts.papers,
       "papers that name Cancer Research UK as a funder but are not yet linked to one of its grants in Europe PMC",
-      "",
     ],
     [counts.processed, "papers read", unread],
-    [counts.withReference, "papers that give a grant reference", ""],
-    [counts.references, "grant references recovered", ""],
+    [counts.withReference, "papers that give a grant reference"],
+    [counts.references, "grant references recovered"],
   ];
-  const card = ([n, label, more]: [number, string, string]) =>
+  const card = ([n, label, more = ""]: [number, string, string?]) =>
     `<p class="card stat"><span class="value">${number(n)}</span> ${escape(label)}${
       more === "" ? "" : ` <span class="more">${escape(more)}</span>`
     }</p>`;
