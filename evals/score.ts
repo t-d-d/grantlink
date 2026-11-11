@@ -225,10 +225,12 @@ export function printedGrants(
 }
 
 // What a model added after the rules: the normalised references it found
-// in each paper, and what it spent over every gold paper, in US dollars.
+// in each paper, what it spent over every gold paper, in US dollars, and
+// the papers whose reply could not be read. Ids only.
 export interface ModelPass {
   found: ReadonlyMap<string, readonly string[]>;
   spend: number;
+  unprocessed: readonly string[];
 }
 
 interface Input {
@@ -246,11 +248,17 @@ const ratio = (part: number, whole: number): number | null =>
 
 export function score({
   texts,
-  goldA,
-  goldB,
+  goldA: sentA,
+  goldB: sentB,
   model,
   rules = true,
 }: Input): Scores {
+  // A paper the model left unread is out of its scores alone, on every
+  // gold set. After the rules it stays in, and scores what the rules found
+  // in it (#696).
+  const unread = new Set(rules ? [] : (model?.unprocessed ?? []));
+  const goldA = sentA.filter((paper) => !unread.has(paper.pmcid));
+  const goldB = sentB.filter((paper) => !unread.has(paper.pmcid));
   const found = (pmcid: string): string[] => {
     const sections = texts.get(pmcid);
     if (sections === undefined) {
@@ -268,7 +276,8 @@ export function score({
       ]),
     ];
   };
-  const papers = goldA.length + goldB.length;
+  // Spend counts every call, read or not, over every gold paper sent.
+  const papers = sentA.length + sentB.length;
 
   let grantsA = 0;
   let recalledA = 0;

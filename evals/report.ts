@@ -59,9 +59,14 @@ export const goldA2Scores = z
           modelId: z.string().min(1).max(100),
           alone: heldOutRow,
           rulesThen: heldOutRow,
-          // How many papers' replies could not be read. They count as
-          // missed, and are not named.
+          // How many papers' replies could not be read. They are not
+          // named.
           unprocessed: z.number().int().nonnegative(),
+          // How many papers the model alone read. Its recall alone is over
+          // these, and after the rules an unread paper scores the rules'
+          // references (#696). A report filed before that has none, and
+          // its recall alone counts an unread paper as missed.
+          read: z.number().int().nonnegative().optional(),
         })
         .strict(),
     ),
@@ -102,6 +107,17 @@ export const report = z
             rows,
             alone: rows.optional(),
             unprocessed: z.array(PMCID),
+            // How many papers of gold sets A and B the model read. Its rows
+            // alone are over these and leave the rest out (#696). A report
+            // filed before that has none, and its rows alone count an
+            // unread paper as finding nothing.
+            read: z
+              .object({
+                goldA: z.number().int().nonnegative(),
+                goldB: z.number().int().nonnegative(),
+              })
+              .strict()
+              .optional(),
           })
           .strict(),
       )
@@ -148,4 +164,49 @@ export function verdict(given: Report): Verdict {
     ),
     rows: judged,
   };
+}
+
+// How many gold papers each model read alone, on each gold set it was
+// sent papers of, as "read N of M" (#696). A report filed before the eval
+// said so gives no line for that model.
+export function readAlone(given: Report): string[] {
+  const of = (rows: Report["rows"], id: RowId): number =>
+    rows.find((row) => row.id === id)?.n ?? 0;
+  return (given.candidates ?? []).flatMap((candidate) => {
+    const a2 = given.goldA2?.models.find(
+      (model) => model.modelId === candidate.modelId,
+    );
+    const sets = [
+      ...(candidate.read === undefined
+        ? []
+        : [
+            {
+              on: "gold set A",
+              read: candidate.read.goldA,
+              of: of(given.baseline, "recall-a"),
+            },
+            {
+              on: "gold set B",
+              read: candidate.read.goldB,
+              of: of(given.baseline, "recall-b"),
+            },
+          ]),
+      ...(a2?.read === undefined || given.goldA2 === undefined
+        ? []
+        : [{ on: "gold set A2", read: a2.read, of: given.goldA2.rules.n }]),
+    ].filter((set) => set.of > 0);
+    if (sets.length === 0) return [];
+    const counts = sets.map(
+      (set, i) =>
+        `${String(set.read)} of ${String(set.of)}${i === 0 ? " papers" : ""} in ${set.on}`,
+    );
+    const list =
+      counts.length === 1
+        ? (counts[0] ?? "")
+        : `${counts.slice(0, -1).join(", ")} and ${counts.at(-1) ?? ""}`;
+    const leftOut = sets.some((set) => set.read < set.of)
+      ? " Its scores alone leave out the papers it did not read."
+      : "";
+    return [`${candidate.modelId} alone read ${list}.${leftOut}`];
+  });
 }

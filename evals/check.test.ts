@@ -235,6 +235,105 @@ describe("the pull request's comment", () => {
     );
   });
 
+  describe("a model's unread papers (#696)", () => {
+    const withRead = (read: { goldA: number; goldB: number }): Report => ({
+      ...report({ "recall-a": 0.96, "precision-b": 1, spend: 0 }),
+      candidates: [
+        {
+          modelId: "anthropic/claude-sonnet-5.5",
+          rows: rows({ "recall-a": 0.99, "precision-b": 0.98, spend: 4.2 }),
+          alone: rows({
+            ...(read.goldA === 0 ? {} : { "recall-a": 0.93 }),
+            ...(read.goldB === 0 ? {} : { "precision-b": 0.97 }),
+            spend: 4.2,
+          }),
+          unprocessed: ["PMC7"],
+          read,
+        },
+      ],
+      goldA2: {
+        rules: { score: 0.91, n: 300 },
+        models: [
+          {
+            modelId: "anthropic/claude-sonnet-5.5",
+            alone: { score: 0.88, n: 297 },
+            rulesThen: { score: 0.93, n: 300 },
+            unprocessed: 3,
+            read: 297,
+          },
+        ],
+      },
+    });
+
+    it("says how many gold papers each model read alone", () => {
+      const text = comment(withRead({ goldA: 300, goldB: 299 }), "no-deploy");
+      expect(text).toContain(
+        "anthropic/claude-sonnet-5.5 alone read 300 of 300 papers in gold set A, 299 of 300 in gold set B and 297 of 300 in gold set A2. Its scores alone leave out the papers it did not read.",
+      );
+      expect(text).toContain(
+        "anthropic/claude-sonnet-5.5 left 3 gold set A2 papers unread. They are out of its recall alone, and score what the rules found after the rules.",
+      );
+      expect(text).not.toContain("they count as missed");
+      // A model that read every paper leaves nothing out.
+      const all = comment(
+        { ...withRead({ goldA: 300, goldB: 300 }), goldA2: undefined },
+        "no-deploy",
+      );
+      expect(all).toContain(
+        "anthropic/claude-sonnet-5.5 alone read 300 of 300 papers in gold set A and 300 of 300 in gold set B.",
+      );
+      expect(all).not.toContain("leave out the papers");
+    });
+
+    it("shows no score alone on a gold set the model read none of", () => {
+      const text = comment(withRead({ goldA: 0, goldB: 0 }), "no-deploy");
+      expect(text).toContain(
+        "| Recall | Gold set A | 96.0% | none read | 99.0% |",
+      );
+      expect(text).toContain(
+        "| Precision of accepted links | Gold set B | 100.0% | none read | 98.0% |",
+      );
+    });
+
+    it("says a gold set with no papers waits for its snapshot, not that the model read none", () => {
+      const empty = (scores: Partial<Record<string, number>>) =>
+        rows(scores).map((row) => ({ ...row, n: 0 }));
+      const text = comment(
+        {
+          ...report({ spend: 0 }),
+          baseline: empty({ spend: 0 }),
+          rows: empty({ spend: 0 }),
+          candidates: [
+            {
+              modelId: "anthropic/claude-sonnet-5.5",
+              rows: empty({}),
+              alone: empty({}),
+              unprocessed: [],
+              read: { goldA: 0, goldB: 0 },
+            },
+          ],
+          goldA2: {
+            rules: { score: null, n: 0 },
+            models: [
+              {
+                modelId: "anthropic/claude-sonnet-5.5",
+                alone: { score: null, n: 0 },
+                rulesThen: { score: null, n: 0 },
+                unprocessed: 0,
+                read: 0,
+              },
+            ],
+          },
+        },
+        "no-deploy",
+      );
+      expect(text).not.toContain("none read");
+      expect(text).toContain(
+        "| Recall | Gold set A | awaiting snapshot | awaiting snapshot | awaiting snapshot |",
+      );
+    });
+  });
+
   it("shows no model table for a report with no candidates", () => {
     const text = comment(report({ spend: 0 }), "no-deploy");
     expect(text).not.toContain("Rules alone");

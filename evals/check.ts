@@ -1,8 +1,14 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { FLOORS, judge, shownScore } from "./floors.ts";
-import { report, verdict, type Judged, type Report } from "./report.ts";
+import { FLOORS, judge, shownScore, type RowId } from "./floors.ts";
+import {
+  readAlone,
+  report,
+  verdict,
+  type Judged,
+  type Report,
+} from "./report.ts";
 
 // What CI does with a report (docs/constraints/deploy-gates.md). Run
 //
@@ -18,6 +24,13 @@ import { report, verdict, type Judged, type Report } from "./report.ts";
 // saying why there is none to compare with (#88).
 
 export const MARKER = "<!-- grantlink:eval -->";
+
+// A model alone's cell on a gold set it read no paper of (#696).
+const NONE_READ = "none read" as const;
+
+// How many papers of a gold set the rules were scored on.
+const sentOn = (ci: Report, id: RowId): number =>
+  ci.baseline.find((row) => row.id === id)?.n ?? 0;
 
 const shown = (row: Judged, score: number | null): string =>
   shownScore(row.id, score);
@@ -198,10 +211,17 @@ export function comment(
 function heldOutA2(ci: Report): string[] {
   const a2 = ci.goldA2;
   if (a2 === undefined) return [];
-  const cell = (score: number | null) =>
-    score === null ? judge("recall-a", null) : shownScore("recall-a", score);
+  const cell = (score: number | null | typeof NONE_READ) =>
+    score === NONE_READ
+      ? score
+      : score === null
+        ? judge("recall-a", null)
+        : shownScore("recall-a", score);
   const recallA = (rows: Report["rows"] | undefined) =>
     rows?.find((row) => row.id === "recall-a")?.score ?? null;
+  // A gold set with no papers waits for its snapshot, so only a scored
+  // one can have none read.
+  const scoredA = sentOn(ci, "recall-a") > 0;
   const columns = a2.models.flatMap((model) => {
     const candidate = (ci.candidates ?? []).find(
       (c) => c.modelId === model.modelId,
@@ -209,8 +229,11 @@ function heldOutA2(ci: Report): string[] {
     return [
       {
         name: `${model.modelId} alone`,
-        a: recallA(candidate?.alone),
-        a2: model.alone.score,
+        a:
+          scoredA && candidate?.read?.goldA === 0
+            ? NONE_READ
+            : recallA(candidate?.alone),
+        a2: a2.rules.n > 0 && model.read === 0 ? NONE_READ : model.alone.score,
       },
       {
         name: `Rules then ${model.modelId}`,
@@ -219,8 +242,11 @@ function heldOutA2(ci: Report): string[] {
       },
     ];
   });
-  const line = (on: string, rules: number | null, scores: (number | null)[]) =>
-    `| ${[on, cell(rules), ...scores.map(cell)].join(" | ")} |`;
+  const line = (
+    on: string,
+    rules: number | null,
+    scores: (number | null | typeof NONE_READ)[],
+  ) => `| ${[on, cell(rules), ...scores.map(cell)].join(" | ")} |`;
   const names = ["On", "Rules alone", ...columns.map((c) => c.name)];
   return [
     "",
@@ -240,12 +266,15 @@ function heldOutA2(ci: Report): string[] {
     ),
     "",
     "Gold set A2 is drawn as gold set A is, with its own seed, from papers not in gold set A. Nobody tuned the rules or the prompt on gold set A2. Gold set A2 gates nothing.",
+    // A report filed before #696 counted an unread paper as missed alone.
     ...a2.models
       .filter((model) => model.unprocessed > 0)
-      .map(
-        (model) =>
-          `${model.modelId} left ${String(model.unprocessed)} gold set A2 ${model.unprocessed === 1 ? "paper" : "papers"} unread, and they count as missed.`,
-      ),
+      .map((model) => {
+        const left = `${model.modelId} left ${String(model.unprocessed)} gold set A2 ${model.unprocessed === 1 ? "paper" : "papers"} unread`;
+        return model.read === undefined
+          ? `${left}, and they count as missed.`
+          : `${left}. They are out of its recall alone, and score what the rules found after the rules.`;
+      }),
   ];
 }
 
@@ -263,12 +292,36 @@ function models(ci: Report): string[] {
   const scoreIn = (rows: Report["rows"], i: number) => rows[i]?.score ?? null;
   const columns = candidates.flatMap((c) =>
     c.alone === undefined
-      ? [{ name: c.modelId, rows: c.rows, alone: false }]
+      ? [{ name: c.modelId, rows: c.rows, alone: false, read: undefined }]
       : [
-          { name: `${c.modelId} alone`, rows: c.alone, alone: true },
-          { name: `Rules then ${c.modelId}`, rows: c.rows, alone: false },
+          {
+            name: `${c.modelId} alone`,
+            rows: c.alone,
+            alone: true,
+            read: c.read,
+          },
+          {
+            name: `Rules then ${c.modelId}`,
+            rows: c.rows,
+            alone: false,
+            read: undefined,
+          },
         ],
   );
+  // A model alone that read no paper of a scored gold set has no score on
+  // it (#696). A gold set with no papers waits for its snapshot.
+  const scoredA = sentOn(ci, "recall-a") > 0;
+  const scoredB = sentOn(ci, "recall-b") > 0;
+  const noneRead = (
+    read: { goldA: number; goldB: number } | undefined,
+    id: RowId,
+  ): boolean =>
+    read !== undefined &&
+    (id === "recall-a"
+      ? scoredA && read.goldA === 0
+      : (id === "precision-b" || id === "recall-b") &&
+        scoredB &&
+        read.goldB === 0);
   const rows = FLOORS.map((floor, i) =>
     [
       floor.measure,
@@ -277,10 +330,13 @@ function models(ci: Report): string[] {
       ...columns.map((column) =>
         column.alone && floor.id === "model-adds"
           ? "-"
-          : cell(floor.id, scoreIn(column.rows, i)),
+          : column.alone && noneRead(column.read, floor.id)
+            ? NONE_READ
+            : cell(floor.id, scoreIn(column.rows, i)),
       ),
     ].join(" | "),
   );
+  const read = readAlone(ci);
   const left = candidates
     .filter((c) => c.unprocessed.length > 0)
     .map(
@@ -297,6 +353,7 @@ function models(ci: Report): string[] {
     `| --- | --- | --- | ${columns.map(() => "---").join(" | ")} |`,
     ...rows.map((row) => `| ${row} |`),
     ...(left.length === 0 ? [] : ["", ...left]),
+    ...(read.length === 0 ? [] : ["", ...read]),
   ];
 }
 

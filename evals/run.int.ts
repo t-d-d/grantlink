@@ -260,6 +260,33 @@ describe("the rules, then each model", () => {
     }
   });
 
+  it("leaves a paper a model left unread out of its scores alone, and says how many it read (#696)", async () => {
+    const result = await evaluate({
+      texts,
+      goldA: [{ pmcid: "PMC1", grants: ["A11111"] }],
+      goldB: [
+        { pmcid: "PMC2", references: [] },
+        { pmcid: "PMC3", references: ["44"] },
+      ],
+      models,
+      propose,
+    });
+    const row = (rows: typeof result.rows | undefined, id: string) =>
+      rows?.find((r) => r.id === id);
+    const [haiku, sonnet] = result.candidates;
+    expect(haiku?.read).toEqual({ goldA: 1, goldB: 2 });
+    // Sonnet left PMC2 unread, so its scores alone are over PMC3 alone.
+    expect(sonnet?.read).toEqual({ goldA: 1, goldB: 1 });
+    expect(row(sonnet?.alone, "precision-b")).toEqual({
+      id: "precision-b",
+      score: 1,
+      n: 1,
+    });
+    // After the rules PMC2 stays in, and spend counts every call.
+    expect(row(sonnet?.rows, "precision-b")?.n).toBe(2);
+    expect(row(sonnet?.alone, "spend")?.score).toBeCloseTo(40 / 3);
+  });
+
   it("calls no model when no gold paper is scored", async () => {
     sent.length = 0;
     const result = await evaluate({
@@ -395,6 +422,7 @@ describe("fitness: a report gives gold set A2's recall and no ids of what it mis
           alone: { score: 0.5, n: 2 },
           rulesThen: { score: 1, n: 2 },
           unprocessed: 0,
+          read: 2,
         },
       ],
     });
@@ -443,6 +471,29 @@ describe("fitness: a report gives gold set A2's recall and no ids of what it mis
     expect(JSON.stringify(result)).not.toContain("PMC5");
   });
 
+  it("leaves a gold set A2 paper a model left unread out of its recall alone, and says how many it read (#696)", async () => {
+    const unreadable: Propose = (_model, text) =>
+      text === texts.get("PMC5")?.text
+        ? Promise.resolve({ status: "unprocessed", spend: 1 })
+        : propose(model, text);
+    const result = await evaluate({
+      texts,
+      goldA: [],
+      goldB: [],
+      goldA2,
+      models: [model],
+      propose: unreadable,
+    });
+    expect(result.goldA2.models[0]).toEqual({
+      modelId: model,
+      // The model alone read PMC4, where it finds nothing.
+      alone: { score: 0, n: 1 },
+      rulesThen: { score: 0.5, n: 2 },
+      unprocessed: 1,
+      read: 1,
+    });
+  });
+
   it("scores nothing on gold set A2 while it has no papers", async () => {
     const result = await evaluate({
       texts,
@@ -460,6 +511,7 @@ describe("fitness: a report gives gold set A2's recall and no ids of what it mis
           alone: { score: null, n: 0 },
           rulesThen: { score: null, n: 0 },
           unprocessed: 0,
+          read: 0,
         },
       ],
     });
