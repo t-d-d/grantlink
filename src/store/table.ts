@@ -151,9 +151,9 @@ export interface Table {
   // Why each paper not yet processed last failed, for those that hold a
   // reason this version reads.
   lastFailures(pmcids: string[]): Promise<Map<string, LastFailure>>;
-  // Records a paper's result, unless a rules version not older than the
-  // result's has read it, whose result stays and the paper counts as done
-  // (#688).
+  // Records a paper's result, unless a rules version newer than the
+  // result's, or one this version cannot read, has read it, whose result
+  // stays and the paper counts as done (#688).
   markProcessed(pmcid: string, result: Result): Promise<void>;
   // Writes the result of re-running the rules on a processed paper, only
   // while the rules version that read it is still `from` (null for none) or
@@ -416,9 +416,12 @@ export function dynamoTable(
             new UpdateCommand({
               TableName: name,
               Key: key,
+              // No versions at all, not no versions.rules: a row whose
+              // versions are in a shape this version does not know lacks
+              // versions.rules too, and rulesRead reads it as not older.
               ConditionExpression: `attribute_exists(pmcid) AND (${
                 seen === null
-                  ? "attribute_not_exists(versions.rules)"
+                  ? "attribute_not_exists(versions)"
                   : "versions.rules = :seen"
               } OR versions.rules = :to)`,
               UpdateExpression:
@@ -460,7 +463,9 @@ export function dynamoTable(
           if (reply.Item === undefined) throw error;
           const held = reply.Item.versions?.rules ?? null;
           if (held !== null && !olderRules(held, checked.versions.rules)) {
-            // A newer rules version read the paper, and its result stays.
+            // A rules version not older than the result's, or one this
+            // version cannot read, has read the paper since, and its
+            // result stays.
             return;
           }
           seen = held;

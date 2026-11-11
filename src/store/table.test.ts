@@ -599,14 +599,17 @@ describe("recording a paper's result over a row another rules version read (#688
     });
   }
 
-  it("writes only while the row holds no rules version or the result's own", async () => {
+  // A row whose versions hold no `rules`, or are not a map, has no
+  // versions.rules either, so the first write asks for no versions at all:
+  // rulesRead reads only that as none, and any other shape stays.
+  it("writes only while the row holds no versions or the result's own rules version", async () => {
     const { client, sent } = recorder();
     await dynamoTable("results", client).markProcessed("PMC11", result);
     expect(sent).toHaveLength(1);
     expect(sent[0]?.input).toMatchObject({
       Key: { pmcid: "PMC11" },
       ConditionExpression:
-        "attribute_exists(pmcid) AND (attribute_not_exists(versions.rules) OR versions.rules = :to)",
+        "attribute_exists(pmcid) AND (attribute_not_exists(versions) OR versions.rules = :to)",
       ExpressionAttributeValues: {
         ":to": "rules-20",
         ":versions": result.versions,
