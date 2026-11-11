@@ -419,6 +419,8 @@ describe("the page's two tabs (#674)", () => {
       });
 
       it("keeps the notice, the contact and the no-warranty line under both tabs", () => {
+        expect(found).not.toBe("");
+        expect(how).not.toBe("");
         const outside = page.replace(found, "").replace(how, "");
         expect(textOf(footerOf(outside))).toMatch(NOTICE);
         expect(footerOf(outside)).toContain(`mailto:${CONTACT}`);

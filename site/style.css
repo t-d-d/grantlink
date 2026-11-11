@@ -192,8 +192,9 @@ td.status {
 /* Two tabs (#674). The page runs no script (no-tracking.md), so each tab is
    a link to its panel, and the stylesheet shows the panel the address names,
    or What it found when it names none. A browser without :has() shows both
-   panels, one under the other. The tabs stay at the top of the screen, so
-   How it's run is one click from anywhere in the list. */
+   panels, one under the other, and so does a printout. The tabs stay at the
+   top of the screen, so How it's run is one click from anywhere in the
+   list. */
 .tabs {
   background: var(--ground);
   border-bottom: 1px solid var(--rule);
@@ -233,22 +234,24 @@ td.status {
   scroll-margin-top: 3.5rem;
 }
 
-@supports selector(:has(*)) {
-  .panel {
-    display: none;
-  }
+@media screen {
+  @supports selector(:has(*)) {
+    .panel {
+      display: none;
+    }
 
-  .panel:target,
-  .panel:has(:target),
-  main:not(:has(.panel:target, .panel :target)) #what-it-found {
-    display: block;
-  }
+    .panel:target,
+    .panel:has(:target),
+    main:not(:has(.panel:target, .panel :target)) #what-it-found {
+      display: block;
+    }
 
-  main:not(:has(.panel:target, .panel :target)) a[href="#what-it-found"],
-  main:has(#what-it-found:target, #what-it-found :target)
-    a[href="#what-it-found"],
-  main:has(#how-its-run:target, #how-its-run :target) a[href="#how-its-run"] {
-    border-bottom-color: var(--accent);
-    color: var(--accent);
+    main:not(:has(.panel:target, .panel :target)) a[href="#what-it-found"],
+    main:has(#what-it-found:target, #what-it-found :target)
+      a[href="#what-it-found"],
+    main:has(#how-its-run:target, #how-its-run :target) a[href="#how-its-run"] {
+      border-bottom-color: var(--accent);
+      color: var(--accent);
+    }
   }
 }
