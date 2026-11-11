@@ -29,7 +29,7 @@ The live service calls no model, because Haiku added only 3.9 points of recall a
 
 ## How it is built
 
-Each change starts as an issue. Claude Code sessions write the code against it, tests first. `npm run gate` runs format, lint, types and the test tiers, including fitness functions that check the constraints. Before each push, the session has the whole diff reviewed at high effort by reviewers with a fresh context, who never saw it being written, and fixes, files or disproves each finding ([pre-push](.claude/skills/pre-push/SKILL.md)). Governor, the owner's review bot, reviews each pull request against [a checklist](.claude/skills/pr-review/SKILL.md) and merges one that passes. A change to infrastructure, workflows, dependencies, scripts, constraints or the eval waits for the owner.
+Each change starts as an issue. Claude Code sessions write the code against it, tests first. `npm run gate` runs format, lint, types and the test tiers, including fitness functions that check the constraints. Before each push, Claude agents that did not write the change give the whole diff a high-effort code review, and the session fixes each finding, files it as an issue, or shows it is wrong ([pre-push](.claude/skills/pre-push/SKILL.md)). Governor, the owner's review bot, reads no code. It checks each pull request's description, tickets and changed files against [a checklist](.claude/skills/pr-review/SKILL.md) and merges one that passes. A change to infrastructure, workflows, dependencies, scripts, constraints or the eval waits for the owner.
 
 ## Access and data
 
