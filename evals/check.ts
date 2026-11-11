@@ -231,7 +231,9 @@ function models(ci: Report): string[] {
     );
   return [
     "",
-    "#### The rules alone, each model alone, and the rules then each model",
+    columns.some((column) => column.alone)
+      ? "#### The rules alone, each model alone, and the rules then each model"
+      : "#### The rules alone and with each model",
     "",
     `| Measure | On | Rules alone | ${columns.map((c) => c.name).join(" | ")} |`,
     `| --- | --- | --- | ${columns.map(() => "---").join(" | ")} |`,

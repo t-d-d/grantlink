@@ -104,6 +104,9 @@ describe("the pull request's comment", () => {
     expect(text).toContain(
       "anthropic/claude-sonnet-5.5 left 1 paper for the next run: PMC7.",
     );
+    // A report filed before the eval scored a model alone names no
+    // model-alone column.
+    expect(text).toContain("#### The rules alone and with each model");
   });
 
   it("gives each model a column alone and one after the rules", () => {
@@ -126,6 +129,9 @@ describe("the pull request's comment", () => {
         ],
       },
       "no-deploy",
+    );
+    expect(text).toContain(
+      "#### The rules alone, each model alone, and the rules then each model",
     );
     expect(text).toContain(
       "| Measure | On | Rules alone | anthropic/claude-haiku-5.5 alone | Rules then anthropic/claude-haiku-5.5 | anthropic/claude-sonnet-5.5 alone | Rules then anthropic/claude-sonnet-5.5 |",

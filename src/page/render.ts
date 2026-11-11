@@ -159,12 +159,13 @@ const GOLD_B_LABELS = [
 
 const SHIPS_ALONE = "Rules ship alone";
 
+const scoreOf = (rows: Report["rows"], id: RowId): number | null =>
+  rows.find((row) => row.id === id)?.score ?? null;
+
 // Rules ship alone (#330), so the release calls no model. Beside the table,
 // the page gives what each model the eval scored would add, and its spend,
-// or nothing when the eval scored none.
+// then the table of each model alone, or nothing when the eval scored none.
 function rulesAloneNote(report: Report): string {
-  const scoreOf = (rows: Report["rows"], id: string) =>
-    rows.find((row) => row.id === id)?.score ?? null;
   const models = (report.candidates ?? []).flatMap((candidate) => {
     const adds = scoreOf(candidate.rows, "model-adds");
     if (adds === null) return [];
@@ -188,16 +189,17 @@ function rulesAloneNote(report: Report): string {
 
 // Each model's precision and recall on gold set B alone, beside the rules
 // alone and what the model adds after them (#694). It does not gate. A
-// report filed before the eval scored a model alone shows no table.
+// report filed before the eval scored a model alone shows no table, and a
+// model alone with no score on gold set B is left out.
 function aloneTable(report: Report): string {
-  const scoreOf = (rows: Report["rows"], id: string) =>
-    rows.find((row) => row.id === id)?.score ?? null;
   const count = (id: RowId, score: number | null) =>
     `<td class="count">${escape(shownScore(id, score))}</td>`;
   const line = (name: string, rows: Report["rows"], adds: number | null) =>
     `<tr><th scope="row">${name}</th>${count("precision-b", scoreOf(rows, "precision-b"))}${count("recall-b", scoreOf(rows, "recall-b"))}${count("model-adds", adds)}</tr>`;
   const models = (report.candidates ?? []).flatMap((candidate) =>
-    candidate.alone === undefined
+    candidate.alone === undefined ||
+    (scoreOf(candidate.alone, "precision-b") === null &&
+      scoreOf(candidate.alone, "recall-b") === null)
       ? []
       : [
           line(

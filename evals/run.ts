@@ -41,10 +41,10 @@ import {
 // paper ids and scores, never text.
 //
 // It scores the rules alone, then the rules and each model in MODELS on the
-// same papers, and each model alone from the same replies, and needs OPENROUTER_KEY whenever a gold paper is scored. In
-// CI that is the eval environment's secret. In a session the proxy puts the
-// key in, so any value will do, and NODE_USE_ENV_PROXY=1 sends the calls
-// through it.
+// same papers, and each model alone from the same replies, and needs
+// OPENROUTER_KEY whenever a gold paper is scored. In CI that is the eval
+// environment's secret. In a session the proxy puts the key in, so any
+// value will do, and NODE_USE_ENV_PROXY=1 sends the calls through it.
 
 // How many papers each model reads at once.
 const AT_ONCE = 8;

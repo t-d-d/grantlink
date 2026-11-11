@@ -223,6 +223,26 @@ describe("how it's run, on the page", () => {
     );
   });
 
+  it("leaves out a model alone with no score on gold set B", () => {
+    const unscored = renderRun(
+      makeRelease({
+        ...fields,
+        report: {
+          ...report,
+          candidates: [
+            {
+              ...candidate("anthropic/claude-haiku-5.5", 0, 0),
+              rows: rows({}),
+              alone: rows({}),
+            },
+          ],
+        },
+      }),
+    );
+    expect(unscored).not.toContain("anthropic/claude-haiku-5.5");
+    expect(unscored).not.toContain('<table class="models">');
+  });
+
   it("renders a report with no model-alone rows as before", () => {
     expect(rulesAlone).not.toContain('<table class="models">');
     expect(rulesAlone).toContain(
