@@ -1,4 +1,4 @@
-import { shownScore } from "../../evals/floors.ts";
+import { shownScore, type RowId } from "../../evals/floors.ts";
 import { RULES_ALONE, verdict, type Report } from "../../evals/report.ts";
 import type { Found } from "./found.ts";
 import type { Release } from "./release.ts";
@@ -153,18 +153,19 @@ const GOLD_B_LABELS = [
   "The owner checked 58 of the 100 papers: every one where the passes differed or one was unsure, the 18 used to settle the guide's rules, and 10 of the rest drawn at random.",
   "That sample found no error, so the other 42 were accepted as proposed.",
   "The owner changed none of the labels.",
-  "Because a Claude model proposed them, the labels may favour a model over the rules, so read what the model adds with that in mind.",
+  "Because a Claude model proposed them, the labels may favour a model over the rules, so read what each model scores alone, and what it adds after the rules, with that in mind.",
   '<a href="https://github.com/t-d-d/grantlink/issues/175">The decision record</a> says why.',
 ].join(" ");
 
 const SHIPS_ALONE = "Rules ship alone";
 
+const scoreOf = (rows: Report["rows"], id: RowId): number | null =>
+  rows.find((row) => row.id === id)?.score ?? null;
+
 // Rules ship alone (#330), so the release calls no model. Beside the table,
 // the page gives what each model the eval scored would add, and its spend,
-// or nothing when the eval scored none.
+// then the table of each model alone, or nothing when the eval scored none.
 function rulesAloneNote(report: Report): string {
-  const scoreOf = (rows: Report["rows"], id: string) =>
-    rows.find((row) => row.id === id)?.score ?? null;
   const models = (report.candidates ?? []).flatMap((candidate) => {
     const adds = scoreOf(candidate.rows, "model-adds");
     if (adds === null) return [];
@@ -177,13 +178,46 @@ function rulesAloneNote(report: Report): string {
       `<code class="ref">${escape(candidate.modelId)}</code> adds ${shownScore("model-adds", adds)} of recall on gold set B${cost}.`,
     ];
   });
-  if (models.length === 0) return "";
+  if (models.length === 0) return aloneTable(report);
   return `\n        <p class="note">${[
     `${SHIPS_ALONE}. The eval still scores each model after the rules, on the same papers.`,
     ...models,
     "A model ships only if it adds at least 10 points.",
     '<a href="https://github.com/t-d-d/grantlink/issues/330">The decision</a> says why.',
-  ].join(" ")}</p>`;
+  ].join(" ")}</p>${aloneTable(report)}`;
+}
+
+// Each model's precision and recall on gold set B alone, beside the rules
+// alone and what the model adds after them (#694). It does not gate. A
+// report filed before the eval scored a model alone shows no table, and a
+// model alone with no score on gold set B is left out.
+function aloneTable(report: Report): string {
+  const count = (id: RowId, score: number | null) =>
+    `<td class="count">${escape(shownScore(id, score))}</td>`;
+  const line = (name: string, rows: Report["rows"], adds: number | null) =>
+    `<tr><th scope="row">${name}</th>${count("precision-b", scoreOf(rows, "precision-b"))}${count("recall-b", scoreOf(rows, "recall-b"))}${count("model-adds", adds)}</tr>`;
+  const models = (report.candidates ?? []).flatMap((candidate) =>
+    candidate.alone === undefined ||
+    (scoreOf(candidate.alone, "precision-b") === null &&
+      scoreOf(candidate.alone, "recall-b") === null)
+      ? []
+      : [
+          line(
+            `<code class="ref">${escape(candidate.modelId)}</code> alone`,
+            candidate.alone,
+            scoreOf(candidate.rows, "model-adds"),
+          ),
+        ],
+  );
+  if (models.length === 0) return "";
+  return `
+        <p class="note">The eval also scores each model alone, on the same papers and from the same replies. Nothing gates on a model alone.</p>
+        <div class="table-scroll">
+          <table class="models">
+            <tr><th scope="col">Read by</th><th scope="col">Precision on gold set B</th><th scope="col">Recall on gold set B</th><th scope="col">Adds after the rules</th></tr>
+            ${[line("Rules alone", report.baseline, null), ...models].join("\n            ")}
+          </table>
+        </div>`;
 }
 
 // How it's run: the go/no-go table for the live release beside the rules

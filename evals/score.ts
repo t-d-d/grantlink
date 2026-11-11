@@ -237,12 +237,20 @@ interface Input {
   goldB: readonly GoldB[];
   // The rules alone when left out.
   model?: ModelPass;
+  // False scores the model alone, without the rules' references (#694).
+  rules?: boolean;
 }
 
 const ratio = (part: number, whole: number): number | null =>
   whole === 0 ? null : part / whole;
 
-export function score({ texts, goldA, goldB, model }: Input): Scores {
+export function score({
+  texts,
+  goldA,
+  goldB,
+  model,
+  rules = true,
+}: Input): Scores {
   const found = (pmcid: string): string[] => {
     const sections = texts.get(pmcid);
     if (sections === undefined) {
@@ -253,7 +261,9 @@ export function score({ texts, goldA, goldB, model }: Input): Scores {
     // The rules first, then what the model adds, each reference once.
     return [
       ...new Set([
-        ...findReferences(sections).map((reference) => reference.normalised),
+        ...(rules
+          ? findReferences(sections).map((reference) => reference.normalised)
+          : []),
         ...(model?.found.get(pmcid) ?? []),
       ]),
     ];
@@ -302,7 +312,8 @@ export function score({ texts, goldA, goldB, model }: Input): Scores {
       // Nothing goes to review until review lands (#26).
       "review-share": { score: null, n: 0 },
       "recall-a": { score: ratio(recalledA, grantsA), n: goldA.length },
-      // Set by the runner, against the rules alone.
+      // Set by the runner, against the rules alone. A model alone adds
+      // nothing after the rules, so it stays empty there.
       "model-adds": { score: null, n: goldB.length },
       // The rules call no model, so they spend nothing. A model's spend is
       // per 1,000 papers, and unmeasured when it read none.
