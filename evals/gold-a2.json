@@ -1,0 +1,7 @@
+{
+  "about": "Gold set A2: a held-out draw of gold set A (#695). A run draws it as it draws gold set A, with the same query and the same check that a paper's full text prints at least one of its linked Cancer Research UK grants, but with this seed, and passes over any paper in gold set A. Nobody changes the rules or the prompt because of a paper in it, and a report gives its recall and never the ids of what it missed. Its papers and their grant ids are copied here from the snapshot's manifest when it is pinned. Ids and grant ids only, never text.",
+  "query": "GRANT_AGENCY:\"Cancer Research UK\" AND OPEN_ACCESS:y AND IN_EPMC:y AND FIRST_PDATE:[2020-01-01 TO 2026-11-08]",
+  "seed": 20261111,
+  "size": 300,
+  "papers": []
+}

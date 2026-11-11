@@ -186,6 +186,15 @@ export const FAKE_GOLD: Gold = {
     size: 300,
     papers: [],
   },
+  // Drawn as gold set A is, with its own seed, so it searches no more
+  // while gold set A lists no papers either.
+  goldA2: {
+    about: "a test's gold set A2",
+    query: 'GRANT_AGENCY:"Test Funder"',
+    seed: 11,
+    size: 300,
+    papers: [],
+  },
   goldB: {
     about: "a test's gold set B",
     papers: ["PMC0000011", "PMC0000012", "PMC0000013"].map((pmcid) => ({

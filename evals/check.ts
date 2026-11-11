@@ -188,7 +188,59 @@ export function comment(
       ? "No snapshot is pinned yet, so the gold sets are not scored."
       : `Scored on snapshot ${ci.snapshot.id}, manifest \`${ci.snapshot.manifestSha256.slice(0, 12)}\`.`,
     ...models(ci),
+    ...heldOutA2(ci),
   ].join("\n");
+}
+
+// Gold set A2's recall beside gold set A's, for the rules alone, each model
+// alone and the rules then each model (#695). It gates nothing, and lists
+// no misses. A report filed before gold set A2 joined shows no table.
+function heldOutA2(ci: Report): string[] {
+  const a2 = ci.goldA2;
+  if (a2 === undefined) return [];
+  const cell = (score: number | null) =>
+    score === null ? judge("recall-a", null) : shownScore("recall-a", score);
+  const recallA = (rows: Report["rows"] | undefined) =>
+    rows?.find((row) => row.id === "recall-a")?.score ?? null;
+  const columns = a2.models.flatMap((model) => {
+    const candidate = (ci.candidates ?? []).find(
+      (c) => c.modelId === model.modelId,
+    );
+    return [
+      {
+        name: `${model.modelId} alone`,
+        a: recallA(candidate?.alone),
+        a2: model.alone.score,
+      },
+      {
+        name: `Rules then ${model.modelId}`,
+        a: recallA(candidate?.rows),
+        a2: model.rulesThen.score,
+      },
+    ];
+  });
+  const line = (on: string, rules: number | null, scores: (number | null)[]) =>
+    `| ${[on, cell(rules), ...scores.map(cell)].join(" | ")} |`;
+  const names = ["On", "Rules alone", ...columns.map((c) => c.name)];
+  return [
+    "",
+    "#### Recall on gold set A and held-out gold set A2",
+    "",
+    `| ${names.join(" | ")} |`,
+    `| ${names.map(() => "---").join(" | ")} |`,
+    line(
+      "Gold set A",
+      recallA(ci.baseline),
+      columns.map((c) => c.a),
+    ),
+    line(
+      "Gold set A2, held out",
+      a2.rules.score,
+      columns.map((c) => c.a2),
+    ),
+    "",
+    "Gold set A2 is drawn as gold set A is, with its own seed, from papers not in gold set A. Nobody tuned the rules or the prompt on gold set A2. Gold set A2 gates nothing.",
+  ];
 }
 
 // The rules alone beside each model alone and the rules then each model

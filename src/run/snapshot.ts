@@ -32,9 +32,9 @@ import { europePmcRetry, paperRetry, storeRetry } from "./retry.ts";
 
 // Takes the eval snapshot named in the deps' gold, once
 // (docs/constraints/evals.md). A run calls this after it publishes, so the
-// page never waits on it. Gold set A comes from the papers the gold lists,
-// or before there are any, from a sample drawn with its query and seed.
-// Gold set B's papers come from its labels.
+// page never waits on it. Gold sets A and A2 come from the papers the gold
+// lists, or before there are any, from a sample drawn with the set's query
+// and seed. Gold set B's papers come from its labels.
 
 export type SnapshotSummary =
   | { taken: true; papers: number; manifestSha256: string }
@@ -64,7 +64,7 @@ async function takeBatch(
   ctx: DurableContext,
   deps: Deps,
   pmcids: string[],
-  set: "A" | "B",
+  set: "A" | "A2" | "B",
   owed: Owed,
 ): Promise<{
   entries: Entry[];
@@ -125,6 +125,141 @@ async function takeBatch(
   return { entries, empty, failed, owed: due, stopped };
 }
 
+// What a drawn set's search found, or how losing it ends the snapshot.
+type Searched =
+  | { found: string[]; owed: Owed }
+  | { lost: { snapshot: SnapshotSummary; owed: Owed } };
+
+// Searches with a drawn set's query, page by page, as a run searches.
+// Gold set A's steps keep the names they had before gold set A2 joined;
+// gold set A2's, when it searches on its own, are named for it (#695).
+async function searchDrawn(
+  ctx: DurableContext,
+  deps: Deps,
+  runId: string,
+  query: string,
+  set: "A" | "A2",
+  owed: Owed,
+): Promise<Searched> {
+  const prefix = set === "A" ? "snapshot-search" : "snapshot-a2-search";
+  let due = owed;
+  const found: string[] = [];
+  let skipped = 0;
+  let cursor: string | null = "*";
+  let page = 0;
+  // The wait a refused page leaves owed, once Europe PMC has refused one.
+  let refused: { owed: Owed } | null = null;
+  // What a page that failed after its retries without a refusal threw.
+  let failed: { error: unknown } | null = null;
+  while (cursor !== null) {
+    const from: string = cursor;
+    if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
+    due = null;
+    const name = `${prefix}-${String(page)}`;
+    let asked: Asked<Awaited<ReturnType<typeof searchGoldA>>>;
+    try {
+      asked = await askEuropePmc(
+        ctx,
+        name,
+        `${name}-wait`,
+        europePmcRetry,
+        async () => searchGoldA(deps, from, query),
+      );
+    } catch (error) {
+      // An error the SDK raises for itself is not a failed page, so it
+      // is thrown as it is, before any other durable operation.
+      if (!(error instanceof DurableOperationError)) throw error;
+      failed = { error };
+      break;
+    }
+    if ("owed" in asked) {
+      refused = { owed: asked.owed };
+      break;
+    }
+    const result = asked.read;
+    found.push(...result.pmcids);
+    skipped += result.skipped;
+    cursor = result.nextCursor;
+    page += 1;
+  }
+  // Logged before the check, so a search that fails it still says how
+  // many results it skipped, and before a refusal or a failed page ends
+  // it, so the totals of the pages it read still show in one line (#307,
+  // #348). The line only reports, so when its step fails the search's
+  // own judgment below still decides how the snapshot ends, not that
+  // failure (#370).
+  await logOnly(ctx, `${prefix}-ended`, () => {
+    logGoldSearchEnded(
+      runId,
+      deps.gold.snapshotId,
+      found.length,
+      skipped,
+      refused !== null,
+      failed !== null,
+      set === "A" ? undefined : set,
+    );
+  });
+  if (failed !== null) failedAs("search-failed", failed.error);
+  // A refused search loses the snapshot for this run, and leaves the
+  // wait Europe PMC asked for owed, which the run waits out before it
+  // ends (#236). The run logs it as a failure, as it does one the
+  // snapshot throws (#399).
+  if (refused !== null) {
+    await logOnly(ctx, "snapshot-not-taken", () => {
+      logSnapshotFailed(runId, "search-refused");
+    });
+    return {
+      lost: {
+        snapshot: {
+          taken: false,
+          reason: `Europe PMC refused gold set ${set}'s search`,
+        },
+        owed: refused.owed,
+      },
+    };
+  }
+  try {
+    checkWholeSearch(found.length, skipped);
+  } catch {
+    throw new Error("malformed-search" satisfies KnownSnapshotFailure);
+  }
+  return { found, owed: due };
+}
+
+// Walks a drawn set's candidates in order, in batches, keeping papers
+// until it has the set's size or runs out. Gold set A's steps keep the
+// names they had before gold set A2 joined.
+async function drawSet(
+  ctx: DurableContext,
+  deps: Deps,
+  candidates: readonly string[],
+  set: "A" | "A2",
+  size: number,
+  owed: Owed,
+): Promise<{ entries: Entry[]; owed: Owed }> {
+  const prefix = set === "A" ? "snapshot-a" : "snapshot-a2";
+  let due = owed;
+  const entries: Entry[] = [];
+  let at = 0;
+  let index = 0;
+  while (entries.length < size && at < candidates.length) {
+    const batch = candidates.slice(
+      at,
+      at + Math.min(BATCH, size - entries.length),
+    );
+    const outcome = await ctx.runInChildContext(
+      `${prefix}-${String(index)}`,
+      async (child) => takeBatch(child, deps, batch, set, due),
+    );
+    due = outcome.owed;
+    entries.push(...outcome.entries);
+    at += batch.length;
+    await ctx.wait(`${prefix}-rest-${String(index)}`, { seconds: 1 });
+    index += 1;
+  }
+  return { entries, owed: due };
+}
+
 // `owed` is a wait the run's last refusal left, which the snapshot waits
 // out before it first asks Europe PMC, and `runId` names the run in its
 // logs. It returns whatever wait is still owed when it ends, which the run
@@ -147,111 +282,65 @@ export async function takeSnapshot(
   if (done)
     return { snapshot: { taken: false, reason: "already taken" }, owed };
   let due = owed;
-  const { goldA, goldB } = deps.gold;
+  const { goldA, goldA2, goldB } = deps.gold;
+
+  // What each query found, so gold set A2, which shares gold set A's
+  // query, does not search again when gold set A has searched.
+  const searched = new Map<string, string[]>();
 
   // The order gold set A is drawn in.
   let candidates: string[] = goldA.papers.map((paper) => paper.pmcid);
   if (candidates.length === 0) {
-    const found: string[] = [];
-    let skipped = 0;
-    let cursor: string | null = "*";
-    let page = 0;
-    // The wait a refused page leaves owed, once Europe PMC has refused one.
-    let refused: { owed: Owed } | null = null;
-    // What a page that failed after its retries without a refusal threw.
-    let failed: { error: unknown } | null = null;
-    while (cursor !== null) {
-      const from: string = cursor;
-      if (due !== null) await ctx.wait(due.name, { seconds: due.seconds });
-      due = null;
-      const name = `snapshot-search-${String(page)}`;
-      let asked: Asked<Awaited<ReturnType<typeof searchGoldA>>>;
-      try {
-        asked = await askEuropePmc(
-          ctx,
-          name,
-          `${name}-wait`,
-          europePmcRetry,
-          async () => searchGoldA(deps, from),
-        );
-      } catch (error) {
-        // An error the SDK raises for itself is not a failed page, so it
-        // is thrown as it is, before any other durable operation.
-        if (!(error instanceof DurableOperationError)) throw error;
-        failed = { error };
-        break;
-      }
-      if ("owed" in asked) {
-        refused = { owed: asked.owed };
-        break;
-      }
-      const result = asked.read;
-      found.push(...result.pmcids);
-      skipped += result.skipped;
-      cursor = result.nextCursor;
-      page += 1;
-    }
-    // Logged before the check, so a search that fails it still says how
-    // many results it skipped, and before a refusal or a failed page ends
-    // it, so the totals of the pages it read still show in one line (#307,
-    // #348). The line only reports, so when its step fails the search's
-    // own judgment below still decides how the snapshot ends, not that
-    // failure (#370).
-    await logOnly(ctx, "snapshot-search-ended", () => {
-      logGoldSearchEnded(
-        runId,
-        deps.gold.snapshotId,
-        found.length,
-        skipped,
-        refused !== null,
-        failed !== null,
-      );
-    });
-    if (failed !== null) failedAs("search-failed", failed.error);
-    // A refused search loses the snapshot for this run, and leaves the
-    // wait Europe PMC asked for owed, which the run waits out before it
-    // ends (#236). The run logs it as a failure, as it does one the
-    // snapshot throws (#399).
-    if (refused !== null) {
-      await logOnly(ctx, "snapshot-not-taken", () => {
-        logSnapshotFailed(runId, "search-refused");
-      });
-      return {
-        snapshot: {
-          taken: false,
-          reason: "Europe PMC refused gold set A's search",
-        },
-        owed: refused.owed,
-      };
-    }
-    try {
-      checkWholeSearch(found.length, skipped);
-    } catch {
-      throw new Error("malformed-search" satisfies KnownSnapshotFailure);
-    }
-    candidates = sample(found, goldA.seed);
+    // eslint-disable-next-line grantlink/no-await-outside-step -- every await in searchDrawn and drawSet is a durable operation or a step helper, so a replay takes the same path, as it did when this code was inline.
+    const result = await searchDrawn(ctx, deps, runId, goldA.query, "A", due);
+    if ("lost" in result) return result.lost;
+    due = result.owed;
+    searched.set(goldA.query, result.found);
+    candidates = sample(result.found, goldA.seed);
   }
 
-  const entries: Entry[] = [];
-  let keptA = 0;
-  let at = 0;
-  let index = 0;
-  while (keptA < goldA.size && at < candidates.length) {
-    const batch = candidates.slice(
-      at,
-      at + Math.min(BATCH, goldA.size - keptA),
-    );
-    const outcome = await ctx.runInChildContext(
-      `snapshot-a-${String(index)}`,
-      async (child) => takeBatch(child, deps, batch, "A", due),
-    );
-    due = outcome.owed;
-    entries.push(...outcome.entries);
-    keptA += outcome.entries.length;
-    at += batch.length;
-    await ctx.wait(`snapshot-a-rest-${String(index)}`, { seconds: 1 });
-    index += 1;
+  // eslint-disable-next-line grantlink/no-await-outside-step -- every await in searchDrawn and drawSet is a durable operation or a step helper, so a replay takes the same path, as it did when this code was inline.
+  const drawnA = await drawSet(ctx, deps, candidates, "A", goldA.size, due);
+  due = drawnA.owed;
+  const entries: Entry[] = [...drawnA.entries];
+
+  // Gold set A2 is drawn as gold set A is, with its own seed, and passes
+  // over any candidate in gold set A, as the repo pinned it or as this
+  // snapshot took it (#695).
+  let candidatesA2: string[] = goldA2.papers.map((paper) => paper.pmcid);
+  if (candidatesA2.length === 0) {
+    let found = searched.get(goldA2.query);
+    if (found === undefined) {
+      // eslint-disable-next-line grantlink/no-await-outside-step -- every await in searchDrawn and drawSet is a durable operation or a step helper, so a replay takes the same path, as it did when this code was inline.
+      const result = await searchDrawn(
+        ctx,
+        deps,
+        runId,
+        goldA2.query,
+        "A2",
+        due,
+      );
+      if ("lost" in result) return result.lost;
+      due = result.owed;
+      found = result.found;
+    }
+    candidatesA2 = sample(found, goldA2.seed);
   }
+  const inA = new Set([
+    ...goldA.papers.map((paper) => paper.pmcid),
+    ...drawnA.entries.map((entry) => entry.pmcid),
+  ]);
+  // eslint-disable-next-line grantlink/no-await-outside-step -- every await in searchDrawn and drawSet is a durable operation or a step helper, so a replay takes the same path, as it did when this code was inline.
+  const drawnA2 = await drawSet(
+    ctx,
+    deps,
+    candidatesA2.filter((pmcid) => !inA.has(pmcid)),
+    "A2",
+    goldA2.size,
+    due,
+  );
+  due = drawnA2.owed;
+  entries.push(...drawnA2.entries);
 
   // Every labelled paper must be in the snapshot, or its labels score
   // nothing, so one that cannot be read leaves the snapshot for next time,

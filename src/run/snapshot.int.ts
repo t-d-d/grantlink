@@ -10,7 +10,7 @@ import {
   vi,
 } from "vitest";
 import { snapshotKeys } from "../../evals/gold.ts";
-import { fakeDeps } from "../../test/fakes.ts";
+import { FAKE_GOLD, fakeDeps, isGoldSearch } from "../../test/fakes.ts";
 import { EuropePmcError } from "../europepmc/client.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
@@ -251,5 +251,84 @@ describe("gold set B in the eval snapshot (evals.md)", () => {
     expect(logged("snapshot-b-empty")).toEqual([
       expect.objectContaining({ count: 0, pmcids: "" }),
     ]);
+  });
+});
+
+describe("fitness: no paper in gold set A2 is in gold set A (evals.md)", () => {
+  // Gold set A's search finds PMC0000001 and PMC0000002, each linked to a
+  // grant it prints, and PMC0000003, linked to none.
+  const manifestOf = (fake: ReturnType<typeof fakeDeps>) =>
+    JSON.parse(String(fake.text.get(manifestKey(fake)))) as {
+      goldA2?: { query: string; seed: number; size: number };
+      papers: { pmcid: string; set: string; grants: string[] }[];
+    };
+  const inSet = (fake: ReturnType<typeof fakeDeps>, set: string) =>
+    manifestOf(fake)
+      .papers.filter((paper) => paper.set === set)
+      .map((paper) => paper.pmcid)
+      .sort();
+
+  it("passes over a candidate the snapshot takes for gold set A, drawing from the same search", async () => {
+    const fake = fakeDeps({
+      gold: { goldA: { ...FAKE_GOLD.goldA, size: 1 } },
+    });
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toMatchObject({ taken: true });
+    const a = inSet(fake, "A");
+    const a2 = inSet(fake, "A2");
+    expect(a).toHaveLength(1);
+    expect(a2).toHaveLength(1);
+    expect([...a, ...a2].sort()).toEqual(["PMC0000001", "PMC0000002"]);
+    // Gold set A2 has gold set A's query, so one search serves both.
+    expect(fake.requests.filter(isGoldSearch)).toHaveLength(1);
+    const { goldA2 } = FAKE_GOLD;
+    expect(manifestOf(fake).goldA2).toEqual({
+      query: goldA2.query,
+      seed: goldA2.seed,
+      size: goldA2.size,
+    });
+    const kept = manifestOf(fake).papers.find((p) => p.set === "A2");
+    expect(kept?.grants.length).toBeGreaterThan(0);
+  });
+
+  it("passes over a candidate in gold set A as the repo pinned it", async () => {
+    const fake = fakeDeps({
+      gold: {
+        goldA: {
+          ...FAKE_GOLD.goldA,
+          papers: [{ pmcid: "PMC0000001", grants: ["A56789"] }],
+        },
+      },
+    });
+    const { status } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(inSet(fake, "A")).toEqual(["PMC0000001"]);
+    expect(inSet(fake, "A2")).toEqual(["PMC0000002"]);
+    // Gold set A's papers are pinned, so gold set A2 searches for its own.
+    expect(fake.requests.filter(isGoldSearch)).toHaveLength(1);
+  });
+
+  it("passes over a pinned gold set A2 paper that is in gold set A", async () => {
+    const fake = fakeDeps({
+      gold: {
+        goldA: {
+          ...FAKE_GOLD.goldA,
+          papers: [{ pmcid: "PMC0000001", grants: ["A56789"] }],
+        },
+        goldA2: {
+          ...FAKE_GOLD.goldA2,
+          papers: [
+            { pmcid: "PMC0000001", grants: ["A56789"] },
+            { pmcid: "PMC0000002", grants: ["RRCOER-Jun24\\100008"] },
+          ],
+        },
+      },
+    });
+    const { status } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(inSet(fake, "A")).toEqual(["PMC0000001"]);
+    expect(inSet(fake, "A2")).toEqual(["PMC0000002"]);
+    expect(fake.requests.some(isGoldSearch)).toBe(false);
   });
 });

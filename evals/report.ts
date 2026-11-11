@@ -39,6 +39,34 @@ const rows = z
     { message: "a report has every go/no-go row, in order" },
   );
 
+// A held-out set's recall over its papers, with no ids beside it (#695).
+const heldOutRow = z
+  .object({
+    score: z.number().nonnegative().nullable(),
+    n: z.number().int().nonnegative(),
+  })
+  .strict();
+
+// Gold set A2's recall for the rules alone, and for each model alone and
+// after the rules. It gates nothing and lists no misses (#695). A report
+// filed before gold set A2 joined the eval has none, and still reads.
+export const goldA2Scores = z
+  .object({
+    rules: heldOutRow,
+    models: z.array(
+      z
+        .object({
+          modelId: z.string().min(1).max(100),
+          alone: heldOutRow,
+          rulesThen: heldOutRow,
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export type GoldA2Scores = z.infer<typeof goldA2Scores>;
+
 export const report = z
   .object({
     fingerprint: HEX(64),
@@ -76,6 +104,7 @@ export const report = z
       )
       .optional(),
     missedA: z.array(PMCID),
+    goldA2: goldA2Scores.optional(),
   })
   .strict();
 

@@ -303,3 +303,67 @@ describe("the page's intro", () => {
     expect(intro).not.toContain("did not find enough more to ship");
   });
 });
+
+describe("gold set A2 on the page (#706)", () => {
+  const withA2 = (goldA2: Report["goldA2"]) =>
+    renderRun(
+      makeRelease({
+        ...fields,
+        report: {
+          ...report,
+          candidates: [
+            {
+              modelId: "anthropic/claude-haiku-5.5",
+              rows: rows({ ...scores, "recall-a": 0.98, spend: 0.15 }),
+              alone: rows({ "recall-a": 0.9, spend: 0.15 }),
+              unprocessed: [],
+            },
+          ],
+          goldA2,
+        },
+      }),
+    );
+  const scored = withA2({
+    rules: { score: 0.94, n: 300 },
+    models: [
+      {
+        modelId: "anthropic/claude-haiku-5.5",
+        alone: { score: 0.88, n: 300 },
+        rulesThen: { score: 0.96, n: 300 },
+      },
+    ],
+  });
+  const table = (html: string) =>
+    /<table class="held-out">[\s\S]*?<\/table>/u.exec(html)?.[0] ?? "";
+
+  it("shows gold set A2's recall beside gold set A's, for the rules and each model", () => {
+    expect(table(scored)).toContain(
+      '<tr><th scope="col">Read by</th><th scope="col">Recall on gold set A</th><th scope="col">Recall on gold set A2, held out</th></tr>',
+    );
+    expect(table(scored)).toContain(
+      '<tr><th scope="row">Rules alone</th><td class="count">97.0%</td><td class="count">94.0%</td></tr>',
+    );
+    expect(table(scored)).toContain(
+      '<tr><th scope="row"><code class="ref">anthropic/claude-haiku-5.5</code> alone</th><td class="count">90.0%</td><td class="count">88.0%</td></tr>',
+    );
+    expect(table(scored)).toContain(
+      '<tr><th scope="row">Rules then <code class="ref">anthropic/claude-haiku-5.5</code></th><td class="count">98.0%</td><td class="count">96.0%</td></tr>',
+    );
+  });
+
+  it("says nobody tuned the rules or the prompt on gold set A2, and that it gates nothing", () => {
+    expect(scored).toContain(
+      "Nobody tuned the rules or the prompt on gold set A2",
+    );
+    expect(scored).toContain("Gold set A2 gates nothing");
+    expect(scored).toContain(
+      'href="https://github.com/t-d-d/grantlink/issues/695"',
+    );
+  });
+
+  it("shows no gold set A2 table before gold set A2 has a score", () => {
+    const waiting = withA2({ rules: { score: null, n: 0 }, models: [] });
+    expect(table(waiting)).toBe("");
+    expect(table(renderRun(makeRelease(fields)))).toBe("");
+  });
+});

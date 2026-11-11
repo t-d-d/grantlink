@@ -56,6 +56,92 @@ describe("the gate on a report", () => {
   });
 });
 
+// Gold set A2's recall, the rules alone and one model, with the rules
+// then the model at `then`.
+const goldA2 = (rules: number, then = rules) => ({
+  rules: { score: rules, n: 300 },
+  models: [
+    {
+      modelId: "anthropic/claude-haiku-5.5",
+      alone: { score: 0.5, n: 300 },
+      rulesThen: { score: then, n: 300 },
+    },
+  ],
+});
+
+describe("fitness: a gold set A2 row below any floor fails no gate (evals.md)", () => {
+  it("passes a report whatever gold set A2 scores", () => {
+    const result = gate(
+      JSON.stringify({
+        ...report({ "recall-a": 0.96, spend: 0 }),
+        goldA2: goldA2(0, 0),
+      }),
+      "a".repeat(64),
+    );
+    expect(result.pass).toBe(true);
+    expect(result.lines.join("\n")).not.toContain("no-go");
+  });
+
+  it("leaves the go/no-go table as it was", () => {
+    expect(FLOORS.map((floor) => floor.id)).toEqual([
+      "precision-b",
+      "recall-b",
+      "review-share",
+      "recall-a",
+      "model-adds",
+      "spend",
+    ]);
+  });
+});
+
+describe("gold set A2 in the pull request's comment", () => {
+  it("shows gold set A2's recall beside gold set A's, and says nobody tuned on it", () => {
+    const text = comment(
+      {
+        ...report({ "recall-a": 0.96, spend: 0 }),
+        candidates: [
+          {
+            modelId: "anthropic/claude-haiku-5.5",
+            rows: rows({ "recall-a": 0.98, spend: 0.4 }),
+            alone: rows({ "recall-a": 0.9, spend: 0.4 }),
+            unprocessed: [],
+          },
+        ],
+        goldA2: goldA2(0.91, 0.93),
+      },
+      "no-deploy",
+    );
+    expect(text).toContain(
+      "#### Recall on gold set A and held-out gold set A2",
+    );
+    expect(text).toContain(
+      "| On | Rules alone | anthropic/claude-haiku-5.5 alone | Rules then anthropic/claude-haiku-5.5 |",
+    );
+    expect(text).toContain("| Gold set A | 96.0% | 90.0% | 98.0% |");
+    expect(text).toContain("| Gold set A2, held out | 91.0% | 50.0% | 93.0% |");
+    expect(text).toContain(
+      "Nobody tuned the rules or the prompt on gold set A2.",
+    );
+    expect(text).toContain("Gold set A2 gates nothing.");
+  });
+
+  it("says gold set A2 waits for its snapshot while it has no score", () => {
+    const text = comment(
+      {
+        ...report({ spend: 0 }),
+        goldA2: { rules: { score: null, n: 0 }, models: [] },
+      },
+      "no-deploy",
+    );
+    expect(text).toContain("| Gold set A2, held out | awaiting snapshot |");
+  });
+
+  it("shows no gold set A2 table for a report filed before it joined", () => {
+    const text = comment(report({ spend: 0 }), "no-deploy");
+    expect(text).not.toContain("gold set A2");
+  });
+});
+
 describe("the pull request's comment", () => {
   it("shows CI's scores beside the live release's, with the runs behind each", () => {
     const text = comment(report({ "recall-a": 0.96, spend: 0 }), {

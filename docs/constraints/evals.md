@@ -25,6 +25,15 @@ text, so it must not get broad AWS access or see the key.
   `evals/gold-b.json`. A new gold paper needs a new snapshot id, which
   starts unpinned. An unpinned snapshot scores nothing, so its rows wait
   and do not block until it is taken and pinned.
+- Gold set A2 is a held-out draw of gold set A: 300 papers drawn as gold
+  set A is, with the same query and its own seed, from candidates not in
+  gold set A. Its answers are found as gold set A's are.
+  `node evals/pin.ts` copies its ids and grant ids into
+  `evals/gold-a2.json`.
+- Gold set A2 is held out. Nobody changes the rules or the prompt because
+  of a paper or reference in it. A report gives its scores and never the
+  ids of the papers or references it missed.
+- Gold set A2's rows are reported and do not gate.
 - The repo holds paper ids, grant ids and labels only, never text.
 - The fingerprint is the SHA-256 of the git hashes of `src/extract/`,
   `src/shared/`, `evals/`, `.github/workflows/eval.yml` and
@@ -66,6 +75,8 @@ text, so it must not get broad AWS access or see the key.
   from CI.
 - Overwrite a report or a snapshot file, even to fix one. Take a new
   snapshot id, or change an input so the fingerprint moves.
+- Read gold set A2's misses to change the rules or the prompt. Its scores
+  would then measure the tuning, as gold set A's do.
 
 ## Judgment
 
@@ -75,6 +86,7 @@ drift instead. Unpinning the snapshot makes every gold row wait, so a pull
 request that sets `manifestSha256` to null without a new snapshot id is for
 review. Whether a new input that can change a score sits inside the
 fingerprinted paths is for review: the lint rule sees imports, not files
-read at run time.
+read at run time. Whether a change to the rules or the prompt came from gold
+set A2 is for review.
 
-History: #9, #502
+History: #9, #502, #695

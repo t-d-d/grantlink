@@ -1,4 +1,4 @@
-import type { goldA, goldB } from "../../evals/gold.ts";
+import type { goldA, goldA2, goldB } from "../../evals/gold.ts";
 import type { EuropePmc, SearchPaper } from "../europepmc/client.ts";
 import { fundingSections } from "../europepmc/jats.ts";
 import { failureReason, type PaperFailure } from "./failure.ts";
@@ -19,6 +19,7 @@ import { olderRules, type Table } from "../store/table.ts";
 // time does not grow with gold set B.
 export interface Gold {
   goldA: typeof goldA;
+  goldA2: typeof goldA2;
   goldB: typeof goldB;
   snapshotId: string;
 }
@@ -92,6 +93,8 @@ export function logSearchEnded(
 // first (#307). When a page fails after its retries without a refusal,
 // `failed` is true, and the totals are again those of the pages before it
 // (#348).
+// Gold set A2 searches on its own only when gold set A's papers are pinned
+// and its own are not, and then its line names its set.
 export function logGoldSearchEnded(
   runId: string,
   snapshotId: string,
@@ -99,10 +102,12 @@ export function logGoldSearchEnded(
   skipped: number,
   refused: boolean,
   failed: boolean,
+  set?: "A2",
 ): void {
   logger.info("snapshot-search-ended", {
     runId,
     snapshotId,
+    ...(set === undefined ? {} : { set }),
     found,
     skipped,
     refused,
@@ -319,7 +324,7 @@ export async function markFailed(
 // logs a paper that fails (#378).
 export function logGoldPaperFailed(
   pmcid: string,
-  set: "A" | "B",
+  set: "A" | "A2" | "B",
   failure: PaperFailure,
 ): void {
   logger.warn("gold-paper-failed", { pmcid, set, ...failure });
