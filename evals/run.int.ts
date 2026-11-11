@@ -134,20 +134,23 @@ describe("a gold set B paper with empty funding sections", () => {
 describe("which gold papers are scored", () => {
   const a = [{ pmcid: "PMC1", grants: ["A11111"] }];
   const b = [{ pmcid: "PMC2", references: [] }];
+  const a2 = [{ pmcid: "PMC3", grants: ["A22222"] }];
 
-  it("scores both gold sets against a pinned snapshot", () => {
-    expect(goldToScore({ manifestSha256: "a".repeat(64) }, a, b)).toEqual({
+  it("scores every gold set against a pinned snapshot", () => {
+    expect(goldToScore({ manifestSha256: "a".repeat(64) }, a, b, a2)).toEqual({
       goldA: a,
       goldB: b,
+      goldA2: a2,
     });
   });
 
   it("scores nothing while a new snapshot waits to be taken and pinned", () => {
     // A labels pull request names a new snapshot with no pin yet. Its rows
     // wait rather than block, so it can merge, deploy and be taken.
-    expect(goldToScore({ manifestSha256: null }, a, b)).toEqual({
+    expect(goldToScore({ manifestSha256: null }, a, b, a2)).toEqual({
       goldA: [],
       goldB: [],
+      goldA2: [],
     });
   });
 });
@@ -340,5 +343,125 @@ describe("a refusal that passes", () => {
     })(model, ["t"]);
     expect(waits).toHaveLength(2);
     expect(waits[1]).toBeGreaterThan(waits[0] ?? Infinity);
+  });
+});
+
+describe("fitness: a report gives gold set A2's recall and no ids of what it missed (evals.md)", () => {
+  const texts = new Map([
+    ["PMC1", { text: papers.PMC1, awards: [] }],
+    [
+      "PMC4",
+      { text: ["Funded by Cancer Research UK grant A44444."], awards: [] },
+    ],
+    ["PMC5", { text: ["Funded by Cancer Research UK."], awards: [] }],
+  ]);
+  const model = "anthropic/claude-haiku-5.5" as ModelId;
+  // The model finds PMC5's grant, which the rules cannot, and spends a
+  // dollar on each paper.
+  const sent: string[] = [];
+  const propose: Propose = (_model, text) => {
+    const pmcid = [...texts].find(([, s]) => s.text === text)?.[0] ?? "";
+    sent.push(pmcid);
+    return Promise.resolve({
+      status: "read",
+      references:
+        pmcid === "PMC5"
+          ? [{ asWritten: "A55555", normalised: "A55555", confidence: 0.9 }]
+          : [],
+      rejected: 0,
+      spend: 1,
+    });
+  };
+  const goldA2 = [
+    { pmcid: "PMC4", grants: ["A44444"] },
+    { pmcid: "PMC5", grants: ["A55555"] },
+  ];
+
+  it("scores gold set A2's recall for the rules alone, each model alone, and the rules then each model", async () => {
+    sent.length = 0;
+    const result = await evaluate({
+      texts,
+      goldA: [{ pmcid: "PMC1", grants: ["A11111"] }],
+      goldB: [],
+      goldA2,
+      models: [model],
+      propose,
+    });
+    expect(result.goldA2).toEqual({
+      rules: { score: 0.5, n: 2 },
+      models: [
+        {
+          modelId: model,
+          alone: { score: 0.5, n: 2 },
+          rulesThen: { score: 1, n: 2 },
+          unprocessed: 0,
+        },
+      ],
+    });
+    // Each paper goes to the model once.
+    expect(sent.sort()).toEqual(["PMC1", "PMC4", "PMC5"]);
+  });
+
+  it("leaves gold set A2's misses out of the report, and its papers out of the gating rows", async () => {
+    const result = await evaluate({
+      texts,
+      goldA: [{ pmcid: "PMC1", grants: ["A11111"] }],
+      goldB: [],
+      goldA2,
+      models: [model],
+      propose,
+    });
+    expect(result.missedA).toEqual([]);
+    const text = JSON.stringify(result);
+    for (const pmcid of ["PMC4", "PMC5"]) expect(text).not.toContain(pmcid);
+    // Gold set A's recall and the spend row are over gold set A alone.
+    const rows = result.candidates[0]?.rows ?? [];
+    expect(rows.find((row) => row.id === "recall-a")).toMatchObject({
+      score: 1,
+      n: 1,
+    });
+    expect(rows.find((row) => row.id === "spend")?.score).toBeCloseTo(1000);
+  });
+
+  it("counts the gold set A2 papers a model's reply could not be read for, without naming them", async () => {
+    const unreadable: Propose = (_model, text) =>
+      text === texts.get("PMC5")?.text
+        ? Promise.resolve({ status: "unprocessed", spend: 1 })
+        : propose(model, text);
+    const result = await evaluate({
+      texts,
+      goldA: [],
+      goldB: [],
+      goldA2,
+      models: [model],
+      propose: unreadable,
+    });
+    expect(result.goldA2.models[0]).toMatchObject({
+      rulesThen: { score: 0.5, n: 2 },
+      unprocessed: 1,
+    });
+    expect(JSON.stringify(result)).not.toContain("PMC5");
+  });
+
+  it("scores nothing on gold set A2 while it has no papers", async () => {
+    const result = await evaluate({
+      texts,
+      goldA: [],
+      goldB: [],
+      goldA2: [],
+      models: [model],
+      propose,
+    });
+    expect(result.goldA2).toEqual({
+      rules: { score: null, n: 0 },
+      models: [
+        {
+          modelId: model,
+          alone: { score: null, n: 0 },
+          rulesThen: { score: null, n: 0 },
+          unprocessed: 0,
+        },
+      ],
+    });
   });
 });

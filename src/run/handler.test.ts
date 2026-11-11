@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { goldA, goldB, pinned } from "../../evals/gold.ts";
+import { goldA, goldA2, goldB, pinned } from "../../evals/gold.ts";
 
 // The run's tests pass small gold sets in through its deps. This checks the
 // deployed handler passes the repo's own: the labels in evals/gold-b.json,
@@ -14,6 +14,11 @@ afterAll(() => vi.unstubAllEnvs());
 describe("the handler's gold sets", () => {
   it("are the repo's own, with the pinned snapshot id", async () => {
     const { liveDeps } = await import("./handler.ts");
-    expect(liveDeps().gold).toEqual({ goldA, goldB, snapshotId: pinned.id });
+    expect(liveDeps().gold).toEqual({
+      goldA,
+      goldA2,
+      goldB,
+      snapshotId: pinned.id,
+    });
   });
 });

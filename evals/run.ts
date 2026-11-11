@@ -14,13 +14,20 @@ import { RULES_VERSION, type FundingSections } from "../src/extract/rules.ts";
 import { FLOORS } from "./floors.ts";
 import {
   goldA,
+  goldA2,
   goldB,
   manifest,
   paperFile,
   pinned,
   snapshotKeys,
 } from "./gold.ts";
-import { makeReport, RULES_ALONE, verdict, type Report } from "./report.ts";
+import {
+  makeReport,
+  RULES_ALONE,
+  verdict,
+  type GoldA2Scores,
+  type Report,
+} from "./report.ts";
 import {
   score,
   type GoldA,
@@ -163,10 +170,30 @@ async function modelPass(
 const scoreOf = (rows: Rows, id: string): number | null =>
   rows.find((row) => row.id === id)?.score ?? null;
 
+// Gold set A2's recall, scored as gold set A's is, with its misses dropped
+// so no report holds them (#695).
+function recallA2(
+  texts: ReadonlyMap<string, FundingSections>,
+  papers: readonly GoldA[],
+  model?: ModelPass,
+  rules = true,
+): GoldA2Scores["rules"] {
+  const { rows } = score({
+    texts,
+    goldA: papers,
+    goldB: [],
+    rules,
+    ...(model === undefined ? {} : { model }),
+  });
+  return rows["recall-a"];
+}
+
 export async function evaluate(input: {
   texts: ReadonlyMap<string, FundingSections>;
   goldA: readonly GoldA[];
   goldB: readonly GoldB[];
+  // Held out, and scored apart from the gating rows (#695).
+  goldA2?: readonly GoldA[];
   models: readonly ModelId[];
   propose: Propose;
 }): Promise<{
@@ -174,15 +201,34 @@ export async function evaluate(input: {
   baseline: Rows;
   candidates: Candidate[];
   missedA: string[];
+  goldA2: GoldA2Scores;
 }> {
+  const heldOut = input.goldA2 ?? [];
   // Rules ship alone (#330), so the release and the baseline are the same
   // run.
   const release = score(input);
   const baseline = asRows(release);
   const pmcids = goldIds(input.goldA, input.goldB);
   const candidates: Candidate[] = [];
+  const goldA2Models: GoldA2Scores["models"] = [];
   for (const model of input.models) {
     const pass = await modelPass(model, pmcids, input.texts, input.propose);
+    // Gold set A2's papers go to the model in a pass of their own, so the
+    // spend row stays over gold sets A and B, as its floor was set. A paper
+    // whose reply could not be read counts as missed, and only how many
+    // there were is reported.
+    const passA2 = await modelPass(
+      model,
+      heldOut.map((paper) => paper.pmcid),
+      input.texts,
+      input.propose,
+    );
+    goldA2Models.push({
+      modelId: model,
+      alone: recallA2(input.texts, heldOut, passA2, false),
+      rulesThen: recallA2(input.texts, heldOut, passA2),
+      unprocessed: passA2.unprocessed.length,
+    });
     const rows = asRows(score({ ...input, model: pass }));
     // What the model adds is its recall on gold set B over the rules'.
     const withModel = scoreOf(rows, "recall-b");
@@ -207,6 +253,10 @@ export async function evaluate(input: {
     baseline,
     candidates,
     missedA: release.missedA,
+    goldA2: {
+      rules: recallA2(input.texts, heldOut),
+      models: goldA2Models,
+    },
   };
 }
 
@@ -219,10 +269,15 @@ export function goldToScore(
   pin: { manifestSha256: string | null },
   a: readonly GoldA[],
   b: readonly GoldB[],
-): { goldA: readonly GoldA[]; goldB: readonly GoldB[] } {
+  a2: readonly GoldA[],
+): {
+  goldA: readonly GoldA[];
+  goldB: readonly GoldB[];
+  goldA2: readonly GoldA[];
+} {
   return pin.manifestSha256 === null
-    ? { goldA: [], goldB: [] }
-    : { goldA: a, goldB: b };
+    ? { goldA: [], goldB: [], goldA2: [] }
+    : { goldA: a, goldB: b, goldA2: a2 };
 }
 
 const ciEnv = z.object({
@@ -273,7 +328,7 @@ async function main(dir: string, out: string | undefined): Promise<void> {
   const texts = loadSnapshot(dir, pinned);
   const result = await evaluate({
     texts,
-    ...goldToScore(pinned, goldA.papers, goldB.papers),
+    ...goldToScore(pinned, goldA.papers, goldB.papers, goldA2.papers),
     models: MODELS,
     propose: retrying(openRouter),
   });
@@ -298,6 +353,21 @@ async function main(dir: string, out: string | undefined): Promise<void> {
   }
   if (result.missedA.length > 0) {
     console.log(`missed in gold set A: ${result.missedA.join(" ")}`);
+  }
+  // Held out: its recall, and never the ids of what it missed (#695).
+  const held = (label: string, row: GoldA2Scores["rules"]) => {
+    const shown = row.score === null ? "-" : row.score.toFixed(4);
+    console.log(`${label}\trecall-a2\t${shown}\tn=${String(row.n)}`);
+  };
+  held("rules alone", result.goldA2.rules);
+  for (const model of result.goldA2.models) {
+    held(`${model.modelId} alone`, model.alone);
+    held(`rules then ${model.modelId}`, model.rulesThen);
+    if (model.unprocessed > 0) {
+      console.log(
+        `${model.modelId} left ${String(model.unprocessed)} gold set A2 papers unread`,
+      );
+    }
   }
   for (const candidate of result.candidates) {
     for (const [label, rows] of [

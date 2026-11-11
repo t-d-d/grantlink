@@ -1,5 +1,5 @@
 {
   "about": "The eval snapshot under eval/ in the private bucket, and the SHA-256 of its manifest. A run writes the snapshot named here if there is none. Its hash is pinned here once it exists, and null means it is not pinned yet.",
-  "id": "s3",
-  "manifestSha256": "86aa7df069ff9c257037bb80ae2f45203ca2075fd05f31656cef7de6bc29de1e"
+  "id": "s4",
+  "manifestSha256": null
 }

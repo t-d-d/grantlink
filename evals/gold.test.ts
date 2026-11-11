@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   goldA,
+  goldA2,
   goldB,
   goldBLabels,
   manifest,
@@ -14,6 +15,18 @@ describe("the gold sets and the pin", () => {
     expect(goldA.query).toMatch(/FIRST_PDATE:\[\S+ TO \d{4}-\d{2}-\d{2}\]/u);
     expect(goldA.size).toBe(300);
     expect(Number.isInteger(goldA.seed)).toBe(true);
+  });
+
+  it("records gold set A2's draw: gold set A's query, its own seed, and 300 papers", () => {
+    expect(goldA2.query).toBe(goldA.query);
+    expect(goldA2.size).toBe(300);
+    expect(Number.isInteger(goldA2.seed)).toBe(true);
+    expect(goldA2.seed).not.toBe(goldA.seed);
+  });
+
+  it("keeps no gold set A paper in gold set A2", () => {
+    const inA = new Set(goldA.papers.map((paper) => paper.pmcid));
+    expect(goldA2.papers.filter((paper) => inA.has(paper.pmcid))).toEqual([]);
   });
 
   it("names the snapshot, pinned or not yet", () => {
@@ -68,6 +81,30 @@ describe("the gold sets and the pin", () => {
         papers: [{ ...entry, grants: ["Funded by Dr Jane Doe"] }],
       }),
     ).toThrow();
+  });
+
+  it("reads gold set A2's draw and papers in a manifest, and one taken before gold set A2", () => {
+    const drawn = {
+      id: "s4",
+      createdAt: "2026-11-11T12:00:00.000Z",
+      goldA: { query: goldA.query, seed: goldA.seed, size: goldA.size },
+      goldA2: { query: goldA2.query, seed: goldA2.seed, size: goldA2.size },
+      papers: [
+        {
+          pmcid: "PMC1",
+          set: "A2",
+          sha256: "a".repeat(64),
+          grants: ["C1234/A56789"],
+        },
+      ],
+    };
+    expect(manifest.parse(drawn)).toEqual(drawn);
+    const before: Record<string, unknown> = { ...drawn };
+    delete before.goldA2;
+    expect(manifest.parse({ ...before, papers: [] })).toEqual({
+      ...before,
+      papers: [],
+    });
   });
 
   // A snapshot taken before #128 joins an award group's sources with "; ".

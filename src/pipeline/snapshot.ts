@@ -45,15 +45,14 @@ export async function snapshotTaken(deps: Deps): Promise<boolean> {
   return deps.text.hasSnapshot(deps.gold.snapshotId);
 }
 
+// One page of a drawn set's search, gold set A's or gold set A2's, which
+// share a query (#695).
 export async function searchGoldA(
   deps: Deps,
   cursor: string,
+  query: string = deps.gold.goldA.query,
 ): Promise<{ pmcids: string[]; skipped: number; nextCursor: string | null }> {
-  const page = await deps.europePmc.search(
-    cursor,
-    deps.gold.goldA.query,
-    LARGEST_PAGE_SIZE,
-  );
+  const page = await deps.europePmc.search(cursor, query, LARGEST_PAGE_SIZE);
   logger.info("snapshot-search", {
     hitCount: page.hitCount,
     found: page.papers.length,
@@ -109,21 +108,22 @@ export type Taken =
 // find in it, which may be nothing (#399). A gold set A paper's grants are
 // read first, so a paper with none costs no full text. A grant id the
 // manifest cannot hold, such as one with a space, is left out, or the
-// manifest would refuse the whole snapshot.
+// manifest would refuse the whole snapshot. A gold set A2 paper is read as
+// a gold set A paper is (#695).
 export async function snapshotPaper(
   deps: Deps,
   pmcid: string,
-  set: "A" | "B",
+  set: "A" | "A2" | "B",
 ): Promise<Taken> {
-  const grants =
-    set === "A"
-      ? (await deps.europePmc.grants(pmcid)).filter(
-          // crukReference refuses a Crossref Funder Registry id, such as
-          // CRUK's own, which Europe PMC sometimes lists as a grant (#502).
-          (grant) => GRANT.safeParse(grant).success && crukReference(grant),
-        )
-      : [];
-  if (set === "A" && grants.length === 0) {
+  const drawn = set !== "B";
+  const grants = drawn
+    ? (await deps.europePmc.grants(pmcid)).filter(
+        // crukReference refuses a Crossref Funder Registry id, such as
+        // CRUK's own, which Europe PMC sometimes lists as a grant (#502).
+        (grant) => GRANT.safeParse(grant).success && crukReference(grant),
+      )
+    : [];
+  if (drawn && grants.length === 0) {
     logger.info("snapshot-passed-over", { pmcid });
     return { kept: false };
   }
@@ -131,9 +131,8 @@ export async function snapshotPaper(
   const sections = fundingSections(article);
   await deps.text.putFundingText(pmcid, sections);
   const empty = sections.text.length === 0 && sections.awards.length === 0;
-  const answers =
-    set === "A" ? oncePerGrant(printedGrants(grants, article)) : [];
-  if (set === "A" && (empty || answers.length === 0)) {
+  const answers = drawn ? oncePerGrant(printedGrants(grants, article)) : [];
+  if (drawn && (empty || answers.length === 0)) {
     logger.info("snapshot-passed-over", { pmcid });
     return { kept: false };
   }
@@ -155,12 +154,13 @@ export async function writeManifest(
   deps: Deps,
   entries: Entry[],
 ): Promise<{ manifestSha256: string }> {
-  const { goldA, snapshotId } = deps.gold;
+  const { goldA, goldA2, snapshotId } = deps.gold;
   const body = JSON.stringify(
     manifest.parse({
       id: snapshotId,
       createdAt: deps.now(),
       goldA: { query: goldA.query, seed: goldA.seed, size: goldA.size },
+      goldA2: { query: goldA2.query, seed: goldA2.seed, size: goldA2.size },
       papers: entries,
     }),
   );

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { withDurableExecution } from "@aws/durable-execution-sdk-js";
 import { z } from "zod";
-import { goldA, goldB, pinned } from "../../evals/gold.ts";
+import { goldA, goldA2, goldB, pinned } from "../../evals/gold.ts";
 import { europePmc } from "../europepmc/client.ts";
 import { release } from "../page/release.ts";
 import type { Deps } from "../pipeline/steps.ts";
@@ -51,7 +51,7 @@ export function liveDeps(): Deps {
     now: () => new Date().toISOString(),
     // The repo's own gold sets, and the snapshot id evals/snapshot.json
     // pins.
-    gold: { goldA, goldB, snapshotId: pinned.id },
+    gold: { goldA, goldA2, goldB, snapshotId: pinned.id },
   };
 }
 
