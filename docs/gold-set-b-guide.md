@@ -267,6 +267,10 @@ every reason to check the row (#700):
   seed in `docs/gold-set-b2-sample.json`.
 - `agreed, not checked`: none of the above.
 
+Its `passes` column can also say `passes differed on references`. When
+the passes compared in more than one way, it gives each way, separated by
+`; `. Leave `passes`, `flag` and `look_in` as they are.
+
 A flag says only that a row differs, not which reference, so read the
 paper afresh. Check every flagged row and every `sample` row. If the
 sample finds an error, check every row. `docs/gold-set-b2-proposed.csv`

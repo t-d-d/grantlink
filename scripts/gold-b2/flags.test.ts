@@ -29,6 +29,10 @@ describe("guideNormalise", () => {
     expect(guideNormalise("CRUKC1234/A56789")).toBe("C1234/A56789");
   });
 
+  it("keeps a CRUK printed apart from the reference, as the guide says", () => {
+    expect(guideNormalise("CRUK C1234/A56789")).toBe("CRUKC1234/A56789");
+  });
+
   it("keeps a CRUK/ or CRUK- that is the reference's own form", () => {
     expect(guideNormalise("CRUK/12/345")).toBe("CRUK/12/345");
     expect(guideNormalise("CRUK-A12345")).toBe("CRUK-A12345");
@@ -130,5 +134,12 @@ describe("csv", () => {
     const text = csv(rows);
     expect(text).toBe('a,"b, c","say ""hi"""\n,x,y\n');
     expect(parseCsv(text)).toEqual(rows);
+  });
+
+  it("reads a spreadsheet's export, with CRLF line ends and a byte order mark", () => {
+    expect(parseCsv('\uFEFFa,b\r\n"c\r\nd",e\r\n')).toEqual([
+      ["a", "b"],
+      ["c\r\nd", "e"],
+    ]);
   });
 });

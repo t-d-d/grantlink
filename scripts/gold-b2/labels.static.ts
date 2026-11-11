@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { readRepoFile } from "../../test/repo.ts";
 import { SHEET_COLUMNS } from "./draw.ts";
 import {
@@ -7,8 +8,8 @@ import {
   NOT_CHECKED,
   parseCsv,
   passesFor,
+  SAMPLE_SIZE,
   SAMPLED,
-  type Funded,
   type Pass,
 } from "./flags.ts";
 import {
@@ -27,32 +28,58 @@ import {
 const recorded = record.parse(JSON.parse(readRepoFile(RECORD)));
 const labels = recorded.labels;
 
-function table(path: string, columns: readonly string[]) {
+// A CSV file's rows, by column, once its header is the one expected.
+function table(path: string, columns: readonly string[]): unknown[] {
   const [header, ...rows] = parseCsv(readRepoFile(path));
-  expect(header).toEqual(columns);
-  return rows.map((row) => {
-    expect(row).toHaveLength(columns.length);
-    return Object.fromEntries(
-      columns.map((column, i) => [column, row[i] ?? ""]),
-    );
+  if (header?.join(",") !== columns.join(",")) {
+    throw new Error(`${path}'s header is not ${columns.join(",")}`);
+  }
+  return rows.map((row, i) => {
+    if (row.length !== columns.length) {
+      throw new Error(`${path}'s row ${String(i + 2)} has the wrong cells`);
+    }
+    return Object.fromEntries(columns.map((column, j) => [column, row[j]]));
   });
 }
 
-const FUNDED = new Set(["yes", "no", "unclear"]);
-const list = (cell: string | undefined): string[] =>
-  cell === undefined || cell === "" ? [] : cell.split("; ");
-const funded = (cell: string | undefined): Funded => {
-  if (cell === "yes" || cell === "no" || cell === "unclear") return cell;
-  throw new Error(`funded is ${String(cell)}`);
-};
+const FUNDED = z.enum(["yes", "no", "unclear"]);
+const proposedRow = z
+  .object({
+    pmcid: z.string(),
+    europe_pmc: z.string(),
+    funded: FUNDED,
+    references_as_written: z.string(),
+    references_normalised: z.string(),
+    note: z.string(),
+    passes: z.string(),
+    flag: z.string(),
+    look_in: z.string(),
+    checked: z.string(),
+  })
+  .strict();
+// The owner's sheet, which may have a row not yet labelled.
+const sheetRow = proposedRow.extend({ funded: FUNDED.or(z.literal("")) });
+const passRow = z
+  .object({
+    pmcid: z.string(),
+    pass: z.enum(["1", "2"]),
+    funded: FUNDED,
+    references_as_written: z.string(),
+    references_normalised: z.string(),
+    unsure: z.enum(["yes", "no"]),
+  })
+  .strict();
 
-const proposed = table(PROPOSED, SHEET_COLUMNS);
-const passRows = table(PASSES, PASSES_COLUMNS);
+const list = (cell: string): string[] => (cell === "" ? [] : cell.split("; "));
+
+const proposed = z.array(proposedRow).parse(table(PROPOSED, SHEET_COLUMNS));
+const sheet = z.array(sheetRow).parse(table(SHEET, SHEET_COLUMNS));
+const passRows = z.array(passRow).parse(table(PASSES, PASSES_COLUMNS));
 const passesOf = (pmcid: string): [Pass, Pass] => {
   const mine = passRows.filter((row) => row.pmcid === pmcid);
   expect(mine.map((row) => row.pass)).toEqual(["1", "2"]);
   const [one, two] = mine.map((row): Pass => ({
-    funded: funded(row.funded),
+    funded: row.funded,
     references: list(row.references_normalised),
     unsure: row.unsure === "yes",
   }));
@@ -61,42 +88,48 @@ const passesOf = (pmcid: string): [Pass, Pass] => {
 };
 
 // The references a row lists, as written, normalise as the guide says.
-function expectNormalised(
-  written: string | undefined,
-  normalised: string | undefined,
-) {
+function expectNormalised(written: string, normalised: string) {
   expect(list(written).map(guideNormalise)).toEqual(list(normalised));
 }
 
 describe("gold set B2's proposed labels", () => {
   it("records the labeller, the versions, the models and the check's seed", () => {
     expect(labels).toBeDefined();
-    expect(labels?.checkSize).toBe(10);
+    expect(labels?.checkSize).toBe(SAMPLE_SIZE);
   });
 
   it("lists the sample's papers in order, in the sheet and the proposals", () => {
-    for (const rows of [proposed, table(SHEET, SHEET_COLUMNS)]) {
+    for (const rows of [proposed, sheet]) {
       expect(rows.map((row) => row.pmcid)).toEqual(recorded.papers);
       for (const row of rows) {
         expect(row.europe_pmc).toBe(
-          `https://europepmc.org/article/PMC/${String(row.pmcid)}`,
+          `https://europepmc.org/article/PMC/${row.pmcid}`,
         );
       }
     }
   });
 
+  it("keeps the columns the owner leaves alone as the proposals have them", () => {
+    const kept = (row: z.infer<typeof sheetRow>) => [
+      row.pmcid,
+      row.europe_pmc,
+      row.passes,
+      row.flag,
+      row.look_in,
+    ];
+    expect(sheet.map(kept)).toEqual(proposed.map(kept));
+  });
+
   it("keeps both passes' labels for every paper", () => {
     expect(passRows).toHaveLength(2 * recorded.papers.length);
     for (const row of passRows) {
-      expect(FUNDED.has(row.funded ?? "")).toBe(true);
-      expect(["yes", "no"]).toContain(row.unsure);
       expectNormalised(row.references_as_written, row.references_normalised);
     }
   });
 
   it("proposes the first pass's labels, with how the passes compared", () => {
     for (const row of proposed) {
-      const pmcid = row.pmcid ?? "";
+      const pmcid = row.pmcid;
       const [one, two] = passesOf(pmcid);
       const first = passRows.find((p) => p.pmcid === pmcid && p.pass === "1");
       expect(row.funded).toBe(one.funded);
@@ -117,7 +150,7 @@ describe("gold set B2's proposed labels", () => {
       ...models.map((model) => `differs from ${model} alone`),
     ]);
     for (const row of proposed) {
-      const [one, two] = passesOf(row.pmcid ?? "");
+      const [one, two] = passesOf(row.pmcid);
       const reasons = list(row.flag).filter(
         (flag) => flag !== SAMPLED && flag !== NOT_CHECKED,
       );
@@ -133,7 +166,7 @@ describe("gold set B2's proposed labels", () => {
 
   it("draws the random check from the unflagged rows with the recorded seed", () => {
     const rows = proposed.map((row) => ({
-      pmcid: row.pmcid ?? "",
+      pmcid: row.pmcid,
       reasons: list(row.flag).filter(
         (flag) => flag !== SAMPLED && flag !== NOT_CHECKED,
       ),
@@ -143,9 +176,8 @@ describe("gold set B2's proposed labels", () => {
     );
     for (const row of proposed) {
       const flags = list(row.flag);
-      if (drawn.has(row.pmcid ?? "")) expect(flags).toEqual([SAMPLED]);
-      else if (flags.includes(SAMPLED))
-        throw new Error(`${String(row.pmcid)} sampled`);
+      if (drawn.has(row.pmcid)) expect(flags).toEqual([SAMPLED]);
+      else if (flags.includes(SAMPLED)) throw new Error(`${row.pmcid} sampled`);
       else if (flags.length === 0 || flags.includes(NOT_CHECKED)) {
         expect(flags).toEqual([NOT_CHECKED]);
       }

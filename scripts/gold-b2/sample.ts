@@ -24,6 +24,16 @@ const SEED = 20261111;
 const SIZE = 100;
 
 const today = new Date().toISOString().slice(0, 10);
+// A new draw would blank the sheet and drop the labels' record, so once the
+// passes have proposed labels (#700) the sample is not drawn again here.
+if (
+  process.argv.includes("--write") &&
+  record.parse(JSON.parse(readFileSync(RECORD, "utf8"))).labels !== undefined
+) {
+  throw new Error(
+    "gold set B2 is labelled: drawing again would discard its labels",
+  );
+}
 const recorded = process.argv.includes("--write")
   ? undefined
   : record.parse(JSON.parse(readFileSync(RECORD, "utf8")));

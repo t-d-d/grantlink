@@ -34,9 +34,11 @@ export const SAMPLE_SIZE = 10;
 // The guide's normal form (docs/gold-set-b-guide.md): the rules' own, and a
 // CRUK printed straight onto the front of a reference dropped. A reference
 // whose own form starts CRUK/ or CRUK- keeps it.
+// The test reads the reference as written, since normalising takes out the
+// space that keeps a CRUK apart from it.
 export function guideNormalise(written: string): string {
   const form = normalise(written);
-  return /^CRUK[A-Z0-9]/u.test(form) ? form.slice(4) : form;
+  return /^CRUK[A-Z0-9]/iu.test(written.trim()) ? form.slice(4) : form;
 }
 
 const sameSet = (a: readonly string[], b: readonly string[]): boolean => {
@@ -96,12 +98,14 @@ export function csv(rows: readonly (readonly string[])[]): string {
 }
 
 // Reads what csv() writes: quoted cells, with a doubled quote for a quote.
+// It reads a spreadsheet's export too, whose lines end CRLF and which may
+// start with a byte order mark.
 export function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let value = "";
   let quoted = false;
-  for (let i = 0; i < text.length; i += 1) {
+  for (let i = text.startsWith("\uFEFF") ? 1 : 0; i < text.length; i += 1) {
     const char = text.charAt(i);
     if (quoted) {
       if (char === '"' && text.charAt(i + 1) === '"') {
@@ -117,6 +121,8 @@ export function parseCsv(text: string): string[][] {
     } else if (char === ",") {
       row.push(value);
       value = "";
+    } else if (char === "\r" && text.charAt(i + 1) === "\n") {
+      // The \n that follows ends the row.
     } else if (char === "\n") {
       row.push(value);
       rows.push(row);
