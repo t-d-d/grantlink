@@ -6,7 +6,7 @@ import {
   sheetCsv as goldBSheet,
 } from "../gold-b/draw.ts";
 
-// Draws gold set C's 100 papers (#695, #699): a plain seeded draw from the
+// Draws gold set B2's 100 papers (#695, #699): a plain seeded draw from the
 // papers the live search returns, less gold set B's. No check on a paper's
 // text decides whether it joins, so the draw reads no text at all, only
 // ids, and prints nothing from a paper (docs/constraints/personal-data.md).
@@ -58,7 +58,7 @@ export async function draw(
   };
 }
 
-// The columns docs/gold-set-b-guide.md names, which gold set C's labels
+// The columns docs/gold-set-b-guide.md names, which gold set B2's labels
 // follow too.
 export const SHEET_COLUMNS = [
   ...GOLD_B_COLUMNS,

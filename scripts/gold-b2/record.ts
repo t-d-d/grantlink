@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { pmcid as PMCID } from "../../src/shared/pmcid.ts";
 
-// Gold set C's recorded draw: the search it ran, the day, how many papers
+// Gold set B2's recorded draw: the search it ran, the day, how many papers
 // that search found, the seed, the size and the papers drawn, ids only.
-export const RECORD = "docs/gold-set-c-sample.json";
-export const SHEET = "docs/gold-set-c-sheet.csv";
+export const RECORD = "docs/gold-set-b2-sample.json";
+export const SHEET = "docs/gold-set-b2-sheet.csv";
 
 export const record = z
   .object({

@@ -6,7 +6,7 @@ import { SHEET_COLUMNS, sheetCsv } from "./draw.ts";
 
 const recorded = record.parse(JSON.parse(readFileSync(RECORD, "utf8")));
 
-describe("gold set C's recorded sample", () => {
+describe("gold set B2's recorded sample", () => {
   it("holds the plan's 100 papers, once each", () => {
     expect(recorded.size).toBe(100);
     expect(recorded.papers).toHaveLength(recorded.size);
@@ -27,7 +27,7 @@ describe("gold set C's recorded sample", () => {
   });
 });
 
-describe("gold set C's labelling sheet", () => {
+describe("gold set B2's labelling sheet", () => {
   it("lists the sample's papers with their links and empty label columns only", () => {
     const sheet = readFileSync(SHEET, "utf8");
     expect(sheet.split("\n")[0]).toBe(SHEET_COLUMNS.join(","));

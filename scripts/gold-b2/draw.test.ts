@@ -41,7 +41,7 @@ function fake(query: string, pages: string[][]) {
   return { api, searched, read: () => read };
 }
 
-describe("drawing gold set C", () => {
+describe("drawing gold set B2", () => {
   const population = ids(1, 300);
   const goldB = ids(1, 150).filter((_, i) => i % 3 === 0);
 
@@ -106,7 +106,7 @@ describe("the dated query", () => {
   });
 });
 
-describe("gold set C's labelling sheet", () => {
+describe("gold set B2's labelling sheet", () => {
   it("has the guide's columns, and a row per paper with only its id and link", () => {
     expect(SHEET_COLUMNS).toEqual([
       "pmcid",

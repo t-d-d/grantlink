@@ -8,18 +8,18 @@ import goldB from "../../evals/gold-b.json" with { type: "json" };
 import { draw, sheetCsv, upTo } from "./draw.ts";
 import { record, RECORD, SHEET } from "./record.ts";
 
-// Draws gold set C's sample from Europe PMC and checks it against the
-// papers recorded in docs/gold-set-c-sample.json (#699). It reads Europe
+// Draws gold set B2's sample from Europe PMC and checks it against the
+// papers recorded in docs/gold-set-b2-sample.json (#699). It reads Europe
 // PMC through the service's own client, at its pace, and prints ids and
 // counts only.
 //
-//   node scripts/gold-c/sample.ts           draw again with the recorded
+//   node scripts/gold-b2/sample.ts           draw again with the recorded
 //                                           search and seed, and compare
-//   node scripts/gold-c/sample.ts --write   draw from today's live search,
+//   node scripts/gold-b2/sample.ts --write   draw from today's live search,
 //                                           and record the draw and the sheet
 
 const ABOUT =
-  "Gold set C's sample (#695, #699): ids only, never text. scripts/gold-c/sample.ts draws it from Europe PMC: every open-access paper the live search (searchQuery() in src/europepmc/client.ts) found, published up to the day it ran, less gold set B's papers (evals/gold-b.json), shuffled with the seed, and the first `size` of them. No check on a paper's text decides whether it joins. population counts the papers the search found, gold set B's among them. Run the script without --write to draw again and compare. The sheet lists the same papers in the same order.";
+  "Gold set B2's sample (#695, #699): ids only, never text. scripts/gold-b2/sample.ts draws it from Europe PMC: every open-access paper the live search (searchQuery() in src/europepmc/client.ts) found, published up to the day it ran, less gold set B's papers (evals/gold-b.json), shuffled with the seed, and the first `size` of them. No check on a paper's text decides whether it joins. population counts the papers the search found, gold set B's among them. Run the script without --write to draw again and compare. The sheet lists the same papers in the same order.";
 const SEED = 20261111;
 const SIZE = 100;
 
