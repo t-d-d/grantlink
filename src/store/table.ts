@@ -399,7 +399,7 @@ export function dynamoTable(
       const checked = result.parse(given);
       const was =
         from === null
-          ? "attribute_not_exists(versions.rules)"
+          ? "attribute_not_exists(versions)"
           : "versions.rules = :from";
       try {
         await send(

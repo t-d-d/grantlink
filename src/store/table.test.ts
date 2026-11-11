@@ -447,7 +447,7 @@ describe("the table module", () => {
     });
     expect(sent[1]?.input).toMatchObject({
       ConditionExpression:
-        "#status = :processed AND (attribute_not_exists(versions.rules) OR versions.rules = :to)",
+        "#status = :processed AND (attribute_not_exists(versions) OR versions.rules = :to)",
     });
   });
 
