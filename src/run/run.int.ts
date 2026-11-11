@@ -433,6 +433,39 @@ describe("a run that finishes after a deploy", () => {
     expect(fake.site.files?.["index.html"]).toContain("RRCOER-JUN24/100008");
     expect(fake.site.files?.["found.json"]).toContain("RRCOER-Jun24/100008");
   });
+
+  // A run on the newer deploy reads the paper after this run decided to
+  // read it and before this run writes its result (#688).
+  it("leaves a row a newer rules version read as it is, and counts the paper as read", async () => {
+    const fake = fakeDeps();
+    const newer = {
+      references: [
+        { asWritten: "C1/A12345", normalised: "C1/A12345", format: "Cn/An" },
+      ],
+      versions: { rules: NEWER_RULES, code: "newer" },
+      processedAt: "2026-11-09T11:00:00.000Z",
+      runId: "run-newer",
+    };
+    // Only the first time: the snapshot keeps the same paper's text later.
+    let raced = false;
+    const put = fake.deps.text.putFundingText.bind(fake.deps.text);
+    fake.deps.text.putFundingText = async (pmcid, sections) => {
+      await put(pmcid, sections);
+      if (pmcid === "PMC0000001" && !raced) {
+        raced = true;
+        await fake.table.markProcessed(pmcid, newer);
+      }
+    };
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    const row = fake.table.rows.get("PMC0000001");
+    expect(row).toMatchObject({ status: "processed", ...newer });
+    // As a run that meets no newer row: one fixture paper fails every time.
+    expect(result).toMatchObject({ read: 7, failed: 1 });
+    expect(logged("paper-read")).toContainEqual(
+      expect.objectContaining({ pmcid: "PMC0000001" }),
+    );
+  });
 });
 
 describe("a paper Europe PMC has since linked to a grant", () => {
