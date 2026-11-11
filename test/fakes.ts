@@ -5,6 +5,7 @@ import { RULES_VERSIONS, type FundingSections } from "../src/extract/rules.ts";
 import type { Deps, Gold } from "../src/pipeline/steps.ts";
 import type { PageFiles } from "../src/store/bucket.ts";
 import {
+  olderRules,
   paperRow,
   type LastFailure,
   type PaperRow,
@@ -92,7 +93,17 @@ export function memoryTable(): Table & {
       rows.set(pmcid, paperRow.parse({ ...row, ...result }));
       return Promise.resolve(true);
     },
+    // As the real table: leaves a row a rules version not older than the
+    // result's read, and counts the paper as done (#688).
     markProcessed(pmcid, result) {
+      const held = get(pmcid).versions?.rules ?? null;
+      if (
+        held !== null &&
+        held !== result.versions.rules &&
+        !olderRules(held, result.versions.rules)
+      ) {
+        return Promise.resolve();
+      }
       rows.set(
         pmcid,
         paperRow.parse({ ...get(pmcid), ...result, status: "processed" }),

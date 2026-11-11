@@ -1,6 +1,6 @@
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import { describe, expect, it } from "vitest";
-import { dynamoTable, paperRow, readRow } from "./table.ts";
+import { dynamoTable, olderRules, paperRow, readRow } from "./table.ts";
 
 const processed = {
   pmcid: "PMC11",
@@ -552,5 +552,141 @@ describe("the table module", () => {
     const { client, sent } = recorder(() => ({ Items: [processed] }));
     await dynamoTable("results", client).all();
     expect(sent[0]?.input.ConsistentRead).toBe(true);
+  });
+});
+
+describe("which rules version is older (#686)", () => {
+  it.each([
+    ["rules-9", "rules-20", true],
+    ["rules-19", "rules-20", true],
+    [null, "rules-20", true],
+    ["rules-20", "rules-20", false],
+    ["rules-21", "rules-20", false],
+    ["rules-100", "rules-20", false],
+    // A version this code cannot read the number of is left as it is.
+    ["r", "rules-20", false],
+    ["rules-", "rules-20", false],
+    ["rules-9x", "rules-20", false],
+  ])("reads %s as older than %s: %s", (read, current, older) => {
+    expect(olderRules(read, current)).toBe(older);
+  });
+});
+
+// A run that started before a deploy stays on the older Lambda version, so
+// it can read a paper after a newer version has (#688).
+describe("recording a paper's result over a row another rules version read (#688)", () => {
+  const result = {
+    references: processed.references,
+    versions: { rules: "rules-20", code: "abc123" },
+    processedAt: "2026-11-11T10:00:00.000Z",
+    runId: "run-2",
+  };
+  const refused = () =>
+    new ConditionalCheckFailedException({ message: "refused", $metadata: {} });
+
+  // A client that refuses the first update, as the table does when another
+  // rules version has read the paper, then answers a read with `item` and
+  // takes every later update.
+  function heldBy(item: Record<string, unknown> | undefined) {
+    let updates = 0;
+    return recorder((command) => {
+      const name = command.constructor.name;
+      if (name === "GetCommand")
+        return item === undefined ? {} : { Item: item };
+      updates += 1;
+      if (updates === 1) throw refused();
+      return {};
+    });
+  }
+
+  // A row whose versions hold no `rules`, or are not a map, has no
+  // versions.rules either, so the first write asks for no versions at all:
+  // rulesRead reads only that as none, and any other shape stays.
+  it("writes only while the row holds no versions or the result's own rules version", async () => {
+    const { client, sent } = recorder();
+    await dynamoTable("results", client).markProcessed("PMC11", result);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.input).toMatchObject({
+      Key: { pmcid: "PMC11" },
+      ConditionExpression:
+        "attribute_exists(pmcid) AND (attribute_not_exists(versions) OR versions.rules = :to)",
+      ExpressionAttributeValues: {
+        ":to": "rules-20",
+        ":versions": result.versions,
+      },
+    });
+  });
+
+  it.each([
+    ["a newer version, compared by number", { rules: "rules-100", code: "x" }],
+    [
+      "a version this code cannot read the number of",
+      { rules: "r", code: "x" },
+    ],
+    ["versions in a shape this code does not know", "rules-21"],
+  ])(
+    "leaves a row %s read as it is, and counts the paper as done",
+    async (_case, versions) => {
+      const { client, sent } = heldBy({
+        pmcid: "PMC11",
+        status: "processed",
+        versions,
+      });
+      await expect(
+        dynamoTable("results", client).markProcessed("PMC11", result),
+      ).resolves.toBeUndefined();
+      expect(sent.map((command) => command.name)).toEqual([
+        "UpdateCommand",
+        "GetCommand",
+      ]);
+      expect(sent[1]?.input).toMatchObject({
+        Key: { pmcid: "PMC11" },
+        ConsistentRead: true,
+      });
+    },
+  );
+
+  it("writes over a row an older version read since, while that version still holds it", async () => {
+    const { client, sent } = heldBy({
+      pmcid: "PMC11",
+      status: "processed",
+      versions: { rules: "rules-9", code: "x" },
+    });
+    await dynamoTable("results", client).markProcessed("PMC11", result);
+    expect(sent.map((command) => command.name)).toEqual([
+      "UpdateCommand",
+      "GetCommand",
+      "UpdateCommand",
+    ]);
+    expect(sent[2]?.input).toMatchObject({
+      ConditionExpression:
+        "attribute_exists(pmcid) AND (versions.rules = :seen OR versions.rules = :to)",
+      ExpressionAttributeValues: { ":seen": "rules-9", ":to": "rules-20" },
+    });
+  });
+
+  it("fails for a paper the table does not hold", async () => {
+    const { client } = heldBy(undefined);
+    await expect(
+      dynamoTable("results", client).markProcessed("PMC11", result),
+    ).rejects.toThrow(ConditionalCheckFailedException);
+  });
+
+  it("fails when the row keeps changing under it, so the step tries again", async () => {
+    const { client } = recorder((command) => {
+      if (command.constructor.name === "GetCommand") {
+        return {
+          Item: {
+            pmcid: "PMC11",
+            status: "processed",
+            versions: { rules: "rules-9", code: "x" },
+          },
+        };
+      }
+      throw refused();
+    });
+    await expect(
+      dynamoTable("results", client).markProcessed("PMC11", result),
+    ).rejects.toThrow(ConditionalCheckFailedException);
   });
 });
