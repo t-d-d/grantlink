@@ -155,7 +155,8 @@ td {
   vertical-align: top;
 }
 
-tr:last-child td {
+tr:last-child td,
+tr:last-child th {
   border-bottom: 0;
 }
 

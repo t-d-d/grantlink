@@ -227,6 +227,36 @@ describe("the rules, then each model", () => {
     expect(sent).toHaveLength(6);
   });
 
+  it("scores each model alone from the same replies, asking about each paper once", async () => {
+    sent.length = 0;
+    const result = await evaluate({
+      texts,
+      goldA: [{ pmcid: "PMC1", grants: ["A11111"] }],
+      goldB: [
+        { pmcid: "PMC2", references: [] },
+        { pmcid: "PMC3", references: ["44"] },
+      ],
+      models,
+      propose,
+    });
+    const row = (rows: typeof result.rows | undefined, id: string) =>
+      rows?.find((r) => r.id === id)?.score;
+    const [haiku, sonnet] = result.candidates;
+    // Alone, Haiku finds PMC3's reference but not PMC1's grant, which only
+    // the rules read.
+    expect(row(haiku?.alone, "recall-b")).toBe(1);
+    expect(row(haiku?.alone, "precision-b")).toBe(1);
+    expect(row(haiku?.alone, "recall-a")).toBe(0);
+    expect(row(haiku?.alone, "model-adds")).toBeNull();
+    expect(row(haiku?.alone, "spend")).toBeCloseTo(1);
+    expect(row(sonnet?.alone, "spend")).toBeCloseTo(40 / 3);
+    // Each model reads each gold paper's funding text once, as before.
+    expect(sent).toHaveLength(6);
+    for (const model of models) {
+      expect(sent.filter((s) => s.model === model)).toHaveLength(3);
+    }
+  });
+
   it("calls no model when no gold paper is scored", async () => {
     sent.length = 0;
     const result = await evaluate({

@@ -61,12 +61,15 @@ export const report = z
     // The same rows for the rules and then each model the eval compares,
     // with the papers each model's reply could not be read for (#329). A
     // report filed before the eval scored a model has none, and still reads.
+    // alone holds the same rows for the model with no rules (#694), and a
+    // report filed before that has none.
     candidates: z
       .array(
         z
           .object({
             modelId: z.string().min(1).max(100),
             rows,
+            alone: rows.optional(),
             unprocessed: z.array(PMCID),
           })
           .strict(),
