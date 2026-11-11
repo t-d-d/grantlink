@@ -204,8 +204,9 @@ export function readAlone(given: Report): string[] {
       counts.length === 1
         ? (counts[0] ?? "")
         : `${counts.slice(0, -1).join(", ")} and ${counts.at(-1) ?? ""}`;
-    return [
-      `${candidate.modelId} alone read ${list}. Its scores alone leave out the papers it did not read.`,
-    ];
+    const leftOut = sets.some((set) => set.read < set.of)
+      ? " Its scores alone leave out the papers it did not read."
+      : "";
+    return [`${candidate.modelId} alone read ${list}.${leftOut}`];
   });
 }

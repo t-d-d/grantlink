@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { FLOORS, judge, shownScore } from "./floors.ts";
+import { FLOORS, judge, shownScore, type RowId } from "./floors.ts";
 import {
   readAlone,
   report,
@@ -27,6 +27,10 @@ export const MARKER = "<!-- grantlink:eval -->";
 
 // A model alone's cell on a gold set it read no paper of (#696).
 const NONE_READ = "none read" as const;
+
+// How many papers of a gold set the rules were scored on.
+const sentOn = (ci: Report, id: RowId): number =>
+  ci.baseline.find((row) => row.id === id)?.n ?? 0;
 
 const shown = (row: Judged, score: number | null): string =>
   shownScore(row.id, score);
@@ -215,6 +219,9 @@ function heldOutA2(ci: Report): string[] {
         : shownScore("recall-a", score);
   const recallA = (rows: Report["rows"] | undefined) =>
     rows?.find((row) => row.id === "recall-a")?.score ?? null;
+  // A gold set with no papers waits for its snapshot, so only a scored
+  // one can have none read.
+  const scoredA = sentOn(ci, "recall-a") > 0;
   const columns = a2.models.flatMap((model) => {
     const candidate = (ci.candidates ?? []).find(
       (c) => c.modelId === model.modelId,
@@ -222,8 +229,11 @@ function heldOutA2(ci: Report): string[] {
     return [
       {
         name: `${model.modelId} alone`,
-        a: candidate?.read?.goldA === 0 ? NONE_READ : recallA(candidate?.alone),
-        a2: model.read === 0 ? NONE_READ : model.alone.score,
+        a:
+          scoredA && candidate?.read?.goldA === 0
+            ? NONE_READ
+            : recallA(candidate?.alone),
+        a2: a2.rules.n > 0 && model.read === 0 ? NONE_READ : model.alone.score,
       },
       {
         name: `Rules then ${model.modelId}`,
@@ -298,14 +308,20 @@ function models(ci: Report): string[] {
           },
         ],
   );
-  // A model alone that read no paper of a gold set has no score on it
-  // (#696).
+  // A model alone that read no paper of a scored gold set has no score on
+  // it (#696). A gold set with no papers waits for its snapshot.
+  const scoredA = sentOn(ci, "recall-a") > 0;
+  const scoredB = sentOn(ci, "recall-b") > 0;
   const noneRead = (
     read: { goldA: number; goldB: number } | undefined,
-    on: string,
+    id: RowId,
   ): boolean =>
-    (on === "Gold set A" && read?.goldA === 0) ||
-    (on === "Gold set B" && read?.goldB === 0);
+    read !== undefined &&
+    (id === "recall-a"
+      ? scoredA && read.goldA === 0
+      : (id === "precision-b" || id === "recall-b") &&
+        scoredB &&
+        read.goldB === 0);
   const rows = FLOORS.map((floor, i) =>
     [
       floor.measure,
@@ -314,12 +330,13 @@ function models(ci: Report): string[] {
       ...columns.map((column) =>
         column.alone && floor.id === "model-adds"
           ? "-"
-          : column.alone && noneRead(column.read, floor.on)
+          : column.alone && noneRead(column.read, floor.id)
             ? NONE_READ
             : cell(floor.id, scoreIn(column.rows, i)),
       ),
     ].join(" | "),
   );
+  const read = readAlone(ci);
   const left = candidates
     .filter((c) => c.unprocessed.length > 0)
     .map(
@@ -336,7 +353,7 @@ function models(ci: Report): string[] {
     `| --- | --- | --- | ${columns.map(() => "---").join(" | ")} |`,
     ...rows.map((row) => `| ${row} |`),
     ...(left.length === 0 ? [] : ["", ...left]),
-    ...(readAlone(ci).length === 0 ? [] : ["", ...readAlone(ci)]),
+    ...(read.length === 0 ? [] : ["", ...read]),
   ];
 }
 

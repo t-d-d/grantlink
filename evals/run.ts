@@ -223,7 +223,8 @@ export async function evaluate(input: {
     const pass = await modelPass(model, pmcids, input.texts, input.propose);
     // Gold set A2's papers go to the model in a pass of their own, so the
     // spend row stays over gold sets A and B, as its floor was set. A paper
-    // whose reply could not be read counts as missed, and only how many
+    // whose reply could not be read is out of the model's recall alone and
+    // scores what the rules found after the rules (#696). Only how many
     // there were is reported.
     const passA2 = await modelPass(
       model,
