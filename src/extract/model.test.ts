@@ -237,6 +237,19 @@ describe("the reply", () => {
       "a spaced JSON object after prose",
       `${PROSE}\n{ "references": [ { "asWritten": "A11111", "confidence": 0.5 } ] }`,
     ],
+    // A brace in the prose is not the answer's end (#711).
+    [
+      "a closing brace in the prose after its JSON",
+      `${BARE} I left out the {placeholder}.`,
+    ],
+    [
+      "braces in the prose before and after its JSON",
+      `${PROSE} } {\n${BARE}\nNothing else {matched}.`,
+    ],
+    [
+      "its JSON spread over lines",
+      '{\n  "references": [\n    { "asWritten": "A11111", "confidence": 0.5 }\n  ]\n}',
+    ],
   ])(
     "reads a reply with %s, giving the references the bare JSON gives",
     async (_, content) => {
@@ -258,6 +271,28 @@ describe("the reply", () => {
       ]);
     },
   );
+
+  it("counts braces inside a JSON string as text, not as the object's end (#711)", async () => {
+    const { fetch, sent } = fakeOpenRouter(
+      reply(
+        '{"references":[{"asWritten":"A11111","confidence":0.5},{"asWritten":"x\\"}}","confidence":0.1}]} done }',
+      ),
+    );
+    const result = await proposeReferences(TEXT, {
+      model: haiku,
+      key: "k",
+      fetch,
+    });
+    expect(sent).toHaveLength(1);
+    expect(result).toMatchObject({
+      status: "read",
+      references: [
+        { asWritten: "A11111", normalised: "A11111", confidence: 0.5 },
+      ],
+      // The string with braces in it is read, and fails the check.
+      rejected: 1,
+    });
+  });
 
   it("keeps nothing of the prose around the JSON in the result or a log", async () => {
     const logged: unknown[] = [];
@@ -1065,6 +1100,47 @@ describe("fitness: no lost papers (model-calls.md)", () => {
       expect(sent).toHaveLength(2);
       expect(result.status).toBe("unprocessed");
       expect(result).not.toHaveProperty("references");
+    },
+  );
+
+  // A reply with two answers says two things. Reading the first or the last
+  // is a guess at which one the model meant, and model-calls.md forbids a
+  // guessed result, so the reply is unread and the paper waits (#711). Two
+  // answers that agree count, and so does an example of the shape quoted
+  // before the real answer: the reader cannot tell an example from an
+  // answer. So does a second answer cut off before it closes.
+  it.each([
+    [
+      "the prompt's empty example quoted before the real answer",
+      'The shape is {"references":[]}. My answer: {"references":[{"asWritten":"A11111","confidence":0.5}]}',
+    ],
+    [
+      "two answers that differ",
+      '{"references":[{"asWritten":"A11111","confidence":0.5}]}\n{"references":[{"asWritten":"C1234/A56789","confidence":0.9}]}',
+    ],
+    [
+      "the same answer twice",
+      '{"references":[{"asWritten":"A11111","confidence":0.5}]} {"references":[{"asWritten":"A11111","confidence":0.5}]}',
+    ],
+    [
+      "a whole answer and a second one cut off",
+      '{"references":[{"asWritten":"A11111","confidence":0.5}]} Correction: {"references":[{"asWritten":"C1234/A56789"',
+    ],
+    [
+      "an answer inside one that never closes",
+      '{"references":[{"asWritten":"A11111","x":{"references":[]}',
+    ],
+  ])(
+    "leaves a reply with two answer objects unread, since taking one is a guess: %s (#711)",
+    async (_, content) => {
+      const { fetch, sent } = fakeOpenRouter(reply(content), reply(content));
+      const result = await proposeReferences(TEXT, {
+        model: haiku,
+        key: "k",
+        fetch,
+      });
+      expect(sent).toHaveLength(2);
+      expect(result).toEqual({ status: "unprocessed", spend: 0.002 });
     },
   );
 
