@@ -124,9 +124,10 @@ export interface Table {
   lastFailures(pmcids: string[]): Promise<Map<string, LastFailure>>;
   markProcessed(pmcid: string, result: Result): Promise<void>;
   // Writes the result of re-running the rules on a processed paper, only
-  // while the rules version that read it is still `from` (null for none) or
-  // already the result's own. Returns false, and writes nothing, when
-  // another version has read it since. Safe to run twice (#686).
+  // while the rules version that read it is still `from` (null while the row
+  // holds no versions at all) or already the result's own. Returns false,
+  // and writes nothing, when another version has read it since. Safe to run
+  // twice (#686).
   replaceReferences(
     pmcid: string,
     from: string | null,
