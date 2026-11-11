@@ -112,7 +112,7 @@ describe("the dated query", () => {
 });
 
 describe("gold set B2's labelling sheet", () => {
-  it("has the guide's columns, and a row per paper with only its id and link", () => {
+  it("has the guide's columns and #700's flag, and a row per paper with only its id and link", () => {
     expect(SHEET_COLUMNS).toEqual([
       "pmcid",
       "europe_pmc",
@@ -121,12 +121,13 @@ describe("gold set B2's labelling sheet", () => {
       "references_normalised",
       "note",
       "passes",
+      "flag",
       "look_in",
       "checked",
     ]);
     expect(sheetCsv(["PMC7"]).split("\n")).toEqual([
       SHEET_COLUMNS.join(","),
-      "PMC7,https://europepmc.org/article/PMC/PMC7,,,,,,,",
+      "PMC7,https://europepmc.org/article/PMC/PMC7,,,,,,,,",
       "",
     ]);
   });

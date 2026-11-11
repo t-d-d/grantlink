@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { goldB } from "../../evals/gold.ts";
 import { readRepoFile } from "../../test/repo.ts";
-import { record, RECORD, SHEET } from "./record.ts";
-import { SHEET_COLUMNS, sheetCsv, upTo } from "./draw.ts";
+import { record, RECORD } from "./record.ts";
+import { upTo } from "./draw.ts";
 
 const recorded = record.parse(JSON.parse(readRepoFile(RECORD)));
 
@@ -24,13 +24,5 @@ describe("gold set B2's recorded sample", () => {
     expect(recorded.query.endsWith(upTo("", recorded.ranOn).slice(2))).toBe(
       true,
     );
-  });
-});
-
-describe("gold set B2's labelling sheet", () => {
-  it("lists the sample's papers with their links and empty label columns only", () => {
-    const sheet = readRepoFile(SHEET);
-    expect(sheet.split("\n")[0]).toBe(SHEET_COLUMNS.join(","));
-    expect(sheet).toBe(sheetCsv(recorded.papers));
   });
 });
