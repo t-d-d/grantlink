@@ -202,6 +202,8 @@ export const FAKE_GOLD: Gold = {
       references: [],
     })),
   },
+  // None, so a run's tests take no more papers than before gold set B2.
+  goldB2: { about: "a test's gold set B2", papers: [] },
   snapshotId: "s1",
 };
 

@@ -202,6 +202,7 @@ export function comment(
       : `Scored on snapshot ${ci.snapshot.id}, manifest \`${ci.snapshot.manifestSha256.slice(0, 12)}\`.`,
     ...models(ci),
     ...heldOutA2(ci),
+    ...heldOutB2(ci),
   ].join("\n");
 }
 
@@ -274,6 +275,84 @@ function heldOutA2(ci: Report): string[] {
         return model.read === undefined
           ? `${left}, and they count as missed.`
           : `${left}. They are out of its recall alone, and score what the rules found after the rules.`;
+      }),
+  ];
+}
+
+// Gold set B2's precision and recall beside gold set B's, for the rules
+// alone, each model alone and the rules then each model (#695). It gates
+// nothing, and lists no misses. A report filed before gold set B2 joined
+// shows no table.
+function heldOutB2(ci: Report): string[] {
+  const b2 = ci.goldB2;
+  if (b2 === undefined) return [];
+  type Cell = number | null | typeof NONE_READ;
+  const cell = (id: RowId, score: Cell) =>
+    score === NONE_READ
+      ? score
+      : score === null
+        ? judge(id, null)
+        : shownScore(id, score);
+  const scoreIn = (rows: Report["rows"] | undefined, id: RowId) =>
+    rows?.find((row) => row.id === id)?.score ?? null;
+  // A gold set with no papers waits for its snapshot, so only a scored
+  // one can have none read.
+  const scoredB = sentOn(ci, "recall-b") > 0;
+  const scoredB2 = b2.rules.recall.n > 0;
+  const columns = b2.models.flatMap((model) => {
+    const candidate = (ci.candidates ?? []).find(
+      (c) => c.modelId === model.modelId,
+    );
+    const noneB = scoredB && candidate?.read?.goldB === 0;
+    const noneB2 = scoredB2 && model.read === 0;
+    return [
+      {
+        name: `${model.modelId} alone`,
+        b: (id: RowId): Cell =>
+          noneB ? NONE_READ : scoreIn(candidate?.alone, id),
+        b2: { ...model.alone, none: noneB2 },
+      },
+      {
+        name: `Rules then ${model.modelId}`,
+        b: (id: RowId): Cell => scoreIn(candidate?.rows, id),
+        b2: { ...model.rulesThen, none: false },
+      },
+    ];
+  });
+  const measures = [
+    { id: "precision-b", name: "Precision", key: "precision" },
+    { id: "recall-b", name: "Recall", key: "recall" },
+  ] as const;
+  const line = (on: string, measure: string, cells: string[]) =>
+    `| ${[on, measure, ...cells].join(" | ")} |`;
+  const names = ["On", "Measure", "Rules alone", ...columns.map((c) => c.name)];
+  return [
+    "",
+    "#### Precision and recall on gold set B and held-out gold set B2",
+    "",
+    `| ${names.join(" | ")} |`,
+    `| ${names.map(() => "---").join(" | ")} |`,
+    ...measures.map((m) =>
+      line("Gold set B", m.name, [
+        cell(m.id, scoreIn(ci.baseline, m.id)),
+        ...columns.map((c) => cell(m.id, c.b(m.id))),
+      ]),
+    ),
+    ...measures.map((m) =>
+      line("Gold set B2, held out", m.name, [
+        cell(m.id, b2.rules[m.key].score),
+        ...columns.map((c) =>
+          cell(m.id, c.b2.none ? NONE_READ : c.b2[m.key].score),
+        ),
+      ]),
+    ),
+    "",
+    "Gold set B2 is drawn at random from the live search, less gold set B's papers. A Claude model proposed gold set B2's labels and the owner checked them. Nobody tuned the rules or the prompt on gold set B2. Gold set B2 gates nothing.",
+    ...b2.models
+      .filter((model) => model.unprocessed > 0)
+      .map((model) => {
+        const one = model.unprocessed === 1;
+        return `${model.modelId} left ${String(model.unprocessed)} gold set B2 ${one ? "paper" : "papers"} unread. ${one ? "It is" : "They are"} out of its scores alone, and ${one ? "scores" : "score"} what the rules found after the rules.`;
       }),
   ];
 }

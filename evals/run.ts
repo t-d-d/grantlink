@@ -16,6 +16,7 @@ import {
   goldA,
   goldA2,
   goldB,
+  goldB2,
   manifest,
   paperFile,
   pinned,
@@ -27,6 +28,7 @@ import {
   RULES_ALONE,
   verdict,
   type GoldA2Scores,
+  type GoldB2Scores,
   type Report,
 } from "./report.ts";
 import {
@@ -192,6 +194,24 @@ function recallA2(
   return rows["recall-a"];
 }
 
+// Gold set B2's precision and recall, scored as gold set B's are, with
+// nothing beside them that names a paper (#695).
+function scoresB2(
+  texts: ReadonlyMap<string, FundingSections>,
+  papers: readonly GoldB[],
+  model?: ModelPass,
+  rules = true,
+): GoldB2Scores["rules"] {
+  const { rows } = score({
+    texts,
+    goldA: [],
+    goldB: papers,
+    rules,
+    ...(model === undefined ? {} : { model }),
+  });
+  return { precision: rows["precision-b"], recall: rows["recall-b"] };
+}
+
 // A row's n, how many gold papers its score is over.
 const nOf = (rows: Rows, id: string): number =>
   rows.find((row) => row.id === id)?.n ?? 0;
@@ -202,6 +222,7 @@ export async function evaluate(input: {
   goldB: readonly GoldB[];
   // Held out, and scored apart from the gating rows (#695).
   goldA2?: readonly GoldA[];
+  goldB2?: readonly GoldB[];
   models: readonly ModelId[];
   propose: Propose;
 }): Promise<{
@@ -210,8 +231,10 @@ export async function evaluate(input: {
   candidates: Candidate[];
   missedA: string[];
   goldA2: GoldA2Scores;
+  goldB2: GoldB2Scores;
 }> {
   const heldOut = input.goldA2 ?? [];
+  const heldOutB = input.goldB2 ?? [];
   // Rules ship alone (#330), so the release and the baseline are the same
   // run.
   const release = score(input);
@@ -219,6 +242,7 @@ export async function evaluate(input: {
   const pmcids = goldIds(input.goldA, input.goldB);
   const candidates: Candidate[] = [];
   const goldA2Models: GoldA2Scores["models"] = [];
+  const goldB2Models: GoldB2Scores["models"] = [];
   for (const model of input.models) {
     const pass = await modelPass(model, pmcids, input.texts, input.propose);
     // Gold set A2's papers go to the model in a pass of their own, so the
@@ -239,6 +263,22 @@ export async function evaluate(input: {
       rulesThen: recallA2(input.texts, heldOut, passA2),
       unprocessed: passA2.unprocessed.length,
       read: aloneA2.n,
+    });
+    // Gold set B2's papers go in a pass of their own too, for the same
+    // reason.
+    const passB2 = await modelPass(
+      model,
+      heldOutB.map((paper) => paper.pmcid),
+      input.texts,
+      input.propose,
+    );
+    const aloneB2 = scoresB2(input.texts, heldOutB, passB2, false);
+    goldB2Models.push({
+      modelId: model,
+      alone: aloneB2,
+      rulesThen: scoresB2(input.texts, heldOutB, passB2),
+      unprocessed: passB2.unprocessed.length,
+      read: aloneB2.recall.n,
     });
     const rows = asRows(score({ ...input, model: pass }));
     // What the model adds is its recall on gold set B over the rules'.
@@ -270,6 +310,10 @@ export async function evaluate(input: {
       rules: recallA2(input.texts, heldOut),
       models: goldA2Models,
     },
+    goldB2: {
+      rules: scoresB2(input.texts, heldOutB),
+      models: goldB2Models,
+    },
   };
 }
 
@@ -283,14 +327,16 @@ export function goldToScore(
   a: readonly GoldA[],
   b: readonly GoldB[],
   a2: readonly GoldA[],
+  b2: readonly GoldB[],
 ): {
   goldA: readonly GoldA[];
   goldB: readonly GoldB[];
   goldA2: readonly GoldA[];
+  goldB2: readonly GoldB[];
 } {
   return pin.manifestSha256 === null
-    ? { goldA: [], goldB: [], goldA2: [] }
-    : { goldA: a, goldB: b, goldA2: a2 };
+    ? { goldA: [], goldB: [], goldA2: [], goldB2: [] }
+    : { goldA: a, goldB: b, goldA2: a2, goldB2: b2 };
 }
 
 const ciEnv = z.object({
@@ -341,7 +387,13 @@ async function main(dir: string, out: string | undefined): Promise<void> {
   const texts = loadSnapshot(dir, pinned);
   const result = await evaluate({
     texts,
-    ...goldToScore(pinned, goldA.papers, goldB.papers, goldA2.papers),
+    ...goldToScore(
+      pinned,
+      goldA.papers,
+      goldB.papers,
+      goldA2.papers,
+      goldB2.papers,
+    ),
     models: MODELS,
     propose: retrying(openRouter),
   });
@@ -379,6 +431,27 @@ async function main(dir: string, out: string | undefined): Promise<void> {
     if (model.unprocessed > 0) {
       console.log(
         `${model.modelId} left ${String(model.unprocessed)} gold set A2 papers unread`,
+      );
+    }
+  }
+  // Held out: its precision and recall, and never the ids of what it
+  // missed (#695).
+  const heldB = (label: string, both: GoldB2Scores["rules"]) => {
+    for (const [id, row] of [
+      ["precision-b2", both.precision],
+      ["recall-b2", both.recall],
+    ] as const) {
+      const shown = row.score === null ? "-" : row.score.toFixed(4);
+      console.log(`${label}\t${id}\t${shown}\tn=${String(row.n)}`);
+    }
+  };
+  heldB("rules alone", result.goldB2.rules);
+  for (const model of result.goldB2.models) {
+    heldB(`${model.modelId} alone`, model.alone);
+    heldB(`rules then ${model.modelId}`, model.rulesThen);
+    if (model.unprocessed > 0) {
+      console.log(
+        `${model.modelId} left ${String(model.unprocessed)} gold set B2 ${model.unprocessed === 1 ? "paper" : "papers"} unread`,
       );
     }
   }

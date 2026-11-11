@@ -109,13 +109,14 @@ export type Taken =
 // read first, so a paper with none costs no full text. A grant id the
 // manifest cannot hold, such as one with a space, is left out, or the
 // manifest would refuse the whole snapshot. A gold set A2 paper is read as
-// a gold set A paper is (#695).
+// a gold set A paper is, and a gold set B2 paper as a gold set B paper is
+// (#695).
 export async function snapshotPaper(
   deps: Deps,
   pmcid: string,
-  set: "A" | "A2" | "B",
+  set: "A" | "A2" | "B" | "B2",
 ): Promise<Taken> {
-  const drawn = set !== "B";
+  const drawn = set === "A" || set === "A2";
   const grants = drawn
     ? (await deps.europePmc.grants(pmcid)).filter(
         // crukReference refuses a Crossref Funder Registry id, such as

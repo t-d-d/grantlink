@@ -1,6 +1,6 @@
 # The eval snapshot
 
-The snapshot is the gold sets' funding text, under `eval/` in the private bucket. A run writes the snapshot that [evals/snapshot.json](../evals/snapshot.json) names when it does not exist yet. It samples gold sets A and A2 with their queries and seeds, takes gold set B's papers from its labels, and writes a manifest of each paper and its text's hash. The run logs the manifest's hash as `snapshot-written`.
+The snapshot is the gold sets' funding text, under `eval/` in the private bucket. A run writes the snapshot that [evals/snapshot.json](../evals/snapshot.json) names when it does not exist yet. It samples gold sets A and A2 with their queries and seeds, takes gold set B's and B2's papers from their labels, and writes a manifest of each paper and its text's hash. The run logs the manifest's hash as `snapshot-written`.
 
 ## Pinning it
 

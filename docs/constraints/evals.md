@@ -30,10 +30,15 @@ text, so it must not get broad AWS access or see the key.
   gold set A. Its answers are found as gold set A's are.
   `node evals/pin.ts` copies its ids and grant ids into
   `evals/gold-a2.json`.
-- Gold set A2 is held out. Nobody changes the rules or the prompt because
-  of a paper or reference in it. A report gives its scores and never the
-  ids of the papers or references it missed.
-- Gold set A2's rows are reported and do not gate.
+- Gold set B2 is 100 papers drawn once, at random, from the live search
+  less gold set B's papers, with the query, seed, date and size recorded
+  beside its ids in `docs/gold-set-b2-sample.json`. Its labels live in
+  `evals/gold-b2.json`. The snapshot keeps its papers as set `B2`, as it
+  keeps gold set B's, even with empty sections.
+- Gold sets A2 and B2 are held out. Nobody changes the rules or the prompt
+  because of a paper or reference in either. A report gives their scores
+  and never the ids of the papers or references they missed.
+- Gold set A2's and B2's rows are reported and do not gate.
 - The repo holds paper ids, grant ids and labels only, never text.
 - The fingerprint is the SHA-256 of the git hashes of `src/extract/`,
   `src/shared/`, `evals/`, `.github/workflows/eval.yml` and
@@ -75,8 +80,8 @@ text, so it must not get broad AWS access or see the key.
   from CI.
 - Overwrite a report or a snapshot file, even to fix one. Take a new
   snapshot id, or change an input so the fingerprint moves.
-- Read gold set A2's misses to change the rules or the prompt. Its scores
-  would then measure the tuning, as gold set A's do.
+- Read gold set A2's or B2's misses to change the rules or the prompt.
+  Their scores would then measure the tuning, as gold sets A's and B's do.
 
 ## Judgment
 
@@ -87,6 +92,6 @@ request that sets `manifestSha256` to null without a new snapshot id is for
 review. Whether a new input that can change a score sits inside the
 fingerprinted paths is for review: the lint rule sees imports, not files
 read at run time. Whether a change to the rules or the prompt came from gold
-set A2 is for review.
+set A2 or B2 is for review.
 
 History: #9, #502, #695

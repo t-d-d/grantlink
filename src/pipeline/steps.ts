@@ -1,4 +1,4 @@
-import type { goldA, goldA2, goldB } from "../../evals/gold.ts";
+import type { goldA, goldA2, goldB, goldB2 } from "../../evals/gold.ts";
 import type { EuropePmc, SearchPaper } from "../europepmc/client.ts";
 import { fundingSections } from "../europepmc/jats.ts";
 import { failureReason, type PaperFailure } from "./failure.ts";
@@ -21,6 +21,7 @@ export interface Gold {
   goldA: typeof goldA;
   goldA2: typeof goldA2;
   goldB: typeof goldB;
+  goldB2: typeof goldB2;
   snapshotId: string;
 }
 
@@ -120,14 +121,17 @@ export function logGoldSearchEnded(
 // keeps them, so the eval scores each as a miss, but empty sections for
 // such a paper more likely mean the cutter misread its full text (#405).
 // The line carries ids and a count only (docs/constraints/personal-data.md).
+// Gold set B2's papers get a line of their own, which names its set (#695).
 export function logGoldBEmpty(
   runId: string,
   snapshotId: string,
   pmcids: readonly string[],
+  set?: "B2",
 ): void {
   logger.info("snapshot-b-empty", {
     runId,
     snapshotId,
+    ...(set === undefined ? {} : { set }),
     count: pmcids.length,
     pmcids: pmcids.join(","),
   });
@@ -162,7 +166,7 @@ export type SnapshotLost = "search-refused" | "gold-paper-failed";
 export function logSnapshotFailed(
   runId: string,
   reason: SnapshotFailure | SnapshotLost,
-  paper?: { pmcid: string; set: "A" | "B" },
+  paper?: { pmcid: string; set: "A" | "B" | "B2" },
 ): void {
   logger.warn("snapshot-failed", { runId, reason, ...paper });
 }
@@ -324,7 +328,7 @@ export async function markFailed(
 // logs a paper that fails (#378).
 export function logGoldPaperFailed(
   pmcid: string,
-  set: "A" | "A2" | "B",
+  set: "A" | "A2" | "B" | "B2",
   failure: PaperFailure,
 ): void {
   logger.warn("gold-paper-failed", { pmcid, set, ...failure });

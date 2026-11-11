@@ -1,0 +1,427 @@
+{
+  "about": "Gold set B2: the 100 papers drawn in docs/gold-set-b2-sample.json, at random from the live search less gold set B's papers (#695). Two passes of Claude Opus proposed the labels against docs/gold-set-b-guide.md, and the owner checked them (#701). The owner checked 43 papers: the 33 where the passes differed, a pass was unsure, or the proposal differed from the rules or a model alone, and 10 of the other 67 drawn at random with seed 7002026. That sample found no error, so the other 57 were accepted as proposed. The owner changed 0 of the 100 labels against docs/gold-set-b2-proposed.csv. Gold set B2 is held out: nobody changes the rules or the prompt because of a paper in it, and a report gives its scores and never the ids of what it missed. Each paper lists its grant references, normalised, or none. Ids and references only, never text.",
+  "papers": [
+    {
+      "pmcid": "PMC7251061",
+      "references": ["FC010110"]
+    },
+    {
+      "pmcid": "PMC7354313",
+      "references": []
+    },
+    {
+      "pmcid": "PMC7506194",
+      "references": ["C31250/A22804"]
+    },
+    {
+      "pmcid": "PMC7508671",
+      "references": []
+    },
+    {
+      "pmcid": "PMC7616860",
+      "references": []
+    },
+    {
+      "pmcid": "PMC7617999",
+      "references": []
+    },
+    {
+      "pmcid": "PMC7618230",
+      "references": []
+    },
+    {
+      "pmcid": "PMC7675190",
+      "references": ["C25640/A29057"]
+    },
+    {
+      "pmcid": "PMC7812362",
+      "references": []
+    },
+    {
+      "pmcid": "PMC8092835",
+      "references": []
+    },
+    {
+      "pmcid": "PMC8093233",
+      "references": []
+    },
+    {
+      "pmcid": "PMC8161540",
+      "references": []
+    },
+    {
+      "pmcid": "PMC8184862",
+      "references": []
+    },
+    {
+      "pmcid": "PMC8192769",
+      "references": ["C58789/A251741"]
+    },
+    {
+      "pmcid": "PMC8250124",
+      "references": []
+    },
+    {
+      "pmcid": "PMC8374969",
+      "references": []
+    },
+    {
+      "pmcid": "PMC8379126",
+      "references": ["C9685/A25177"]
+    },
+    {
+      "pmcid": "PMC8432147",
+      "references": ["FC010110"]
+    },
+    {
+      "pmcid": "PMC8571143",
+      "references": []
+    },
+    {
+      "pmcid": "PMC8642942",
+      "references": []
+    },
+    {
+      "pmcid": "PMC8770142",
+      "references": []
+    },
+    {
+      "pmcid": "PMC8830643",
+      "references": []
+    },
+    {
+      "pmcid": "PMC8927425",
+      "references": ["FC001169"]
+    },
+    {
+      "pmcid": "PMC8975534",
+      "references": []
+    },
+    {
+      "pmcid": "PMC9072738",
+      "references": ["C147/A25254"]
+    },
+    {
+      "pmcid": "PMC9163047",
+      "references": ["FC001061"]
+    },
+    {
+      "pmcid": "PMC9238579",
+      "references": ["C864/A14136"]
+    },
+    {
+      "pmcid": "PMC9278305",
+      "references": []
+    },
+    {
+      "pmcid": "PMC9386661",
+      "references": ["A26825", "A28223"]
+    },
+    {
+      "pmcid": "PMC9578067",
+      "references": []
+    },
+    {
+      "pmcid": "PMC9612938",
+      "references": []
+    },
+    {
+      "pmcid": "PMC9825478",
+      "references": ["C309/A11566", "C2739/A22897", "C35696/A23187"]
+    },
+    {
+      "pmcid": "PMC9967091",
+      "references": []
+    },
+    {
+      "pmcid": "PMC10154254",
+      "references": []
+    },
+    {
+      "pmcid": "PMC10165198",
+      "references": ["C1287/A16563"]
+    },
+    {
+      "pmcid": "PMC10236072",
+      "references": ["C48390/A21153"]
+    },
+    {
+      "pmcid": "PMC10277526",
+      "references": []
+    },
+    {
+      "pmcid": "PMC10307949",
+      "references": []
+    },
+    {
+      "pmcid": "PMC10395327",
+      "references": []
+    },
+    {
+      "pmcid": "PMC10411332",
+      "references": ["22790"]
+    },
+    {
+      "pmcid": "PMC10460492",
+      "references": []
+    },
+    {
+      "pmcid": "PMC10722023",
+      "references": ["C5255/A1593"]
+    },
+    {
+      "pmcid": "PMC10777053",
+      "references": ["CC2134"]
+    },
+    {
+      "pmcid": "PMC10803428",
+      "references": ["CC2112"]
+    },
+    {
+      "pmcid": "PMC10937379",
+      "references": []
+    },
+    {
+      "pmcid": "PMC10964706",
+      "references": ["C16077/A29186", "C500/A16896"]
+    },
+    {
+      "pmcid": "PMC11021484",
+      "references": []
+    },
+    {
+      "pmcid": "PMC11097428",
+      "references": ["CTRQQR-2021/100006"]
+    },
+    {
+      "pmcid": "PMC11112268",
+      "references": ["14136", "C8221/A29017", "C588/A19167"]
+    },
+    {
+      "pmcid": "PMC11225294",
+      "references": ["C14094/A27178"]
+    },
+    {
+      "pmcid": "PMC11226649",
+      "references": ["C69256/A30194"]
+    },
+    {
+      "pmcid": "PMC11239901",
+      "references": ["A27323"]
+    },
+    {
+      "pmcid": "PMC11261557",
+      "references": []
+    },
+    {
+      "pmcid": "PMC11294822",
+      "references": ["C27165/A29073"]
+    },
+    {
+      "pmcid": "PMC11491724",
+      "references": []
+    },
+    {
+      "pmcid": "PMC11514655",
+      "references": []
+    },
+    {
+      "pmcid": "PMC11624196",
+      "references": ["A27657"]
+    },
+    {
+      "pmcid": "PMC11833127",
+      "references": []
+    },
+    {
+      "pmcid": "PMC11874280",
+      "references": []
+    },
+    {
+      "pmcid": "PMC11893880",
+      "references": ["A24456"]
+    },
+    {
+      "pmcid": "PMC11926181",
+      "references": []
+    },
+    {
+      "pmcid": "PMC11926500",
+      "references": []
+    },
+    {
+      "pmcid": "PMC11947101",
+      "references": ["C13749/A7261", "A26825", "A28223"]
+    },
+    {
+      "pmcid": "PMC12001638",
+      "references": ["14136", "C8221/A29017"]
+    },
+    {
+      "pmcid": "PMC12103774",
+      "references": ["C18281/A29019"]
+    },
+    {
+      "pmcid": "PMC12107840",
+      "references": ["CC2112"]
+    },
+    {
+      "pmcid": "PMC12127038",
+      "references": []
+    },
+    {
+      "pmcid": "PMC12178568",
+      "references": ["C8640/A23385"]
+    },
+    {
+      "pmcid": "PMC12183212",
+      "references": []
+    },
+    {
+      "pmcid": "PMC12227175",
+      "references": ["RCCPDF/100005"]
+    },
+    {
+      "pmcid": "PMC12337379",
+      "references": []
+    },
+    {
+      "pmcid": "PMC12342986",
+      "references": []
+    },
+    {
+      "pmcid": "PMC12448984",
+      "references": ["C1287/A16563"]
+    },
+    {
+      "pmcid": "PMC12617882",
+      "references": []
+    },
+    {
+      "pmcid": "PMC12630642",
+      "references": ["C7893/A28990"]
+    },
+    {
+      "pmcid": "PMC12645609",
+      "references": ["A23517", "C416/A19488"]
+    },
+    {
+      "pmcid": "PMC12722390",
+      "references": ["C1163/A21762"]
+    },
+    {
+      "pmcid": "PMC12749543",
+      "references": []
+    },
+    {
+      "pmcid": "PMC12805401",
+      "references": []
+    },
+    {
+      "pmcid": "PMC12809478",
+      "references": []
+    },
+    {
+      "pmcid": "PMC12819515",
+      "references": []
+    },
+    {
+      "pmcid": "PMC12824662",
+      "references": [
+        "CRCPSC-DEC21/100003",
+        "DRCPGM/100058",
+        "DRCPFA-NOV21/100001"
+      ]
+    },
+    {
+      "pmcid": "PMC12932120",
+      "references": []
+    },
+    {
+      "pmcid": "PMC12932952",
+      "references": ["C15966/A24375", "C16420/A18066"]
+    },
+    {
+      "pmcid": "PMC12978755",
+      "references": ["C18281/A29019"]
+    },
+    {
+      "pmcid": "PMC13038206",
+      "references": ["CC2134"]
+    },
+    {
+      "pmcid": "PMC13110639",
+      "references": ["EDDAPA-2022/100001", "C9685/A25177", "CTRQQR-2021/100012"]
+    },
+    {
+      "pmcid": "PMC13179136",
+      "references": [
+        "C15075/A28647",
+        "DRCPGM-JUN25/100003",
+        "C29637/A21451",
+        "C29637/A20183",
+        "DRCNPG-NOV21/100001"
+      ]
+    },
+    {
+      "pmcid": "PMC13242629",
+      "references": ["C7893/A26233"]
+    },
+    {
+      "pmcid": "PMC13329579",
+      "references": []
+    },
+    {
+      "pmcid": "PMC13331279",
+      "references": ["A22734"]
+    },
+    {
+      "pmcid": "PMC13369908",
+      "references": [
+        "C507/A27657",
+        "C9545/A29580",
+        "SEBINT-2024/100003",
+        "C1287/A26886",
+        "EDDRPG-MAY24/100002",
+        "C36857/A27548",
+        "C9685/A25177",
+        "CTRQQR-2021/100012",
+        "C7893/A26233",
+        "CTRQQR-2021/100004",
+        "C64667/A27958"
+      ]
+    },
+    {
+      "pmcid": "PMC13439439",
+      "references": []
+    },
+    {
+      "pmcid": "PMC13451422",
+      "references": ["C543/A26884"]
+    },
+    {
+      "pmcid": "PMC13472360",
+      "references": []
+    },
+    {
+      "pmcid": "PMC13547982",
+      "references": ["C18281/A19169"]
+    },
+    {
+      "pmcid": "PMC13599994",
+      "references": ["C16077/A29186", "C500/A16896"]
+    },
+    {
+      "pmcid": "PMC13638909",
+      "references": ["C309/A31316"]
+    },
+    {
+      "pmcid": "PMC13668697",
+      "references": ["CGCATF-2021/100012"]
+    },
+    {
+      "pmcid": "PMC13716833",
+      "references": ["CC2074"]
+    }
+  ]
+}

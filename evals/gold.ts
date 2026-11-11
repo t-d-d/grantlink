@@ -3,6 +3,7 @@ import { pmcid as PMCID } from "../src/shared/pmcid.ts";
 import goldAFile from "./gold-a.json" with { type: "json" };
 import goldA2File from "./gold-a2.json" with { type: "json" };
 import goldBFile from "./gold-b.json" with { type: "json" };
+import goldB2File from "./gold-b2.json" with { type: "json" };
 import snapshotFile from "./snapshot.json" with { type: "json" };
 
 // The gold sets, the snapshot's pin, and the shape of the snapshot's files
@@ -55,6 +56,11 @@ export const goldBLabels = z
 
 export const goldB = goldBLabels.parse(goldBFile);
 
+// evals/gold-b2.json: gold set B2's labels, in gold set B's shape. Gold set
+// B2 is drawn at random from the live search less gold set B's papers, and
+// held out (#695).
+export const goldB2 = goldBLabels.parse(goldB2File);
+
 export const pinned = z
   .object({
     about: z.string(),
@@ -67,6 +73,8 @@ export const pinned = z
 // eval/<id>/manifest.json: each paper in the snapshot, which set it is in,
 // the SHA-256 of its text file, and for gold sets A and A2 Europe PMC's
 // grant ids. A snapshot taken before gold set A2 joined has no draw for it.
+// Gold sets B and B2 come from their labels, so their papers have no grant
+// ids.
 export const manifest = z
   .object({
     id: z.string().regex(/^s\d+$/u),
@@ -77,7 +85,7 @@ export const manifest = z
       z
         .object({
           pmcid: PMCID,
-          set: z.enum(["A", "A2", "B"]),
+          set: z.enum(["A", "A2", "B", "B2"]),
           sha256: SHA256,
           grants: z.array(GRANT),
         })

@@ -413,3 +413,76 @@ describe("gold set A2 on the page (#706)", () => {
     expect(table(renderRun(makeRelease(fields)))).toBe("");
   });
 });
+
+describe("gold set B2 on the page (#702)", () => {
+  const bScores = { ...scores, "precision-b": 0.97, "recall-b": 0.92 };
+  const both = (precision: number | null, recall: number | null, n = 100) => ({
+    precision: { score: precision, n },
+    recall: { score: recall, n },
+  });
+  const withB2 = (goldB2: Report["goldB2"]) =>
+    renderRun(
+      makeRelease({
+        ...fields,
+        report: {
+          ...report,
+          rows: rows(bScores),
+          baseline: rows(bScores),
+          candidates: [
+            {
+              modelId: "anthropic/claude-haiku-5.5",
+              rows: rows({ ...bScores, "recall-b": 0.94, spend: 0.15 }),
+              alone: rows({ "precision-b": 0.9, "recall-b": 0.91 }),
+              unprocessed: [],
+            },
+          ],
+          goldB2,
+        },
+      }),
+    );
+  const scored = withB2({
+    rules: both(0.93, 0.85),
+    models: [
+      {
+        modelId: "anthropic/claude-haiku-5.5",
+        alone: both(0.8, 0.7),
+        rulesThen: both(0.9, 0.95),
+        unprocessed: 0,
+        read: 100,
+      },
+    ],
+  });
+  const table = (html: string) =>
+    /<table class="held-out-b2">[\s\S]*?<\/table>/u.exec(html)?.[0] ?? "";
+
+  it("shows gold set B2's precision and recall beside gold set B's, for the rules and each model", () => {
+    expect(table(scored)).toContain(
+      '<tr><th scope="col">Read by</th><th scope="col">Precision on gold set B</th><th scope="col">Precision on gold set B2, held out</th><th scope="col">Recall on gold set B</th><th scope="col">Recall on gold set B2, held out</th></tr>',
+    );
+    expect(table(scored)).toContain(
+      '<tr><th scope="row">Rules alone</th><td class="count">97.0%</td><td class="count">93.0%</td><td class="count">92.0%</td><td class="count">85.0%</td></tr>',
+    );
+    expect(table(scored)).toContain(
+      '<tr><th scope="row"><code class="ref">anthropic/claude-haiku-5.5</code> alone</th><td class="count">90.0%</td><td class="count">80.0%</td><td class="count">91.0%</td><td class="count">70.0%</td></tr>',
+    );
+    expect(table(scored)).toContain(
+      '<tr><th scope="row">Rules then <code class="ref">anthropic/claude-haiku-5.5</code></th><td class="count">97.0%</td><td class="count">90.0%</td><td class="count">94.0%</td><td class="count">95.0%</td></tr>',
+    );
+  });
+
+  it("says nobody tuned the rules or the prompt on gold set B2, that a Claude model proposed its labels and the owner checked them, and that it gates nothing", () => {
+    expect(scored).toContain(
+      "Nobody tuned the rules or the prompt on gold set B2",
+    );
+    expect(scored).toContain(
+      "A Claude model proposed gold set B2's labels and the owner checked them",
+    );
+    expect(scored).toContain("Gold set B2 gates nothing");
+  });
+
+  it("shows no gold set B2 table before gold set B2 has a score", () => {
+    const waiting = withB2({ rules: both(null, null, 0), models: [] });
+    expect(table(waiting)).toBe("");
+    expect(table(renderRun(makeRelease(fields)))).toBe("");
+  });
+});
