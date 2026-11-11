@@ -166,9 +166,15 @@ function standingAlone(form: string): RegExp {
 // the rules read as one (#556).
 const JOINER = `[.\u00b7${DASHES}-]`;
 
+// A DOI's prefix and the run of the characters a DOI holds after it, which
+// ends at a space, a comma or an entity's ampersand. A bare number in this
+// run is part of the DOI, whatever stands just before it, as in eLife's
+// 10.7554/eLife.12345 (#597).
+const IN_DOI = String.raw`\b10\.\d{4,9}/[-.;()/:\w]*`;
+
 function bareNumber(digits: string): RegExp {
   return new RegExp(
-    `(?<![A-Za-z0-9]|\\d${JOINER})${digits}(?![A-Za-z0-9]|${JOINER}\\d)`,
+    `(?<![A-Za-z0-9]|\\d${JOINER}|${IN_DOI})${digits}(?![A-Za-z0-9]|${JOINER}\\d)`,
     "giu",
   );
 }
@@ -203,9 +209,10 @@ function printedAs(form: string, text: string, names: Span[]): boolean {
 // another paper is not printed. Each markup tag reads as a space, and any
 // run of spaces as one, so a tag inside a grant does not hide it and
 // indentation does not part a year from the funder's name. A bare number
-// in a decimal, a range or a DOI, with a dot, a middle dot or any dash the
-// rules read as a hyphen, or one that reads as a year far from the
-// funder's name, is not printed (#520, #556).
+// joined to a digit by a dot, a middle dot or any dash the rules read as a
+// hyphen, as in a decimal or a range, or anywhere in a DOI, or one that
+// reads as a year far from the funder's name, is not printed (#520, #556,
+// #597).
 export function printedGrants(
   grants: readonly string[],
   article: string,
