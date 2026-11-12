@@ -308,7 +308,9 @@ describe("how it's run, on the page", () => {
         report: { ...report, modelId: "anthropic/claude-haiku-5.5" },
       }),
     );
-    expect(withModel).toContain("with model anthropic/claude-haiku-5.5");
+    expect(withModel).toContain(
+      'with model <code class="ref">anthropic/claude-haiku-5.5</code>',
+    );
     expect(withModel).not.toContain("Rules ship alone");
     expect(modelAddsRow(withModel)).toContain("not measured yet");
   });
