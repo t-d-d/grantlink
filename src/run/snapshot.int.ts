@@ -436,3 +436,55 @@ describe("fitness: a snapshot keeps every gold set B2 paper, even with empty sec
     );
   });
 });
+
+describe("fitness: a gold set A paper whose cut is empty stays in gold set A as a miss (evals.md)", () => {
+  // Gold set A is pinned to PMC0000001, whose whole article prints its
+  // linked grant A56789 but whose cut the snapshot finds empty, as a
+  // cutter that drops text leaves it (#727).
+  it("keeps the pinned paper with its answer, and draws none in its place", async () => {
+    const fake = fakeDeps({
+      gold: {
+        goldA: {
+          ...FAKE_GOLD.goldA,
+          size: 1,
+          papers: [{ pmcid: "PMC0000001", grants: ["A56789"] }],
+        },
+      },
+    });
+    const real = fake.deps.europePmc;
+    let snapshot = false;
+    const hasSnapshot = fake.deps.text.hasSnapshot.bind(fake.deps.text);
+    fake.deps.text.hasSnapshot = (id) => {
+      snapshot = true;
+      return hasSnapshot(id);
+    };
+    fake.deps.europePmc = {
+      search: real.search.bind(real),
+      grants: real.grants.bind(real),
+      sent: real.sent.bind(real),
+      fullText: (pmcid) =>
+        snapshot && pmcid === "PMC0000001"
+          ? Promise.resolve(
+              "<article><body><p>Supported by grant A56789.</p></body></article>",
+            )
+          : real.fullText(pmcid),
+    };
+    const { status } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    const manifest = JSON.parse(String(fake.text.get(manifestKey(fake)))) as {
+      papers: { pmcid: string; set: string; grants: string[] }[];
+    };
+    expect(manifest.papers.filter((paper) => paper.set === "A")).toEqual([
+      expect.objectContaining({ pmcid: "PMC0000001", grants: ["A56789"] }),
+    ]);
+    expect(
+      JSON.parse(
+        String(
+          fake.text.get(
+            snapshotKeys.paper(fake.deps.gold.snapshotId, "PMC0000001"),
+          ),
+        ),
+      ),
+    ).toEqual({ pmcid: "PMC0000001", text: [], awards: [] });
+  });
+});
