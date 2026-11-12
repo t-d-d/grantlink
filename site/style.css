@@ -25,10 +25,18 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
+/* The page grows to 56rem so the tables on How it's run fit on a desktop
+   screen (#735). A paragraph stays at most 42rem wide, the width of the
+   text when the page was 44rem less its padding, so a line of prose is no
+   longer than it was. */
 body {
   margin: 0 auto;
-  max-width: 44rem;
+  max-width: 56rem;
   padding: 1.5rem 1rem 3rem;
+}
+
+p {
+  max-width: 42rem;
 }
 
 h1,
@@ -167,7 +175,9 @@ tr:last-child th {
   border-bottom: 0;
 }
 
-th {
+/* A header may wrap, but a model id in a row header stays on one line
+   rather than breaking at its slash or hyphens. */
+th code {
   white-space: nowrap;
 }
 
