@@ -354,7 +354,7 @@ export function renderRun(release: Release): string {
   );
   const model = alone
     ? ". This release reads references with the rules alone and calls no model"
-    : `, with model ${escape(report.modelId)}`;
+    : `, with model <code class="ref">${escape(report.modelId)}</code>`;
   const snapshot =
     report.snapshot === null
       ? "No eval snapshot is pinned yet, so the gold sets are not scored, and each row that needs them waits without blocking."
