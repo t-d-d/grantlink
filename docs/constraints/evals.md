@@ -19,6 +19,9 @@ text, so it must not get broad AWS access or see the key.
   `evals/gold-a.json`. A candidate joins it only if its full text prints
   at least one of the CRUK grants Europe PMC links it to. Its answers are
   the linked grants it prints. A funder registry id is never an answer.
+  Such a paper stays in the set, and scores as a miss, when the cut of its
+  funding sections is empty, so a cutter that drops text shows as lower
+  recall and not as a smaller gold set.
   Once the snapshot exists, `node evals/pin.ts` pins
   the manifest's hash in `evals/snapshot.json` and copies gold set A's ids
   and grant ids into `evals/gold-a.json`. Gold set B's labels live in
@@ -94,4 +97,4 @@ fingerprinted paths is for review: the lint rule sees imports, not files
 read at run time. Whether a change to the rules or the prompt came from gold
 set A2 or B2 is for review.
 
-History: #9, #502, #695
+History: #9, #502, #695, #727
