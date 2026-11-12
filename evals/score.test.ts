@@ -189,8 +189,8 @@ describe("finding which linked grants a paper prints", () => {
     ).toEqual(["A11111"]);
   });
 
-  // The front matter is the article's metadata, so only its funding group
-  // is read (#555).
+  // The front matter is the article's metadata, so only the parts of it
+  // the cutter can keep are read (#555, #595).
   it.each([
     [
       "A12345",
@@ -243,6 +243,27 @@ describe("finding which linked grants a paper prints", () => {
         '<article><front><article-meta><author-notes><fn fn-type="financial-disclosure"><p>Funded by grant A12345.</p></fn></author-notes></article-meta></front><body><p>No grant here.</p></body></article>',
       ),
     ).toEqual(["A12345"]);
+  });
+
+  // JATS lets an ack, a footnote group or notes stand in the front matter
+  // too, and the cutter reads them there, so the answers do as well (#595).
+  it.each([
+    ["an ack", "<ack><p>Funded by grant C1/A12345.</p></ack>"],
+    [
+      "a footnote group",
+      "<fn-group><fn><p>Funded by grant C1/A12345.</p></fn></fn-group>",
+    ],
+    [
+      "notes",
+      '<notes notes-type="funding-information"><p>Funded by grant C1/A12345.</p></notes>',
+    ],
+  ])("finds a grant printed in %s in the front matter", (_what, part) => {
+    expect(
+      printedGrants(
+        ["C1/A12345"],
+        `<article><front><article-meta><article-id pub-id-type="doi">10.7554/eLife.99999</article-id></article-meta>${part}</front><body><p>No grant here.</p></body></article>`,
+      ),
+    ).toEqual(["C1/A12345"]);
   });
 
   // An empty funding group does not keep the metadata after it.
