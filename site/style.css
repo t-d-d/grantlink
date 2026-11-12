@@ -175,6 +175,12 @@ tr:last-child th {
   border-bottom: 0;
 }
 
+/* A header may wrap, but a model id in a row header stays on one line
+   rather than breaking at its slash or hyphens. */
+th code {
+  white-space: nowrap;
+}
+
 td.paper {
   min-width: 14rem;
 }
