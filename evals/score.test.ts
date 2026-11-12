@@ -65,6 +65,11 @@ describe("telling a CRUK reference from another linked id", () => {
     // A CRUK id the rules read, which only their shape check takes (#575).
     "CRUK/12345",
     "CRUK-Nov21/100001",
+    // Letters before the CRUK, which the rules' CRUK-X form reads (#596).
+    "ABC-CRUK-ABCD12-AB",
+    "AB-CRUK/12/034",
+    "ABCDEF-CRUK-12",
+    "AB\u2013CRUK-12",
   ])("takes %s", (id) => {
     expect(crukReference(id)).toBe(true);
   });
@@ -100,6 +105,12 @@ describe("telling a CRUK reference from another linked id", () => {
     // A year alone after CRUK, which the rules refuse since #514 (#575).
     "CRUK/2019",
     "CRUK-2019/12345",
+    // Letters before the CRUK that the rules do not read: seven of them,
+    // one, none joined by a hyphen, or a shape the rules refuse (#596).
+    "ABCDEFG-CRUK-12",
+    "A-CRUK-12",
+    "AB/CRUK/12",
+    "AB-CRUK/2019",
   ])("refuses %s", (id) => {
     expect(crukReference(id)).toBe(false);
   });
