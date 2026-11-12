@@ -64,16 +64,19 @@ const DATE = new Intl.DateTimeFormat("en-GB", {
 
 export function renderFound(found: Found): string {
   const { counts } = found;
-  // The papers not yet read are a line in the papers read card, not a card
-  // of their own, and the line goes when every paper has been read (#724).
-  const unread =
-    counts.pending > 0 ? `${number(counts.pending)} not yet read` : "";
+  // Every paper is read or not yet read, so the first card's number is the
+  // sum of the two. They are a line in that card, not cards of their own,
+  // and the line goes when every paper has been read (#724, #734).
+  const progress =
+    counts.pending > 0
+      ? `${number(counts.processed)} read, ${number(counts.pending)} still to read`
+      : "";
   const cards: [number, string, string?][] = [
     [
       counts.papers,
       "papers that name Cancer Research UK as a funder but are not yet linked to one of its grants in Europe PMC",
+      progress,
     ],
-    [counts.processed, "papers read", unread],
     [counts.withReference, "papers that give a grant reference"],
     [counts.references, "grant references recovered"],
   ];

@@ -577,30 +577,36 @@ describe("rendering the page", () => {
   });
 });
 
-describe("the papers not yet read in the counts (#724)", () => {
+// Every paper is read or not yet read, so a card for each would repeat the
+// first card's number. Both counts are a line in the first card (#724, #734).
+describe("the papers read and not yet read in the counts (#734)", () => {
   const cards = (html: string) =>
     [...html.matchAll(/<p class="card stat">(.*?)<\/p>/gu)].map(
       (match) => match[1] ?? "",
     );
-  const read = (html: string) =>
-    cards(html).find((card) => card.includes("papers read")) ?? "";
+  const first = (html: string) => cards(html)[0] ?? "";
 
-  it("are counted in the papers read card, not in a card of their own", () => {
+  it("are a line in the first card, not cards of their own", () => {
     const html = renderFound(summarise(rows, run));
-    expect(cards(html)).toHaveLength(4);
+    expect(cards(html)).toHaveLength(3);
+    expect(cards(html).join("\n")).not.toContain("papers read");
     expect(cards(html).join("\n")).not.toContain("papers not yet read");
-    expect(read(html)).toContain('<span class="more">1 not yet read</span>');
+    expect(first(html)).toContain("papers that name Cancer Research UK");
+    expect(first(html)).toContain(
+      '<span class="more">3 read, 1 still to read</span>',
+    );
   });
 
-  it("go unmentioned in that card when every paper has been read", () => {
+  it("go unmentioned when every paper has been read", () => {
     const html = renderFound(
       summarise(
         rows.filter((r) => r.status === "processed"),
         run,
       ),
     );
-    expect(read(html)).toContain("papers read");
-    expect(read(html)).not.toContain("not yet read");
+    expect(cards(html)).toHaveLength(3);
+    expect(first(html)).not.toContain('class="more"');
+    expect(first(html)).not.toContain("still to read");
   });
 });
 
