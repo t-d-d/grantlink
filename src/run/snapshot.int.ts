@@ -438,16 +438,21 @@ describe("fitness: a snapshot keeps every gold set B2 paper, even with empty sec
 });
 
 describe("fitness: a gold set A paper whose cut is empty stays in gold set A as a miss (evals.md)", () => {
-  // Gold set A is pinned to PMC0000001, whose whole article prints its
-  // linked grant A56789 but whose cut the snapshot finds empty, as a
-  // cutter that drops text leaves it (#727).
+  // Gold set A, of size 1, walks PMC0000001 and then PMC0000002.
+  // PMC0000001's whole article prints its linked grant A56789 but the
+  // snapshot finds its cut empty, as a cutter that drops text leaves it
+  // (#727). PMC0000002 is a paper the snapshot would keep, so it is the
+  // one drawn in PMC0000001's place if PMC0000001 is passed over.
   it("keeps the pinned paper with its answer, and draws none in its place", async () => {
     const fake = fakeDeps({
       gold: {
         goldA: {
           ...FAKE_GOLD.goldA,
           size: 1,
-          papers: [{ pmcid: "PMC0000001", grants: ["A56789"] }],
+          papers: [
+            { pmcid: "PMC0000001", grants: ["A56789"] },
+            { pmcid: "PMC0000002", grants: ["RRCOER-Jun24\\100008"] },
+          ],
         },
       },
     });
