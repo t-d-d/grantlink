@@ -92,6 +92,10 @@ describe("how it's run, on the page", () => {
     expect(section).toContain("d".repeat(64));
   });
 
+  it("gives the snapshot's hash as a reference the stylesheet lets break (#736)", () => {
+    expect(section).toContain(`<code class="ref">${"d".repeat(64)}</code>`);
+  });
+
   it("says how gold set B's labels were made once gold set B is scored", () => {
     const scored = { "precision-b": 0.96, "recall-b": 0.81, ...scores };
     const withB = renderRun(

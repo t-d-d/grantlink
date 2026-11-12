@@ -194,6 +194,16 @@ td.count {
   text-align: right;
 }
 
+/* A reference in a sentence, such as the eval snapshot's 64-character hash,
+   breaks where it must, so the page never scrolls sideways (#736). In a
+   table heading, white-space: nowrap still keeps it on one line. A browser
+   that does not know anywhere, such as Safari before 15.4, keeps
+   break-word, which does the same in a paragraph. */
+code.ref {
+  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
 /* Waiting for review: amber, as in the mock-ups. */
 td.status {
   background: #fbebd9;
