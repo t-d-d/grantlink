@@ -176,7 +176,9 @@ const IN_DOI = String.raw`\b10\.\d{4,9}/[-.;()/:\w]*`;
 // 12345</italic> or between its prefix and the slash, and a line break
 // after a dot, a slash or a hyphen, with or without a tag between, where a
 // DOI may wrap. Inside a DOI both are dropped, so it reads whole (#613).
-const INLINE_TAG = String.raw`<\/?(?:italic|bold|sup|sub|sc|monospace|underline|roman|sans-serif|styled-content|named-content)(?=[\s>/])[^>]*>`;
+// A DOI is not set in superscript or subscript, so a marker in either
+// after a DOI, such as a citation, is not joined to it.
+const INLINE_TAG = String.raw`<\/?(?:italic|bold|sc|monospace|underline|roman|sans-serif|styled-content|named-content)(?=[\s>/])[^>]*>`;
 const SPLIT_DOI = new RegExp(
   String.raw`\b10\.\d{4,9}(?:${INLINE_TAG})*\/(?:[-.;()/:\w]|${INLINE_TAG}|(?<=[-./](?:${INLINE_TAG})*)\s*\n\s*)*`,
   "gu",

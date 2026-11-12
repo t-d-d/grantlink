@@ -139,6 +139,9 @@ describe("finding which linked grants a paper prints", () => {
     ],
     ["A12345", "<p>Data at 10.7554/eLife.1</p><p>12345 funded it.</p>"],
     ["A12345", "<p>Data at 10.7554/eLife.1\n12345 funded it.</p>"],
+    // A DOI is not set in superscript or subscript, so a marker in one
+    // after a DOI is not part of it.
+    ["A12345", "<p>Data at 10.7554/eLife.<sup>12345</sup></p>"],
     // A link's text reads as its DOI only when it is a whole part of it.
     [
       "A12345",
