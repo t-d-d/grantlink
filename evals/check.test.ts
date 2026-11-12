@@ -56,6 +56,195 @@ describe("the gate on a report", () => {
   });
 });
 
+// Gold set A2's recall, the rules alone and one model, with the rules
+// then the model at `then`.
+const goldA2 = (rules: number, then = rules) => ({
+  rules: { score: rules, n: 300 },
+  models: [
+    {
+      modelId: "anthropic/claude-haiku-5.5",
+      alone: { score: 0.5, n: 300 },
+      rulesThen: { score: then, n: 300 },
+      unprocessed: 3,
+    },
+  ],
+});
+
+describe("fitness: a gold set A2 row below any floor fails no gate (evals.md)", () => {
+  it("passes a report whatever gold set A2 scores", () => {
+    const result = gate(
+      JSON.stringify({
+        ...report({ "recall-a": 0.96, spend: 0 }),
+        goldA2: goldA2(0, 0),
+      }),
+      "a".repeat(64),
+    );
+    expect(result.pass).toBe(true);
+    expect(result.lines.join("\n")).not.toContain("no-go");
+  });
+
+  it("leaves the go/no-go table as it was", () => {
+    expect(FLOORS.map((floor) => floor.id)).toEqual([
+      "precision-b",
+      "recall-b",
+      "review-share",
+      "recall-a",
+      "model-adds",
+      "spend",
+    ]);
+  });
+});
+
+describe("gold set A2 in the pull request's comment", () => {
+  it("shows gold set A2's recall beside gold set A's, and says nobody tuned on it", () => {
+    const text = comment(
+      {
+        ...report({ "recall-a": 0.96, spend: 0 }),
+        candidates: [
+          {
+            modelId: "anthropic/claude-haiku-5.5",
+            rows: rows({ "recall-a": 0.98, spend: 0.4 }),
+            alone: rows({ "recall-a": 0.9, spend: 0.4 }),
+            unprocessed: [],
+          },
+        ],
+        goldA2: goldA2(0.91, 0.93),
+      },
+      "no-deploy",
+    );
+    expect(text).toContain(
+      "#### Recall on gold set A and held-out gold set A2",
+    );
+    expect(text).toContain(
+      "| On | Rules alone | anthropic/claude-haiku-5.5 alone | Rules then anthropic/claude-haiku-5.5 |",
+    );
+    expect(text).toContain("| Gold set A | 96.0% | 90.0% | 98.0% |");
+    expect(text).toContain("| Gold set A2, held out | 91.0% | 50.0% | 93.0% |");
+    expect(text).toContain(
+      "Nobody tuned the rules or the prompt on gold set A2.",
+    );
+    expect(text).toContain("Gold set A2 gates nothing.");
+    expect(text).toContain(
+      "anthropic/claude-haiku-5.5 left 3 gold set A2 papers unread, and they count as missed.",
+    );
+  });
+
+  it("says gold set A2 waits for its snapshot while it has no score", () => {
+    const text = comment(
+      {
+        ...report({ spend: 0 }),
+        goldA2: { rules: { score: null, n: 0 }, models: [] },
+      },
+      "no-deploy",
+    );
+    expect(text).toContain("| Gold set A2, held out | awaiting snapshot |");
+  });
+
+  it("shows no gold set A2 table for a report filed before it joined", () => {
+    const text = comment(report({ spend: 0 }), "no-deploy");
+    expect(text).not.toContain("gold set A2");
+  });
+});
+
+// Gold set B2's precision and recall, the rules alone and one model.
+const both = (precision: number | null, recall: number | null, n = 100) => ({
+  precision: { score: precision, n },
+  recall: { score: recall, n },
+});
+const goldB2 = (precision: number, recall: number) => ({
+  rules: both(precision, recall),
+  models: [
+    {
+      modelId: "anthropic/claude-haiku-5.5",
+      alone: both(0.8, 0.7, 99),
+      rulesThen: both(0.9, 0.95),
+      unprocessed: 1,
+      read: 99,
+    },
+  ],
+});
+
+describe("fitness: a gold set B2 row below any floor fails no gate (evals.md)", () => {
+  it("passes a report whatever gold set B2 scores", () => {
+    const result = gate(
+      JSON.stringify({
+        ...report({
+          "precision-b": 0.97,
+          "recall-b": 0.9,
+          "recall-a": 0.96,
+          spend: 0,
+        }),
+        goldB2: goldB2(0, 0),
+      }),
+      "a".repeat(64),
+    );
+    expect(result.pass).toBe(true);
+    expect(result.lines.join("\n")).not.toContain("no-go");
+  });
+});
+
+describe("gold set B2 in the pull request's comment", () => {
+  const withB2 = (b2: Report["goldB2"]): Report => ({
+    ...report({ "precision-b": 0.97, "recall-b": 0.92, spend: 0 }),
+    candidates: [
+      {
+        modelId: "anthropic/claude-haiku-5.5",
+        rows: rows({ "precision-b": 0.96, "recall-b": 0.94, spend: 0.4 }),
+        alone: rows({ "precision-b": 0.9, "recall-b": 0.91, spend: 0.4 }),
+        unprocessed: [],
+        read: { goldA: 300, goldB: 100 },
+      },
+    ],
+    goldB2: b2,
+  });
+
+  it("shows gold set B2's precision and recall beside gold set B's, and says how its labels were made and that nobody tuned on it", () => {
+    const text = comment(withB2(goldB2(0.93, 0.85)), "no-deploy");
+    expect(text).toContain(
+      "#### Precision and recall on gold set B and held-out gold set B2",
+    );
+    expect(text).toContain(
+      "| On | Measure | Rules alone | anthropic/claude-haiku-5.5 alone | Rules then anthropic/claude-haiku-5.5 |",
+    );
+    expect(text).toContain(
+      "| Gold set B | Precision | 97.0% | 90.0% | 96.0% |",
+    );
+    expect(text).toContain("| Gold set B | Recall | 92.0% | 91.0% | 94.0% |");
+    expect(text).toContain(
+      "| Gold set B2, held out | Precision | 93.0% | 80.0% | 90.0% |",
+    );
+    expect(text).toContain(
+      "| Gold set B2, held out | Recall | 85.0% | 70.0% | 95.0% |",
+    );
+    expect(text).toContain(
+      "A Claude model proposed gold set B2's labels and the owner checked them.",
+    );
+    expect(text).toContain(
+      "Nobody tuned the rules or the prompt on gold set B2.",
+    );
+    expect(text).toContain("Gold set B2 gates nothing.");
+    expect(text).toContain(
+      "anthropic/claude-haiku-5.5 left 1 gold set B2 paper unread. It is out of its scores alone, and scores what the rules found after the rules.",
+    );
+    expect(text).toContain("99 of 100 in gold set B2");
+  });
+
+  it("says gold set B2 waits for its snapshot while it has no score", () => {
+    const text = comment(
+      withB2({ rules: both(null, null, 0), models: [] }),
+      "no-deploy",
+    );
+    expect(text).toContain(
+      "| Gold set B2, held out | Precision | awaiting snapshot |",
+    );
+  });
+
+  it("shows no gold set B2 table for a report filed before it joined", () => {
+    const text = comment(report({ spend: 0 }), "no-deploy");
+    expect(text).not.toContain("gold set B2");
+  });
+});
+
 describe("the pull request's comment", () => {
   it("shows CI's scores beside the live release's, with the runs behind each", () => {
     const text = comment(report({ "recall-a": 0.96, spend: 0 }), {
@@ -104,6 +293,144 @@ describe("the pull request's comment", () => {
     expect(text).toContain(
       "anthropic/claude-sonnet-5.5 left 1 paper for the next run: PMC7.",
     );
+    // A report filed before the eval scored a model alone names no
+    // model-alone column.
+    expect(text).toContain("#### The rules alone and with each model");
+  });
+
+  it("gives each model a column alone and one after the rules", () => {
+    const text = comment(
+      {
+        ...report({ "recall-a": 0.96, spend: 0 }),
+        candidates: [
+          {
+            modelId: "anthropic/claude-haiku-5.5",
+            rows: rows({ "recall-a": 0.98, spend: 0.4 }),
+            alone: rows({ "recall-a": 0.9, spend: 0.4 }),
+            unprocessed: [],
+          },
+          {
+            modelId: "anthropic/claude-sonnet-5.5",
+            rows: rows({ "recall-a": 0.99, spend: 4.2 }),
+            alone: rows({ "recall-a": 0.93, spend: 4.2 }),
+            unprocessed: [],
+          },
+        ],
+      },
+      "no-deploy",
+    );
+    expect(text).toContain(
+      "#### The rules alone, each model alone, and the rules then each model",
+    );
+    expect(text).toContain(
+      "| Measure | On | Rules alone | anthropic/claude-haiku-5.5 alone | Rules then anthropic/claude-haiku-5.5 | anthropic/claude-sonnet-5.5 alone | Rules then anthropic/claude-sonnet-5.5 |",
+    );
+    expect(text).toContain(
+      "| Recall | Gold set A | 96.0% | 90.0% | 98.0% | 93.0% | 99.0% |",
+    );
+    // Nothing alone adds anything after the rules.
+    expect(text).toContain(
+      "| What the model adds | Gold set B | not measured yet | - | not measured yet | - | not measured yet |",
+    );
+  });
+
+  describe("a model's unread papers (#696)", () => {
+    const withRead = (read: { goldA: number; goldB: number }): Report => ({
+      ...report({ "recall-a": 0.96, "precision-b": 1, spend: 0 }),
+      candidates: [
+        {
+          modelId: "anthropic/claude-sonnet-5.5",
+          rows: rows({ "recall-a": 0.99, "precision-b": 0.98, spend: 4.2 }),
+          alone: rows({
+            ...(read.goldA === 0 ? {} : { "recall-a": 0.93 }),
+            ...(read.goldB === 0 ? {} : { "precision-b": 0.97 }),
+            spend: 4.2,
+          }),
+          unprocessed: ["PMC7"],
+          read,
+        },
+      ],
+      goldA2: {
+        rules: { score: 0.91, n: 300 },
+        models: [
+          {
+            modelId: "anthropic/claude-sonnet-5.5",
+            alone: { score: 0.88, n: 297 },
+            rulesThen: { score: 0.93, n: 300 },
+            unprocessed: 3,
+            read: 297,
+          },
+        ],
+      },
+    });
+
+    it("says how many gold papers each model read alone", () => {
+      const text = comment(withRead({ goldA: 300, goldB: 299 }), "no-deploy");
+      expect(text).toContain(
+        "anthropic/claude-sonnet-5.5 alone read 300 of 300 papers in gold set A, 299 of 300 in gold set B and 297 of 300 in gold set A2. Its scores alone leave out the papers it did not read.",
+      );
+      expect(text).toContain(
+        "anthropic/claude-sonnet-5.5 left 3 gold set A2 papers unread. They are out of its recall alone, and score what the rules found after the rules.",
+      );
+      expect(text).not.toContain("they count as missed");
+      // A model that read every paper leaves nothing out.
+      const all = comment(
+        { ...withRead({ goldA: 300, goldB: 300 }), goldA2: undefined },
+        "no-deploy",
+      );
+      expect(all).toContain(
+        "anthropic/claude-sonnet-5.5 alone read 300 of 300 papers in gold set A and 300 of 300 in gold set B.",
+      );
+      expect(all).not.toContain("leave out the papers");
+    });
+
+    it("shows no score alone on a gold set the model read none of", () => {
+      const text = comment(withRead({ goldA: 0, goldB: 0 }), "no-deploy");
+      expect(text).toContain(
+        "| Recall | Gold set A | 96.0% | none read | 99.0% |",
+      );
+      expect(text).toContain(
+        "| Precision of accepted links | Gold set B | 100.0% | none read | 98.0% |",
+      );
+    });
+
+    it("says a gold set with no papers waits for its snapshot, not that the model read none", () => {
+      const empty = (scores: Partial<Record<string, number>>) =>
+        rows(scores).map((row) => ({ ...row, n: 0 }));
+      const text = comment(
+        {
+          ...report({ spend: 0 }),
+          baseline: empty({ spend: 0 }),
+          rows: empty({ spend: 0 }),
+          candidates: [
+            {
+              modelId: "anthropic/claude-sonnet-5.5",
+              rows: empty({}),
+              alone: empty({}),
+              unprocessed: [],
+              read: { goldA: 0, goldB: 0 },
+            },
+          ],
+          goldA2: {
+            rules: { score: null, n: 0 },
+            models: [
+              {
+                modelId: "anthropic/claude-sonnet-5.5",
+                alone: { score: null, n: 0 },
+                rulesThen: { score: null, n: 0 },
+                unprocessed: 0,
+                read: 0,
+              },
+            ],
+          },
+        },
+        "no-deploy",
+      );
+      expect(text).not.toContain("none read");
+      expect(text).toContain(
+        "| Recall | Gold set A | awaiting snapshot | awaiting snapshot | awaiting snapshot |",
+      );
+    });
   });
 
   it("shows no model table for a report with no candidates", () => {

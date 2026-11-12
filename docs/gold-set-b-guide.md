@@ -250,6 +250,37 @@ Example grant (12345)". Never count a DOI funder-registry number
 (`10.13039/…`), a GRID or ROR id, an ORCID, an ethics approval, a trial
 registration or a dataset accession.
 
+## Gold set B2
+
+Gold set B2's labels follow this guide too (#695). Its sheet,
+`docs/gold-set-b2-sheet.csv`, has one more column, `flag`, which gives
+every reason to check the row (#700):
+
+- `passes differ`: the two passes gave a different `funded` or different
+  references. The sheet proposes the first pass's labels.
+- `a pass was unsure`.
+- `differs from the rules`: the rules found other references in the
+  paper's funding sections.
+- `differs from <model id> alone`: that model, reading the funding
+  sections with no rules, found other references.
+- `sample`: one of 10 rows nothing else flagged, drawn at random with the
+  seed in `docs/gold-set-b2-sample.json`.
+- `agreed, not checked`: none of the above.
+
+Its `passes` column can also say `passes differed on references`. When
+the passes compared in more than one way, it gives each way, separated by
+`; `. Leave `passes`, `flag` and `look_in` as they are.
+
+A flag says only that a row differs, not which reference, so read the
+paper afresh. Check every flagged row and every `sample` row. If the
+sample finds an error, check every row. `docs/gold-set-b2-proposed.csv`
+keeps the proposals as they were, and `docs/gold-set-b2-passes.csv` keeps
+each pass's own labels. Leave both alone.
+
+`docs/gold-set-b2-sample.json` records the model that made the passes,
+the versions of the rules and the prompt, and the models that read the
+papers alone.
+
 ## When you are done
 
 Every row has `funded` set, its references where it has any, and

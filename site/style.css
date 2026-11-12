@@ -134,6 +134,13 @@ footer p {
   line-height: 1.2;
 }
 
+.stat .more {
+  color: var(--muted);
+  display: block;
+  font-size: 0.9rem;
+  margin-top: 0.25rem;
+}
+
 .table-scroll {
   background: var(--card);
   border: 1px solid var(--rule);
@@ -155,7 +162,8 @@ td {
   vertical-align: top;
 }
 
-tr:last-child td {
+tr:last-child td,
+tr:last-child th {
   border-bottom: 0;
 }
 
@@ -188,6 +196,69 @@ td.status {
   padding-left: 1.25rem;
 }
 
-#found {
-  margin-top: 2.5rem;
+/* Two tabs (#674). The page runs no script (no-tracking.md), so each tab is
+   a link to its panel, and the stylesheet shows the panel the address names,
+   or What it found when it names none. A browser without :has() shows both
+   panels, one under the other, and so does a printout. The tabs stay at the
+   top of the screen, so How it's run is one click from anywhere in the
+   list. */
+.tabs {
+  background: var(--ground);
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  gap: 1.5rem;
+  margin: 2.5rem 0 0;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.tabs a {
+  border-bottom: 3px solid transparent;
+  color: var(--muted);
+  font-family: var(--heading-font);
+  font-weight: 700;
+  margin-bottom: -1px;
+  padding: 0.75rem 0 0.5rem;
+  text-decoration: none;
+}
+
+.tabs a:hover {
+  color: var(--text);
+}
+
+.panel {
+  padding-top: 1.5rem;
+}
+
+.panel > .card:first-child {
+  margin-top: 0;
+}
+
+/* Clear of the tabs when the address names a panel or a heading in one. */
+.panel,
+.panel :target {
+  scroll-margin-top: 3.5rem;
+}
+
+@media screen {
+  @supports selector(:has(*)) {
+    .panel {
+      display: none;
+    }
+
+    .panel:target,
+    .panel:has(:target),
+    main:not(:has(.panel:target, .panel :target)) #what-it-found {
+      display: block;
+    }
+
+    main:not(:has(.panel:target, .panel :target)) a[href="#what-it-found"],
+    main:has(#what-it-found:target, #what-it-found :target)
+      a[href="#what-it-found"],
+    main:has(#how-its-run:target, #how-its-run :target) a[href="#how-its-run"] {
+      border-bottom-color: var(--accent);
+      color: var(--accent);
+    }
+  }
 }

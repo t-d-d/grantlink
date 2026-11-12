@@ -172,9 +172,15 @@ function standingAlone(form: string): RegExp {
 // hyphen by the time this reads the text.
 const JOINER = "[.\u00b7\u22c5\u2219-]";
 
+// A DOI's prefix and the run of the characters a DOI holds after it, which
+// ends at a space, a comma or an entity's ampersand. A bare number in this
+// run is part of the DOI, whatever stands just before it, as in eLife's
+// 10.7554/eLife.12345 (#597).
+const IN_DOI = String.raw`\b10\.\d{4,9}/[-.;()/:\w]*`;
+
 function bareNumber(digits: string): RegExp {
   return new RegExp(
-    `(?<!${JOINED}|\\p{Nd}${JOINER})${digits}(?!${JOINED}|${JOINER}\\p{Nd})`,
+    `(?<!${JOINED}|\\p{Nd}${JOINER}|${IN_DOI})${digits}(?!${JOINED}|${JOINER}\\p{Nd})`,
     "giu",
   );
 }
@@ -210,9 +216,10 @@ function printedAs(form: string, text: string, names: Span[]): boolean {
 // run of spaces as one, so a tag inside a grant does not hide it and
 // indentation does not part a year from the funder's name. Any dash the
 // rules read as a hyphen reads as one here too, so a grant printed with an
-// en dash is printed (#581). A bare number in a decimal, a range or a DOI,
-// or one that reads as a year far from the funder's name, is not printed
-// (#520, #556).
+// en dash is printed (#581). A bare number joined to a digit by a dot, a
+// middle dot, a dot operator, a bullet operator or a hyphen, as in a
+// decimal or a range, or anywhere in a DOI, or one that reads as a year far
+// from the funder's name, is not printed (#520, #556, #581, #597).
 export function printedGrants(
   grants: readonly string[],
   article: string,
@@ -233,10 +240,12 @@ export function printedGrants(
 }
 
 // What a model added after the rules: the normalised references it found
-// in each paper, and what it spent over every gold paper, in US dollars.
+// in each paper, what it spent over every gold paper, in US dollars, and
+// the papers whose reply could not be read. Ids only.
 export interface ModelPass {
   found: ReadonlyMap<string, readonly string[]>;
   spend: number;
+  unprocessed: readonly string[];
 }
 
 interface Input {
@@ -245,12 +254,26 @@ interface Input {
   goldB: readonly GoldB[];
   // The rules alone when left out.
   model?: ModelPass;
+  // False scores the model alone, without the rules' references (#694).
+  rules?: boolean;
 }
 
 const ratio = (part: number, whole: number): number | null =>
   whole === 0 ? null : part / whole;
 
-export function score({ texts, goldA, goldB, model }: Input): Scores {
+export function score({
+  texts,
+  goldA: sentA,
+  goldB: sentB,
+  model,
+  rules = true,
+}: Input): Scores {
+  // A paper the model left unread is out of its scores alone, on every
+  // gold set. After the rules it stays in, and scores what the rules found
+  // in it (#696).
+  const unread = new Set(rules ? [] : (model?.unprocessed ?? []));
+  const goldA = sentA.filter((paper) => !unread.has(paper.pmcid));
+  const goldB = sentB.filter((paper) => !unread.has(paper.pmcid));
   const found = (pmcid: string): string[] => {
     const sections = texts.get(pmcid);
     if (sections === undefined) {
@@ -261,12 +284,15 @@ export function score({ texts, goldA, goldB, model }: Input): Scores {
     // The rules first, then what the model adds, each reference once.
     return [
       ...new Set([
-        ...findReferences(sections).map((reference) => reference.normalised),
+        ...(rules
+          ? findReferences(sections).map((reference) => reference.normalised)
+          : []),
         ...(model?.found.get(pmcid) ?? []),
       ]),
     ];
   };
-  const papers = goldA.length + goldB.length;
+  // Spend counts every call, read or not, over every gold paper sent.
+  const papers = sentA.length + sentB.length;
 
   let grantsA = 0;
   let recalledA = 0;
@@ -310,7 +336,8 @@ export function score({ texts, goldA, goldB, model }: Input): Scores {
       // Nothing goes to review until review lands (#26).
       "review-share": { score: null, n: 0 },
       "recall-a": { score: ratio(recalledA, grantsA), n: goldA.length },
-      // Set by the runner, against the rules alone.
+      // Set by the runner, against the rules alone. A model alone adds
+      // nothing after the rules, so it stays empty there.
       "model-adds": { score: null, n: goldB.length },
       // The rules call no model, so they spend nothing. A model's spend is
       // per 1,000 papers, and unmeasured when it read none.

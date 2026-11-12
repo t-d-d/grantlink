@@ -124,6 +124,12 @@ describe("finding which linked grants a paper prints", () => {
     ["A2019", "<p>Grant 2019 from CRUK.</p>"],
     ["A2019", "<p>Recruited in 2019. Funded by grant A2019.</p>"],
     ["A1234", "<p>Recruited with grant 1234.</p>"],
+    // A DOI ends at a space, so a grant after it still reads (#597).
+    ["A12345", "<p>Data at 10.7554/eLife.1. Funded by grant 12345.</p>"],
+    // A DOI also ends at a character no DOI holds, such as a comma or the
+    // ampersand that starts an entity (#597).
+    ["A12345", "<p>Cancer Research UK (10.13039/501100000289,12345)</p>"],
+    ["A12345", "<p>Data at 10.5061/dryad.1&#x000a0;12345.</p>"],
     // A year reads near any name the rules read for the funder (#520).
     ["A2019", "<p>Funded by Cancer Research U.K. grant 2019.</p>"],
     ["A2019", "<p>Funded by CR-UK grant 2019.</p>"],
@@ -172,6 +178,13 @@ describe("finding which linked grants a paper prints", () => {
     ["A12345", "<p>The ratio was \u0661.12345 overall.</p>"],
     ["A12345", "<p>Version 12345.\u0666 of the tool.</p>"],
     ["CTRQQR-2021/100010", "<p>CTRQQR-2021/100010\u0661</p>"],
+    // A DOI whose last part is letters, a dot and the number, as eLife's
+    // are, still holds the number (#597).
+    [
+      "A12345",
+      "<article><body><p>Data at https://doi.org/10.7554/eLife.12345</p></body></article>",
+    ],
+    ["A12345", "<p>See DOI 10.7554/ELIFE.12345.sa1 for the review.</p>"],
     // A bare number that reads as a year counts only near CRUK (#520).
     ["A2019", "<p>Recruited in 2019.</p>"],
     [
@@ -334,11 +347,110 @@ describe("scoring the rules on the gold sets", () => {
       texts: withPMC5,
       goldA: [],
       goldB,
-      model: { found: new Map([["PMC5", ["A77777", "B1"]]]), spend: 0.01 },
+      model: {
+        found: new Map([["PMC5", ["A77777", "B1"]]]),
+        spend: 0.01,
+        unprocessed: [],
+      },
     });
     expect(both.rows["recall-b"]).toEqual({ score: 1, n: 2 });
     // Found: C1234/A56789 by the rules, A77777 and B1 by the model.
     expect(both.rows["precision-b"]).toEqual({ score: 2 / 3, n: 2 });
+  });
+
+  it("scores a model alone, counting only its references, on both gold sets", () => {
+    // The rules find C1234/A56789 in PMC1 and A22222 in PMC4. The model,
+    // alone, finds A77777 in PMC5 and a wrong B1 in PMC1, and nothing else.
+    const withPMC5 = new Map([
+      ...texts,
+      ["PMC5", paper(["Funded by CRUK award ref X1."])],
+    ]);
+    const result = score({
+      texts: withPMC5,
+      goldA: [
+        { pmcid: "PMC1", grants: ["A56789"] },
+        { pmcid: "PMC5", grants: ["A77777"] },
+      ],
+      goldB: [
+        { pmcid: "PMC1", references: ["C1234/A56789"] },
+        { pmcid: "PMC4", references: ["A22222"] },
+        { pmcid: "PMC5", references: ["A77777"] },
+      ],
+      model: {
+        found: new Map([
+          ["PMC1", ["B1"]],
+          ["PMC5", ["A77777"]],
+        ]),
+        spend: 0.005,
+        unprocessed: [],
+      },
+      rules: false,
+    });
+    expect(result.rows["recall-a"]).toEqual({ score: 1 / 2, n: 2 });
+    expect(result.missedA).toEqual(["PMC1"]);
+    // Found in gold set B: B1 and A77777, one of them true, and one of the
+    // three true references.
+    expect(result.rows["precision-b"]).toEqual({ score: 1 / 2, n: 3 });
+    expect(result.rows["recall-b"]).toEqual({ score: 1 / 3, n: 3 });
+    expect(result.rows["model-adds"].score).toBeNull();
+    // $0.005 over 5 papers is $1 per 1,000, the model's own spend.
+    expect(result.rows.spend.score).toBeCloseTo(1);
+  });
+
+  describe("a paper the model left unread (#696)", () => {
+    // The model reads PMC1, where it finds the grant, and leaves PMC2 and
+    // PMC4 unread. The rules find a grant in each of the three.
+    const goldA = [
+      { pmcid: "PMC1", grants: ["A56789"] },
+      { pmcid: "PMC2", grants: ["A11111"] },
+    ];
+    const goldB = [
+      { pmcid: "PMC1", references: ["C1234/A56789"] },
+      { pmcid: "PMC4", references: ["A22222"] },
+    ];
+    const model = {
+      found: new Map([["PMC1", ["C1234/A56789"]]]),
+      spend: 0.004,
+      unprocessed: ["PMC2", "PMC4"],
+    };
+
+    it("is out of the model's precision and recall alone, on every gold set", () => {
+      const result = score({ texts, goldA, goldB, model, rules: false });
+      expect(result.rows["recall-a"]).toEqual({ score: 1, n: 1 });
+      expect(result.rows["precision-b"]).toEqual({ score: 1, n: 1 });
+      expect(result.rows["recall-b"]).toEqual({ score: 1, n: 1 });
+      expect(result.missedA).toEqual([]);
+    });
+
+    it("scores the rules' references when the rules come first", () => {
+      const result = score({ texts, goldA, goldB, model });
+      expect(result.rows["recall-a"]).toEqual({ score: 1, n: 2 });
+      expect(result.rows["recall-b"]).toEqual({ score: 1, n: 2 });
+      // PMC4's C9/A33333 is found by the rules and is not a true reference.
+      expect(result.rows["precision-b"]).toEqual({ score: 2 / 3, n: 2 });
+    });
+
+    it("gives the model alone no score on a gold set it read none of", () => {
+      const result = score({
+        texts,
+        goldA: [{ pmcid: "PMC2", grants: ["A11111"] }],
+        goldB: [{ pmcid: "PMC4", references: ["A22222"] }],
+        model,
+        rules: false,
+      });
+      expect(result.rows["recall-a"]).toEqual({ score: null, n: 0 });
+      expect(result.rows["precision-b"]).toEqual({ score: null, n: 0 });
+      expect(result.rows["recall-b"]).toEqual({ score: null, n: 0 });
+    });
+
+    it("still counts in the spend, read or not", () => {
+      // $0.004 over the 4 gold papers sent is $1 per 1,000.
+      for (const rules of [true, false]) {
+        const result = score({ texts, goldA, goldB, model, rules });
+        expect(result.rows.spend.n).toBe(4);
+        expect(result.rows.spend.score).toBeCloseTo(1);
+      }
+    });
   });
 
   it("counts a reference the rules and the model both found once", () => {
@@ -346,7 +458,11 @@ describe("scoring the rules on the gold sets", () => {
       texts,
       goldA: [],
       goldB: [{ pmcid: "PMC1", references: ["C1234/A56789"] }],
-      model: { found: new Map([["PMC1", ["C1234/A56789"]]]), spend: 0 },
+      model: {
+        found: new Map([["PMC1", ["C1234/A56789"]]]),
+        spend: 0,
+        unprocessed: [],
+      },
     });
     expect(result.rows["precision-b"].score).toBe(1);
   });
@@ -356,7 +472,7 @@ describe("scoring the rules on the gold sets", () => {
       texts,
       goldA: [{ pmcid: "PMC1", grants: ["A56789"] }],
       goldB: [{ pmcid: "PMC2", references: ["A11111"] }],
-      model: { found: new Map(), spend: 0.004 },
+      model: { found: new Map(), spend: 0.004, unprocessed: [] },
     });
     // $0.004 over 2 papers is $2 per 1,000.
     expect(result.rows.spend).toEqual({ score: 2, n: 2 });
@@ -367,7 +483,7 @@ describe("scoring the rules on the gold sets", () => {
       texts,
       goldA: [],
       goldB: [],
-      model: { found: new Map(), spend: 0 },
+      model: { found: new Map(), spend: 0, unprocessed: [] },
     });
     expect(result.rows.spend.score).toBeNull();
   });

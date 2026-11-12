@@ -1,8 +1,14 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { FLOORS, judge, shownScore } from "./floors.ts";
-import { report, verdict, type Judged, type Report } from "./report.ts";
+import { FLOORS, judge, shownScore, type RowId } from "./floors.ts";
+import {
+  readAlone,
+  report,
+  verdict,
+  type Judged,
+  type Report,
+} from "./report.ts";
 
 // What CI does with a report (docs/constraints/deploy-gates.md). Run
 //
@@ -18,6 +24,13 @@ import { report, verdict, type Judged, type Report } from "./report.ts";
 // saying why there is none to compare with (#88).
 
 export const MARKER = "<!-- grantlink:eval -->";
+
+// A model alone's cell on a gold set it read no paper of (#696).
+const NONE_READ = "none read" as const;
+
+// How many papers of a gold set the rules were scored on.
+const sentOn = (ci: Report, id: RowId): number =>
+  ci.baseline.find((row) => row.id === id)?.n ?? 0;
 
 const shown = (row: Judged, score: number | null): string =>
   shownScore(row.id, score);
@@ -188,27 +201,221 @@ export function comment(
       ? "No snapshot is pinned yet, so the gold sets are not scored."
       : `Scored on snapshot ${ci.snapshot.id}, manifest \`${ci.snapshot.manifestSha256.slice(0, 12)}\`.`,
     ...models(ci),
+    ...heldOutA2(ci),
+    ...heldOutB2(ci),
   ].join("\n");
 }
 
-// The rules alone beside the rules and then each model the eval compares
-// (#329). They do not gate: rules ship alone (#330), and the eval scores
-// each model to show what it would add. A row with no score says what it
-// waits for.
+// Gold set A2's recall beside gold set A's, for the rules alone, each model
+// alone and the rules then each model (#695). It gates nothing, and lists
+// no misses. A report filed before gold set A2 joined shows no table.
+function heldOutA2(ci: Report): string[] {
+  const a2 = ci.goldA2;
+  if (a2 === undefined) return [];
+  const cell = (score: number | null | typeof NONE_READ) =>
+    score === NONE_READ
+      ? score
+      : score === null
+        ? judge("recall-a", null)
+        : shownScore("recall-a", score);
+  const recallA = (rows: Report["rows"] | undefined) =>
+    rows?.find((row) => row.id === "recall-a")?.score ?? null;
+  // A gold set with no papers waits for its snapshot, so only a scored
+  // one can have none read.
+  const scoredA = sentOn(ci, "recall-a") > 0;
+  const columns = a2.models.flatMap((model) => {
+    const candidate = (ci.candidates ?? []).find(
+      (c) => c.modelId === model.modelId,
+    );
+    return [
+      {
+        name: `${model.modelId} alone`,
+        a:
+          scoredA && candidate?.read?.goldA === 0
+            ? NONE_READ
+            : recallA(candidate?.alone),
+        a2: a2.rules.n > 0 && model.read === 0 ? NONE_READ : model.alone.score,
+      },
+      {
+        name: `Rules then ${model.modelId}`,
+        a: recallA(candidate?.rows),
+        a2: model.rulesThen.score,
+      },
+    ];
+  });
+  const line = (
+    on: string,
+    rules: number | null,
+    scores: (number | null | typeof NONE_READ)[],
+  ) => `| ${[on, cell(rules), ...scores.map(cell)].join(" | ")} |`;
+  const names = ["On", "Rules alone", ...columns.map((c) => c.name)];
+  return [
+    "",
+    "#### Recall on gold set A and held-out gold set A2",
+    "",
+    `| ${names.join(" | ")} |`,
+    `| ${names.map(() => "---").join(" | ")} |`,
+    line(
+      "Gold set A",
+      recallA(ci.baseline),
+      columns.map((c) => c.a),
+    ),
+    line(
+      "Gold set A2, held out",
+      a2.rules.score,
+      columns.map((c) => c.a2),
+    ),
+    "",
+    "Gold set A2 is drawn as gold set A is, with its own seed, from papers not in gold set A. Nobody tuned the rules or the prompt on gold set A2. Gold set A2 gates nothing.",
+    // A report filed before #696 counted an unread paper as missed alone.
+    ...a2.models
+      .filter((model) => model.unprocessed > 0)
+      .map((model) => {
+        const left = `${model.modelId} left ${String(model.unprocessed)} gold set A2 ${model.unprocessed === 1 ? "paper" : "papers"} unread`;
+        return model.read === undefined
+          ? `${left}, and they count as missed.`
+          : `${left}. They are out of its recall alone, and score what the rules found after the rules.`;
+      }),
+  ];
+}
+
+// Gold set B2's precision and recall beside gold set B's, for the rules
+// alone, each model alone and the rules then each model (#695). It gates
+// nothing, and lists no misses. A report filed before gold set B2 joined
+// shows no table.
+function heldOutB2(ci: Report): string[] {
+  const b2 = ci.goldB2;
+  if (b2 === undefined) return [];
+  type Cell = number | null | typeof NONE_READ;
+  const cell = (id: RowId, score: Cell) =>
+    score === NONE_READ
+      ? score
+      : score === null
+        ? judge(id, null)
+        : shownScore(id, score);
+  const scoreIn = (rows: Report["rows"] | undefined, id: RowId) =>
+    rows?.find((row) => row.id === id)?.score ?? null;
+  // A gold set with no papers waits for its snapshot, so only a scored
+  // one can have none read.
+  const scoredB = sentOn(ci, "recall-b") > 0;
+  const scoredB2 = b2.rules.recall.n > 0;
+  const columns = b2.models.flatMap((model) => {
+    const candidate = (ci.candidates ?? []).find(
+      (c) => c.modelId === model.modelId,
+    );
+    const noneB = scoredB && candidate?.read?.goldB === 0;
+    const noneB2 = scoredB2 && model.read === 0;
+    return [
+      {
+        name: `${model.modelId} alone`,
+        b: (id: RowId): Cell =>
+          noneB ? NONE_READ : scoreIn(candidate?.alone, id),
+        b2: { ...model.alone, none: noneB2 },
+      },
+      {
+        name: `Rules then ${model.modelId}`,
+        b: (id: RowId): Cell => scoreIn(candidate?.rows, id),
+        b2: { ...model.rulesThen, none: false },
+      },
+    ];
+  });
+  const measures = [
+    { id: "precision-b", name: "Precision", key: "precision" },
+    { id: "recall-b", name: "Recall", key: "recall" },
+  ] as const;
+  const line = (on: string, measure: string, cells: string[]) =>
+    `| ${[on, measure, ...cells].join(" | ")} |`;
+  const names = ["On", "Measure", "Rules alone", ...columns.map((c) => c.name)];
+  return [
+    "",
+    "#### Precision and recall on gold set B and held-out gold set B2",
+    "",
+    `| ${names.join(" | ")} |`,
+    `| ${names.map(() => "---").join(" | ")} |`,
+    ...measures.map((m) =>
+      line("Gold set B", m.name, [
+        cell(m.id, scoreIn(ci.baseline, m.id)),
+        ...columns.map((c) => cell(m.id, c.b(m.id))),
+      ]),
+    ),
+    ...measures.map((m) =>
+      line("Gold set B2, held out", m.name, [
+        cell(m.id, b2.rules[m.key].score),
+        ...columns.map((c) =>
+          cell(m.id, c.b2.none ? NONE_READ : c.b2[m.key].score),
+        ),
+      ]),
+    ),
+    "",
+    "Gold set B2 is drawn at random from the live search, less gold set B's papers. A Claude model proposed gold set B2's labels and the owner checked them. Nobody tuned the rules or the prompt on gold set B2. Gold set B2 gates nothing.",
+    ...b2.models
+      .filter((model) => model.unprocessed > 0)
+      .map((model) => {
+        const one = model.unprocessed === 1;
+        return `${model.modelId} left ${String(model.unprocessed)} gold set B2 ${one ? "paper" : "papers"} unread. ${one ? "It is" : "They are"} out of its scores alone, and ${one ? "scores" : "score"} what the rules found after the rules.`;
+      }),
+  ];
+}
+
+// The rules alone beside each model alone and the rules then each model
+// (#329, #694). They do not gate: rules ship alone (#330), and the eval
+// scores each model to show what it would add. A row with no score says
+// what it waits for. A model alone adds nothing after the rules, so that
+// cell is a dash. A report filed before the eval scored a model alone gives
+// that model one column, the rules then the model.
 function models(ci: Report): string[] {
   const candidates = ci.candidates ?? [];
   if (candidates.length === 0) return [];
   const cell = (id: (typeof FLOORS)[number]["id"], score: number | null) =>
     score === null ? judge(id, null) : shownScore(id, score);
   const scoreIn = (rows: Report["rows"], i: number) => rows[i]?.score ?? null;
+  const columns = candidates.flatMap((c) =>
+    c.alone === undefined
+      ? [{ name: c.modelId, rows: c.rows, alone: false, read: undefined }]
+      : [
+          {
+            name: `${c.modelId} alone`,
+            rows: c.alone,
+            alone: true,
+            read: c.read,
+          },
+          {
+            name: `Rules then ${c.modelId}`,
+            rows: c.rows,
+            alone: false,
+            read: undefined,
+          },
+        ],
+  );
+  // A model alone that read no paper of a scored gold set has no score on
+  // it (#696). A gold set with no papers waits for its snapshot.
+  const scoredA = sentOn(ci, "recall-a") > 0;
+  const scoredB = sentOn(ci, "recall-b") > 0;
+  const noneRead = (
+    read: { goldA: number; goldB: number } | undefined,
+    id: RowId,
+  ): boolean =>
+    read !== undefined &&
+    (id === "recall-a"
+      ? scoredA && read.goldA === 0
+      : (id === "precision-b" || id === "recall-b") &&
+        scoredB &&
+        read.goldB === 0);
   const rows = FLOORS.map((floor, i) =>
     [
       floor.measure,
       floor.on,
       cell(floor.id, scoreIn(ci.baseline, i)),
-      ...candidates.map((c) => cell(floor.id, scoreIn(c.rows, i))),
+      ...columns.map((column) =>
+        column.alone && floor.id === "model-adds"
+          ? "-"
+          : column.alone && noneRead(column.read, floor.id)
+            ? NONE_READ
+            : cell(floor.id, scoreIn(column.rows, i)),
+      ),
     ].join(" | "),
   );
+  const read = readAlone(ci);
   const left = candidates
     .filter((c) => c.unprocessed.length > 0)
     .map(
@@ -217,12 +424,15 @@ function models(ci: Report): string[] {
     );
   return [
     "",
-    "#### The rules alone and with each model",
+    columns.some((column) => column.alone)
+      ? "#### The rules alone, each model alone, and the rules then each model"
+      : "#### The rules alone and with each model",
     "",
-    `| Measure | On | Rules alone | ${candidates.map((c) => c.modelId).join(" | ")} |`,
-    `| --- | --- | --- | ${candidates.map(() => "---").join(" | ")} |`,
+    `| Measure | On | Rules alone | ${columns.map((c) => c.name).join(" | ")} |`,
+    `| --- | --- | --- | ${columns.map(() => "---").join(" | ")} |`,
     ...rows.map((row) => `| ${row} |`),
     ...(left.length === 0 ? [] : ["", ...left]),
+    ...(read.length === 0 ? [] : ["", ...read]),
   ];
 }
 

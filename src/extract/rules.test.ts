@@ -233,6 +233,21 @@ describe("the rules", () => {
     },
   );
 
+  // A next part of nine or more capitals or digits is too long to read,
+  // but it is still a part, so the read does not fall back to the front of
+  // the form (#579). The text is made up.
+  it.each([
+    "Funded by CRUK (CRUK/12/MCALLISTER).",
+    "Funded by CRUK (CRUK/12/ABCDEFGHI).",
+    "Funded by CRUK (CRUK/12/123456789).",
+    "Funded by CRUK (CRUK/12/34/MCALLISTER).",
+  ])(
+    "leaves a CRUK- form whose next part is nine or more capitals or digits: %j",
+    (text) => {
+      expect(findReferences(sections(text))).toEqual([]);
+    },
+  );
+
   // A slash with a space on each side parts a list of references, not the
   // parts of one, so each reference in the list is still read (#598).
   it("reads each CRUK- form in a list parted by a slash spaced on both sides", () => {
@@ -684,6 +699,37 @@ describe("the rules", () => {
           awards: [{ sources: ["Cancer Research UK"], ids: [id] }],
         }),
       ).toEqual([]);
+    },
+  );
+
+  // The same holds at the end: a hyphen and digits, or a decimal point and
+  // a digit, after it makes it the start of a longer one (#577).
+  it.each([["Funded by CRUK, 12345-67."], ["Funded by CRUK, 12345.6."]])(
+    "leaves a bare number the metadata gives where the text goes on past it, in %s",
+    (text) => {
+      expect(
+        findReferences({
+          text: [text],
+          awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  it.each([
+    ["Funded by CRUK, 12345 and the Example Trust."],
+    ["Funded by CRUK and others (12345)."],
+    ["Funded by CRUK, 12345."],
+    ["Funded by CRUK, 12345, and the Example Trust."],
+  ])(
+    "reads a bare number the metadata gives before a space, a bracket, a full stop or a comma, in %s",
+    (text) => {
+      expect(
+        findReferences({
+          text: [text],
+          awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
+        }).map(({ normalised }) => normalised),
+      ).toEqual(["12345"]);
     },
   );
 

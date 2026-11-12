@@ -1,9 +1,11 @@
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { fakeDeps, fakeRelease, reply } from "../../test/fakes.ts";
+import { fakeDeps, fakeRelease, NEWER_RULES, reply } from "../../test/fakes.ts";
+import { RULES_VERSION } from "../extract/rules.ts";
 import { SEARCH_PAGE_SIZE } from "../europepmc/client.ts";
 import { found } from "../page/found.ts";
 import {
   checkWholeSearch,
+  logRerunFailed,
   publish,
   readPaper,
   recordPage,
@@ -138,6 +140,7 @@ describe("recording a page of the search", () => {
     expect(todo).toEqual({
       todo: ["PMC31", "PMC32", "PMC33"],
       once: ["PMC31"],
+      rerun: [],
     });
   });
 
@@ -162,7 +165,7 @@ describe("recording a page of the search", () => {
       ],
       "run-2",
     );
-    expect(todo).toEqual({ todo: ["PMC22"], once: [] });
+    expect(todo).toEqual({ todo: ["PMC22"], once: [], rerun: [] });
     expect(table.rows.get("PMC22")).toMatchObject({
       status: "pending",
       foundByRun: "run-2",
@@ -171,6 +174,38 @@ describe("recording a page of the search", () => {
       status: "processed",
       runId: "run-1",
       foundByRun: "run-2",
+    });
+  });
+
+  it("names the papers an older rules version read, or none, with the version each was read by (#686)", async () => {
+    const { deps, table } = fakeDeps();
+    const papers = ["PMC41", "PMC42", "PMC43", "PMC44", "PMC45"].map(
+      (pmcid) => ({ pmcid, title: "A paper" }),
+    );
+    await table.addFound(papers, deps.now(), "run-1");
+    const read = (pmcid: string, rules: string) =>
+      table.markProcessed(pmcid, {
+        references: [],
+        versions: { rules, code: "c" },
+        processedAt: deps.now(),
+        runId: "run-1",
+      });
+    await read("PMC41", "rules-9");
+    await read("PMC42", RULES_VERSION);
+    await read("PMC43", NEWER_RULES);
+    await read("PMC44", "rules-9");
+    const row = table.rows.get("PMC44");
+    if (row === undefined) throw new Error("no row");
+    // A row written before rows recorded their versions.
+    table.rows.set("PMC44", { ...row, versions: undefined });
+    const todo = await recordPage(deps, papers, "run-2");
+    expect(todo).toEqual({
+      todo: ["PMC45"],
+      once: [],
+      rerun: [
+        { pmcid: "PMC41", from: "rules-9" },
+        { pmcid: "PMC44", from: null },
+      ],
     });
   });
 });
@@ -316,5 +351,24 @@ describe("the reason a failed snapshot logs", () => {
     undefined,
   ])("is unknown for anything else, such as %s", (error) => {
     expect(snapshotFailure(error)).toBe("unknown");
+  });
+});
+
+describe("logging a paper whose re-run failed (#698)", () => {
+  const line = () => JSON.parse(logs.at(-1) ?? "{}") as Record<string, unknown>;
+
+  it("logs the error's name beside the paper's id", () => {
+    logRerunFailed("PMC11", "ValidationException");
+    expect(line()).toMatchObject({
+      event: "paper-reread-failed",
+      pmcid: "PMC11",
+      error: "ValidationException",
+    });
+  });
+
+  it("logs a name not shaped like an error's name as unknown", () => {
+    logRerunFailed("PMC11", "Funded by Cancer Research UK (C1/A12345)");
+    expect(line()).toMatchObject({ pmcid: "PMC11", error: "unknown" });
+    expect(logs.join("\n")).not.toContain("Funded");
   });
 });

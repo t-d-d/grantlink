@@ -234,6 +234,23 @@ describe("the function", () => {
     expect(text).toContain("/found.json");
   });
 
+  it("may read funding text back from cache/, to re-run the rules on it (#686)", () => {
+    const statements =
+      (
+        serverless.provider as {
+          iam?: { role?: { statements?: Record<string, unknown>[] } };
+        }
+      ).iam?.role?.statements ?? [];
+    const onCache = statements.filter((statement) =>
+      JSON.stringify(statement.Resource).includes(
+        "grantlink-text-${AWS::AccountId}/cache/*",
+      ),
+    );
+    expect(onCache.map((statement) => statement.Action)).toEqual([
+      ["s3:GetObject", "s3:PutObject"],
+    ]);
+  });
+
   it("lists only the snapshot's prefix, so a missing manifest reads as missing", () => {
     const statements = (
       serverless.provider as {

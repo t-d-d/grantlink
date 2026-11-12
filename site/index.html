@@ -33,10 +33,10 @@
       <p>
         grantlink reads the funding text of those papers, finds the grant
         reference, and checks it against the links Europe PMC already holds. It
-        reads the reference with rules. Its evaluation also tried a model after
-        the rules, which did not find enough more to ship, so the rules run
-        alone. It accepts only what clears thresholds set by its evaluation, and
-        sends everything else to a person for review.
+        reads the reference with rules. Its evaluation scored each model alone
+        and after the rules. The rules ship alone, because no model adds 10
+        points of recall after them. It accepts only what clears thresholds set
+        by its evaluation, and sends everything else to a person for review.
       </p>
 
       <p>
@@ -45,25 +45,35 @@
         release, and the check behind every limit it works within.
       </p>
 
-      <!-- found -->
-      <section class="card" aria-labelledby="status">
-        <h2 id="status">Not yet run</h2>
-        <p>
-          The first run over the back catalogue has not happened yet. The links
-          it finds, and how it is run, will appear here once it has.
-        </p>
-      </section>
-      <!-- /found -->
+      <nav class="tabs" aria-label="Sections of this page">
+        <a href="#what-it-found">What it found</a>
+        <a href="#how-its-run">How it's run</a>
+      </nav>
 
-      <!-- run -->
-      <section class="card" aria-labelledby="run">
-        <h2 id="run">How it's run</h2>
-        <p>
-          No release has been recorded yet. Each release will show here with the
-          eval report that covers it and the runs that scored and deployed it.
-        </p>
-      </section>
-      <!-- /run -->
+      <div class="panel" id="what-it-found">
+        <!-- found -->
+        <section class="card" aria-labelledby="status">
+          <h2 id="status">Not yet run</h2>
+          <p>
+            The first run over the back catalogue has not happened yet. The
+            links it finds, and how it is run, will appear here once it has.
+          </p>
+        </section>
+        <!-- /found -->
+      </div>
+
+      <div class="panel" id="how-its-run">
+        <!-- run -->
+        <section class="card" aria-labelledby="run">
+          <h2 id="run">How it's run</h2>
+          <p>
+            No release has been recorded yet. Each release will show here with
+            the eval report that covers it and the runs that scored and deployed
+            it.
+          </p>
+        </section>
+        <!-- /run -->
+      </div>
 
       <p>
         The links are proposed by software. Each shows its status, and none

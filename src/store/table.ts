@@ -39,6 +39,44 @@ const result = z
 
 export type Result = z.infer<typeof result>;
 
+// The number of a rules version, `rules-<number>`, or null for a version
+// this code cannot read the number of.
+function rulesNumber(version: string): number | null {
+  const match = /^rules-(\d+)$/u.exec(version);
+  return match?.[1] === undefined ? null : Number(match[1]);
+}
+
+// Whether the rules version that read a paper, or null for none recorded,
+// is older than `current`. Versions compare by number, not as strings, and
+// a version whose number cannot be read counts as not older, so the row
+// stays as it is (#686).
+export function olderRules(read: string | null, current: string): boolean {
+  if (read === null) return true;
+  const was = rulesNumber(read);
+  const now = rulesNumber(current);
+  return was !== null && now !== null && was < now;
+}
+
+// The rules version a row holds, as rulesRead reads it: null for none, or
+// an empty string for versions in a shape this version does not know.
+const heldRules = z
+  .object({ rules: versions.shape.rules })
+  .optional()
+  .catch({ rules: "" });
+
+// The names markProcessed and replaceReferences write a result through.
+// status, references and rules are DynamoDB reserved words, so an
+// expression names them only through these (#698).
+const RESULT_NAMES = {
+  "#status": "status",
+  "#references": "references",
+  "#rules": "rules",
+};
+
+// How many times markProcessed reads a row that changed under its write
+// before it fails, and the step that called it tries again.
+const MARK_PROCESSED_TRIES = 3;
+
 // Why a paper last failed: the status of Europe PMC's last answer, or that
 // the last request timed out or could not connect, or that a wait Europe PMC
 // asked for was still owed, or that the fault was in the code (#378). A run
@@ -115,11 +153,27 @@ export interface Table {
   recordSearch(runId: string): Promise<void>;
   // The run whose search is the latest complete one, or null before any.
   latestSearch(): Promise<string | null>;
-  processed(pmcids: string[]): Promise<Set<string>>;
+  // The rules version that read each processed paper, null for one whose
+  // row records none, or an empty string for one this version cannot read
+  // (#686).
+  rulesRead(pmcids: string[]): Promise<Map<string, string | null>>;
   // Why each paper not yet processed last failed, for those that hold a
   // reason this version reads.
   lastFailures(pmcids: string[]): Promise<Map<string, LastFailure>>;
+  // Records a paper's result, unless a rules version newer than the
+  // result's, or one this version cannot read, has read it, whose result
+  // stays and the paper counts as done (#688).
   markProcessed(pmcid: string, result: Result): Promise<void>;
+  // Writes the result of re-running the rules on a processed paper, only
+  // while the rules version that read it is still `from` (null while the row
+  // holds no versions at all) or already the result's own. Returns false,
+  // and writes nothing, when another version has read it since. Safe to run
+  // twice (#686).
+  replaceReferences(
+    pmcid: string,
+    from: string | null,
+    result: Result,
+  ): Promise<boolean>;
   // Counts a failure, and keeps why, or no reason when none is known.
   markFailed(pmcid: string, why?: LastFailure): Promise<void>;
   all(): Promise<PaperRow[]>;
@@ -318,13 +372,25 @@ export function dynamoTable(
       return reply.Item?.runId ?? null;
     },
 
-    async processed(pmcids) {
-      const done = new Set<string>();
-      for (const item of await getMany(pmcids)) {
-        const row = z.object({ pmcid: PMCID, status: z.string() }).parse(item);
-        if (row.status === "processed") done.add(row.pmcid);
+    async rulesRead(pmcids) {
+      const read = new Map<string, string | null>();
+      for (const item of await getMany(pmcids, ["versions"])) {
+        const row = z
+          .object({
+            pmcid: PMCID,
+            status: z.string(),
+            // A row a later version wrote may hold more, or a shape this
+            // version does not know. That reads as an empty version, which
+            // olderRules counts as not older, so the row stays as it is.
+            // Only a row with no versions at all reads as none.
+            versions: heldRules,
+          })
+          .parse(item);
+        if (row.status === "processed") {
+          read.set(row.pmcid, row.versions?.rules ?? null);
+        }
       }
-      return done;
+      return read;
     },
 
     async lastFailures(pmcids) {
@@ -344,28 +410,111 @@ export function dynamoTable(
       return failed;
     },
 
+    // Writes only while the row holds no rules version, the result's own,
+    // or one olderRules counts as older, so a run that started before a
+    // deploy leaves a row a newer version read as it is (#688). The first
+    // write asks for no version or the result's own. If the table refuses
+    // it, the row is read: a version not older stays, and the paper counts
+    // as done, and an older one is written over while it still holds.
     async markProcessed(pmcid, given) {
       const checked = result.parse(given);
-      await send(
-        new UpdateCommand({
-          TableName: name,
-          Key: { pmcid: PMCID.parse(pmcid) },
-          ConditionExpression: "attribute_exists(pmcid)",
-          UpdateExpression:
-            "SET #status = :processed, #references = :references, versions = :versions, processedAt = :processedAt, runId = :runId",
-          ExpressionAttributeNames: {
-            "#status": "status",
-            "#references": "references",
-          },
-          ExpressionAttributeValues: {
-            ":processed": "processed",
-            ":references": checked.references,
-            ":versions": checked.versions,
-            ":processedAt": checked.processedAt,
-            ":runId": checked.runId,
-          },
-        }),
-      );
+      const key = { pmcid: PMCID.parse(pmcid) };
+      let seen: string | null = null;
+      for (let tries = 1; ; tries += 1) {
+        try {
+          await send(
+            new UpdateCommand({
+              TableName: name,
+              Key: key,
+              // No versions at all, not no versions.rules: a row whose
+              // versions are in a shape this version does not know lacks
+              // versions.rules too, and rulesRead reads it as not older.
+              ConditionExpression: `attribute_exists(pmcid) AND (${
+                seen === null
+                  ? "attribute_not_exists(versions)"
+                  : "versions.#rules = :seen"
+              } OR versions.#rules = :to)`,
+              UpdateExpression:
+                "SET #status = :processed, #references = :references, versions = :versions, processedAt = :processedAt, runId = :runId",
+              ExpressionAttributeNames: RESULT_NAMES,
+              ExpressionAttributeValues: {
+                ":processed": "processed",
+                ...(seen === null ? {} : { ":seen": seen }),
+                ":to": checked.versions.rules,
+                ":references": checked.references,
+                ":versions": checked.versions,
+                ":processedAt": checked.processedAt,
+                ":runId": checked.runId,
+              },
+            }),
+          );
+          return;
+        } catch (error) {
+          if (!(error instanceof ConditionalCheckFailedException)) throw error;
+          if (tries === MARK_PROCESSED_TRIES) throw error;
+          const reply = z
+            .object({
+              Item: z.object({ pmcid: PMCID, versions: heldRules }).optional(),
+            })
+            .parse(
+              await send(
+                new GetCommand({
+                  TableName: name,
+                  Key: key,
+                  ProjectionExpression: "pmcid, versions",
+                  ConsistentRead: true,
+                }),
+              ),
+            );
+          // The table does not hold the paper.
+          if (reply.Item === undefined) throw error;
+          const held = reply.Item.versions?.rules ?? null;
+          if (held !== null && !olderRules(held, checked.versions.rules)) {
+            // A rules version not older than the result's, or one this
+            // version cannot read, has read the paper since, and its
+            // result stays.
+            return;
+          }
+          seen = held;
+        }
+      }
+    },
+
+    async replaceReferences(pmcid, from, given) {
+      const checked = result.parse(given);
+      const was =
+        from === null
+          ? "attribute_not_exists(versions)"
+          : "versions.#rules = :from";
+      try {
+        await send(
+          new UpdateCommand({
+            TableName: name,
+            Key: { pmcid: PMCID.parse(pmcid) },
+            ConditionExpression: `#status = :processed AND (${was} OR versions.#rules = :to)`,
+            UpdateExpression:
+              "SET #references = :references, versions = :versions, processedAt = :processedAt, runId = :runId",
+            ExpressionAttributeNames: RESULT_NAMES,
+            ExpressionAttributeValues: {
+              ":processed": "processed",
+              ...(from === null
+                ? {}
+                : { ":from": versions.shape.rules.parse(from) }),
+              ":to": checked.versions.rules,
+              ":references": checked.references,
+              ":versions": checked.versions,
+              ":processedAt": checked.processedAt,
+              ":runId": checked.runId,
+            },
+          }),
+        );
+        return true;
+      } catch (error) {
+        // Another rules version has read the paper since, and its result
+        // stays.
+        if (!(error instanceof ConditionalCheckFailedException)) throw error;
+        return false;
+      }
     },
 
     async markFailed(pmcid, why) {
