@@ -425,7 +425,9 @@ export function readsWhole(paragraph: string, reference: string): boolean {
   return wholeReference(reference).test(paragraph);
 }
 
-const UNICODE_DASH = new RegExp(`[${DASHES}]`, "gu");
+// Any dash the rules read as a hyphen. The eval's scorer reads the text
+// with it too (#581).
+export const UNICODE_DASH = new RegExp(`[${DASHES}]`, "gu");
 
 // The reference as one form, for counting and matching. The model module
 // calls it only after it has found the reference in the text as written.
