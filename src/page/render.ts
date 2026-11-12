@@ -28,6 +28,9 @@ const escape = (text: string) =>
     .replace(/"/gu, "&quot;")
     .replace(/'/gu, "&#39;");
 
+// A reference, a model id or a hash, escaped and set as code (#741).
+const ref = (text: string) => `<code class="ref">${escape(text)}</code>`;
+
 type Reference = Found["papers"][number]["references"][number];
 
 // Europe PMC's titles may carry a little inline markup, such as the
@@ -189,7 +192,7 @@ function rulesAloneNote(report: Report): string {
         ? ""
         : `, for ${shownScore("spend", spend)} per 1,000 papers`;
     return [
-      `<code class="ref">${escape(candidate.modelId)}</code> adds ${shownScore("model-adds", adds)} of recall on gold set B${cost}.`,
+      `${ref(candidate.modelId)} adds ${shownScore("model-adds", adds)} of recall on gold set B${cost}.`,
     ];
   });
   if (models.length === 0) return aloneTable(report);
@@ -223,7 +226,7 @@ function aloneTable(report: Report): string {
       ? []
       : [
           line(
-            `<code class="ref">${escape(candidate.modelId)}</code> alone`,
+            `${ref(candidate.modelId)} alone`,
             candidate.alone,
             scoreOf(candidate.rows, "model-adds"),
           ),
@@ -259,7 +262,7 @@ function heldOutA2(report: Report): string {
     const candidate = (report.candidates ?? []).find(
       (c) => c.modelId === model.modelId,
     );
-    const name = `<code class="ref">${escape(model.modelId)}</code>`;
+    const name = ref(model.modelId);
     return [
       line(
         `${name} alone`,
@@ -309,7 +312,7 @@ function heldOutB2(report: Report): string {
     const candidate = (report.candidates ?? []).find(
       (c) => c.modelId === model.modelId,
     );
-    const name = `<code class="ref">${escape(model.modelId)}</code>`;
+    const name = ref(model.modelId);
     return [
       line(`${name} alone`, candidate?.alone, model.alone),
       line(`Rules then ${name}`, candidate?.rows, model.rulesThen),
@@ -355,9 +358,9 @@ export function renderRun(release: Release): string {
   const snapshot =
     report.snapshot === null
       ? "No eval snapshot is pinned yet, so the gold sets are not scored, and each row that needs them waits without blocking."
-      : `Scored on eval snapshot ${escape(report.snapshot.id)}, whose manifest has the SHA-256 <code class="ref">${escape(
+      : `Scored on eval snapshot ${escape(report.snapshot.id)}, whose manifest has the SHA-256 ${ref(
           report.snapshot.manifestSha256,
-        )}</code>.`;
+        )}.`;
   // A model proposed gold set B's labels (#175), so wherever its rows have
   // scores the page says how the labels were made.
   const goldB = judged.some(
@@ -370,7 +373,7 @@ export function renderRun(release: Release): string {
         <p>
           Every release is gated by an evaluation, and only a green merge to
           main deploys. The live release is commit
-          <code class="ref">${escape(release.commit.slice(0, 7))}</code>,
+          ${ref(release.commit.slice(0, 7))},
           deployed by <a href="${escape(release.deployRunUrl)}">this run</a>.
           Its scores come from <a href="${escape(report.runUrl)}">the run that
           filed its eval report</a>${model}.
