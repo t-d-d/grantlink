@@ -1,9 +1,11 @@
 import { FLOORS } from "../evals/floors.ts";
 import { europePmc, type Clock } from "../src/europepmc/client.ts";
 import { release, type Release } from "../src/page/release.ts";
+import { RULES_VERSIONS, type FundingSections } from "../src/extract/rules.ts";
 import type { Deps, Gold } from "../src/pipeline/steps.ts";
 import type { PageFiles } from "../src/store/bucket.ts";
 import {
+  olderRules,
   paperRow,
   type LastFailure,
   type PaperRow,
@@ -64,12 +66,44 @@ export function memoryTable(): Table & {
     latestSearch() {
       return Promise.resolve(search.latest);
     },
-    processed(pmcids) {
+    rulesRead(pmcids) {
       return Promise.resolve(
-        new Set(pmcids.filter((id) => rows.get(id)?.status === "processed")),
+        new Map(
+          pmcids.flatMap((id): [string, string | null][] => {
+            const row = rows.get(id);
+            return row?.status === "processed"
+              ? [[id, row.versions?.rules ?? null]]
+              : [];
+          }),
+        ),
       );
     },
+    // As the real table: writes only while the rules version that read the
+    // paper is still `from`, null while the row holds no versions at all, or
+    // already the result's own.
+    replaceReferences(pmcid, from, result) {
+      const row = rows.get(pmcid);
+      const held = row?.versions === undefined ? null : row.versions.rules;
+      if (
+        row?.status !== "processed" ||
+        (held !== from && held !== result.versions.rules)
+      ) {
+        return Promise.resolve(false);
+      }
+      rows.set(pmcid, paperRow.parse({ ...row, ...result }));
+      return Promise.resolve(true);
+    },
+    // As the real table: leaves a row a rules version not older than the
+    // result's read, and counts the paper as done (#688).
     markProcessed(pmcid, result) {
+      const held = get(pmcid).versions?.rules ?? null;
+      if (
+        held !== null &&
+        held !== result.versions.rules &&
+        !olderRules(held, result.versions.rules)
+      ) {
+        return Promise.resolve();
+      }
       rows.set(
         pmcid,
         paperRow.parse({ ...get(pmcid), ...result, status: "processed" }),
@@ -127,6 +161,11 @@ export function reply(
   } as unknown as Response;
 }
 
+// A rules version newer than the current one, as a run on a later deploy
+// writes it, so a test does not name the current number and break at the
+// next bump (#686).
+export const NEWER_RULES = `rules-${String((RULES_VERSIONS.at(-1)?.number ?? 0) + 1)}`;
+
 // The papers gold set A's search finds, and the grant each is linked to.
 // PMC0000003 is linked to none, so the snapshot passes it over.
 const GOLD_SEARCH = { PMC0000001: true, PMC0000002: true, PMC0000003: true };
@@ -147,6 +186,15 @@ export const FAKE_GOLD: Gold = {
     size: 300,
     papers: [],
   },
+  // Drawn as gold set A is, with its own seed, so it searches no more
+  // while gold set A lists no papers either.
+  goldA2: {
+    about: "a test's gold set A2",
+    query: 'GRANT_AGENCY:"Test Funder"',
+    seed: 11,
+    size: 300,
+    papers: [],
+  },
   goldB: {
     about: "a test's gold set B",
     papers: ["PMC0000011", "PMC0000012", "PMC0000013"].map((pmcid) => ({
@@ -154,6 +202,8 @@ export const FAKE_GOLD: Gold = {
       references: [],
     })),
   },
+  // None, so a run's tests take no more papers than before gold set B2.
+  goldB2: { about: "a test's gold set B2", papers: [] },
   snapshotId: "s1",
 };
 
@@ -300,6 +350,12 @@ export function fakeDeps(options: FakeOptions = {}) {
       putFundingText(pmcid, sections) {
         text.set(`cache/${pmcid}.json`, sections);
         return Promise.resolve();
+      },
+      getFundingText(pmcid) {
+        const held = text.get(`cache/${pmcid}.json`);
+        return Promise.resolve(
+          held === undefined ? null : (held as FundingSections),
+        );
       },
       hasSnapshot(id) {
         return Promise.resolve(text.has(`eval/${id}/manifest.json`));

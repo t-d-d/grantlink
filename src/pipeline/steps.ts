@@ -1,4 +1,4 @@
-import type { goldA, goldB } from "../../evals/gold.ts";
+import type { goldA, goldA2, goldB, goldB2 } from "../../evals/gold.ts";
 import type { EuropePmc, SearchPaper } from "../europepmc/client.ts";
 import { fundingSections } from "../europepmc/jats.ts";
 import { failureReason, type PaperFailure } from "./failure.ts";
@@ -8,7 +8,7 @@ import { summarise } from "../page/found.ts";
 import { deployRun, liveRelease, type Release } from "../page/release.ts";
 import { buildPage } from "../page/render.ts";
 import type { SiteBucket, TextBucket } from "../store/bucket.ts";
-import type { Table } from "../store/table.ts";
+import { olderRules, type Table } from "../store/table.ts";
 
 // The work a run's steps do. Each takes what it needs and no durable
 // context (docs/constraints/durable-execution.md), so a test can call it
@@ -19,7 +19,9 @@ import type { Table } from "../store/table.ts";
 // time does not grow with gold set B.
 export interface Gold {
   goldA: typeof goldA;
+  goldA2: typeof goldA2;
   goldB: typeof goldB;
+  goldB2: typeof goldB2;
   snapshotId: string;
 }
 
@@ -92,6 +94,8 @@ export function logSearchEnded(
 // first (#307). When a page fails after its retries without a refusal,
 // `failed` is true, and the totals are again those of the pages before it
 // (#348).
+// Gold set A2 searches on its own only when gold set A's papers are pinned
+// and its own are not, and then its line names its set.
 export function logGoldSearchEnded(
   runId: string,
   snapshotId: string,
@@ -99,10 +103,12 @@ export function logGoldSearchEnded(
   skipped: number,
   refused: boolean,
   failed: boolean,
+  set?: "A2",
 ): void {
   logger.info("snapshot-search-ended", {
     runId,
     snapshotId,
+    ...(set === undefined ? {} : { set }),
     found,
     skipped,
     refused,
@@ -115,14 +121,17 @@ export function logGoldSearchEnded(
 // keeps them, so the eval scores each as a miss, but empty sections for
 // such a paper more likely mean the cutter misread its full text (#405).
 // The line carries ids and a count only (docs/constraints/personal-data.md).
+// Gold set B2's papers get a line of their own, which names its set (#695).
 export function logGoldBEmpty(
   runId: string,
   snapshotId: string,
   pmcids: readonly string[],
+  set?: "B2",
 ): void {
   logger.info("snapshot-b-empty", {
     runId,
     snapshotId,
+    ...(set === undefined ? {} : { set }),
     count: pmcids.length,
     pmcids: pmcids.join(","),
   });
@@ -157,7 +166,7 @@ export type SnapshotLost = "search-refused" | "gold-paper-failed";
 export function logSnapshotFailed(
   runId: string,
   reason: SnapshotFailure | SnapshotLost,
-  paper?: { pmcid: string; set: "A" | "B" },
+  paper?: { pmcid: string; set: "A" | "B" | "B2" },
 ): void {
   logger.warn("snapshot-failed", { runId, reason, ...paper });
 }
@@ -176,11 +185,21 @@ export function checkWholeSearch(found: number, skipped: number): void {
   }
 }
 
-// The papers a page leaves to read, and those of them whose full text
-// answered 500 when they last failed, which the run asks for once (#504).
+// A paper an older rules version read, and that version, or null for none
+// recorded.
+export interface ToRerun {
+  pmcid: string;
+  from: string | null;
+}
+
+// The papers a page leaves to read, those of them whose full text answered
+// 500 when they last failed, which the run asks for once (#504), and the
+// papers an older rules version read, which the run re-runs the rules on
+// from cache/ (#686).
 export interface ToRead {
   todo: string[];
   once: string[];
+  rerun: ToRerun[];
 }
 
 // Records each paper a page of the run's search found, and that this run's
@@ -194,16 +213,20 @@ export async function recordPage(
 ): Promise<ToRead> {
   await deps.table.addFound(papers, deps.now(), runId);
   const ids = papers.map((paper) => paper.pmcid);
-  const done = await deps.table.processed(ids);
+  const done = await deps.table.rulesRead(ids);
   const todo = ids.filter((pmcid) => !done.has(pmcid));
   const failed = await deps.table.lastFailures(todo);
   const once = todo.filter((pmcid) => failed.get(pmcid) === 500);
+  const rerun = [...done]
+    .filter(([, from]) => olderRules(from, RULES_VERSION))
+    .map(([pmcid, from]) => ({ pmcid, from }));
   logger.info("page-recorded", {
     found: ids.length,
     todo: todo.length,
     once: once.length,
+    rerun: rerun.length,
   });
-  return { todo, once };
+  return { todo, once, rerun };
 }
 
 // Reads one paper: fetches its full text, keeps its funding sections in the
@@ -231,6 +254,59 @@ export async function readPaper(
   return { references: references.length };
 }
 
+// What re-running the rules on a paper did: replaced its references,
+// found no text for it in cache/, or found another rules version had read it
+// since, whose result stays.
+export type Reread =
+  { reread: { references: number } } | { noText: true } | { left: true };
+
+// Re-runs the current rules on a paper an older rules version read, from its
+// funding sections in cache/, and asks Europe PMC nothing (#686,
+// docs/constraints/europe-pmc.md). A paper with no text there stays as it
+// is. Safe to run twice.
+export async function rereadPaper(
+  deps: Deps,
+  { pmcid, from }: ToRerun,
+  runId: string,
+): Promise<Reread> {
+  const sections = await deps.text.getFundingText(pmcid);
+  if (sections === null) {
+    logger.warn("paper-reread-no-text", { pmcid });
+    return { noText: true };
+  }
+  const references = findReferences(sections);
+  const written = await deps.table.replaceReferences(pmcid, from, {
+    references,
+    versions: { rules: RULES_VERSION, code: deps.codeVersion },
+    processedAt: deps.now(),
+    runId,
+  });
+  if (!written) {
+    logger.info("paper-reread-left", { pmcid });
+    return { left: true };
+  }
+  logger.info("paper-reread", {
+    pmcid,
+    from: from ?? "none",
+    references: references.length,
+  });
+  return { reread: { references: references.length } };
+}
+
+// The shape of an error's name, such as ValidationException or ZodError.
+const ERROR_NAME = /^[A-Za-z][A-Za-z0-9_$.]{0,63}$/u;
+
+// Logs a paper whose re-run failed after its retries, with the name of the
+// error that failed it. Its row stays as it was, for the next run (#686).
+// The error's message may quote what failed, so only its name is logged,
+// and a name that is not shaped like one is logged as unknown (#698).
+export function logRerunFailed(pmcid: string, error: string): void {
+  logger.warn("paper-reread-failed", {
+    pmcid,
+    error: ERROR_NAME.test(error) ? error : "unknown",
+  });
+}
+
 // Records the run's search as the latest complete one, once it has ended,
 // unless a run that started later has recorded its own. Safe to run twice.
 export async function recordSearch(deps: Deps, runId: string): Promise<void> {
@@ -252,7 +328,7 @@ export async function markFailed(
 // logs a paper that fails (#378).
 export function logGoldPaperFailed(
   pmcid: string,
-  set: "A" | "B",
+  set: "A" | "A2" | "B" | "B2",
   failure: PaperFailure,
 ): void {
   logger.warn("gold-paper-failed", { pmcid, set, ...failure });

@@ -126,6 +126,58 @@ describe("the rules", () => {
     ]);
   });
 
+  // Another funder's reference, such as a Crick African Network award,
+  // may hold an A number between letters and a slash before it and a slash
+  // and more after it. That A number is not the funder's (#642).
+  it.each(["CAN/A00004/1", "CAN/A00003/1", "ABC\\A12345\\2", "ABC/A1234/AB"])(
+    "reads no A number from inside %s",
+    (written) => {
+      expect(
+        findReferences(
+          sections(
+            `Funded by Cancer Research UK (FC001234) and the Example Network (${written}).`,
+          ),
+        ),
+      ).toEqual([
+        { asWritten: "FC001234", normalised: "FC001234", format: "FCn" },
+      ]);
+    },
+  );
+
+  it.each([
+    [
+      "an A number after a slash with no letters before it",
+      "C1234/A12345/2",
+      "C1234/A12345",
+    ],
+    [
+      "an A number after letters and a slash, with nothing more",
+      "CRUK grant/A12345",
+      "A12345",
+    ],
+    [
+      "an A number before a slash, with no letters and slash before it",
+      "A12345/2",
+      "A12345",
+    ],
+  ])("still reads %s", (_, written, normalised) => {
+    expect(
+      findReferences(
+        sections(`Funded by Cancer Research UK (${written}).`),
+      ).map((reference) => reference.normalised),
+    ).toEqual([normalised]);
+  });
+
+  it("reads each A number of a list written tight with slashes after a word", () => {
+    // Another A number after the slash makes a list, not another funder's
+    // reference (#642).
+    expect(
+      findReferences(
+        sections("Funded by Cancer Research UK (grant/A12345/A23456)."),
+      ).map((reference) => reference.normalised),
+    ).toEqual(["A12345", "A23456"]);
+  });
+
   it("leaves a word joined to CRUK that has no digit", () => {
     expect(
       findReferences(sections("A CRUK-funded study with CRUK/EPSRC support.")),
@@ -169,12 +221,45 @@ describe("the rules", () => {
     "Funded by CRUK (CRUK/12/JONES).",
     "Funded by CRUK (CRUK/12/ABC).",
     "Funded by CRUK (CRUK/1/2/3/JONES).",
+    // A backslash or a spaced slash parts the form as a slash does (#598).
+    String.raw`Funded by CRUK (CRUK/12\2019).`,
+    "Funded by CRUK (CRUK/12 /2019).",
+    "Funded by CRUK (CRUK/12/ 2019).",
+    String.raw`Funded by CRUK (CRUK/12\SMITH).`,
   ])(
     "leaves a CRUK- form with a part of no digit, or a part that is a year: %j",
     (text) => {
       expect(findReferences(sections(text))).toEqual([]);
     },
   );
+
+  // A next part of nine or more capitals or digits is too long to read,
+  // but it is still a part, so the read does not fall back to the front of
+  // the form (#579). The text is made up.
+  it.each([
+    "Funded by CRUK (CRUK/12/MCALLISTER).",
+    "Funded by CRUK (CRUK/12/ABCDEFGHI).",
+    "Funded by CRUK (CRUK/12/123456789).",
+    "Funded by CRUK (CRUK/12/34/MCALLISTER).",
+  ])(
+    "leaves a CRUK- form whose next part is nine or more capitals or digits: %j",
+    (text) => {
+      expect(findReferences(sections(text))).toEqual([]);
+    },
+  );
+
+  // A slash with a space on each side parts a list of references, not the
+  // parts of one, so each reference in the list is still read (#598).
+  it("reads each CRUK- form in a list parted by a slash spaced on both sides", () => {
+    expect(
+      findReferences(
+        sections(
+          "Funded by CRUK (CRUK-A12345 / CRUK-A23456).",
+          "Funded by CRUK (CRUK/12345 / MRC).",
+        ),
+      ).map(({ asWritten }) => asWritten),
+    ).toEqual(["CRUK-A12345", "CRUK-A23456", "CRUK/12345"]);
+  });
 
   // As the model pass keeps it (#561).
   it("reads the first four parts of a CRUK- form that runs on past them", () => {
@@ -614,6 +699,37 @@ describe("the rules", () => {
           awards: [{ sources: ["Cancer Research UK"], ids: [id] }],
         }),
       ).toEqual([]);
+    },
+  );
+
+  // The same holds at the end: a hyphen and digits, or a decimal point and
+  // a digit, after it makes it the start of a longer one (#577).
+  it.each([["Funded by CRUK, 12345-67."], ["Funded by CRUK, 12345.6."]])(
+    "leaves a bare number the metadata gives where the text goes on past it, in %s",
+    (text) => {
+      expect(
+        findReferences({
+          text: [text],
+          awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  it.each([
+    ["Funded by CRUK, 12345 and the Example Trust."],
+    ["Funded by CRUK and others (12345)."],
+    ["Funded by CRUK, 12345."],
+    ["Funded by CRUK, 12345, and the Example Trust."],
+  ])(
+    "reads a bare number the metadata gives before a space, a bracket, a full stop or a comma, in %s",
+    (text) => {
+      expect(
+        findReferences({
+          text: [text],
+          awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
+        }).map(({ normalised }) => normalised),
+      ).toEqual(["12345"]);
     },
   );
 

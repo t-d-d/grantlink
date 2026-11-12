@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   MODELS,
   ModelRefused,
@@ -222,6 +222,102 @@ describe("the reply", () => {
     ]);
   });
 
+  // Sonnet may write a sentence or two before its JSON (#710).
+  const BARE = '{"references":[{"asWritten":"A11111","confidence":0.5}]}';
+  const PROSE = "Looking at the funding text, Jo Example names one grant.";
+
+  it.each([
+    ["a sentence before its JSON", `${PROSE}\n\n${BARE}`],
+    ["prose before and after its JSON", `${PROSE}\n${BARE}\nThat is all.`],
+    [
+      "prose before its JSON in a code fence",
+      `${PROSE}\n\n\`\`\`json\n${BARE}\n\`\`\``,
+    ],
+    [
+      "a spaced JSON object after prose",
+      `${PROSE}\n{ "references": [ { "asWritten": "A11111", "confidence": 0.5 } ] }`,
+    ],
+    // A brace in the prose is not the answer's end (#711).
+    [
+      "a closing brace in the prose after its JSON",
+      `${BARE} I left out the {placeholder}.`,
+    ],
+    [
+      "braces in the prose before and after its JSON",
+      `${PROSE} } {\n${BARE}\nNothing else {matched}.`,
+    ],
+    [
+      "its JSON spread over lines",
+      '{\n  "references": [\n    { "asWritten": "A11111", "confidence": 0.5 }\n  ]\n}',
+    ],
+  ])(
+    "reads a reply with %s, giving the references the bare JSON gives",
+    async (_, content) => {
+      const bare = await proposeReferences(TEXT, {
+        model: haiku,
+        key: "k",
+        fetch: fakeOpenRouter(reply(BARE)).fetch,
+      });
+      const { fetch, sent } = fakeOpenRouter(reply(content));
+      const result = await proposeReferences(TEXT, {
+        model: haiku,
+        key: "k",
+        fetch,
+      });
+      expect(sent).toHaveLength(1);
+      expect(result).toEqual(bare);
+      expect(result.status === "read" && result.references).toEqual([
+        { asWritten: "A11111", normalised: "A11111", confidence: 0.5 },
+      ]);
+    },
+  );
+
+  it("counts braces inside a JSON string as text, not as the object's end (#711)", async () => {
+    const { fetch, sent } = fakeOpenRouter(
+      reply(
+        '{"references":[{"asWritten":"A11111","confidence":0.5},{"asWritten":"x\\"}}","confidence":0.1}]} done }',
+      ),
+    );
+    const result = await proposeReferences(TEXT, {
+      model: haiku,
+      key: "k",
+      fetch,
+    });
+    expect(sent).toHaveLength(1);
+    expect(result).toMatchObject({
+      status: "read",
+      references: [
+        { asWritten: "A11111", normalised: "A11111", confidence: 0.5 },
+      ],
+      // The string with braces in it is read, and fails the check.
+      rejected: 1,
+    });
+  });
+
+  it("keeps nothing of the prose around the JSON in the result or a log", async () => {
+    const logged: unknown[] = [];
+    const spies = (["log", "info", "warn", "error", "debug"] as const).map(
+      (level) =>
+        vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+          logged.push(...args);
+        }),
+    );
+    try {
+      const result = await proposeReferences(TEXT, {
+        model: haiku,
+        key: "k",
+        fetch: fakeOpenRouter(reply(`${PROSE}\n${BARE}\nJo Example again.`))
+          .fetch,
+      });
+      expect(result.status).toBe("read");
+      expect(JSON.stringify(result)).not.toContain("Jo Example");
+      expect(JSON.stringify(result)).not.toContain("Looking at");
+      expect(logged).toEqual([]);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
   it("finds a reference written across a no-break space in the text", async () => {
     const { fetch } = fakeOpenRouter(
       answer([{ asWritten: "C1234/A 56789", confidence: 0.8 }]),
@@ -334,6 +430,19 @@ describe("fitness: no invented references (model-calls.md)", () => {
       { asWritten: "A56789", normalised: "A56789", confidence: 0.9 },
     ]);
     expect(result.status === "read" && result.rejected).toBe(3);
+  });
+
+  it("rejects an A number inside another funder's reference, as the rules do", async () => {
+    // The rules read no A number from CAN/A00004/1 (#642).
+    const { fetch } = fakeOpenRouter(
+      answer([{ asWritten: "A00004", confidence: 0.9 }]),
+    );
+    const result = await proposeReferences(
+      ["Funded by Cancer Research UK and the Example Network (CAN/A00004/1)."],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(result.status === "read" && result.references).toEqual([]);
+    expect(result.status === "read" && result.rejected).toBe(1);
   });
 
   it("rejects a reference a combining mark is joined to, as the rules do", async () => {
@@ -689,6 +798,66 @@ describe("fitness: no invented references (model-calls.md)", () => {
     expect(result.status === "read" && result.rejected).toBe(3);
   });
 
+  // The text is made up.
+  it.each([
+    String.raw`Funded by CRUK (CRUK/12\2019).`,
+    "Funded by CRUK (CRUK/12 /2019).",
+    "Funded by CRUK (CRUK/12/ 2019).",
+    String.raw`Funded by CRUK (CRUK/12\SMITH).`,
+  ])(
+    "rejects the front of a CRUK- form whose next part follows a backslash or a spaced slash (#598): %j",
+    async (text) => {
+      const { fetch } = fakeOpenRouter(
+        answer([{ asWritten: "CRUK/12", confidence: 0.9 }]),
+      );
+      const result = await proposeReferences([text], {
+        model: haiku,
+        key: "k",
+        fetch,
+      });
+      expect(result.status === "read" && result.references).toEqual([]);
+      expect(result.status === "read" && result.rejected).toBe(1);
+    },
+  );
+
+  // The text is made up.
+  it.each([
+    "Funded by CRUK (CRUK/12/MCALLISTER).",
+    "Funded by CRUK (CRUK/12/ABCDEFGHI).",
+    "Funded by CRUK (CRUK/12/123456789).",
+  ])(
+    "rejects the front of a CRUK- form whose next part is nine or more capitals or digits (#579): %j",
+    async (text) => {
+      const { fetch } = fakeOpenRouter(
+        answer([{ asWritten: "CRUK/12", confidence: 0.9 }]),
+      );
+      const result = await proposeReferences([text], {
+        model: haiku,
+        key: "k",
+        fetch,
+      });
+      expect(result.status === "read" && result.references).toEqual([]);
+      expect(result.status === "read" && result.rejected).toBe(1);
+    },
+  );
+
+  it("keeps each CRUK- form in a list parted by a slash spaced on both sides (#598)", async () => {
+    // The text is made up.
+    const written = ["CRUK-A12345", "CRUK-A23456"];
+    const { fetch } = fakeOpenRouter(
+      answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
+    );
+    const result = await proposeReferences(
+      ["Funded by CRUK (CRUK-A12345 / CRUK-A23456)."],
+      { model: haiku, key: "k", fetch },
+    );
+    expect(
+      result.status === "read" &&
+        result.references.map(({ asWritten }) => asWritten),
+    ).toEqual(written);
+    expect(result.status === "read" && result.rejected).toBe(0);
+  });
+
   it("rejects the back of a CRUK- form whose prefix the rules read with it (#561)", async () => {
     // The text is made up.
     const { fetch } = fakeOpenRouter(
@@ -724,22 +893,16 @@ describe("fitness: no invented references (model-calls.md)", () => {
   });
 
   it("keeps a CRUK- form just where the rules read it, at their limits too (#561)", async () => {
-    // What follows is no part the rules read: a part in lower case, a part
-    // too long, or a fifth part. The text is made up.
-    const written = [
-      "CRUK/12/034",
-      "CRUK-12",
-      "CRUK/34",
-      "CRUK/56",
-      "CRUK/1/2/3/4",
-    ];
+    // What follows is no part the rules read: a part in lower case, or a
+    // fifth part. The text is made up.
+    const written = ["CRUK/12/034", "CRUK-12", "CRUK/34", "CRUK/1/2/3/4"];
     const { fetch } = fakeOpenRouter(
       answer(written.map((asWritten) => ({ asWritten, confidence: 0.9 }))),
     );
     const result = await proposeReferences(
       [
         "Funded by CRUK (CRUK/12/034; CRUK-12, CRUK/34/abc).",
-        "Funded by CRUK (CRUK/56/ABCDEFGHIJ, CRUK/1/2/3/4/5).",
+        "Funded by CRUK (CRUK/1/2/3/4/5).",
       ],
       { model: haiku, key: "k", fetch },
     );
@@ -900,6 +1063,21 @@ describe("fitness: no lost papers (model-calls.md)", () => {
     ["not JSON", reply("I found A11111.")],
     ["JSON of the wrong shape", reply('{"refs":["A11111"]}')],
     [
+      "prose before JSON that does not parse",
+      reply('Here it is: {"references":[{"asWritten":"A11111",}]}'),
+    ],
+    [
+      "prose before JSON of the wrong shape",
+      reply('Here it is: {"references":["A11111"]}'),
+    ],
+    [
+      "prose around JSON with an extra field",
+      reply(
+        'Here it is: {"references":[{"asWritten":"A11111","confidence":0.5,"note":"x"}]} Done.',
+      ),
+    ],
+    ["prose with no references object", reply("The answer is {} here.")],
+    [
       "a confidence out of range",
       answer([{ asWritten: "A11111", confidence: 2 }]),
     ],
@@ -922,6 +1100,47 @@ describe("fitness: no lost papers (model-calls.md)", () => {
       expect(sent).toHaveLength(2);
       expect(result.status).toBe("unprocessed");
       expect(result).not.toHaveProperty("references");
+    },
+  );
+
+  // A reply with two answers says two things. Reading the first or the last
+  // is a guess at which one the model meant, and model-calls.md forbids a
+  // guessed result, so the reply is unread and the paper waits (#711). Two
+  // answers that agree count, and so does an example of the shape quoted
+  // before the real answer: the reader cannot tell an example from an
+  // answer. So does a second answer cut off before it closes.
+  it.each([
+    [
+      "the prompt's empty example quoted before the real answer",
+      'The shape is {"references":[]}. My answer: {"references":[{"asWritten":"A11111","confidence":0.5}]}',
+    ],
+    [
+      "two answers that differ",
+      '{"references":[{"asWritten":"A11111","confidence":0.5}]}\n{"references":[{"asWritten":"C1234/A56789","confidence":0.9}]}',
+    ],
+    [
+      "the same answer twice",
+      '{"references":[{"asWritten":"A11111","confidence":0.5}]} {"references":[{"asWritten":"A11111","confidence":0.5}]}',
+    ],
+    [
+      "a whole answer and a second one cut off",
+      '{"references":[{"asWritten":"A11111","confidence":0.5}]} Correction: {"references":[{"asWritten":"C1234/A56789"',
+    ],
+    [
+      "an answer inside one that never closes",
+      '{"references":[{"asWritten":"A11111","x":{"references":[]}',
+    ],
+  ])(
+    "leaves a reply with two answer objects unread, since taking one is a guess: %s (#711)",
+    async (_, content) => {
+      const { fetch, sent } = fakeOpenRouter(reply(content), reply(content));
+      const result = await proposeReferences(TEXT, {
+        model: haiku,
+        key: "k",
+        fetch,
+      });
+      expect(sent).toHaveLength(2);
+      expect(result).toEqual({ status: "unprocessed", spend: 0.002 });
     },
   );
 

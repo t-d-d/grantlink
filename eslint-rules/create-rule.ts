@@ -472,9 +472,7 @@ function destructuredKey(
 }
 
 // A pattern's target without the default it may give, `{ now = f }`.
-export function withoutDefault(
-  value: TSESTree.Property["value"],
-): TSESTree.Node {
+export function withoutDefault(value: TSESTree.Node): TSESTree.Node {
   return value.type === AST_NODE_TYPES.AssignmentPattern ? value.left : value;
 }
 
@@ -646,5 +644,42 @@ function realPath(path: string): string {
   } catch {
     const parent = dirname(path);
     return parent === path ? path : join(realPath(parent), basename(path));
+  }
+}
+
+// The variable a write lands in, through members and the wrappers unwrapped
+// takes off: `found` in `found!.push(1)`, `(found as T[]).push(1)` and
+// `totals!.papers += 1`.
+export function rootIdentifier(
+  node: TSESTree.Node,
+): TSESTree.Identifier | undefined {
+  let current = unwrapped(node);
+  while (current.type === AST_NODE_TYPES.MemberExpression)
+    current = unwrapped(current.object);
+  return current.type === AST_NODE_TYPES.Identifier ? current : undefined;
+}
+
+// The places an assignment target writes: itself, or each target inside a
+// destructuring pattern.
+export function targets(node: TSESTree.Node): TSESTree.Node[] {
+  switch (node.type) {
+    case AST_NODE_TYPES.ArrayPattern:
+      return node.elements.flatMap((element) =>
+        element === null ? [] : targets(element),
+      );
+    case AST_NODE_TYPES.ObjectPattern:
+      return node.properties.flatMap((property) =>
+        targets(
+          property.type === AST_NODE_TYPES.Property
+            ? property.value
+            : property.argument,
+        ),
+      );
+    case AST_NODE_TYPES.AssignmentPattern:
+      return targets(node.left);
+    case AST_NODE_TYPES.RestElement:
+      return targets(node.argument);
+    default:
+      return [node];
   }
 }

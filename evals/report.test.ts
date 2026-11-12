@@ -64,6 +64,99 @@ describe("fitness: every score names what produced it (evals.md)", () => {
     expect(makeReport(withModels)).toEqual(withModels);
   });
 
+  it("takes each candidate's rows for the model alone", () => {
+    const withAlone: Report = {
+      ...good,
+      candidates: [
+        {
+          modelId: "anthropic/claude-haiku-5.5",
+          rows: rows({ "recall-b": 0.96, spend: 0.4 }),
+          alone: rows({ "recall-b": 0.92, spend: 0.4 }),
+          unprocessed: [],
+        },
+      ],
+    };
+    expect(makeReport(withAlone)).toEqual(withAlone);
+    expect(() =>
+      makeReport({
+        ...withAlone,
+        candidates: [
+          {
+            modelId: "anthropic/claude-haiku-5.5",
+            rows: rows(),
+            alone: rows().slice(1),
+            unprocessed: [],
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("takes a candidate filed before the eval scored a model alone", () => {
+    const candidate = {
+      modelId: "anthropic/claude-haiku-5.5",
+      rows: rows({ spend: 0.4 }),
+      unprocessed: [],
+    };
+    const parsed = makeReport({ ...good, candidates: [candidate] });
+    expect(parsed.candidates?.[0]?.alone).toBeUndefined();
+  });
+
+  it("takes how many papers each model read alone (#696)", () => {
+    const withRead: Report = {
+      ...good,
+      candidates: [
+        {
+          modelId: "anthropic/claude-sonnet-5.5",
+          rows: rows({ "recall-b": 0.96, spend: 0.4 }),
+          alone: rows({ "recall-b": 0.92, spend: 0.4 }),
+          unprocessed: ["PMC2"],
+          read: { goldA: 3, goldB: 2 },
+        },
+      ],
+      goldA2: {
+        rules: { score: 0.9, n: 300 },
+        models: [
+          {
+            modelId: "anthropic/claude-sonnet-5.5",
+            alone: { score: 0.8, n: 297 },
+            rulesThen: { score: 0.95, n: 300 },
+            unprocessed: 3,
+            read: 297,
+          },
+        ],
+      },
+    };
+    expect(makeReport(withRead)).toEqual(withRead);
+  });
+
+  it("takes a report filed before the eval said how many papers each model read alone (#696)", () => {
+    const parsed = makeReport({
+      ...good,
+      candidates: [
+        {
+          modelId: "anthropic/claude-sonnet-5.5",
+          rows: rows({ spend: 0.4 }),
+          alone: rows({ spend: 0.4 }),
+          unprocessed: ["PMC2"],
+        },
+      ],
+      goldA2: {
+        rules: { score: 0.9, n: 300 },
+        models: [
+          {
+            modelId: "anthropic/claude-sonnet-5.5",
+            alone: { score: 0.8, n: 300 },
+            rulesThen: { score: 0.95, n: 300 },
+            unprocessed: 3,
+          },
+        ],
+      },
+    });
+    expect(parsed.candidates?.[0]?.read).toBeUndefined();
+    expect(parsed.goldA2?.models[0]?.read).toBeUndefined();
+  });
+
   it("takes a report filed before the eval scored any model", () => {
     expect(makeReport(good).candidates).toBeUndefined();
   });
@@ -117,5 +210,104 @@ describe("the verdict on a report", () => {
       rows: rows({ "recall-a": 0.99, spend: 0, "review-share": 0.5 }),
     };
     expect(verdict(busy).releasable).toBe(true);
+  });
+});
+
+describe("fitness: a report gives gold set A2's recall and no ids of what it missed (evals.md)", () => {
+  const goldA2 = {
+    rules: { score: 0.9, n: 300 },
+    models: [
+      {
+        modelId: "anthropic/claude-haiku-5.5",
+        alone: { score: 0.8, n: 300 },
+        rulesThen: { score: 0.95, n: 300 },
+        unprocessed: 2,
+      },
+    ],
+  };
+
+  it("takes gold set A2's recall for the rules alone, each model alone, and the rules then each model", () => {
+    const withA2: Report = { ...good, goldA2 };
+    expect(makeReport(withA2)).toEqual(withA2);
+  });
+
+  it("takes a report filed before gold set A2 joined the eval", () => {
+    expect(makeReport(good).goldA2).toBeUndefined();
+  });
+
+  it("refuses ids beside gold set A2's scores", () => {
+    expect(() =>
+      report.parse({ ...good, goldA2: { ...goldA2, missed: ["PMC1"] } }),
+    ).toThrow();
+    expect(() =>
+      report.parse({
+        ...good,
+        goldA2: { ...goldA2, rules: { ...goldA2.rules, missed: ["PMC1"] } },
+      }),
+    ).toThrow();
+    expect(() =>
+      report.parse({
+        ...good,
+        goldA2: {
+          ...goldA2,
+          models: [{ ...goldA2.models[0], missed: ["PMC1"] }],
+        },
+      }),
+    ).toThrow();
+  });
+});
+
+describe("fitness: a report gives gold set B2's scores and no ids of what it missed (evals.md)", () => {
+  const both = (precision: number, recall: number, n = 100) => ({
+    precision: { score: precision, n },
+    recall: { score: recall, n },
+  });
+  const goldB2 = {
+    rules: both(0.97, 0.88),
+    models: [
+      {
+        modelId: "anthropic/claude-haiku-5.5",
+        alone: both(0.9, 0.85, 99),
+        rulesThen: both(0.95, 0.92),
+        unprocessed: 1,
+        read: 99,
+      },
+    ],
+  };
+
+  it("takes gold set B2's precision and recall for the rules alone, each model alone, and the rules then each model", () => {
+    const withB2: Report = { ...good, goldB2 };
+    expect(makeReport(withB2)).toEqual(withB2);
+  });
+
+  it("takes a report filed before gold set B2 joined the eval", () => {
+    expect(makeReport(good).goldB2).toBeUndefined();
+  });
+
+  it("refuses ids beside gold set B2's scores", () => {
+    expect(() =>
+      report.parse({ ...good, goldB2: { ...goldB2, missed: ["PMC1"] } }),
+    ).toThrow();
+    expect(() =>
+      report.parse({
+        ...good,
+        goldB2: {
+          ...goldB2,
+          rules: {
+            ...goldB2.rules,
+            recall: { ...goldB2.rules.recall, missed: ["PMC1"] },
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      report.parse({
+        ...good,
+        goldB2: {
+          ...goldB2,
+          models: [{ ...goldB2.models[0], unprocessed: ["PMC1"] }],
+        },
+      }),
+    ).toThrow();
   });
 });

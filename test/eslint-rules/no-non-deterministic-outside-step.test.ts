@@ -266,6 +266,30 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           const d = performance ? 1 : 2;
           const e = Date && f();`,
         },
+        {
+          name: "assigns from Math, by destructuring, a member that holds no source",
+          filename: "src/run/run.ts",
+          code: `let PI;
+          ({ PI } = Math);`,
+        },
+        {
+          name: "assigns from Date, by destructuring, a member that does not call it",
+          filename: "src/run/run.ts",
+          code: `let UTC;
+          ({ UTC } = Date);`,
+        },
+        {
+          name: "assigns from globalThis, by destructuring under a nested key, a member of Math that holds no source",
+          filename: "src/run/run.ts",
+          code: `let PI;
+          ({ Math: { PI } } = globalThis);`,
+        },
+        {
+          name: "assigns from a nested default of Math, by destructuring, a member that holds no source",
+          filename: "src/run/run.ts",
+          code: `let PI;
+          ({ foo: { PI } = Math } = globalThis);`,
+        },
       ],
       invalid: [
         {
@@ -310,7 +334,7 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export const o = { m: Math };`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Math" },
               line: 1,
             },
@@ -593,6 +617,78 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "exports a copy of Math made through a rest by default",
+          code: `const { ...m } = Math;
+          export default m;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest by default behind a wrapper",
+          code: `const { ...m } = Math;
+          export default (m as unknown);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest by an export assignment behind a wrapper",
+          code: `const { ...m } = Math;
+          export = m!;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest by an export assignment",
+          code: `const { ...m } = Math;
+          export = m;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "copies the rest of Math beside a name that is exported",
+          code: `const { foo, ...m } = Math;
+          export { foo };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "copies the rest of Math in a nested pattern's default beside a name that is exported",
+          code: `const { foo, bar: { ...m } = Math } = {};
+          export { foo };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
           name: "exports a copy of Math made through a rest in a nested pattern's default",
           code: `export const { foo: { ...m } = Math } = {};`,
           errors: [
@@ -604,8 +700,842 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
+          name: "exports a copy of Math made through a rest in a nested pattern's default, destructured from globalThis",
+          code: `export const { x: { ...m } = Math } = globalThis;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest in an assignment",
+          code: `export let m;
+          ({ ...m } = Math);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports an alias of Date made by assignment",
+          filename: "src/run/run.ts",
+          code: `export let D;
+          D = Date;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports an alias of Math made by assignment",
+          filename: "src/run/run.ts",
+          code: `export let m;
+          m = Math;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports now destructured from Date by assignment",
+          filename: "src/run/run.ts",
+          code: `export let now;
+          ({ now } = Date);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports random destructured from Math by assignment",
+          filename: "src/run/run.ts",
+          code: `export let random;
+          ({ random } = Math);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest in a nested default by assignment",
+          filename: "src/run/run.ts",
+          code: `export let m;
+          ({ x: { ...m } = Math } = globalThis);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+              column: 28,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest inside an array pattern by assignment",
+          filename: "src/run/run.ts",
+          code: `export let m;
+          [{ ...m }] = [Math];`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in an array literal in its declaration",
+          filename: "src/run/run.ts",
+          code: `export const a = [Math];`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest from an array literal in its declaration",
+          filename: "src/run/run.ts",
+          code: `export const [{ ...m }] = [Math];`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in a conditional in its declaration",
+          filename: "src/run/run.ts",
+          code: `declare const cond: boolean;
+          export const c = cond ? Math : 1;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in a logical expression in its declaration",
+          filename: "src/run/run.ts",
+          code: `export const l = Math || 1;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in a conditional by assignment",
+          filename: "src/run/run.ts",
+          code: `declare const cond: boolean;
+          export let m;
+          m = cond ? Math : 1;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest in a for-of target",
+          filename: "src/run/run.ts",
+          code: `export let m;
+          for ({ ...m } of [Math]);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in an object literal by default after its declaration",
+          filename: "src/run/run.ts",
+          code: `const o = { m: Math };
+          export default o;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in a conditional by default after its declaration",
+          filename: "src/run/run.ts",
+          code: `declare const cond: boolean;
+          const c = cond ? Math : 1;
+          export default c;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in a literal by default",
+          filename: "src/run/run.ts",
+          code: `export default { m: Math };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports Math held in the right of a nullish coalescing in its declaration",
+          filename: "src/run/run.ts",
+          code: `declare const x: object | null;
+          export const q = x ?? Math;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "keeps Math held in a conditional in a declaration nothing exports",
+          filename: "src/run/run.ts",
+          code: `declare const cond: boolean;
+          const c = cond ? Math : 1;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest into a member of an exported object",
+          filename: "src/run/run.ts",
+          code: `export const o = {};
+          ({ ...o.m } = Math);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest into an exported function's name",
+          filename: "src/run/run.ts",
+          code: `export function m() {}
+          ({ ...m } = Math);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports by name a copy of Math made through a rest in an assignment",
+          code: `let m;
+          ({ ...m } = Math);
+          export { m };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns an alias of Date to a name it does not export",
+          filename: "src/run/run.ts",
+          code: `let D;
+          D = Date;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "adds Math to an exported name, which gives a string and not the source",
+          filename: "src/run/run.ts",
+          code: `export let m;
+          m += Math;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "copies Math through a rest into a member of an object it does not export",
+          filename: "src/run/run.ts",
+          code: `const o = {};
+          ({ ...o.m } = Math);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports by default a copy of Math made through a rest in an assignment",
+          code: `let m;
+          ({ ...m } = Math);
+          export default m;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "copies Math through a rest in an assignment to a name it does not export",
+          code: `let m;
+          ({ ...m } = Math);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "copies Math through a rest in an assignment to a local that shadows an exported name",
+          code: `export let m;
+          { let m; ({ ...m } = Math); }`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports an object literal that holds Math by assignment",
+          filename: "src/run/run.ts",
+          code: `export let m;
+          m = { x: Math };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports a copy of Math made through a rest from a member of an object literal by assignment",
+          filename: "src/run/run.ts",
+          code: `export let m;
+          ({ a: { ...m } } = { a: Math });`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "copies Math through a rest in a nested default to a name it does not export, beside one it does",
+          filename: "src/run/run.ts",
+          code: `export let a;
+          let m;
+          ({ a, x: { ...m } = Math } = globalThis);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "exports by default a name an assignment gives Math",
+          filename: "src/run/run.ts",
+          code: `let m;
+          m = Math;
+          export default m;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from Math, by destructuring, a source it holds",
+          code: `let random;
+          ({ random } = Math);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from globalThis, by destructuring, an object that holds a source",
+          code: `let M;
+          ({ Math: M } = globalThis);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "globalThis" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from Date, by destructuring, a member that calls it",
+          code: `let bind;
+          ({ bind } = Date);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from Math, by destructuring, a copy through a rest",
+          code: `let m;
+          ({ ...m } = Math);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "uses the value of an assignment that destructures from Math",
+          code: `let PI;
+          helper(({ PI } = Math));`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from Math, by destructuring, a member under a key the rule cannot name",
+          code: `let r;
+          ({ [k]: r } = Math);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from Math, by destructuring, in a loop's head rather than a statement of its own",
+          code: `let PI;
+          for (({ PI } = Math); ; ) {}`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from globalThis, by destructuring under a nested key, a source Math holds",
+          code: `let random;
+          ({ Math: { random } } = globalThis);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "globalThis" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from globalThis, by destructuring under a nested key, a member of Date that calls it",
+          code: `let bind;
+          ({ Date: { bind } } = globalThis);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "globalThis" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from globalThis, by destructuring under a nested key, a copy of Math through a rest",
+          code: `let m;
+          ({ Math: { ...m } } = globalThis);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "globalThis" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns from a nested default of Math, by destructuring, a source it holds, and not from globalThis",
+          code: `let random;
+          ({ foo: { random } = Math } = globalThis);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns a copy of Math through a rest in a nested pattern's default, destructured from globalThis",
+          code: `let m;
+          ({ x: { ...m } = Math } = globalThis);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns Math by array destructuring to a name it does not export, beside one it does",
+          code: `export let b;
+          let a;
+          [a, b] = [Math, 1];`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "assigns Math by array destructuring to a name it exports, beside one it does not",
+          code: `export let b;
+          let a;
+          [a, b] = [1, Math];`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "assigns Math by array destructuring to an exported rest",
+          code: `export let b;
+          let a;
+          [a, ...b] = [1, Math];`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "assigns Math by array destructuring to no name, beside an exported one",
+          code: `export let a;
+          [a] = [1, Math];`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "assigns Math by object destructuring to a name it does not export, beside one it does",
+          code: `export let b;
+          let a;
+          ({ x: a, y: b } = { x: Math, y: 1 });`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "assigns Math by array destructuring in a nested default to a name it does not export, beside one it does",
+          code: `export let b;
+          let a;
+          ({ y: [a, b] = [Math, 1] } = x);`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "assigns Math by array destructuring in a nested default to a name it exports, beside one it does not",
+          code: `export let b;
+          let a;
+          ({ y: [a, b] = [1, Math] } = x);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "assigns Math by object destructuring to an exported name under a key the pattern repeats",
+          code: `export let a;
+          let b;
+          ({ x: a, x: b } = { x: Math });`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "assigns Math by array destructuring after a spread, beside an exported name",
+          code: `export let b;
+          let a;
+          [a, b] = [...xs, Math];`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
+          name: "assigns Math by array destructuring through a conditional to a name it does not export, beside one it does",
+          code: `export let b;
+          let a;
+          [a, b] = cond ? [Math, 1] : [1, 2];`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 3,
+            },
+          ],
+        },
+        {
           name: "exports bind destructured from Date",
           code: `export const { bind } = Date;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default bind destructured from Date",
+          code: `const { bind } = Date;
+          export default bind;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by assignment bind destructured from Date",
+          code: `const { bind } = Date;
+          export = bind;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports bind destructured from Date in a nested pattern",
+          code: `const { Date: { bind } } = globalThis;
+          export { bind };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default, through a cast, bind destructured from Date",
+          code: `const { bind } = Date;
+          export default (bind as any);`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default bind destructured from Date given as a nested pattern's default",
+          code: `const { foo: { bind } = Date } = globalThis;
+          export default bind;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default a sibling of bind destructured from Date",
+          code: `const { foo, bind } = Date;
+          export default foo;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by name a sibling of bind destructured from Date",
+          code: `const { foo, bind } = Date;
+          export { foo };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default a sibling of a pattern that destructures bind from a default Date",
+          code: `const { foo: { bind } = Date, bar } = globalThis;
+          export default bar;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports a name nested beside bind destructured from Date",
+          code: `const { Date: { bind, foo: { x } } } = globalThis;
+          export { x };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default the clock beside bind destructured from Date, reported once as an export",
+          code: `const { Date: { bind, now } } = globalThis;
+          export default now;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Date.now" },
+              line: 2,
+            },
+          ],
+        },
+        {
+          name: "exports by default a sibling of bind destructured from Date in a nested pattern",
+          code: `const { foo, Date: { bind } } = globalThis;
+          export default foo;`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Date" },
+              line: 1,
+            },
+          ],
+        },
+        {
+          name: "exports by default bind destructured from Date in a nested pattern",
+          code: `const { Date: { bind } } = globalThis;
+          export default bind;`,
           errors: [
             {
               messageId: "exportedOutsideStep",
@@ -1533,9 +2463,79 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           code: `export const { Math: { ...m } } = globalThis;`,
           errors: [
             {
-              messageId: "nonDeterministicOutsideStep",
+              messageId: "exportedOutsideStep",
               data: { op: "Math" },
               column: 16,
+            },
+          ],
+        },
+        {
+          name: "exports by name the rest of Math destructured from globalThis in a nested pattern",
+          filename: "src/run/run.ts",
+          code: `const { Math: { ...m } } = globalThis;
+          export { m };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+              column: 9,
+            },
+          ],
+        },
+        {
+          name: "exports by default the rest of Math destructured from globalThis in a nested pattern",
+          filename: "src/run/run.ts",
+          code: `const { Math: { ...m } } = globalThis;
+          export default m;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+              column: 9,
+            },
+          ],
+        },
+        {
+          name: "exports by an export assignment the rest of Math destructured from globalThis in a nested pattern",
+          filename: "src/run/run.ts",
+          code: `const { Math: { ...m } } = globalThis;
+          export = m;`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+              column: 9,
+            },
+          ],
+        },
+        {
+          name: "copies the rest of Math destructured from globalThis in a nested pattern beside a name that is exported",
+          filename: "src/run/run.ts",
+          code: `const { foo, Math: { ...m } } = globalThis;
+          export { foo };`,
+          errors: [
+            {
+              messageId: "nonDeterministicOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+              column: 14,
+            },
+          ],
+        },
+        {
+          name: "exports a member under an unnamed key beside the rest of Math destructured from globalThis in a nested pattern",
+          filename: "src/run/run.ts",
+          code: `const { Math: { [k]: x, ...m } } = globalThis;
+          export { x };`,
+          errors: [
+            {
+              messageId: "exportedOutsideStep",
+              data: { op: "Math" },
+              line: 1,
+              column: 9,
             },
           ],
         },
@@ -1606,18 +2606,13 @@ describe("fitness: no clock or random read outside a step (durable-execution.md)
           ],
         },
         {
-          name: "gives Date as a nested default in an assignment the rule does not follow, from globalThis, which it passes on",
+          name: "gives Date as a nested default in an assignment the rule does not follow, and not globalThis, whose foo holds no source",
           code: `async function run(ctx: any) { let now: any; ({ foo: { now } = Date } = globalThis); now(); }`,
           errors: [
             {
               messageId: "nonDeterministicOutsideStep",
               data: { op: "Date" },
               column: 64,
-            },
-            {
-              messageId: "nonDeterministicOutsideStep",
-              data: { op: "globalThis" },
-              column: 73,
             },
           ],
         },

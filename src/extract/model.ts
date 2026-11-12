@@ -43,6 +43,9 @@ export const PROMPT_VERSIONS: readonly Version[] = [
   { number: 10, issue: 571 },
   { number: 11, issue: 560 },
   { number: 12, issue: 599 },
+  { number: 13, issue: 598 },
+  { number: 14, issue: 710 },
+  { number: 15, issue: 711 },
 ];
 export const PROMPT_VERSION = latest("prompt", PROMPT_VERSIONS);
 
@@ -167,17 +170,51 @@ const answer = z
 
 type Answer = z.infer<typeof answer>;
 
-// A reply may come wrapped in a code fence.
-const FENCE = /^```(?:json)?\s*([\s\S]*?)\s*```$/u;
+// Where an answer's object starts in a reply. A reply may be bare JSON, or
+// wrap it in a code fence, or put prose before or after it (#710).
+// Only the spaces JSON allows count, so the start and the parser agree.
+const START = /\{[ \t\n\r]*"references"[ \t\n\r]*:/gu;
 
+// The end of the object that opens at `start`, just past the brace that
+// closes it, or undefined if it never closes. A brace inside a JSON string
+// is text, and so is the character after a backslash there (#711).
+function objectEnd(content: string, start: number): number | undefined {
+  let depth = 0;
+  let inString = false;
+  for (let index = start; index < content.length; index += 1) {
+    const char = content[index];
+    if (inString) {
+      if (char === "\\") index += 1;
+      else if (char === '"') inString = false;
+    } else if (char === '"') inString = true;
+    else if (char === "{") depth += 1;
+    else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return index + 1;
+    }
+  }
+  return undefined;
+}
+
+// Reads the reply's one answer object, from its start to the brace that
+// closes it. A reply that starts two answers, whole or cut off, even two
+// that agree, is unread: taking one would guess which the model meant, and
+// a model result is never guessed (model-calls.md, #711). A start inside a
+// JSON string is escaped, so it is not counted. The prose around the object
+// is dropped here, and kept, logged or returned nowhere
+// (docs/constraints/personal-data.md). The schema and the check still hold.
 function readAnswer(body: unknown): Answer | undefined {
   const parsed = envelope.safeParse(body);
   if (!parsed.success) return undefined;
-  const content = parsed.data.choices[0]?.message.content.trim() ?? "";
-  const unwrapped = FENCE.exec(content)?.[1] ?? content;
+  const content = parsed.data.choices[0]?.message.content ?? "";
+  const starts = [...content.matchAll(START)];
+  const [only] = starts;
+  if (starts.length !== 1 || only === undefined) return undefined;
+  const end = objectEnd(content, only.index);
+  if (end === undefined) return undefined;
   let json: unknown;
   try {
-    json = JSON.parse(unwrapped);
+    json = JSON.parse(content.slice(only.index, end));
   } catch {
     return undefined;
   }
