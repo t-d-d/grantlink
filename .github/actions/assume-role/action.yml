@@ -1,0 +1,95 @@
+# Assumes an AWS role through GitHub's OIDC token, with the AWS CLI the
+# runner ships, so no outside action holds the credentials. The deploy, the
+# eval and the conformance run all assume their role here, so the script
+# that masks the token and the credentials is written once (#114).
+#
+# The token, the account id and the credentials are masked before anything
+# else runs, so no later line prints them. The credentials are this step's
+# outputs, and only the workflow steps that call AWS name them in their env,
+# so no other step's code holds them (#259, #308). The private bucket is
+# grantlink-text-<account id>, as the app stack names it, so the role is the
+# only value GitHub holds for a run (#43). Its name is an output too; the
+# deploy reads none.
+#
+# The job needs id-token: write, and must check out the repository first.
+name: Assume an AWS role
+description: Trades GitHub's OIDC token for an AWS role's credentials.
+inputs:
+  role:
+    description: The role's ARN, from the workflow's secret.
+    required: true
+  secret-name:
+    description: The name of the secret that holds the ARN, for the error when it is empty.
+    required: true
+  session-name:
+    description: The role session's name. The run's id is added to it.
+    required: true
+outputs:
+  key:
+    description: The access key id.
+    value: ${{ steps.assume.outputs.key }}
+  secret:
+    description: The secret access key.
+    value: ${{ steps.assume.outputs.secret }}
+  session:
+    description: The session token.
+    value: ${{ steps.assume.outputs.session }}
+  bucket:
+    description: The private bucket's name, grantlink-text-<account id>.
+    value: ${{ steps.assume.outputs.bucket }}
+runs:
+  using: composite
+  steps:
+    - id: assume
+      shell: bash
+      env:
+        ROLE: ${{ inputs.role }}
+        SECRET_NAME: ${{ inputs.secret-name }}
+        SESSION_NAME: ${{ inputs.session-name }}
+      run: |
+        set -euo pipefail
+        if [ -z "$ROLE" ]; then
+          echo "::error::The $SECRET_NAME secret is not set where this job reads it. The README says where to set it."
+          exit 1
+        fi
+        # Prints a JSON reply's field, or names the field in an error and
+        # fails. jq -e alone fails on a missing field without saying which,
+        # and passes an empty string (#160, #188). jq's own error is
+        # dropped, as it can quote the reply.
+        field() {
+          if ! jq -er "$2 | strings | select(length > 0)" <<< "$1" 2> /dev/null; then
+            echo "::error::The $3 reply has no $2, or it is empty, or the reply is not JSON." >&2
+            return 1
+          fi
+        }
+        oidc="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com")"
+        token="$(field "$oidc" .value OIDC)"
+        echo "::add-mask::$token"
+        creds="$(aws sts assume-role-with-web-identity \
+          --role-arn "$ROLE" \
+          --role-session-name "$SESSION_NAME-$GITHUB_RUN_ID" \
+          --web-identity-token "$token" \
+          --duration-seconds 3600 \
+          --output json)"
+        # An ARN with no account field leaves it empty, and cut -s leaves
+        # it empty too for a value with no colon.
+        arn="$(field "$creds" .AssumedRoleUser.Arn STS)"
+        account="$(cut -s -d: -f5 <<< "$arn")"
+        if [ -z "$account" ]; then
+          echo "::error::The STS reply's role ARN names no account."
+          exit 1
+        fi
+        echo "::add-mask::$account"
+        key="$(field "$creds" .Credentials.AccessKeyId STS)"
+        secret="$(field "$creds" .Credentials.SecretAccessKey STS)"
+        session="$(field "$creds" .Credentials.SessionToken STS)"
+        echo "::add-mask::$key"
+        echo "::add-mask::$secret"
+        echo "::add-mask::$session"
+        {
+          echo "key=$key"
+          echo "secret=$secret"
+          echo "session=$session"
+          echo "bucket=grantlink-text-$account"
+        } >> "$GITHUB_OUTPUT"
