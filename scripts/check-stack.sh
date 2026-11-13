@@ -8,7 +8,10 @@
 # - the funding text bucket exists but the stack does not list it. With a
 #   stack, the owner imports it. With none, as after a failed first create
 #   or a deleted stack, the owner copies out what it holds, empties and
-#   deletes it, and copies it back after the deploy (#129, #197).
+#   deletes it, and copies it back after the deploy (#129, #197). The
+#   results table is retained too and has no fixed name, so after a deleted
+#   stack the owner copies its rows to the new table before the first run
+#   (#254).
 #
 # The deploy workflow runs it once the deploy role is assumed;
 # test/check-stack.int.ts runs it against a stub aws.
@@ -119,7 +122,7 @@ if [ -z "$status" ]; then
   # so the owner chose (#129) to empty and delete it. The check cannot tell
   # a failed first create from a deleted stack, after which the retained
   # bucket still holds the data, so the advice keeps every prefix (#197).
-  echo "::error::TextBucket, the funding text bucket, exists but $stack does not, as after a failed first create or a deleted stack, so CloudFormation would refuse to create it. TextBucket is retained, so after a deleted stack it still holds the data. If it holds anything under cache/ (each paper's funding text), eval/ (the eval snapshot) or eval-reports/ (the reports CI filed), copy it out first, to a private bucket in eu-west-2: the cache saves fetching every paper again, the repo pins the snapshot's hash, and the eval reuses its reports. Then empty and delete the funding text bucket in the S3 console, run this deploy again, and once it has made the bucket, copy back what you kept."
+  echo "::error::TextBucket, the funding text bucket, exists but $stack does not, as after a failed first create or a deleted stack, so CloudFormation would refuse to create it. TextBucket is retained, so after a deleted stack it still holds the data. If it holds anything under cache/ (each paper's funding text), eval/ (the eval snapshot) or eval-reports/ (the reports CI filed), copy it out first, to a private bucket in eu-west-2: the cache lets a run re-read papers under new rules without fetching them again, the repo pins the snapshot's hash, and the eval reuses its reports. Then empty and delete the funding text bucket in the S3 console, run this deploy again, and once it has made the bucket, copy back what you kept. ResultsTable, the results table, is retained too, so after a deleted stack it is left behind under its old name, grantlink-prod-ResultsTable- and a suffix, and the deploy makes a new, empty one, named in $stack's ResultsTableName output. The deploy that makes the stack starts the first run a quarter of an hour after that deploy starts, and making the stack takes part of that time. A run fetches every paper it has no row for, so on an empty table it fetches every paper again. So as soon as the stack exists, and before the first run starts, copy every item from the old table to the new one, for example with aws dynamodb scan on the old table and aws dynamodb batch-write-item, 25 items at a time, on the new one. A failed first create leaves an empty table behind too, so if more than one is left behind, copy from the one that holds items. If none holds items, there is nothing to copy."
   exit 1
 fi
 echo "::error::TextBucket, the funding text bucket, exists but $stack does not list it, so CloudFormation would refuse to create it. It holds the funding text: do not delete it. Import it into $stack under the logical id TextBucket (CloudFormation console, Import resources into stack), then run this deploy again."
