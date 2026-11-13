@@ -344,13 +344,6 @@ export function goldToScore(
 // deploy that makes the bucket again (#253). The workflow then sets
 // NO_BUCKET to true, and the runner scores as before a snapshot is pinned,
 // so the eval does not stop that deploy.
-export function pinFor<T extends { manifestSha256: string | null }>(
-  pin: T,
-  noBucket: boolean,
-): T {
-  return noBucket ? { ...pin, manifestSha256: null } : pin;
-}
-
 const noBucketEnv = z
   .enum(["true", "false"], { error: "NO_BUCKET must be true or false" })
   .optional()
@@ -401,7 +394,9 @@ const openRouter: Propose = (model, text) => {
 };
 
 async function main(dir: string, out: string | undefined): Promise<void> {
-  const pinned = pinFor(pin, noBucketEnv.parse(process.env.NO_BUCKET));
+  const pinned = noBucketEnv.parse(process.env.NO_BUCKET)
+    ? { ...pin, manifestSha256: null }
+    : pin;
   const texts = loadSnapshot(dir, pinned);
   const result = await evaluate({
     texts,

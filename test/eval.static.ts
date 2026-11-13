@@ -197,8 +197,9 @@ describe("the gate and the comment", () => {
       /^\$\{\{ steps\.live\.outcome == 'skipped' && '([\w-]+)' \|\| steps\.live\.outputs\.reason \}\}$/u;
     const fallback = skipped.exec(comment?.env?.NO_LIVE ?? "")?.[1];
     expect(fallback).toBe("no-deploy");
-    // The step skips only before the first deploy creates the private
-    // bucket. Once it runs, the release record says which release is live.
+    // The step skips only when the private bucket does not exist: before
+    // the first deploy, or after a deleted stack (#253). Once it runs, the
+    // release record says which release is live.
     expect(reasons).not.toContain("no-deploy");
     expect([...new Set([...reasons, fallback])].sort()).toEqual(
       [...noLive.options].sort(),

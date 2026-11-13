@@ -1,10 +1,16 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   ModelRefused,
   type ModelId,
@@ -171,9 +177,23 @@ describe("which gold papers are scored", () => {
 // workflow runs them, on the repo's own pin, in an empty directory.
 describe("after a deleted stack, with a pinned snapshot", () => {
   const evals = fileURLToPath(new URL(".", import.meta.url));
+  // The child runs outside vitest's setup, so it loads the offline guard
+  // itself, as every tier in the gate does (code-and-tests.md).
+  const offline = new URL("../test/offline.ts", import.meta.url).href;
   const fingerprint = "f".repeat(64);
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+    }
+  });
+  const tempDir = () => {
+    const dir = mkdtempSync(join(tmpdir(), "grantlink-nobucket-"));
+    dirs.push(dir);
+    return dir;
+  };
   const node = (args: string[], env: Record<string, string> = {}) =>
-    spawnSync(process.execPath, args, {
+    spawnSync(process.execPath, ["--import", offline, ...args], {
       encoding: "utf8",
       env: {
         PATH: process.env.PATH ?? "",
@@ -184,18 +204,20 @@ describe("after a deleted stack, with a pinned snapshot", () => {
       },
     });
 
-  it("is the case the repo is in: a snapshot is pinned", () => {
-    expect(pinned.manifestSha256).not.toBeNull();
-  });
-
-  it("fails without the snapshot when the workflow does not say the bucket is missing", () => {
-    const dir = mkdtempSync(join(tmpdir(), "grantlink-nobucket-"));
-    const run = node([join(evals, "run.ts"), dir, join(dir, "report.json")]);
-    expect(run.status).not.toBe(0);
-  });
+  // Only with a pin is there a manifest to miss. A pull request that names
+  // a new snapshot leaves it unpinned for a while (evals.md).
+  it.runIf(pinned.manifestSha256 !== null)(
+    "fails without the snapshot when the workflow does not say the bucket is missing",
+    () => {
+      const dir = tempDir();
+      const run = node([join(evals, "run.ts"), dir, join(dir, "report.json")]);
+      expect(run.status).not.toBe(0);
+      expect(run.stderr).toContain("manifest.json");
+    },
+  );
 
   it("scores no gold set and hands on a report the deploy's gate passes", () => {
-    const dir = mkdtempSync(join(tmpdir(), "grantlink-nobucket-"));
+    const dir = tempDir();
     const out = join(dir, "report.json");
     const run = node([join(evals, "run.ts"), dir, out], { NO_BUCKET: "true" });
     expect(run.stderr).toBe("");
@@ -205,13 +227,14 @@ describe("after a deleted stack, with a pinned snapshot", () => {
       rows: { n: number }[];
     };
     expect(report.snapshot).toBeNull();
+    expect(report.rows.length).toBeGreaterThan(0);
     expect(report.rows.every((row) => row.n === 0)).toBe(true);
     const gate = node([join(evals, "check.ts"), "gate", out, fingerprint]);
     expect(gate.status).toBe(0);
   });
 
   it("refuses a value of NO_BUCKET it does not know", () => {
-    const dir = mkdtempSync(join(tmpdir(), "grantlink-nobucket-"));
+    const dir = tempDir();
     const run = node([join(evals, "run.ts"), dir, join(dir, "report.json")], {
       NO_BUCKET: "yes",
     });

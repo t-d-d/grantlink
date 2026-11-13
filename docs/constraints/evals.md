@@ -56,6 +56,10 @@ text, so it must not get broad AWS access or see the key.
 - Before the first deploy creates the private bucket, nothing can be
   pinned or filed. The eval then scores no gold set, files nothing, and
   hands its report to the deploy, so the first deploy is not blocked.
+  After a deleted stack the bucket is missing though a snapshot is
+  pinned. The eval treats that the same way, downloads nothing, and the
+  runner scores as if nothing were pinned, so the deploy that makes the
+  bucket again is not blocked.
 - Every report names its fingerprint, commit, model id and the URL of the
   run that produced it, and holds every go/no-go row. `evals/report.ts`
   refuses one without them.
@@ -94,4 +98,4 @@ fingerprinted paths is for review: the lint rule sees imports, not files
 read at run time. Whether a change to the rules or the prompt came from gold
 set A2 or B2 is for review.
 
-History: #9, #502, #695
+History: #9, #502, #695, #253

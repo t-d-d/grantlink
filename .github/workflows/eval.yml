@@ -148,7 +148,7 @@ jobs:
           if ! count="$(aws s3api list-objects-v2 --no-paginate --bucket "$BUCKET" --prefix "$key" \
             --query KeyCount --output text 2>list.err)"; then
             if grep -q NoSuchBucket list.err; then
-              echo "::notice::The private bucket does not exist yet, so no report is filed. The first deploy creates it."
+              echo "::notice::The private bucket does not exist, so no snapshot is read and no report is filed. The next deploy creates it."
               echo "hit=false" >> "$GITHUB_OUTPUT"
               echo "bucket=missing" >> "$GITHUB_OUTPUT"
               exit 0
@@ -243,9 +243,10 @@ jobs:
           printf '%s\n' "$live" > "$RUNNER_TEMP/live.json"
 
       # One comment per pull request, updated on each run. When the step
-      # above was skipped, the private bucket does not exist yet, so no
-      # deploy has run. When it ran, it gives its own reason, and a missing
-      # one fails here rather than reading as no deploy. The comment
+      # above was skipped, the private bucket does not exist: no deploy has
+      # run, or the stack was deleted (#253). When it ran, it gives its own
+      # reason, and a missing one fails here rather than reading as no
+      # deploy. The comment
       # chooses on that reason, not on whether a file exists, and compares
       # only with the report the step wrote (#233).
       - name: Comment with CI's scores beside the live release's
