@@ -14,7 +14,15 @@ text, so it must not get broad AWS access or see the key.
   once: each gold paper's funding sections at
   `eval/<id>/papers/<pmcid>.json`, under its own snapshot id, and a
   manifest at `eval/<id>/manifest.json` listing each paper, its set, its
-  text's SHA-256 and, for gold sets A and A2, its answers.
+  text's SHA-256 and, for gold sets A and A2, its answers. The current
+  cutter cuts each paper, and the manifest records its version. A gold
+  set B or B2 paper whose row says the current cutter cut it is copied
+  from `cache/`. Any other gold paper is fetched again.
+- `evals/snapshot.json` names the cutter version its snapshot is taken
+  with, and the gate fails when that differs from `CUTTER_VERSION` in
+  `src/europepmc/jats.ts`. So a change to the cutter needs a new snapshot
+  id, which starts unpinned, and `node evals/pin.ts` refuses a manifest
+  cut by another version.
 - Gold set A is sampled once, with the query, seed and size recorded in
   `evals/gold-a.json`. A candidate joins it only if its full text prints
   at least one of the CRUK grants Europe PMC links it to. Its answers are
@@ -92,6 +100,8 @@ request that sets `manifestSha256` to null without a new snapshot id is for
 review. Whether a new input that can change a score sits inside the
 fingerprinted paths is for review: the lint rule sees imports, not files
 read at run time. Whether a change to the rules or the prompt came from gold
-set A2 or B2 is for review.
+set A2 or B2 is for review. The gate holds `evals/snapshot.json`'s cutter version to
+`CUTTER_VERSION`, but not its id: whether a change that bumps the cutter
+also names a new snapshot id is for review.
 
-History: #9, #502, #695
+History: #9, #420, #502, #695

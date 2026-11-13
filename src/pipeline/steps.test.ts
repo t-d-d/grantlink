@@ -2,6 +2,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { fakeDeps, fakeRelease, NEWER_RULES, reply } from "../../test/fakes.ts";
 import { RULES_VERSION } from "../extract/rules.ts";
 import { SEARCH_PAGE_SIZE } from "../europepmc/client.ts";
+import { CUTTER_VERSION } from "../europepmc/jats.ts";
 import { found } from "../page/found.ts";
 import {
   checkWholeSearch,
@@ -132,7 +133,7 @@ describe("recording a page of the search", () => {
     await table.markFailed("PMC34", 500);
     await table.markProcessed("PMC34", {
       references: [],
-      versions: { rules: "r", code: "c" },
+      versions: { rules: "r", code: "c", cutter: CUTTER_VERSION },
       processedAt: deps.now(),
       runId: "run-1",
     });
@@ -153,7 +154,7 @@ describe("recording a page of the search", () => {
     );
     await table.markProcessed("PMC21", {
       references: [],
-      versions: { rules: "r", code: "c" },
+      versions: { rules: "r", code: "c", cutter: CUTTER_VERSION },
       processedAt: deps.now(),
       runId: "run-1",
     });
@@ -177,7 +178,9 @@ describe("recording a page of the search", () => {
     });
   });
 
-  it("names the papers an older rules version read, or none, with the version each was read by (#686)", async () => {
+  // A row with no versions at all records no cutter either, so the run
+  // fetches and cuts it again rather than re-run the rules on it (#443).
+  it("names the papers an older rules version read, with the version each was read by (#686)", async () => {
     const { deps, table } = fakeDeps();
     const papers = ["PMC41", "PMC42", "PMC43", "PMC44", "PMC45"].map(
       (pmcid) => ({ pmcid, title: "A paper" }),
@@ -186,7 +189,7 @@ describe("recording a page of the search", () => {
     const read = (pmcid: string, rules: string) =>
       table.markProcessed(pmcid, {
         references: [],
-        versions: { rules, code: "c" },
+        versions: { rules, code: "c", cutter: CUTTER_VERSION },
         processedAt: deps.now(),
         runId: "run-1",
       });
@@ -200,12 +203,39 @@ describe("recording a page of the search", () => {
     table.rows.set("PMC44", { ...row, versions: undefined });
     const todo = await recordPage(deps, papers, "run-2");
     expect(todo).toEqual({
-      todo: ["PMC45"],
+      todo: ["PMC44", "PMC45"],
       once: [],
-      rerun: [
-        { pmcid: "PMC41", from: "rules-9" },
-        { pmcid: "PMC44", from: null },
-      ],
+      rerun: [{ pmcid: "PMC41", from: "rules-9" }],
+    });
+  });
+
+  it("names to read again the papers an older cutter version cut, or none, and re-runs the rules on none of them (#443)", async () => {
+    const { deps, table } = fakeDeps();
+    const papers = ["PMC51", "PMC52", "PMC53", "PMC54", "PMC55"].map(
+      (pmcid) => ({ pmcid, title: "A paper" }),
+    );
+    await table.addFound(papers, deps.now(), "run-1");
+    const cut = (pmcid: string, rules: string, cutter?: string) =>
+      table.markProcessed(pmcid, {
+        references: [],
+        versions: {
+          rules,
+          code: "c",
+          ...(cutter === undefined ? {} : { cutter }),
+        },
+        processedAt: deps.now(),
+        runId: "run-1",
+      });
+    await cut("PMC51", RULES_VERSION, "cutter-0");
+    await cut("PMC52", "rules-9", "cutter-0");
+    await cut("PMC53", RULES_VERSION);
+    await cut("PMC54", "rules-9", "cutter-999");
+    await cut("PMC55", RULES_VERSION, CUTTER_VERSION);
+    const todo = await recordPage(deps, papers, "run-2");
+    expect(todo).toEqual({
+      todo: ["PMC51", "PMC52", "PMC53"],
+      once: [],
+      rerun: [],
     });
   });
 });
@@ -224,7 +254,7 @@ describe("publishing the page", () => {
     );
     await fake.deps.table.markProcessed("PMC11", {
       references: [],
-      versions: { rules: "rules-1", code: "test" },
+      versions: { rules: "rules-1", code: "test", cutter: CUTTER_VERSION },
       processedAt: fake.deps.now(),
       runId: "run-1",
     });

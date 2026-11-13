@@ -19,6 +19,7 @@ import { manifest, snapshotKeys } from "./gold.ts";
 interface SnapshotFile {
   about: string;
   id: string;
+  cutter: string;
   manifestSha256: string | null;
 }
 
@@ -70,6 +71,12 @@ export function pin(
   const parsed = manifest.parse(JSON.parse(raw));
   if (parsed.id !== snapshot.id) {
     throw new Error(`the manifest is for ${parsed.id}, not ${snapshot.id}`);
+  }
+  // A manifest taken before #443 records no cutter version.
+  if (parsed.cutter !== undefined && parsed.cutter !== snapshot.cutter) {
+    throw new Error(
+      `the manifest was cut by ${parsed.cutter}, not ${snapshot.cutter}`,
+    );
   }
   return {
     snapshot: {
