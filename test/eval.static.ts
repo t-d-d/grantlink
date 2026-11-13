@@ -259,7 +259,20 @@ describe("before the first deploy creates the private bucket", () => {
     expect(named("Hand the report on")?.if).toBeUndefined();
   });
 
-  it("needs a pinned snapshot from the bucket all the same", () => {
+  // #253: after a deleted stack the bucket is missing though a snapshot is
+  // pinned. The eval downloads nothing and tells the runner, which scores as
+  // it does before a snapshot is pinned, so the deploy that makes the
+  // bucket again is not stopped. evals/run.int.ts runs the runner so.
+  it("downloads no snapshot, and tells the runner there is no bucket", () => {
+    expect(named("Download the snapshot")?.if).toBe(
+      "steps.cached.outputs.hit != 'true' && steps.cached.outputs.bucket != 'missing'",
+    );
+    expect(named("Run the eval")?.env?.NO_BUCKET).toBe(
+      "${{ steps.cached.outputs.bucket == 'missing' }}",
+    );
+  });
+
+  it("needs a pinned snapshot from the bucket when the bucket is there", () => {
     const script = readRepoFile("scripts/eval-snapshot.sh");
     expect(script.indexOf('"$pin" = "null"')).toBeLessThan(
       script.indexOf("get-object"),

@@ -19,7 +19,7 @@ import {
   goldB2,
   manifest,
   paperFile,
-  pinned,
+  pinned as pin,
   snapshotKeys,
 } from "./gold.ts";
 import {
@@ -339,6 +339,23 @@ export function goldToScore(
     : { goldA: a, goldB: b, goldA2: a2, goldB2: b2 };
 }
 
+// With no private bucket there is no snapshot to read, though one is
+// pinned: after a deleted stack, until the owner copies it back after the
+// deploy that makes the bucket again (#253). The workflow then sets
+// NO_BUCKET to true, and the runner scores as before a snapshot is pinned,
+// so the eval does not stop that deploy.
+export function pinFor<T extends { manifestSha256: string | null }>(
+  pin: T,
+  noBucket: boolean,
+): T {
+  return noBucket ? { ...pin, manifestSha256: null } : pin;
+}
+
+const noBucketEnv = z
+  .enum(["true", "false"], { error: "NO_BUCKET must be true or false" })
+  .optional()
+  .transform((value) => value === "true");
+
 const ciEnv = z.object({
   FINGERPRINT: z.string().min(1),
   COMMIT: z.string().min(1),
@@ -384,6 +401,7 @@ const openRouter: Propose = (model, text) => {
 };
 
 async function main(dir: string, out: string | undefined): Promise<void> {
+  const pinned = pinFor(pin, noBucketEnv.parse(process.env.NO_BUCKET));
   const texts = loadSnapshot(dir, pinned);
   const result = await evaluate({
     texts,

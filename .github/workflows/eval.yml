@@ -129,7 +129,11 @@ jobs:
       # job, so before the first deploy there is no bucket. Then nothing is
       # filed and no snapshot can be pinned, so the eval scores no gold set,
       # files nothing, and hands its report to the deploy that creates the
-      # bucket. A pinned snapshot still needs the bucket, and fails without.
+      # bucket. After a deleted stack the bucket is missing too, though a
+      # snapshot is pinned, until the owner copies it back after the deploy
+      # that makes the bucket again. The eval then downloads nothing and
+      # scores as before a snapshot is pinned, so that deploy is not
+      # stopped (#253).
       - id: cached
         name: Look for the report filed for this fingerprint
         env:
@@ -161,7 +165,7 @@ jobs:
           fi
 
       - name: Download the snapshot
-        if: steps.cached.outputs.hit != 'true'
+        if: steps.cached.outputs.hit != 'true' && steps.cached.outputs.bucket != 'missing'
         env:
           AWS_ACCESS_KEY_ID: ${{ steps.assume.outputs.key }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.assume.outputs.secret }}
@@ -175,6 +179,7 @@ jobs:
         if: steps.cached.outputs.hit != 'true'
         env:
           OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
+          NO_BUCKET: ${{ steps.cached.outputs.bucket == 'missing' }}
           FINGERPRINT: ${{ steps.fingerprint.outputs.value }}
           COMMIT: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
