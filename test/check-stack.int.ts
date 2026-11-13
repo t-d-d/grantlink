@@ -374,7 +374,18 @@ describe("a funding text bucket outside the stack stops the deploy (#89)", () =>
     // The deploy that creates the stack starts the first run a quarter of
     // an hour later, and that run must find the rows.
     expect(advice).toMatch(/before the first run/iu);
-    expect(advice).toMatch(/quarter of an hour/iu);
+    // The deploy sets the first run's time before sls deploy starts, so
+    // making the stack uses up part of the quarter of an hour.
+    expect(advice).toMatch(/quarter of an hour after that deploy starts/iu);
+    expect(advice).not.toMatch(/quarter of an hour after it makes/iu);
+    // A run fetches every paper it has no row for, whatever cache/ holds,
+    // so the advice does not say the cache saves that.
+    expect(advice).not.toMatch(/cache saves fetching/iu);
+    // ResultsTable is retained on a failed first create too, so one may be
+    // left behind empty, and more than one may be there.
+    expect(advice).not.toMatch(/not there, as after a failed first create/iu);
+    expect(advice).toMatch(/more than one/iu);
+    expect(advice).toMatch(/holds items/iu);
     // The table's advice comes after the bucket's, once the deploy has
     // made the new table.
     expect(advice.indexOf("ResultsTable")).toBeGreaterThan(
