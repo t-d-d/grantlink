@@ -90,7 +90,9 @@ export interface Step {
   id?: string;
   if?: string;
   uses?: string;
+  with?: Record<string, string>;
   run?: string;
+  shell?: string;
   env?: Record<string, string>;
 }
 
@@ -105,3 +107,17 @@ export const evalWorkflow = parse(
 export const conformanceWorkflow = parse(
   readRepoFile(".github/workflows/conformance.yml"),
 ) as Workflow;
+
+// The local action every workflow assumes its AWS role through, so the
+// script that masks the token and the credentials is written once (#114).
+export const ASSUME_ROLE = "./.github/actions/assume-role";
+
+export interface Action {
+  inputs?: Record<string, { required?: boolean }>;
+  outputs?: Record<string, { value?: string }>;
+  runs: { using: string; steps?: Step[] };
+}
+
+export const assumeRole = parse(
+  readRepoFile(`${ASSUME_ROLE.slice(2)}/action.yml`),
+) as Action;

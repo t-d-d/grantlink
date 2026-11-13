@@ -6,9 +6,10 @@ import { readRepoFile, repoFiles } from "./repo.ts";
 // step assigns the value to a variable on its own line first, which does
 // fail, and then writes the variable. `export`, `local`, `declare` and
 // `readonly` return their own status, so an assignment behind one of them
-// hides the failure too.
+// hides the failure too. The local actions' steps are read the same way.
 const files = repoFiles().filter(
-  (path) => path.startsWith(".github/workflows/") && /\.ya?ml$/u.test(path),
+  (path) =>
+    /^\.github\/(?:workflows|actions)\//u.test(path) && /\.ya?ml$/u.test(path),
 );
 const printsASubstitution = /\b(?:echo|printf)\b[^\n]*(?:\$\(|`)/u;
 const declaresASubstitution =
@@ -25,6 +26,7 @@ describe("workflow steps hand on what a command printed only if it succeeded", (
   it("finds the workflows", () => {
     expect(files).toContain(".github/workflows/eval.yml");
     expect(files).toContain(".github/workflows/deploy.yml");
+    expect(files).toContain(".github/actions/assume-role/action.yml");
   });
 
   it.each(files)(

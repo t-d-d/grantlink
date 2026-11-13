@@ -104,59 +104,18 @@ jobs:
           node evals/check.ts gate report.json "$own"
           node src/page/release.ts report.json site/release.json
 
-      # Assumes the deploy role through GitHub's OIDC token, with the AWS
-      # CLI the runner ships, so no outside action holds the credentials.
-      # The account id, the token and the credentials are masked before
-      # anything else runs, so no later line prints them. The credentials
-      # are this step's outputs, and only the steps that call AWS name them
-      # in their env, so no other step's code holds them. The step that
-      # reads the live page gets none (#259).
+      # Assumes the deploy role through the shared action, which masks the
+      # account id, the token and the credentials before anything else runs
+      # (#114). Only the steps that call AWS name the credentials in their
+      # env, so no other step's code holds them. The step that reads the
+      # live page gets none (#259).
       - name: Assume the deploy role
         id: assume
-        env:
-          ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-        run: |
-          set -euo pipefail
-          # Prints a JSON reply's field, or names the field in an error and
-          # fails. jq -e alone fails on a missing field without saying which,
-          # and passes an empty string (#160). jq's own error is dropped, as
-          # it can quote the reply.
-          field() {
-            if ! jq -er "$2 | strings | select(length > 0)" <<< "$1" 2> /dev/null; then
-              echo "::error::The $3 reply has no $2, or it is empty, or the reply is not JSON." >&2
-              return 1
-            fi
-          }
-          oidc="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com")"
-          token="$(field "$oidc" .value OIDC)"
-          echo "::add-mask::$token"
-          creds="$(aws sts assume-role-with-web-identity \
-            --role-arn "$ROLE" \
-            --role-session-name "grantlink-deploy-$GITHUB_RUN_ID" \
-            --web-identity-token "$token" \
-            --duration-seconds 3600 \
-            --output json)"
-          # An ARN with no account field leaves it empty, and cut -s leaves
-          # it empty too for a value with no colon.
-          arn="$(field "$creds" .AssumedRoleUser.Arn STS)"
-          account="$(cut -s -d: -f5 <<< "$arn")"
-          if [ -z "$account" ]; then
-            echo "::error::The STS reply's role ARN names no account."
-            exit 1
-          fi
-          echo "::add-mask::$account"
-          key="$(field "$creds" .Credentials.AccessKeyId STS)"
-          secret="$(field "$creds" .Credentials.SecretAccessKey STS)"
-          session="$(field "$creds" .Credentials.SessionToken STS)"
-          echo "::add-mask::$key"
-          echo "::add-mask::$secret"
-          echo "::add-mask::$session"
-          {
-            echo "key=$key"
-            echo "secret=$secret"
-            echo "session=$session"
-          } >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/assume-role
+        with:
+          role: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          secret-name: AWS_DEPLOY_ROLE_ARN
+          session-name: grantlink-deploy
 
       # CloudFormation refuses to update a stack stuck in cleanup or
       # rollback, and to create a bucket that is already there. This stops

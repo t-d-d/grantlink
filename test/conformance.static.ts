@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { z } from "zod";
+import { ASSUME_ROLE } from "./app.ts";
 import { readRepoFile, repoFiles } from "./repo.ts";
 
 // The scheduled conformance run (#56). The conformance files read setup
@@ -13,6 +14,9 @@ const WORKFLOW = ".github/workflows/conformance.yml";
 
 const Step = z.object({
   name: z.string().optional(),
+  id: z.string().optional(),
+  uses: z.string().optional(),
+  with: z.record(z.string(), z.string()).optional(),
   if: z.string().optional(),
   run: z.string().optional(),
   env: z.record(z.string(), z.string()).optional(),
@@ -43,7 +47,8 @@ const at = (pattern: RegExp): number =>
 const conformance = steps.filter((step) =>
   (step.run ?? "").startsWith("npm run conformance"),
 );
-const assume = steps[at(/assume-role-with-web-identity/u)];
+const assumedAt = steps.findIndex((step) => step.uses === ASSUME_ROLE);
+const assume = steps[assumedAt];
 
 describe("the scheduled conformance run", () => {
   it("runs on a schedule and on demand", () => {
@@ -111,19 +116,17 @@ describe("the run reads the funding text bucket", () => {
       ([, kind, name]) => `${kind ?? ""}.${name ?? ""}`,
     );
     expect([...new Set(names)]).toEqual(["secrets.AWS_CONFORMANCE_ROLE_ARN"]);
-    expect(assume?.env?.ROLE).toBe("${{ secrets.AWS_CONFORMANCE_ROLE_ARN }}");
+    expect(assume?.with?.role).toBe("${{ secrets.AWS_CONFORMANCE_ROLE_ARN }}");
   });
 
   it("assumes the role before the tests run", () => {
-    const assumed = at(/assume-role-with-web-identity/u);
-    expect(assumed).toBeGreaterThan(-1);
-    expect(assumed).toBeLessThan(at(/^npm run conformance/u));
+    expect(assumedAt).toBeGreaterThan(-1);
+    expect(assumedAt).toBeLessThan(at(/^npm run conformance/u));
   });
 
-  // test/role-credentials.static.ts checks the masks and the bucket's name.
-  it("stops on the first error and never traces the shell", () => {
-    const run = assume?.run ?? "";
-    expect(run).toMatch(/^set -euo pipefail$/mu);
+  // test/role-credentials.static.ts checks the action's masks, its shell
+  // options and the bucket's name.
+  it("never traces the shell", () => {
     expect(text).not.toMatch(/\bset -x\b/u);
   });
 });
