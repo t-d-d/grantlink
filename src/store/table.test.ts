@@ -1,7 +1,13 @@
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import { describe, expect, it } from "vitest";
 import { RESERVED_WORDS } from "../../test/dynamodb-reserved-words.ts";
-import { dynamoTable, olderRules, paperRow, readRow } from "./table.ts";
+import {
+  dynamoTable,
+  olderCutter,
+  olderRules,
+  paperRow,
+  readRow,
+} from "./table.ts";
 
 const processed = {
   pmcid: "PMC11",
@@ -283,7 +289,7 @@ describe("the table module", () => {
     expect(sent).toEqual([]);
   });
 
-  it("names which papers are already processed, by their rules versions", async () => {
+  it("names which papers are already processed, by their versions", async () => {
     const { client } = recorder(() => ({
       Responses: {
         results: [
@@ -292,7 +298,7 @@ describe("the table module", () => {
         ],
       },
     }));
-    const done = await dynamoTable("results", client).rulesRead([
+    const done = await dynamoTable("results", client).versionsRead([
       "PMC11",
       "PMC12",
       "PMC13",
@@ -316,7 +322,7 @@ describe("the table module", () => {
       waits.push(ms);
       return Promise.resolve();
     };
-    const done = await dynamoTable("results", client, sleep).rulesRead([
+    const done = await dynamoTable("results", client, sleep).versionsRead([
       "PMC11",
     ]);
     expect([...done.keys()]).toEqual(["PMC11"]);
@@ -347,7 +353,7 @@ describe("the table module", () => {
     });
     const done = await dynamoTable("results", client, () =>
       Promise.resolve(),
-    ).rulesRead(pmcids);
+    ).versionsRead(pmcids);
     expect([...done.keys()].sort()).toEqual([...pmcids].sort());
     expect(sent).toHaveLength(12);
   });
@@ -360,7 +366,7 @@ describe("the table module", () => {
     await dynamoTable("results", client, (ms) => {
       waits.push(ms);
       return Promise.resolve();
-    }).rulesRead(["PMC11"]);
+    }).versionsRead(["PMC11"]);
     expect(waits).toEqual([]);
   });
 
@@ -369,14 +375,14 @@ describe("the table module", () => {
       UnprocessedKeys: { results: { Keys: [{ pmcid: "PMC11" }] } },
     }));
     await expect(
-      dynamoTable("results", client, () => Promise.resolve()).rulesRead([
+      dynamoTable("results", client, () => Promise.resolve()).versionsRead([
         "PMC11",
       ]),
     ).rejects.toThrow(/unprocessed/u);
     expect(sent).toHaveLength(8);
   });
 
-  it("names the rules version that read each processed paper, or none (#686)", async () => {
+  it("names the rules version that read each processed paper and the cutter version that cut it, or none (#686, #443)", async () => {
     const { client, sent } = recorder(() => ({
       Responses: {
         results: [
@@ -392,6 +398,11 @@ describe("the table module", () => {
             status: "processed",
             versions: { rules: "rules-21", code: "b", later: 1 },
           },
+          {
+            pmcid: "PMC16",
+            status: "processed",
+            versions: { rules: "rules-20", code: "d", cutter: "cutter-3" },
+          },
           // A later version's shape this one cannot read. It is not a row
           // that records no version, so it must not read as older.
           {
@@ -402,18 +413,23 @@ describe("the table module", () => {
         ],
       },
     }));
-    const read = await dynamoTable("results", client).rulesRead([
+    const read = await dynamoTable("results", client).versionsRead([
       "PMC11",
       "PMC12",
       "PMC13",
       "PMC14",
       "PMC15",
+      "PMC16",
     ]);
+    // A row with no cutter version reads as none, so a run cuts it again.
+    // One whose versions this version cannot read reads as empty, which no
+    // check counts as older, so the row stays as it is.
     expect([...read]).toEqual([
-      ["PMC11", "rules-9"],
-      ["PMC12", null],
-      ["PMC14", "rules-21"],
-      ["PMC15", ""],
+      ["PMC11", { rules: "rules-9", cutter: null }],
+      ["PMC12", { rules: null, cutter: null }],
+      ["PMC14", { rules: "rules-21", cutter: null }],
+      ["PMC16", { rules: "rules-20", cutter: "cutter-3" }],
+      ["PMC15", { rules: "", cutter: "" }],
     ]);
     expect(sent[0]?.input).toMatchObject({
       RequestItems: {
@@ -493,7 +509,9 @@ describe("the table module", () => {
     });
   });
 
-  it("names why each paper not yet processed last failed, if it did (#504)", async () => {
+  // A processed paper the run asks for again, to cut it again, is asked
+  // under the same rules as one not yet read (#443).
+  it("names why each paper last failed, if it did, processed or not (#504, #443)", async () => {
     const { client, sent } = recorder(() => ({
       Responses: {
         results: [
@@ -514,6 +532,7 @@ describe("the table module", () => {
     ]);
     expect(failed).toEqual(
       new Map<string, unknown>([
+        ["PMC11", 500],
         ["PMC12", 500],
         ["PMC13", "timeout"],
       ]),
@@ -554,6 +573,19 @@ describe("the table module", () => {
     const { client, sent } = recorder(() => ({ Items: [processed] }));
     await dynamoTable("results", client).all();
     expect(sent[0]?.input.ConsistentRead).toBe(true);
+  });
+});
+
+describe("which cutter version is older (#443)", () => {
+  it.each([
+    ["no version", null, true],
+    ["an older version, compared by number", "cutter-9", true],
+    ["the current version", "cutter-10", false],
+    ["a newer version", "cutter-11", false],
+    ["a version whose number cannot be read", "", false],
+    ["a rules version", "rules-1", false],
+  ])("counts %s as such", (_case, read, older) => {
+    expect(olderCutter(read, "cutter-10")).toBe(older);
   });
 });
 
@@ -603,7 +635,7 @@ describe("recording a paper's result over a row another rules version read (#688
 
   // A row whose versions hold no `rules`, or are not a map, has no
   // versions.rules either, so the first write asks for no versions at all:
-  // rulesRead reads only that as none, and any other shape stays.
+  // versionsRead reads only that as none, and any other shape stays.
   it("writes only while the row holds no versions or the result's own rules version", async () => {
     const { client, sent } = recorder();
     await dynamoTable("results", client).markProcessed("PMC11", result);
@@ -617,6 +649,28 @@ describe("recording a paper's result over a row another rules version read (#688
         ":to": "rules-20",
         ":versions": result.versions,
       },
+    });
+  });
+
+  // A paper read since it last failed has not last failed, so a later
+  // fetch of it to cut it again gets the usual tries (#443).
+  it("drops why the paper last failed", async () => {
+    const { client, sent } = recorder();
+    await dynamoTable("results", client).markProcessed("PMC11", result);
+    expect(String(sent[0]?.input.UpdateExpression)).toMatch(
+      / REMOVE lastFailure$/u,
+    );
+  });
+
+  it("writes the cutter version a result records", async () => {
+    const { client, sent } = recorder();
+    const cut = {
+      ...result,
+      versions: { ...result.versions, cutter: "cutter-1" },
+    };
+    await dynamoTable("results", client).markProcessed("PMC11", cut);
+    expect(sent[0]?.input).toMatchObject({
+      ExpressionAttributeValues: { ":versions": cut.versions },
     });
   });
 
@@ -792,7 +846,7 @@ describe("no reserved word as a bare attribute name (#698)", () => {
     );
     await table.recordSearch("run-2");
     await table.latestSearch();
-    await table.rulesRead(["PMC11"]);
+    await table.versionsRead(["PMC11"]);
     await table.lastFailures(["PMC11"]);
     await table.markProcessed("PMC11", result);
     await table.replaceReferences("PMC11", "rules-9", result);

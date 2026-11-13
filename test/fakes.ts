@@ -7,6 +7,7 @@ import type { PageFiles } from "../src/store/bucket.ts";
 import {
   olderRules,
   paperRow,
+  type HeldVersions,
   type LastFailure,
   type PaperRow,
   type Table,
@@ -66,13 +67,21 @@ export function memoryTable(): Table & {
     latestSearch() {
       return Promise.resolve(search.latest);
     },
-    rulesRead(pmcids) {
+    versionsRead(pmcids) {
       return Promise.resolve(
         new Map(
-          pmcids.flatMap((id): [string, string | null][] => {
+          pmcids.flatMap((id): [string, HeldVersions][] => {
             const row = rows.get(id);
             return row?.status === "processed"
-              ? [[id, row.versions?.rules ?? null]]
+              ? [
+                  [
+                    id,
+                    {
+                      rules: row.versions?.rules ?? null,
+                      cutter: row.versions?.cutter ?? null,
+                    },
+                  ],
+                ]
               : [];
           }),
         ),
@@ -94,7 +103,8 @@ export function memoryTable(): Table & {
       return Promise.resolve(true);
     },
     // As the real table: leaves a row a rules version not older than the
-    // result's read, and counts the paper as done (#688).
+    // result's read, and counts the paper as done (#688). Otherwise it drops
+    // why the paper last failed (#443).
     markProcessed(pmcid, result) {
       const held = get(pmcid).versions?.rules ?? null;
       if (
@@ -106,7 +116,12 @@ export function memoryTable(): Table & {
       }
       rows.set(
         pmcid,
-        paperRow.parse({ ...get(pmcid), ...result, status: "processed" }),
+        paperRow.parse({
+          ...get(pmcid),
+          ...result,
+          status: "processed",
+          lastFailure: undefined,
+        }),
       );
       return Promise.resolve();
     },
@@ -115,9 +130,7 @@ export function memoryTable(): Table & {
         new Map(
           pmcids.flatMap((id): [string, LastFailure][] => {
             const row = rows.get(id);
-            return row === undefined ||
-              row.status === "processed" ||
-              row.lastFailure === undefined
+            return row?.lastFailure === undefined
               ? []
               : [[id, row.lastFailure]];
           }),
@@ -218,8 +231,9 @@ export const isGoldSearch = (url: URL) =>
 export interface FakeSearches {
   search?: (cursor: string) => Response;
   goldSearch?: (cursor: string) => Response;
-  // Europe PMC's answer for a paper's full text, in place of its fixture.
-  fullText?: (pmcid: string) => Response;
+  // Europe PMC's answer for a paper's full text, in place of its fixture,
+  // or undefined to answer from the fixture as usual.
+  fullText?: (pmcid: string) => Response | undefined;
 }
 
 const LABELLED = new Set(FAKE_GOLD.goldB.papers.map((paper) => paper.pmcid));
@@ -290,7 +304,8 @@ export function fakeEuropePmc(options: FakeSearches = {}) {
       return Promise.resolve(reply(fixture(file)));
     }
     const pmcid = /\/(PMC\d+)\/fullTextXML$/u.exec(url.pathname)?.[1] ?? "";
-    if (options.fullText) return Promise.resolve(options.fullText(pmcid));
+    const given = options.fullText?.(pmcid);
+    if (given !== undefined) return Promise.resolve(given);
     // FAKE_GOLD's gold set B papers have no recording of their own, and
     // answer with a full text written by hand.
     const file = LABELLED.has(pmcid) ? "PMC0000003" : pmcid;

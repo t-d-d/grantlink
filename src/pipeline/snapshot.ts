@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { LARGEST_PAGE_SIZE } from "../europepmc/client.ts";
-import { fundingSections } from "../europepmc/jats.ts";
+import { CUTTER_VERSION, fundingSections } from "../europepmc/jats.ts";
+import type { FundingSections } from "../extract/rules.ts";
 import { GRANT, manifest, type Manifest } from "../../evals/gold.ts";
 import { crukReference, printedGrants, sameGrant } from "../../evals/score.ts";
 import { logger } from "../log.ts";
@@ -94,8 +95,29 @@ export function oncePerGrant(grants: readonly string[]): string[] {
 export type Taken =
   { kept: true; entry: Entry; empty: boolean } | { kept: false };
 
-// Reads one gold paper afresh into cache/, and writes its funding sections
-// under the snapshot's own id once. A gold set A paper Europe PMC links to
+// A gold set B or B2 paper's funding sections from cache/, when the table
+// says the current cutter cut them, or null to fetch the paper (#443). A
+// cache/ read that fails, as S3 refuses a missing key when the role may not
+// list cache/ (#687), reads as null too, so the paper is fetched as before.
+async function currentCut(
+  deps: Deps,
+  pmcid: string,
+): Promise<FundingSections | null> {
+  const held = (await deps.table.versionsRead([pmcid])).get(pmcid);
+  if (held?.cutter !== CUTTER_VERSION) return null;
+  try {
+    return await deps.text.getFundingText(pmcid);
+  } catch {
+    logger.warn("snapshot-cache-unread", { pmcid });
+    return null;
+  }
+}
+
+// Reads one gold paper into cache/, and writes its funding sections under
+// the snapshot's own id once. A gold set B or B2 paper the current cutter
+// has cut already is copied from cache/, with no request (#443). A gold set
+// A or A2 paper is always fetched, since its answers come from its whole
+// article, which cache/ does not hold. A gold set A paper Europe PMC links to
 // none of the funder's grants in a CRUK reference form, one whose full text
 // prints none of them, or one with no funding text or awards, is passed
 // over, and its sample walks on to the next. A kept gold set A paper's
@@ -128,11 +150,16 @@ export async function snapshotPaper(
     logger.info("snapshot-passed-over", { pmcid });
     return { kept: false };
   }
-  const article = await deps.europePmc.fullText(pmcid);
-  const sections = fundingSections(article);
-  await deps.text.putFundingText(pmcid, sections);
+  let sections = drawn ? null : await currentCut(deps, pmcid);
+  const copied = sections !== null;
+  let answers: string[] = [];
+  if (sections === null) {
+    const article = await deps.europePmc.fullText(pmcid);
+    sections = fundingSections(article);
+    await deps.text.putFundingText(pmcid, sections);
+    if (drawn) answers = oncePerGrant(printedGrants(grants, article));
+  }
   const empty = sections.text.length === 0 && sections.awards.length === 0;
-  const answers = drawn ? oncePerGrant(printedGrants(grants, article)) : [];
   if (drawn && (empty || answers.length === 0)) {
     logger.info("snapshot-passed-over", { pmcid });
     return { kept: false };
@@ -142,7 +169,11 @@ export async function snapshotPaper(
     pmcid,
     JSON.stringify({ pmcid, ...sections }),
   );
-  logger.info("snapshot-paper", { pmcid, grants: answers.length });
+  logger.info("snapshot-paper", {
+    pmcid,
+    grants: answers.length,
+    from: copied ? "cache" : "europe-pmc",
+  });
   return {
     kept: true,
     entry: { pmcid, set, sha256: sha256(stored), grants: answers },
@@ -150,7 +181,8 @@ export async function snapshotPaper(
   };
 }
 
-// Writes the manifest once, and logs its hash, which the repo pins.
+// Writes the manifest once, with the cutter version that cut its papers
+// (#443), and logs its hash, which the repo pins.
 export async function writeManifest(
   deps: Deps,
   entries: Entry[],
@@ -162,6 +194,7 @@ export async function writeManifest(
       createdAt: deps.now(),
       goldA: { query: goldA.query, seed: goldA.seed, size: goldA.size },
       goldA2: { query: goldA2.query, seed: goldA2.seed, size: goldA2.size },
+      cutter: CUTTER_VERSION,
       papers: entries,
     }),
   );

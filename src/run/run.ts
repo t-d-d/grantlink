@@ -32,7 +32,9 @@ import { europePmcRetry, onceRetry, paperRetry, storeRetry } from "./retry.ts";
 import { takeSnapshot, type SnapshotSummary } from "./snapshot.ts";
 
 // A run: search Europe PMC page by page, record what each page found, read
-// each paper not yet read, then publish the page. Every I/O call sits in a
+// each paper not yet read or cut by an older cutter version (#443), re-run
+// the current rules from cache/ on a paper an older rules version read,
+// then publish the page. Every I/O call sits in a
 // step (docs/constraints/durable-execution.md). A paper that fails is left for
 // the next run. A run whose search finds nothing publishes nothing. A run
 // that fails publishes nothing, with one exception: a run that fails while it
