@@ -469,6 +469,29 @@ describe("the table module", () => {
     });
   });
 
+  // The text in cache/ is the cut the row names, so a result that names a
+  // cutter version writes only while the row still names it. A run on an
+  // older deploy may have cut the paper again since (#443).
+  it("replaces a paper's references only while the cutter that cut it is the one the result names (#443)", async () => {
+    const { client, sent } = recorder();
+    const result = {
+      references: processed.references,
+      versions: { rules: "rules-20", code: "abc123", cutter: "cutter-1" },
+      processedAt: "2026-11-11T10:00:00.000Z",
+      runId: "run-2",
+    };
+    await dynamoTable("results", client).replaceReferences(
+      "PMC11",
+      "rules-9",
+      result,
+    );
+    expect(sent[0]?.input).toMatchObject({
+      ConditionExpression:
+        "#status = :processed AND (versions.#rules = :from OR versions.#rules = :to) AND versions.cutter = :cutter",
+      ExpressionAttributeValues: { ":cutter": "cutter-1" },
+    });
+  });
+
   it("leaves a paper whose rules version has changed since, without failing (#686)", async () => {
     const { client } = recorder(() => {
       throw new ConditionalCheckFailedException({

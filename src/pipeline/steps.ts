@@ -246,8 +246,9 @@ export async function recordPage(
 
 // Reads one paper: fetches its full text, keeps its funding sections in the
 // bucket, and records the references the rules find, with the rules and
-// cutter versions. Nothing but the references reaches the table. With `once`, Europe PMC's client sends one
-// request for the full text and does not try again (#504).
+// cutter versions. Nothing but the references reaches the table. With
+// `once`, Europe PMC's client sends one request for the full text and does
+// not try again (#504).
 export async function readPaper(
   deps: Deps,
   pmcid: string,

@@ -100,6 +100,8 @@ request that sets `manifestSha256` to null without a new snapshot id is for
 review. Whether a new input that can change a score sits inside the
 fingerprinted paths is for review: the lint rule sees imports, not files
 read at run time. Whether a change to the rules or the prompt came from gold
-set A2 or B2 is for review.
+set A2 or B2 is for review. The gate holds `evals/snapshot.json`'s cutter version to
+`CUTTER_VERSION`, but not its id: whether a change that bumps the cutter
+also names a new snapshot id is for review.
 
 History: #9, #420, #502, #695

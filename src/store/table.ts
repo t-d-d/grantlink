@@ -188,9 +188,10 @@ export interface Table {
   markProcessed(pmcid: string, result: Result): Promise<void>;
   // Writes the result of re-running the rules on a processed paper, only
   // while the rules version that read it is still `from` (null while the row
-  // holds no versions at all) or already the result's own. Returns false,
-  // and writes nothing, when another version has read it since. Safe to run
-  // twice (#686).
+  // holds no versions at all) or already the result's own, and, when the
+  // result names a cutter version, while the row names that one too.
+  // Returns false, and writes nothing, when another version has read or cut
+  // it since. Safe to run twice (#686, #443).
   replaceReferences(
     pmcid: string,
     from: string | null,
@@ -514,12 +515,16 @@ export function dynamoTable(
         from === null
           ? "attribute_not_exists(versions)"
           : "versions.#rules = :from";
+      // The text came from cache/, so the row must still name the cut the
+      // result names (#443).
+      const { cutter } = checked.versions;
+      const cut = cutter === undefined ? "" : " AND versions.cutter = :cutter";
       try {
         await send(
           new UpdateCommand({
             TableName: name,
             Key: { pmcid: PMCID.parse(pmcid) },
-            ConditionExpression: `#status = :processed AND (${was} OR versions.#rules = :to)`,
+            ConditionExpression: `#status = :processed AND (${was} OR versions.#rules = :to)${cut}`,
             UpdateExpression:
               "SET #references = :references, versions = :versions, processedAt = :processedAt, runId = :runId",
             ExpressionAttributeNames: RESULT_NAMES,
@@ -529,6 +534,7 @@ export function dynamoTable(
                 ? {}
                 : { ":from": versions.shape.rules.parse(from) }),
               ":to": checked.versions.rules,
+              ...(cutter === undefined ? {} : { ":cutter": cutter }),
               ":references": checked.references,
               ":versions": checked.versions,
               ":processedAt": checked.processedAt,
