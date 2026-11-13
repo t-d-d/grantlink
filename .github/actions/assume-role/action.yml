@@ -49,7 +49,7 @@ runs:
       run: |
         set -euo pipefail
         if [ -z "$ROLE" ]; then
-          echo "::error::The $SECRET_NAME secret is not set. The README says how to set it."
+          echo "::error::The $SECRET_NAME secret is not set where this job reads it. The README says where to set it."
           exit 1
         fi
         # Prints a JSON reply's field, or names the field in an error and

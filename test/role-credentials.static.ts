@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ASSUME_ROLE,
+  ASSUME_ROLE_FILE,
   assumeRole,
   conformanceWorkflow,
   deploy,
@@ -14,8 +15,9 @@ import { readRepoFile } from "./repo.ts";
 // that call AWS, as step env, so code those steps do not run never holds
 // them (#259, #308, #349). Each assumes its role through one local action,
 // so the script that masks the token and the credentials is written once
-// (#114). test/deploy.static.ts keeps what is particular to the deploy. The tests match the credentials by the assume step's
-// outputs, as no test in the gate names a key (code-and-tests.md).
+// (#114). test/deploy.static.ts keeps what is particular to the deploy.
+// The tests match the credentials by the assume step's outputs, as no test
+// in the gate names a key (code-and-tests.md).
 const credential = /steps\.assume\.outputs\.(key|secret|session)\b/u;
 
 interface Role {
@@ -97,6 +99,16 @@ describe.each(roles)(
         "secret-name": secret,
         "session-name": session,
       });
+    });
+
+    // A local action is read from the job's workspace, so the job must
+    // check the repository out before the step that uses it.
+    it("come from the action only once the repository is checked out", () => {
+      const checkedOut = all.findIndex((step) =>
+        (step.uses ?? "").startsWith("actions/checkout@"),
+      );
+      expect(checkedOut).toBeGreaterThan(-1);
+      expect(checkedOut).toBeLessThan(all.indexOf(assume ?? {}));
     });
 
     it("are written nowhere through GITHUB_ENV", () => {
@@ -213,9 +225,7 @@ describe("the shared action that assumes a role", () => {
 
   it("stops on the first error and never traces the shell", () => {
     expect(run).toMatch(/^set -euo pipefail$/mu);
-    expect(readRepoFile(`${ASSUME_ROLE.slice(2)}/action.yml`)).not.toMatch(
-      /\bset -x\b/u,
-    );
+    expect(readRepoFile(ASSUME_ROLE_FILE)).not.toMatch(/\bset -x\b/u);
   });
 
   it("masks the account id, the token and the credentials before it writes anything", () => {

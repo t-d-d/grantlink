@@ -111,6 +111,7 @@ export const conformanceWorkflow = parse(
 // The local action every workflow assumes its AWS role through, so the
 // script that masks the token and the credentials is written once (#114).
 export const ASSUME_ROLE = "./.github/actions/assume-role";
+export const ASSUME_ROLE_FILE = `${ASSUME_ROLE.slice(2)}/action.yml`;
 
 export interface Action {
   inputs?: Record<string, { required?: boolean }>;
@@ -118,6 +119,4 @@ export interface Action {
   runs: { using: string; steps?: Step[] };
 }
 
-export const assumeRole = parse(
-  readRepoFile(`${ASSUME_ROLE.slice(2)}/action.yml`),
-) as Action;
+export const assumeRole = parse(readRepoFile(ASSUME_ROLE_FILE)) as Action;
