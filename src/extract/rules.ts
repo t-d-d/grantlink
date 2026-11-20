@@ -151,9 +151,9 @@ const END = `(?!${WORD})`;
 const SEP = String.raw`\s?[/\\∖]\s?`;
 
 // A decimal point: a full stop, the Arabic decimal separator, a middle
-// dot, a dot operator or a bullet operator, as gold set A's scorer reads a
-// decimal (#581). The digit on its other side may be any decimal digit
-// (#392).
+// dot, a dot operator or a bullet operator, with any decimal digit on its
+// other side (#392). Gold set A's scorer reads only the full stop and the
+// middle dot, with 0 to 9; #757 holds that gap.
 const POINT = "[.\u066b\u00b7\u22c5\u2219]";
 
 // What may not follow a bare number, so it is not the start of a longer
@@ -254,11 +254,13 @@ const CRUK_PART = `(?:${CRUK_DIGIT_PART}|${CRUK_LETTER_PART})`;
 // a slash with a space on one side of it (#598). A slash with a
 // space on each side parts a list of references, as in
 // "CRUK-A12345 / CRUK-A23456", so it ends the form. An en or em dash, or
-// the horizontal bar, written straight onto a capital and then a
-// lower-case letter is punctuation before a sentence, not the separator
-// before another part, so it ends the form too (#392).
+// the horizontal bar, written straight onto a word in title case that a
+// space then follows, is punctuation before a sentence, not the separator
+// before another part, so it ends the form too (#392). A name in title
+// case at the end of a bracket, as in "CRUK/12" and an en dash before
+// "Smith)", is still a part.
 const NEXT_PART_SEP = String.raw`(?:${DASH}|[/\\∖]\s?|\s[/\\∖](?!\s))`;
-const PROSE_DASH = String.raw`[\u2013-\u2015]\p{Lu}\p{Ll}`;
+const PROSE_DASH = String.raw`[\u2013-\u2015]\p{Lu}\p{Ll}+\s`;
 const NO_MORE_PARTS = String.raw`(?!(?!${PROSE_DASH})${NEXT_PART_SEP}[A-Z0-9])`;
 // One to four parts, read whole. A form that runs on past four parts reads
 // its first four, as the model pass keeps them (#561), unless the fourth

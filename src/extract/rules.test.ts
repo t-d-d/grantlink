@@ -1028,7 +1028,7 @@ describe("the Unicode edge cases of #392", () => {
   });
 
   // A decimal point may be a full stop, the Arabic decimal separator, a
-  // middle dot, a dot operator or a bullet operator, with any decimal digit
+  // on its other side.
   // on its other side, as gold set A's scorer reads a decimal (#581).
   const decimalsBefore = [
     "ratio 1٫12345",
@@ -1072,7 +1072,7 @@ describe("the Unicode edge cases of #392", () => {
   });
 
   it("still reads a bare number after a middle dot with no digit before it", () => {
-    expect(readsWhole("Funded by CRUK · 12345.", "12345")).toBe(true);
+    expect(readsWhole("Funded by CRUK ·12345.", "12345")).toBe(true);
   });
 
   // A combining mark belongs to the letter before it, so it does not hide
@@ -1103,6 +1103,7 @@ describe("the Unicode edge cases of #392", () => {
 
   it.each([
     "Funded by CRUK (CRUK/12-Smith).",
+    "Funded by CRUK (CRUK/12\u2013Smith).",
     "Funded by CRUK (CRUK/12—SMITH).",
     "Funded by CRUK (CRUK/12—MCALLISTER).",
   ])(
