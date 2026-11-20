@@ -234,10 +234,12 @@ export const FUNDING_SECTION_TYPE = /^(?:funding|ack|acknowledge?ments?)$/iu;
 // as "and" and every other mark of punctuation as a space, each run of white
 // space, no-break spaces included, as one space, and no space at either end
 // (#239). So Role of the funder/sponsor and Role of the funder / sponsor
-// read the same.
+// read the same. A format character, such as a zero-width space or a soft
+// hyphen, prints nothing, so it is dropped (#392).
 export const normaliseTitle = (title: string): string =>
   title
     .toLowerCase()
+    .replace(/\p{Cf}/gu, "")
     .replaceAll("&", " and ")
     .replace(/\p{P}/gu, " ")
     .replace(/\s+/gu, " ")

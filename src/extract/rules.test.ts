@@ -3,6 +3,7 @@ import funderFile from "./funder.json" with { type: "json" };
 import {
   findReferences,
   namesPattern,
+  readsWhole,
   referenceSchema,
   RULES_VERSION,
   sentences,
@@ -986,6 +987,131 @@ describe("the rules", () => {
       expect(reference.asWritten).toMatch(/^[A-Za-z0-9 /\\∖-]+$/u);
     }
   });
+});
+
+// Unicode edge cases gathered on #392. No paper is known to hold any of
+// them. Every text is made up.
+describe("the Unicode edge cases of #392", () => {
+  // A letter number, such as a Roman numeral, joins a reference as a letter
+  // does. Other numbers, such as a superscript or a circled digit, are often
+  // a footnote's mark, so they leave the reference as it is.
+  it.each([
+    ["a Roman numeral", "A12345Ⅱ"],
+    ["a small Roman numeral", "A12345ⅱ"],
+    ["a Roman numeral before it", "ⅡA12345"],
+  ])("leaves a reference with %s joined to it", (_, reference) => {
+    expect(findReferences(sections(`Funded by CRUK (${reference}).`))).toEqual(
+      [],
+    );
+  });
+
+  it.each([
+    ["a superscript two", "A12345²"],
+    ["a circled one", "A12345①"],
+  ])("still reads a reference with %s after it", (_, reference) => {
+    expect(
+      findReferences(sections(`Funded by CRUK (${reference}).`)).map(
+        ({ normalised }) => normalised,
+      ),
+    ).toEqual(["A12345"]);
+  });
+
+  // Any connector punctuation joins a reference, as the underscore does.
+  it.each([
+    ["a fullwidth low line", "A12345＿"],
+    ["an undertie", "A12345‿"],
+    ["a fullwidth low line before it", "＿A12345"],
+  ])("leaves a reference with %s joined to it", (_, reference) => {
+    expect(findReferences(sections(`Funded by CRUK (${reference}).`))).toEqual(
+      [],
+    );
+  });
+
+  // A decimal point may be a full stop, the Arabic decimal separator, a
+  // on its other side.
+  // on its other side, as gold set A's scorer reads a decimal (#581).
+  const decimalsBefore = [
+    "ratio 1٫12345",
+    "ratio ١.12345",
+    "ratio 1·12345",
+    "ratio 1⋅12345",
+    "ratio 1∙12345",
+  ];
+  const decimalsAfter = [
+    "ratio 12345.١",
+    "ratio 12345٫6",
+    "ratio 12345·6",
+    "ratio 12345-١٢",
+  ];
+
+  it.each([...decimalsBefore, ...decimalsAfter])(
+    "leaves a bare number the metadata gives inside a decimal or a range: %j",
+    (written) => {
+      expect(
+        findReferences({
+          text: [`Funded by CRUK, ${written}.`],
+          awards: [{ sources: ["Cancer Research UK"], ids: ["12345"] }],
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  it.each([...decimalsBefore, ...decimalsAfter])(
+    "reads no model reply of a bare number inside a decimal or a range: %j",
+    (written) => {
+      expect(readsWhole(`Funded by CRUK grant ${written}.`, "12345")).toBe(
+        false,
+      );
+    },
+  );
+
+  it("reads no bare number the text ties to the funder before a Unicode decimal", () => {
+    expect(findReferences(sections("Funded by CRUK grant 12345٫6."))).toEqual(
+      [],
+    );
+  });
+
+  it("still reads a bare number after a middle dot with no digit before it", () => {
+    expect(readsWhole("Funded by CRUK ·12345.", "12345")).toBe(true);
+  });
+
+  // A combining mark belongs to the letter before it, so it does not hide
+  // that letter from the check for another funder's reference (#642).
+  it("reads no A number from inside a reference whose letters end in a combining mark", () => {
+    expect(
+      findReferences(
+        sections(
+          "Funded by Cancer Research UK (FC001234) and the Example Network (CAÑ/A00004/1).",
+        ),
+      ),
+    ).toEqual([
+      { asWritten: "FC001234", normalised: "FC001234", format: "FCn" },
+    ]);
+  });
+
+  // An en or em dash written straight onto a word that starts a sentence
+  // is punctuation, not the separator before another part (#579).
+  it.each([
+    "Funded by CRUK (grant CRUK/A12345—This work was done here).",
+    "Funded by CRUK (grant CRUK/A12345–This work was done here).",
+  ])("reads a CRUK- form before a dash and prose: %j", (text) => {
+    expect(
+      findReferences(sections(text)).map(({ normalised }) => normalised),
+    ).toEqual(["CRUK/A12345"]);
+    expect(readsWhole(text, "CRUK/A12345")).toBe(true);
+  });
+
+  it.each([
+    "Funded by CRUK (CRUK/12-Smith).",
+    "Funded by CRUK (CRUK/12\u2013Smith).",
+    "Funded by CRUK (CRUK/12—SMITH).",
+    "Funded by CRUK (CRUK/12—MCALLISTER).",
+  ])(
+    "still leaves a CRUK- form before a hyphen and a word, or a dash and capitals: %j",
+    (text) => {
+      expect(findReferences(sections(text))).toEqual([]);
+    },
+  );
 });
 
 // The funder's names as one pattern (#271). The any-case form is built from
