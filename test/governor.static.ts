@@ -174,7 +174,7 @@ describe("governor's checks read governor.json at one commit", () => {
     const { uses, with: inputs } = caller.parse(parse(readRepoFile(path))).jobs
       .check;
     const at = new RegExp(
-      `^t-d-d/gh-governor/\\.github/workflows/${reusable}@([0-9a-f]{40})$`,
+      `^t-d-d/gh-governor/\\.github/workflows/${reusable.replaceAll(".", "\\.")}@([0-9a-f]{40})$`,
       "u",
     ).exec(uses);
     expect(at, `${path} pins a full commit after @`).not.toBeNull();
