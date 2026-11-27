@@ -124,14 +124,15 @@ function withoutReferenceLists(article: string): string {
 }
 
 // The front matter, an article's or a sub-article's, holds its metadata:
-// its DOI, dates and copyright line. Only its funding groups and author
-// notes are read, so a journal's own DOI or a year beside the funder's name
-// in a copyright line is not taken for a grant (#555), while a funding
-// footnote in the author notes, which the cutter keeps, still is. An empty
-// element, written self-closing, holds nothing.
+// its DOI, dates and copyright line. Only the parts of it the cutter can
+// keep are read: its funding groups, author notes, acknowledgements,
+// footnote groups and notes. So a journal's own DOI or a year beside the
+// funder's name in a copyright line is not taken for a grant (#555), while
+// a funding footnote or note there, which the cutter keeps, still is
+// (#595). An empty element, written self-closing, holds nothing.
 const FRONT = /<(front|front-stub)(?=[\s>])[^>]*>([\s\S]*?)<\/\1\s*>/gu;
 const READ_IN_FRONT =
-  /<(funding-group|author-notes)(?=[\s>/])(?:[^>]*\/>|[\s\S]*?<\/\1\s*>)/gu;
+  /<(funding-group|author-notes|ack|fn-group|notes)(?=[\s>/])(?:[^>]*\/>|[\s\S]*?<\/\1\s*>)/gu;
 
 function withoutFrontMatter(article: string): string {
   return article.replace(
@@ -204,8 +205,8 @@ function printedAs(form: string, text: string, names: Span[]): boolean {
 
 // The linked grants a paper prints, in the order given: those with a form
 // sameGrant accepts standing alone in the whole article less its reference
-// list and its front matter but for the funding groups and author notes
-// there, ignoring case and spaces (#502, #503, #555). A grant cited only by
+// list and its front matter but for the parts there the cutter can keep,
+// ignoring case and spaces (#502, #503, #555, #595). A grant cited only by
 // another paper is not printed. Each markup tag reads as a space, and any
 // run of spaces as one, so a tag inside a grant does not hide it and
 // indentation does not part a year from the funder's name. A bare number
