@@ -31,6 +31,6 @@ permissions:
 
 jobs:
   check:
-    uses: t-d-d/gh-governor/.github/workflows/config-check.yml@fda1887811d641f79cea18d4b1fa0f09ef65a238
+    uses: t-d-d/gh-governor/.github/workflows/config-check.yml@aa9ea3a97772dd74575ce44761a9312f0c60ed0a
     with:
-      commit: fda1887811d641f79cea18d4b1fa0f09ef65a238
+      commit: aa9ea3a97772dd74575ce44761a9312f0c60ed0a

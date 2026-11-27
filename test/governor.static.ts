@@ -130,34 +130,27 @@ describe("governor merges pull requests its review passes", () => {
   });
 });
 
-// A ticket whose body starts with `Blocked until:` is held, but its sidebar
-// shows no blocker. With `waits.issue` set, governor links each waiting
-// ticket as blocked by the wait ticket, so the sidebar shows the hold
-// (#461). Governor's own sessions are told how to make a ticket wait; a
-// session a person starts reads CLAUDE.md, so it names the same ticket.
-describe("governor shows a waiting ticket's hold in its sidebar", () => {
+// A ticket whose body starts with `Blocked until:` is held until that date.
+// Governor once linked each waiting ticket as blocked by a wait ticket, so
+// its sidebar showed the hold (#461). Governor has dropped the wait ticket
+// and now refuses `waits.issue`, and a file it refuses unserves the repo.
+// It links nothing and takes no link off, so CLAUDE.md, which a session a
+// person starts reads, names no wait ticket either.
+describe("governor holds a waiting ticket", () => {
   const waits = z
-    .object({
-      waits: z.object({
-        enabled: z.boolean().optional(),
-        issue: z.number().int().positive().optional(),
-      }),
-    })
+    .object({ waits: z.record(z.string(), z.unknown()) })
     .parse(JSON.parse(readRepoFile(".github/governor.json"))).waits;
 
-  it("has waits on, naming the wait ticket", () => {
+  it("has waits on, naming no wait ticket", () => {
     expect(waits.enabled).not.toBe(false);
-    expect(waits.issue).toBeDefined();
+    expect(waits).not.toHaveProperty("issue");
   });
 
-  it("tells sessions in CLAUDE.md how to make a ticket wait, naming the same ticket", () => {
+  it("tells sessions in CLAUDE.md how to make a ticket wait, naming no wait ticket", () => {
     const line = /^- .*`Blocked until: YYYY-MM-DD`.*$/mu.exec(
       readRepoFile("CLAUDE.md"),
     )?.[0];
     expect(line, "CLAUDE.md's line on waiting").toBeDefined();
-    const named = [...(line ?? "").matchAll(/#(\d+)/gu)].map(([, n]) =>
-      Number(n),
-    );
-    expect(named).toEqual([waits.issue]);
+    expect(line).not.toMatch(/#\d+|wait ticket/u);
   });
 });

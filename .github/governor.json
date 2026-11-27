@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/t-d-d/gh-governor/fda1887811d641f79cea18d4b1fa0f09ef65a238/schema/governor.schema.json",
+  "$schema": "https://raw.githubusercontent.com/t-d-d/gh-governor/aa9ea3a97772dd74575ce44761a9312f0c60ed0a/schema/governor.schema.json",
   "environment": "grantlink",
   "workflows": { "ci": ".github/workflows/gate.yml" },
   "pickup": {
@@ -88,7 +88,7 @@
     }
   },
   "hooks": { "enabled": false },
-  "waits": { "enabled": true, "issue": 460 },
+  "waits": { "enabled": true },
   "signOff": {},
   "sessionRules": {},
   "issueReviews": { "enabled": false }
