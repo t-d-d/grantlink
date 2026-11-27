@@ -89,24 +89,26 @@ export function sameGrant(found: string, expected: string): boolean {
 // digits, with or without its A; a Crick core funding number; a newer
 // reference of letters, sometimes with a year or a month, then a slash and
 // a number; or one that starts with CRUK and is, whole, a shape the rules
-// read, so it has a digit after the CRUK (#532). Only that last form takes
-// an id that starts with CRUK, so the scorer never takes a CRUK id the
-// rules refuse, such as CRUK/2019 (#575). A C part alone names a
-// programme, and another funder's reference, a word, a centre or
-// partnership name such as CRUK_Manchester or CRUK/MRC, or the bare
-// abbreviation CRUK is not a CRUK grant, so none of those is an answer.
+// read, so it has a digit after the CRUK (#532). An id with CRUK anywhere
+// in it counts only where it is, whole, a shape the rules read, so the
+// scorer never takes a CRUK id the rules refuse, such as CRUK/2019 (#575)
+// or XCRUK/2019, and still takes a code the rules read, such as
+// XCRUK/100001 (#620). A C part alone names a programme, and another
+// funder's reference, a word, a centre or partnership name such as
+// CRUK_Manchester or CRUK/MRC, or the bare abbreviation CRUK is not a CRUK
+// grant, so none of those is an answer.
 const CRUK_FORMS = [
   /^C\d+\/A\d+$/u,
   /^A?\d{4,6}$/u,
   /^(?:FC|CC)\d+$/u,
-  /^(?!CRUK)[A-Z]+(?:-?(?:(?:19|20)\d{2}|(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}))?\/\d+$/u,
+  /^[A-Z]+(?:-?(?:(?:19|20)\d{2}|(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}))?\/\d+$/u,
 ];
 
 export function crukReference(id: string): boolean {
   const whole = canonical(id);
+  if (whole.includes("CRUK") && !hasReferenceShape(whole)) return false;
   return (
-    CRUK_FORMS.some((form) => form.test(whole)) ||
-    (whole.startsWith("CRUK") && hasReferenceShape(whole))
+    whole.startsWith("CRUK") || CRUK_FORMS.some((form) => form.test(whole))
   );
 }
 
