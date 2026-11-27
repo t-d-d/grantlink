@@ -15,8 +15,10 @@ import {
 // each award's funding sources and award ids. A section is found by its type
 // or its title (#239), and a note or footnote by its type or its title, or,
 // with neither, by the funder it names, a footnote only in a footnote group
-// (#505). Nothing else of the paper is kept: not the abstract, the rest of
-// the body or the author list.
+// (#505). An <ack> and a funding section keep only their untitled and
+// funding subsections, and the notes and footnotes in them that have no
+// type or title (#563, #584). Nothing else of the paper is kept: not the
+// abstract, the rest of the body or the author list.
 // The XML is read through a parser into a tree (#343), so a tag is read as
 // XML reads it, whatever its spacing, quotes or nesting.
 
@@ -389,9 +391,18 @@ const saysWhatItIs = (section: XmlElement): boolean =>
 const keptInFundingPart = (element: XmlElement): boolean =>
   !isSection(element) || !saysWhatItIs(element) || isFundingSection(element);
 
-// What a funding section holds that is read with it, at any depth (#563).
+// What a funding section or an <ack> holds that is read with it, at any
+// depth: all but its sections and its notes and footnotes titled or typed as
+// something other than funding (#563, #584). A note or footnote titled or
+// typed as funding is left out too, and read on its own. An untitled,
+// untyped one is kept, as an untitled section is, since a footnote outside
+// a footnote group is never read by its own words. An <ack> is cut as a
+// section typed ack is, so the two markups of acknowledgements agree.
 const sectionContent = (content: XmlNode[]): XmlNode[] =>
-  pruned(content, keptInFundingPart);
+  pruned(
+    content,
+    (element) => keptInFundingPart(element) && !noteSaysWhatItIs(element),
+  );
 
 // The notes and footnotes inside a note, at any depth, which are read, or
 // left out, on their own (#563).
@@ -417,6 +428,17 @@ const ownContent = (note: XmlElement): XmlNode[] =>
   noteContent(note).filter(
     (child) => child.kind !== "element" || !isSection(child),
   );
+
+// Whether a note or a footnote says what it is about, by a title or by a
+// type that is not empty (#584).
+const noteSaysWhatItIs = (element: XmlElement): boolean => {
+  const type = NOTE_TYPE[element.name];
+  return (
+    type !== undefined &&
+    (noteTitle(element) !== undefined ||
+      anyAttribute(element, type, (value) => value.trim() !== ""))
+  );
+};
 
 // A note's own words, which it is read by when it has no type or title.
 const ownWords = (note: XmlElement): string => plain(ownContent(note));
@@ -504,7 +526,7 @@ export function fundingSections(paper: string): FundingSections {
     ...statements,
     ...sections.flatMap(paragraphs),
     ...outermost(tree, named("ack")).flatMap(({ children }) =>
-      paragraphs(children),
+      paragraphs(sectionContent(children)),
     ),
     ...fundingNoteParts(tree).flatMap(paragraphs),
   ].filter((paragraph) => paragraph !== "");
