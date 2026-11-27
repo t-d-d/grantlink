@@ -981,6 +981,45 @@ describe("keeping funding notes and footnotes (#505)", () => {
     },
   );
 
+  // A format character such as a zero-width space is not white space, but
+  // it prints nothing, so it normalises to nothing as well (#392).
+  const formatTitles = [
+    ["a zero-width space", "<title>&#8203;</title>"],
+    ["a soft hyphen between spaces", "<title> &#173; </title>"],
+    ["labelled and a word joiner", "<label>1</label><title>&#8288;</title>"],
+  ];
+
+  it.each(formatTitles)(
+    "keeps a subsection of a funding section whose title is %s (#392)",
+    (_what, title) => {
+      expect(
+        fundingSections(
+          "<article><body><sec><title>Funding</title><p>a</p>" +
+            `<sec>${title}<p>b</p></sec>` +
+            "</sec></body></article>",
+        ).text,
+      ).toEqual(["a", "b"]);
+    },
+  );
+
+  it.each(formatTitles)(
+    "reads a note whose title is %s as untitled (#392)",
+    (_what, title) => {
+      expect(
+        back(`<notes>${title}<p>Funded by Cancer Research UK.</p></notes>`)
+          .text,
+      ).toEqual(["Funded by Cancer Research UK."]);
+    },
+  );
+
+  it("reads a funding title with a soft hyphen inside its word (#392)", () => {
+    expect(
+      fundingSections(
+        "<article><body><sec><title>Fund&#173;ing</title><p>a</p></sec></body></article>",
+      ).text,
+    ).toEqual(["a"]);
+  });
+
   // A section's type counts as its title, so a section typed as something
   // other than funding is left out of a funding note, and one typed as
   // funding is kept (#563).

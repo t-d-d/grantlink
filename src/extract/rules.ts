@@ -23,6 +23,7 @@ export const RULES_VERSIONS: readonly Version[] = [
   { number: 18, issue: 642 },
   { number: 19, issue: 577 },
   { number: 20, issue: 579 },
+  { number: 21, issue: 392 },
 ];
 export const RULES_VERSION = latest("rules", RULES_VERSIONS);
 
@@ -137,27 +138,37 @@ export const namesFunder = (text: string): boolean => funderName.test(text);
 
 // A reference's edges. Any letter or combining mark joined to a reference,
 // not only A to Z, makes it part of a longer word, as at the funder's name
-// (#339). So does any decimal digit, not only 0 to 9 (#368), and an
-// underscore, as \b had it.
-const WORD = String.raw`[\p{L}\p{M}\p{Nd}_]`;
+// (#339). So does any decimal digit, not only 0 to 9 (#368), and any
+// letter number, such as a Roman numeral, which reads as a letter does. Any
+// connector punctuation, such as a fullwidth low line, joins it too, as the
+// underscore did under \b (#392). Other numbers, such as a superscript or
+// a circled digit, are often a footnote's mark, so they leave it as it is.
+const WORD = String.raw`[\p{L}\p{M}\p{Nd}\p{Nl}\p{Pc}]`;
 const START = `(?<!${WORD})`;
 const END = `(?!${WORD})`;
 
 // A separator may be written as a slash, a backslash or the set minus sign.
 const SEP = String.raw`\s?[/\\∖]\s?`;
 
+// A decimal point: a full stop, the Arabic decimal separator, a middle
+// dot, a dot operator or a bullet operator, with any decimal digit on its
+// other side (#392). Gold set A's scorer reads only the full stop and the
+// middle dot, with 0 to 9; #757 holds that gap.
+const POINT = "[.\u066b\u00b7\u22c5\u2219]";
+
 // What may not follow a bare number, so it is not the start of a longer
 // one, as in 12345/2, 12345-67 or 1234.5.
-const NUMBER_AFTER = String.raw`(?!${SEP}|${DASH}\d|\.\d)`;
+const NUMBER_AFTER = String.raw`(?!${SEP}|${DASH}\p{Nd}|${POINT}\p{Nd})`;
 
 // An A number inside another funder's reference, with letters and a slash
 // before it and a slash and more after it, as in CAN/A00004/1, is part of
 // that reference, not the funder's (#642). A slash here is written straight
 // against both its neighbours, so a list spaced with slashes is not one,
 // and another A number after it makes a list too, as in grant/A12345/A23456.
-// Read at the A, before the shape.
+// A combining mark belongs to the letter before it, so it does not hide
+// that letter (#392). Read at the A, before the shape.
 const TIGHT_SEP = String.raw`[/\\∖]`;
-const NOT_INSIDE_REFERENCE = String.raw`(?:(?<!\p{L}${TIGHT_SEP})|(?!A\s?\d+${TIGHT_SEP}(?!A\s?\d)${WORD}))`;
+const NOT_INSIDE_REFERENCE = String.raw`(?:(?<!\p{L}\p{M}*${TIGHT_SEP})|(?!A\s?\d+${TIGHT_SEP}(?!A\s?\d)${WORD}))`;
 
 // An A number, as the An shape reads it.
 const A_SHAPE = String.raw`A(?:\s?\d{5}|\d{4}${END}(?!${SEP}A\s?\d))`;
@@ -242,9 +253,15 @@ const CRUK_PART = `(?:${CRUK_DIGIT_PART}|${CRUK_LETTER_PART})`;
 // hyphen or a slash, a part may follow a backslash, the set minus sign, or
 // a slash with a space on one side of it (#598). A slash with a
 // space on each side parts a list of references, as in
-// "CRUK-A12345 / CRUK-A23456", so it ends the form.
+// "CRUK-A12345 / CRUK-A23456", so it ends the form. An en or em dash, or
+// the horizontal bar, written straight onto a word in title case that a
+// space then follows, is punctuation before a sentence, not the separator
+// before another part, so it ends the form too (#392). A name in title
+// case at the end of a bracket, as in "CRUK/12" and an en dash before
+// "Smith)", is still a part.
 const NEXT_PART_SEP = String.raw`(?:${DASH}|[/\\∖]\s?|\s[/\\∖](?!\s))`;
-const NO_MORE_PARTS = String.raw`(?!${NEXT_PART_SEP}[A-Z0-9])`;
+const PROSE_DASH = String.raw`[\u2013-\u2015]\p{Lu}\p{Ll}+\s`;
+const NO_MORE_PARTS = String.raw`(?!(?!${PROSE_DASH})${NEXT_PART_SEP}[A-Z0-9])`;
 // One to four parts, read whole. A form that runs on past four parts reads
 // its first four, as the model pass keeps them (#561), unless the fourth
 // has no digit and another part follows it.
@@ -373,8 +390,9 @@ const BARE_REPLY = new RegExp(String.raw`^\d+(?:${BARE_SUFFIX})?$`, "u");
 // one, as in 12/345678, ABC-123456 or 1.23456. The rules' n shape reads a
 // bare number from the text only after a bracket, a tie word, a colon or a
 // hash, so it never reads one there (#571). A number the metadata gives
-// counts only with this edge too (#573).
-const NUMBER_BEFORE = String.raw`(?<!${SEP}|${DASH}|\d\.)`;
+// counts only with this edge too (#573). The point and the digit before it
+// are read as NUMBER_AFTER reads them (#392).
+const NUMBER_BEFORE = String.raw`(?<!${SEP}|${DASH}|\p{Nd}${POINT})`;
 
 // A reference as written, between the edges above. A bare number of any
 // length counts only where the text neither runs into it nor goes on past

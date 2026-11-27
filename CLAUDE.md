@@ -8,7 +8,7 @@ grantlink finds research papers that say Cancer Research UK funded them but that
 ## Scope
 
 - Work you find in passing becomes an issue. Do not fix it in the branch you are on.
-- A Unicode edge case in `src/extract/` or `src/europepmc/` that no paper in Europe PMC's data or the gold sets is known to hit goes as a comment on [#392](https://github.com/t-d-d/grantlink/issues/392), as that issue describes, and not as a new issue. A case seen in a real paper still gets its own issue.
+- A Unicode edge case in `src/extract/` or `src/europepmc/` that no paper in Europe PMC's data or the gold sets is known to hit goes as a comment on [#757](https://github.com/t-d-d/grantlink/issues/757), as that issue describes, and not as a new issue. A case seen in a real paper still gets its own issue.
 
 ## Before any code edit
 
