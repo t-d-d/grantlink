@@ -7,6 +7,8 @@
 # repo's own token, pinned to a commit of gh-governor. To move to a newer
 # check, change the commit after `@`, in `commit:` and in governor.json's
 # `$schema` together, so the editor and the check read the same schema.
+# Move heartbeat.yml's pin with them: test/governor.static.ts fails while
+# the pins differ.
 #
 # If your prompts live in files ({ "file": "<path>" } in governor.json),
 # add their paths under `paths:` too, so a change to one runs the check.
@@ -31,6 +33,6 @@ permissions:
 
 jobs:
   check:
-    uses: t-d-d/gh-governor/.github/workflows/config-check.yml@aa9ea3a97772dd74575ce44761a9312f0c60ed0a
+    uses: t-d-d/gh-governor/.github/workflows/config-check.yml@ffa7dd6156c42e4ebf94c8373e0bb4e16243cebd
     with:
-      commit: aa9ea3a97772dd74575ce44761a9312f0c60ed0a
+      commit: ffa7dd6156c42e4ebf94c8373e0bb4e16243cebd

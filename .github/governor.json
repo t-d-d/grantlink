@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/t-d-d/gh-governor/aa9ea3a97772dd74575ce44761a9312f0c60ed0a/schema/governor.schema.json",
+  "$schema": "https://raw.githubusercontent.com/t-d-d/gh-governor/ffa7dd6156c42e4ebf94c8373e0bb4e16243cebd/schema/governor.schema.json",
   "environment": "grantlink",
   "workflows": { "ci": ".github/workflows/gate.yml" },
   "pickup": {
@@ -83,7 +83,7 @@
     "sessions": {
       "Weekly review": {
         "prompt": "Look back over the repo since the last fire time governor gives below, or over the past week if this is the first run: the pull requests merged, the issues opened and closed, and the default branch's workflow runs that failed. Raise one issue for each lesson worth acting on, such as a failure that keeps coming back, a slow or flaky check, or work that had to be redone. Search the open issues first so you raise none twice. Change no code yourself. When you are done, make `Signing off.` the last line of your reply.",
-        "days": 7
+        "when": { "days": 7 }
       }
     }
   },
