@@ -1,5 +1,6 @@
 import {
   ANY_CASE_FUNDER_NAME,
+  CRUK_LEAD,
   DASHES,
   findReferences,
   hasReferenceShape,
@@ -89,12 +90,15 @@ export function sameGrant(found: string, expected: string): boolean {
 // digits, with or without its A; a Crick core funding number; a newer
 // reference of letters, sometimes with a year or a month, then a slash and
 // a number; or one that starts with CRUK and is, whole, a shape the rules
-// read, so it has a digit after the CRUK (#532). Only that last form takes
-// an id that starts with CRUK, so the scorer never takes a CRUK id the
-// rules refuse, such as CRUK/2019 (#575). A C part alone names a
-// programme, and another funder's reference, a word, a centre or
-// partnership name such as CRUK_Manchester or CRUK/MRC, or the bare
-// abbreviation CRUK is not a CRUK grant, so none of those is an answer.
+// read, so it has a digit after the CRUK (#532). That one may have two to
+// six letters and a hyphen before the CRUK, as in ABC-CRUK-ABCD12-AB, as
+// the rules' CRUK-X form has it (#596). Only that last form takes an id
+// that starts with CRUK, or with those letters and a hyphen and then CRUK,
+// so the scorer never takes such an id the rules refuse, such as CRUK/2019
+// (#575). A C part alone names a programme, and another funder's
+// reference, a word, a centre or partnership name such as CRUK_Manchester
+// or CRUK/MRC, or the bare abbreviation CRUK is not a CRUK grant, so none
+// of those is an answer.
 const CRUK_FORMS = [
   /^C\d+\/A\d+$/u,
   /^A?\d{4,6}$/u,
@@ -102,11 +106,13 @@ const CRUK_FORMS = [
   /^(?!CRUK)[A-Z]+(?:-?(?:(?:19|20)\d{2}|(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}))?\/\d+$/u,
 ];
 
+const CRUK_START = new RegExp(`^${CRUK_LEAD}`, "u");
+
 export function crukReference(id: string): boolean {
   const whole = canonical(id);
   return (
     CRUK_FORMS.some((form) => form.test(whole)) ||
-    (whole.startsWith("CRUK") && hasReferenceShape(whole))
+    (CRUK_START.test(whole) && hasReferenceShape(whole))
   );
 }
 
