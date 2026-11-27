@@ -60,65 +60,19 @@ jobs:
           fingerprint="$(node evals/fingerprint.ts)"
           echo "value=$fingerprint" >> "$GITHUB_OUTPUT"
 
-      # Assumes the eval role through GitHub's OIDC token, as the deploy
-      # assumes its own. The account id, the token and the credentials are
-      # masked before anything else runs. The private bucket is
-      # grantlink-text-<account id>, as the app stack names it, so the role
-      # is the only value GitHub holds for the eval (#43). The credentials
-      # and the bucket's name are this step's outputs, and only the steps
-      # that call AWS name them in their env, so no other step's code holds
-      # them (#308).
+      # Assumes the eval role through the shared action, as the deploy
+      # assumes its own (#114). The private bucket's name is one of its
+      # outputs, so the role is the only value GitHub holds for the eval
+      # (#43). Only the steps that call AWS name the credentials and the
+      # bucket's name in their env, so no other step's code holds them
+      # (#308).
       - name: Assume the eval role
         id: assume
-        env:
-          ROLE: ${{ secrets.AWS_EVAL_ROLE_ARN }}
-        run: |
-          set -euo pipefail
-          if [ -z "$ROLE" ]; then
-            echo "::error::AWS_EVAL_ROLE_ARN is not set in the eval environment. The README says how to set it."
-            exit 1
-          fi
-          # Prints a JSON reply's field, or names the field in an error and
-          # fails. jq -e alone fails on a missing field without saying which,
-          # and passes an empty string (#160). jq's own error is dropped, as
-          # it can quote the reply.
-          field() {
-            if ! jq -er "$2 | strings | select(length > 0)" <<< "$1" 2> /dev/null; then
-              echo "::error::The $3 reply has no $2, or it is empty, or the reply is not JSON." >&2
-              return 1
-            fi
-          }
-          oidc="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com")"
-          token="$(field "$oidc" .value OIDC)"
-          echo "::add-mask::$token"
-          creds="$(aws sts assume-role-with-web-identity \
-            --role-arn "$ROLE" \
-            --role-session-name "grantlink-eval-$GITHUB_RUN_ID" \
-            --web-identity-token "$token" \
-            --duration-seconds 3600 \
-            --output json)"
-          # An ARN with no account field leaves it empty, and cut -s leaves
-          # it empty too for a value with no colon.
-          arn="$(field "$creds" .AssumedRoleUser.Arn STS)"
-          account="$(cut -s -d: -f5 <<< "$arn")"
-          if [ -z "$account" ]; then
-            echo "::error::The STS reply's role ARN names no account."
-            exit 1
-          fi
-          echo "::add-mask::$account"
-          key="$(field "$creds" .Credentials.AccessKeyId STS)"
-          secret="$(field "$creds" .Credentials.SecretAccessKey STS)"
-          session="$(field "$creds" .Credentials.SessionToken STS)"
-          echo "::add-mask::$key"
-          echo "::add-mask::$secret"
-          echo "::add-mask::$session"
-          {
-            echo "key=$key"
-            echo "secret=$secret"
-            echo "session=$session"
-            echo "bucket=grantlink-text-$account"
-          } >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/assume-role
+        with:
+          role: ${{ secrets.AWS_EVAL_ROLE_ARN }}
+          secret-name: AWS_EVAL_ROLE_ARN
+          session-name: grantlink-eval
 
       # The report is a cache keyed by the fingerprint (#9). Listing with
       # the key as a prefix is how the role asks whether it exists. The

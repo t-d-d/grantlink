@@ -4,10 +4,11 @@
 // failure inside `echo "x=$(cmd)"` does not stop a script, even under
 // `set -e`, so the step would succeed with an empty value. The role steps
 // must fail too when the STS reply lacks a field, where `jq -r` would print
-// `null` and succeed (#122). All three role steps are covered (#188). The
-// eval and conformance role steps stop before the network when their
-// secret is unset (#250). Each role step hands its credentials on as step
-// outputs, so only the steps that call AWS hold them (#259, #308).
+// `null` and succeed (#122). All three workflows assume their role through
+// one local action, whose step is run here once (#188, #114). It stops
+// before the network when the role's secret is unset (#250), and hands its
+// credentials on as step outputs, so only the steps that call AWS hold them
+// (#259, #308).
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -23,7 +24,7 @@ import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MARKER as marker } from "../evals/check.ts";
 import {
-  conformanceWorkflow,
+  assumeRole as assumeRoleAction,
   deploy,
   evalWorkflow,
   type Workflow,
@@ -446,6 +447,8 @@ function stsReply(drop?: string, blank?: string): string {
 
 const roleEnv = {
   ROLE: "role-placeholder",
+  SECRET_NAME: "AWS_EXAMPLE_ROLE_ARN",
+  SESSION_NAME: "grantlink-example",
   ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-placeholder",
   ACTIONS_ID_TOKEN_REQUEST_URL: "http://127.0.0.1/token?x=1",
   GITHUB_RUN_ID: "1",
@@ -462,7 +465,7 @@ function assumeRole(
     run,
     {
       curl: `cat <<'EOF'\n${oidc}\nEOF`,
-      aws: `echo aws-called >&2\ncat <<'EOF'\n${reply}\nEOF`,
+      aws: `echo "aws-called $*" >&2\ncat <<'EOF'\n${reply}\nEOF`,
     },
     roleEnv,
   );
@@ -483,32 +486,11 @@ function namesPath(path: string): RegExp {
 
 const missingFields = [...Object.keys(fieldPaths), "AccountId", "ArnFields"];
 
-const evalRole = script(evalWorkflow, "eval", "Assume the eval role");
-const conformanceRole = script(
-  conformanceWorkflow,
-  "conformance",
-  "Assume the conformance role",
-);
+const run = assumeRoleAction.runs.steps?.[0]?.run ?? "";
+const extra = [`grantlink-text-${account}`];
 
-describe.each([
-  {
-    title: "the eval's role step",
-    run: evalRole,
-    extra: [`grantlink-text-${account}`],
-  },
-  {
-    title: "the deploy's role step",
-    run: script(deploy, "deploy", "Assume the deploy role"),
-    extra: [],
-  },
-  // #188: the third copy of the step, which had neither fix.
-  {
-    title: "the conformance run's role step",
-    run: conformanceRole,
-    extra: [`grantlink-text-${account}`],
-  },
-] as const)("$title", ({ run, extra }) => {
-  // Each step writes the credentials to its outputs, and nothing to
+describe("the shared action's role step", () => {
+  // The step writes the credentials to its outputs, and nothing to
   // $GITHUB_ENV, where every later step would hold them (#259, #308).
 
   // The values only: no test in the gate names the variables that hold a
@@ -527,6 +509,15 @@ describe.each([
       "session-placeholder",
       ...extra,
     ]);
+  });
+
+  // Each workflow names its own session, so CloudTrail shows which run
+  // assumed the role.
+  it("names the session from its input and the run", () => {
+    const { stderr } = assumeRole(run, stsReply());
+    expect(stderr).toMatch(
+      /^aws-called .*--role-session-name grantlink-example-1 /mu,
+    );
   });
 
   it.each(missingFields)("fails when the reply has no %s", (field) => {
@@ -579,23 +570,11 @@ describe.each([
   );
 });
 
-// #250: the eval and conformance role steps stop with an error that points
-// at the README when their secret is empty, before curl or STS, rather than
-// fail later with an AWS error. The deploy role step has no such check: the
-// deploy job does not run when its secret is unset, which
-// test/deploy.static.ts holds.
-describe.each([
-  {
-    title: "the eval's role step",
-    run: evalRole,
-    secret: "AWS_EVAL_ROLE_ARN",
-  },
-  {
-    title: "the conformance run's role step",
-    run: conformanceRole,
-    secret: "AWS_CONFORMANCE_ROLE_ARN",
-  },
-])("$title with its role secret unset", ({ run, secret }) => {
+// #250: the step stops with an error that points at the README when the
+// role's secret is empty, before curl or STS, rather than fail later with
+// an AWS error. The deploy job does not run at all when its secret is
+// unset, which test/deploy.static.ts holds.
+describe("the shared action's role step with its role secret unset", () => {
   it("fails with an error that names the secret, before it calls curl or STS, and writes nothing", () => {
     const { status, stdout, stderr, env, output } = runStep(
       run,
@@ -607,7 +586,7 @@ describe.each([
     );
     expect(status).not.toBe(0);
     expect(`${stdout}${stderr}`).toMatch(
-      new RegExp(`^::error::.*\\b${secret}\\b.*README`, "mu"),
+      /^::error::.*\bAWS_EXAMPLE_ROLE_ARN\b.*README/mu,
     );
     expect(stderr).not.toContain("curl-called");
     expect(stderr).not.toContain("aws-called");

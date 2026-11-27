@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { z } from "zod";
-import { deploy, type Step, type Workflow } from "./app.ts";
+import { ASSUME_ROLE, deploy, type Step, type Workflow } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
 
 // The deploy workflow (#17). Only a green merge to main deploys, through
@@ -14,10 +14,6 @@ const needs = (name: string): string[] => {
   return Array.isArray(value) ? value : [value];
 };
 const steps = (name: string): Step[] => jobs[name]?.steps ?? [];
-const runs = (name: string): string =>
-  steps(name)
-    .map((step) => step.run ?? "")
-    .join("\n");
 
 describe("the deploy workflow", () => {
   it("runs only on a push to main", () => {
@@ -57,7 +53,7 @@ describe("the deploy workflow", () => {
       contents: "read",
       "id-token": "write",
     });
-    expect(runs("deploy")).toContain("assume-role-with-web-identity");
+    expect(steps("deploy").map((step) => step.uses)).toContain(ASSUME_ROLE);
   });
 
   it("names the deploy job so governor sees each deploy", () => {
@@ -184,7 +180,8 @@ describe("the deploy and the run (#19)", () => {
   // test/check-stack.int.ts runs the script against a stub aws (#89).
   it("checks the stack with scripts/check-stack.sh, once the role is assumed and before anything reads the stack", () => {
     const checkAt = at(/^scripts\/check-stack\.sh$/u);
-    const assumeAt = at(/assume-role-with-web-identity/u);
+    const assumeAt = all.findIndex((step) => step.uses === ASSUME_ROLE);
+    expect(assumeAt).toBeGreaterThan(-1);
     const firstAt = all.findIndex((step) => step.id === "first");
     expect(checkAt).toBeGreaterThan(assumeAt);
     expect(checkAt).toBeLessThan(firstAt);
