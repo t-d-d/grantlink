@@ -2,7 +2,10 @@
 # pickup or any periodic that has stopped firing. The checker runs here, on
 # this repo's own token, pinned to a commit of gh-governor. To move to a
 # newer checker, change the commit after `@` and in `commit:` together, so
-# the workflow and the checker it fetches come from the same commit.
+# the workflow and the checker it fetches come from the same commit. Move
+# config-check.yml's pin and governor.json's `$schema` with it: the checker
+# reads governor.json with the reader at its own commit, and
+# test/governor.static.ts fails while the pins differ.
 name: heartbeat
 
 on:
@@ -16,8 +19,8 @@ permissions:
 
 jobs:
   check:
-    uses: t-d-d/gh-governor/.github/workflows/heartbeat-check.yml@fda1887811d641f79cea18d4b1fa0f09ef65a238
+    uses: t-d-d/gh-governor/.github/workflows/heartbeat-check.yml@ffa7dd6156c42e4ebf94c8373e0bb4e16243cebd
     with:
-      commit: fda1887811d641f79cea18d4b1fa0f09ef65a238
+      commit: ffa7dd6156c42e4ebf94c8373e0bb4e16243cebd
       tolerance-hours: 3
       labels: heartbeat

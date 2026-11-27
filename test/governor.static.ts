@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 import { z } from "zod";
 import { deploy } from "./app.ts";
 import { readRepoFile } from "./repo.ts";
@@ -152,5 +153,47 @@ describe("governor holds a waiting ticket", () => {
     )?.[0];
     expect(line, "CLAUDE.md's line on waiting").toBeDefined();
     expect(line).not.toMatch(/#\d+|wait ticket/u);
+  });
+});
+
+// Governor's config check and its heartbeat check each read governor.json
+// with the reader at their own gh-governor commit, and `$schema` points an
+// editor at that commit's schema. A pin left behind reads the file with an
+// older reader, which refuses a shape governor has moved to (#766), so all
+// three name one commit.
+describe("governor's checks read governor.json at one commit", () => {
+  const caller = z.object({
+    jobs: z.object({
+      check: z.object({
+        uses: z.string(),
+        with: z.object({ commit: z.string() }),
+      }),
+    }),
+  });
+  const pins = (path: string, reusable: string): (string | undefined)[] => {
+    const { uses, with: inputs } = caller.parse(parse(readRepoFile(path))).jobs
+      .check;
+    const at = new RegExp(
+      `^t-d-d/gh-governor/\\.github/workflows/${reusable}@([0-9a-f]{40})$`,
+      "u",
+    ).exec(uses);
+    expect(at, `${path} pins a full commit after @`).not.toBeNull();
+    return [at?.[1], inputs.commit];
+  };
+
+  it("pins the config check, the heartbeat check and $schema to one commit", () => {
+    const { $schema } = z
+      .object({ $schema: z.string() })
+      .parse(JSON.parse(readRepoFile(".github/governor.json")));
+    const schema =
+      /^https:\/\/raw\.githubusercontent\.com\/t-d-d\/gh-governor\/([0-9a-f]{40})\/schema\/governor\.schema\.json$/u.exec(
+        $schema,
+      )?.[1];
+    expect(schema, "$schema names a commit of gh-governor").toBeDefined();
+    const commits = [
+      ...pins(".github/workflows/config-check.yml", "config-check.yml"),
+      ...pins(".github/workflows/heartbeat.yml", "heartbeat-check.yml"),
+    ];
+    expect(commits).toEqual(commits.map(() => schema));
   });
 });
