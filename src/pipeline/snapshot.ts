@@ -90,18 +90,21 @@ export function oncePerGrant(grants: readonly string[]): string[] {
 }
 
 // `empty` says the funding-section cutter found no funding text or awards
-// in a kept paper, which only a gold set B paper can be (#405).
+// in a kept paper (#405). A kept gold set A or A2 paper can be empty too,
+// when its whole article prints a linked grant its cut lost (#727).
 export type Taken =
   { kept: true; entry: Entry; empty: boolean } | { kept: false };
 
 // Reads one gold paper afresh into cache/, and writes its funding sections
 // under the snapshot's own id once. A gold set A paper Europe PMC links to
-// none of the funder's grants in a CRUK reference form, one whose full text
-// prints none of them, or one with no funding text or awards, is passed
-// over, and its sample walks on to the next. A kept gold set A paper's
-// answers are the linked grants its whole article prints, less its
-// reference list and the metadata in its front matter, not only its
-// funding sections, so a cutter that dropped text cannot shrink the
+// none of the funder's grants in a CRUK reference form, or one whose full
+// text prints none of them, is passed over, and its sample walks on to the
+// next. One whose article prints a linked grant is kept even when the
+// cutter finds no funding text or awards in it, so a cutter that drops
+// text shows as a miss and not as a smaller gold set (#727). A kept gold
+// set A paper's answers are the linked grants its whole article prints,
+// less its reference list and the metadata in its front matter, not only
+// its funding sections, so a cutter that dropped text cannot shrink the
 // answers with it (#502, #503, #555), each grant once (#508). A funder
 // registry id is never an answer. A gold set B paper is always kept, even
 // with empty sections, since its label is scored against what the rules
@@ -133,7 +136,7 @@ export async function snapshotPaper(
   await deps.text.putFundingText(pmcid, sections);
   const empty = sections.text.length === 0 && sections.awards.length === 0;
   const answers = drawn ? oncePerGrant(printedGrants(grants, article)) : [];
-  if (drawn && (empty || answers.length === 0)) {
+  if (drawn && answers.length === 0) {
     logger.info("snapshot-passed-over", { pmcid });
     return { kept: false };
   }

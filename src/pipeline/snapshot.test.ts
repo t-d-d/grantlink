@@ -213,11 +213,39 @@ describe("taking one gold paper", () => {
     expect(written).toEqual(["s3 PMC11"]);
   });
 
-  it("passes over a gold set A paper with no funding text or awards, since its sample walks on", async () => {
+  it("passes over a gold set A paper whose article prints none of its grants, since its sample walks on", async () => {
     const { deps, stored } = paperDeps(["A56789"], "<article></article>");
     expect(await snapshotPaper(deps, "PMC11", "A")).toEqual({ kept: false });
     expect(stored.size).toBe(0);
   });
+
+  // A cutter that drops a paper's funding text must show as a miss, not as
+  // a smaller gold set, so the paper stays with its empty sections (#727).
+  it.each(["A", "A2"] as const)(
+    "keeps a gold set %s paper whose article prints a linked grant but whose cut is empty, as a miss (#727)",
+    async (set) => {
+      const { deps, stored } = paperDeps(
+        ["A56789"],
+        "<article><body><p>Supported by grant A56789.</p></body></article>",
+      );
+      const taken = await snapshotPaper(deps, "PMC11", set);
+      expect(taken).toEqual({
+        kept: true,
+        entry: {
+          pmcid: "PMC11",
+          set,
+          sha256: expect.any(String) as string,
+          grants: ["A56789"],
+        },
+        empty: true,
+      });
+      expect(JSON.parse(stored.get("PMC11") ?? "null")).toEqual({
+        pmcid: "PMC11",
+        text: [],
+        awards: [],
+      });
+    },
+  );
 
   it("keeps a gold set B paper with no funding text or awards, with its empty sections (#399)", async () => {
     const { deps, stored } = paperDeps([], "<article></article>");
