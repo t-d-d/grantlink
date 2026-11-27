@@ -1,6 +1,6 @@
 import type { goldA, goldA2, goldB, goldB2 } from "../../evals/gold.ts";
 import type { EuropePmc, SearchPaper } from "../europepmc/client.ts";
-import { fundingSections } from "../europepmc/jats.ts";
+import { CUTTER_VERSION, fundingSections } from "../europepmc/jats.ts";
 import { failureReason, type PaperFailure } from "./failure.ts";
 import { findReferences, RULES_VERSION } from "../extract/rules.ts";
 import { logger } from "../log.ts";
@@ -8,7 +8,7 @@ import { summarise } from "../page/found.ts";
 import { deployRun, liveRelease, type Release } from "../page/release.ts";
 import { buildPage } from "../page/render.ts";
 import type { SiteBucket, TextBucket } from "../store/bucket.ts";
-import { olderRules, type Table } from "../store/table.ts";
+import { olderCutter, olderRules, type Table } from "../store/table.ts";
 
 // The work a run's steps do. Each takes what it needs and no durable
 // context (docs/constraints/durable-execution.md), so a test can call it
@@ -195,7 +195,9 @@ export interface ToRerun {
 // The papers a page leaves to read, those of them whose full text answered
 // 500 when they last failed, which the run asks for once (#504), and the
 // papers an older rules version read, which the run re-runs the rules on
-// from cache/ (#686).
+// from cache/ (#686). The papers to read include those an older cutter
+// version cut, or whose row records none, which the run fetches and cuts
+// again (#443).
 export interface ToRead {
   todo: string[];
   once: string[];
@@ -204,8 +206,12 @@ export interface ToRead {
 
 // Records each paper a page of the run's search found, and that this run's
 // search returned it, and decides which still need reading and which of
-// those to ask for once. Safe to run twice: what the table holds of a paper
-// is kept.
+// those to ask for once. A processed paper an older cutter version cut is
+// read again, which runs the current rules too, so the rules are re-run
+// from cache/ only on a paper the current cutter cut (#443). A paper a
+// newer cutter version cut, or one whose versions this version cannot read,
+// stays as it is. Safe to run twice: what the table holds of a paper is
+// kept.
 export async function recordPage(
   deps: Deps,
   papers: SearchPaper[],
@@ -213,16 +219,25 @@ export async function recordPage(
 ): Promise<ToRead> {
   await deps.table.addFound(papers, deps.now(), runId);
   const ids = papers.map((paper) => paper.pmcid);
-  const done = await deps.table.rulesRead(ids);
-  const todo = ids.filter((pmcid) => !done.has(pmcid));
+  const done = await deps.table.versionsRead(ids);
+  const recut = new Set(
+    [...done]
+      .filter(([, held]) => olderCutter(held.cutter, CUTTER_VERSION))
+      .map(([pmcid]) => pmcid),
+  );
+  const todo = ids.filter((pmcid) => !done.has(pmcid) || recut.has(pmcid));
   const failed = await deps.table.lastFailures(todo);
   const once = todo.filter((pmcid) => failed.get(pmcid) === 500);
   const rerun = [...done]
-    .filter(([, from]) => olderRules(from, RULES_VERSION))
-    .map(([pmcid, from]) => ({ pmcid, from }));
+    .filter(
+      ([, held]) =>
+        held.cutter === CUTTER_VERSION && olderRules(held.rules, RULES_VERSION),
+    )
+    .map(([pmcid, held]) => ({ pmcid, from: held.rules }));
   logger.info("page-recorded", {
     found: ids.length,
     todo: todo.length,
+    recut: recut.size,
     once: once.length,
     rerun: rerun.length,
   });
@@ -230,9 +245,10 @@ export async function recordPage(
 }
 
 // Reads one paper: fetches its full text, keeps its funding sections in the
-// bucket, and records the references the rules find. Nothing but the
-// references reaches the table. With `once`, Europe PMC's client sends one
-// request for the full text and does not try again (#504).
+// bucket, and records the references the rules find, with the rules and
+// cutter versions. Nothing but the references reaches the table. With
+// `once`, Europe PMC's client sends one request for the full text and does
+// not try again (#504).
 export async function readPaper(
   deps: Deps,
   pmcid: string,
@@ -246,7 +262,11 @@ export async function readPaper(
   const references = findReferences(sections);
   await deps.table.markProcessed(pmcid, {
     references,
-    versions: { rules: RULES_VERSION, code: deps.codeVersion },
+    versions: {
+      rules: RULES_VERSION,
+      code: deps.codeVersion,
+      cutter: CUTTER_VERSION,
+    },
     processedAt: deps.now(),
     runId,
   });
@@ -262,8 +282,9 @@ export type Reread =
 
 // Re-runs the current rules on a paper an older rules version read, from its
 // funding sections in cache/, and asks Europe PMC nothing (#686,
-// docs/constraints/europe-pmc.md). A paper with no text there stays as it
-// is. Safe to run twice.
+// docs/constraints/europe-pmc.md). recordPage hands it only papers the
+// current cutter cut, so the versions it writes name that cutter (#443). A
+// paper with no text there stays as it is. Safe to run twice.
 export async function rereadPaper(
   deps: Deps,
   { pmcid, from }: ToRerun,
@@ -277,7 +298,11 @@ export async function rereadPaper(
   const references = findReferences(sections);
   const written = await deps.table.replaceReferences(pmcid, from, {
     references,
-    versions: { rules: RULES_VERSION, code: deps.codeVersion },
+    versions: {
+      rules: RULES_VERSION,
+      code: deps.codeVersion,
+      cutter: CUTTER_VERSION,
+    },
     processedAt: deps.now(),
     runId,
   });

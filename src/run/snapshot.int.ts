@@ -12,6 +12,8 @@ import {
 import { snapshotKeys } from "../../evals/gold.ts";
 import { FAKE_GOLD, fakeDeps, isGoldSearch, reply } from "../../test/fakes.ts";
 import { EuropePmcError } from "../europepmc/client.ts";
+import { CUTTER_VERSION } from "../europepmc/jats.ts";
+import { RULES_VERSION } from "../extract/rules.ts";
 import { makeRun, type RunSummary } from "./run.ts";
 
 // The snapshot with a gold set B of its own, passed in through the run's
@@ -81,7 +83,9 @@ async function runWith(fake: ReturnType<typeof fakeDeps>) {
 // Europe PMC answering the first labelled paper's full text with `first`
 // once the snapshot starts, and recording every gold set B paper the
 // snapshot asks about. The run reads the same papers first, as it finds
-// them in its own search.
+// them in its own search. Their rows then lose their cutter version as the
+// snapshot starts, as if an older cutter had cut them, so the snapshot
+// fetches each rather than copy the run's cut from cache/ (#443).
 function failingFirstLabelled(
   first: () => Promise<string>,
   fake = labelledDeps(),
@@ -91,6 +95,13 @@ function failingFirstLabelled(
   const hasSnapshot = fake.deps.text.hasSnapshot.bind(fake.deps.text);
   fake.deps.text.hasSnapshot = (id) => {
     snapshot = true;
+    for (const pmcid of LABELLED) {
+      const row = fake.table.rows.get(pmcid);
+      if (row?.versions !== undefined) {
+        const { rules, code } = row.versions;
+        fake.table.rows.set(pmcid, { ...row, versions: { rules, code } });
+      }
+    }
     return hasSnapshot(id);
   };
   const asked: string[] = [];
@@ -434,5 +445,74 @@ describe("fitness: a snapshot keeps every gold set B2 paper, even with empty sec
     expect(logged("snapshot-failed")).toContainEqual(
       expect.objectContaining({ pmcid: LABELLED[0], set: "B2" }),
     );
+  });
+});
+
+// A snapshot copies a gold set B or B2 paper's sections from cache/ when the
+// current cutter cut them, and fetches the paper otherwise. The manifest
+// records the cutter version (#420, #443).
+describe("a gold paper the current cutter has cut already", () => {
+  const [current, older, none] = FAKE_GOLD.goldB.papers.map(
+    (paper) => paper.pmcid,
+  );
+  // What cache/ holds of each paper the table says a run cut.
+  const cached = { text: ["A cut already made."], awards: [] };
+
+  // FAKE_GOLD's gold set B papers are in no search, so only these rows,
+  // which an earlier run left, say how each was cut.
+  async function cutEarlier(fake: ReturnType<typeof fakeDeps>) {
+    for (const [pmcid, cutter] of [
+      [current, CUTTER_VERSION],
+      [older, "cutter-0"],
+    ] as const) {
+      if (pmcid === undefined) throw new Error("gold set B is too small");
+      await fake.table.addFound(
+        [{ pmcid, title: "A paper" }],
+        "2026-11-01T12:00:00.000Z",
+        "run-2026-11-01T12:00:00.000Z",
+      );
+      await fake.table.markProcessed(pmcid, {
+        references: [],
+        versions: { rules: RULES_VERSION, code: "older", cutter },
+        processedAt: "2026-11-01T12:00:00.000Z",
+        runId: "run-2026-11-01T12:00:00.000Z",
+      });
+      fake.text.set(`cache/${pmcid}.json`, cached);
+    }
+  }
+
+  const fullTextAsked = (fake: ReturnType<typeof fakeDeps>, pmcid: string) =>
+    fake.requests.filter((url) =>
+      url.pathname.endsWith(`/${pmcid}/fullTextXML`),
+    ).length;
+
+  it("copies a paper cut by the current cutter from cache/, and fetches one cut by an older cutter or none", async () => {
+    const fake = fakeDeps();
+    await cutEarlier(fake);
+    const { status, result } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    expect(result?.snapshot).toMatchObject({ taken: true });
+    const id = fake.deps.gold.snapshotId;
+    if (current === undefined || older === undefined || none === undefined) {
+      throw new Error("gold set B is too small");
+    }
+    expect(fullTextAsked(fake, current)).toBe(0);
+    expect(fake.text.get(snapshotKeys.paper(id, current))).toBe(
+      JSON.stringify({ pmcid: current, ...cached }),
+    );
+    expect(fullTextAsked(fake, older)).toBe(1);
+    expect(fake.text.get(snapshotKeys.paper(id, older))).not.toBe(
+      JSON.stringify({ pmcid: older, ...cached }),
+    );
+    expect(fullTextAsked(fake, none)).toBe(1);
+  });
+
+  it("records the cutter version in the manifest", async () => {
+    const fake = fakeDeps();
+    const { status } = await runWith(fake);
+    expect(status).toBe("SUCCEEDED");
+    const body = fake.text.get(manifestKey(fake));
+    if (typeof body !== "string") throw new Error("no manifest");
+    expect(JSON.parse(body)).toMatchObject({ cutter: CUTTER_VERSION });
   });
 });

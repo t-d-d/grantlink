@@ -16,7 +16,12 @@ const manifest = JSON.stringify({
     { pmcid: "PMC4", set: "A2", sha256: "e".repeat(64), grants: ["A44444"] },
   ],
 });
-const snapshot = { about: "x", id: "s1", manifestSha256: null };
+const snapshot = {
+  about: "x",
+  id: "s1",
+  cutter: "cutter-2",
+  manifestSha256: null,
+};
 const goldA = { about: "y", query: "q", seed: 1, size: 2, papers: [] };
 const goldA2 = { about: "z", query: "q", seed: 5, size: 2, papers: [] };
 
@@ -42,6 +47,34 @@ describe("pinning a snapshot", () => {
     expect(() =>
       pin(manifest, snapshot, { ...goldA, seed: 2 }, goldA2),
     ).toThrow();
+  });
+});
+
+// A snapshot holds the cut its cutter made, so snapshot.json names the
+// cutter version that takes it, and the manifest records the one that did
+// (#443). A manifest from before #443 records none.
+describe("pinning a snapshot's cutter version (#443)", () => {
+  const cut = (cutter: string) =>
+    JSON.stringify({ ...(JSON.parse(manifest) as object), cutter });
+
+  it("pins a manifest cut by the version snapshot.json names", () => {
+    const raw = cut("cutter-2");
+    expect(pin(raw, snapshot, goldA, goldA2).snapshot).toEqual({
+      ...snapshot,
+      manifestSha256: createHash("sha256").update(raw).digest("hex"),
+    });
+  });
+
+  it("refuses a manifest cut by another version", () => {
+    expect(() => pin(cut("cutter-1"), snapshot, goldA, goldA2)).toThrow(
+      /cutter-1/u,
+    );
+  });
+
+  it("pins a manifest that records no cutter version, as one taken before #443 does", () => {
+    expect(
+      pin(manifest, snapshot, goldA, goldA2).snapshot.manifestSha256,
+    ).not.toBeNull();
   });
 });
 

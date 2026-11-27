@@ -22,6 +22,7 @@ import {
 } from "../../test/fakes.ts";
 import { NAMES, RECORDED } from "../../test/fixtures.ts";
 import { europePmc, EuropePmcError } from "../europepmc/client.ts";
+import { CUTTER_VERSION } from "../europepmc/jats.ts";
 import { RULES_VERSION } from "../extract/rules.ts";
 import { found } from "../page/found.ts";
 import { textBucket } from "../store/bucket.ts";
@@ -181,7 +182,11 @@ describe("a run over the back catalogue", () => {
       "CTRQQR-2021/100010",
       "A28707",
     ]);
-    expect(row?.versions).toEqual({ rules: "rules-20", code: "test" });
+    expect(row?.versions).toEqual({
+      rules: "rules-20",
+      code: "test",
+      cutter: CUTTER_VERSION,
+    });
     expect(fake.table.rows.get("PMC0000003")?.references).toEqual([]);
 
     const page = fake.site.files?.["index.html"] ?? "";
@@ -295,7 +300,10 @@ describe("a paper an older rules version read", () => {
     fake.table.rows.set(pmcid, {
       ...row,
       references: stale,
-      versions: rules === undefined ? undefined : { rules, code: "older" },
+      versions:
+        rules === undefined
+          ? undefined
+          : { rules, code: "older", cutter: CUTTER_VERSION },
     });
     fake.requests.length = 0;
     logs.length = 0;
@@ -305,10 +313,9 @@ describe("a paper an older rules version read", () => {
   const fullTextAsked = (fake: ReturnType<typeof fakeDeps>, pmcid: string) =>
     fake.requests.some((url) => url.pathname.endsWith(`/${pmcid}/fullTextXML`));
 
-  it.each([
-    ["an older version, compared by number", "rules-9"],
-    ["no version", undefined],
-  ])(
+  // A row with no versions at all records no cutter either, so the run
+  // fetches and cuts it again, as the tests of an older cut show (#443).
+  it.each([["an older version, compared by number", "rules-9"]])(
     "gets the current rules' references and versions for a row %s read, with no request to Europe PMC",
     async (_case, rules) => {
       const fake = await readBy("PMC0000001", rules);
@@ -321,12 +328,16 @@ describe("a paper an older rules version read", () => {
         "CTRQQR-2021/100010",
         "A28707",
       ]);
-      expect(row?.versions).toEqual({ rules: RULES_VERSION, code: "test" });
+      expect(row?.versions).toEqual({
+        rules: RULES_VERSION,
+        code: "test",
+        cutter: CUTTER_VERSION,
+      });
       expect(fullTextAsked(fake, "PMC0000001")).toBe(false);
       expect(logged("paper-reread")).toEqual([
         expect.objectContaining({
           pmcid: "PMC0000001",
-          from: rules ?? "none",
+          from: rules,
           references: 3,
         }),
       ]);
@@ -370,7 +381,11 @@ describe("a paper an older rules version read", () => {
       "CTRQQR-2021/100010",
       "A28707",
     ]);
-    expect(row?.versions).toEqual({ rules: RULES_VERSION, code: "test" });
+    expect(row?.versions).toEqual({
+      rules: RULES_VERSION,
+      code: "test",
+      cutter: CUTTER_VERSION,
+    });
     expect(logged("paper-reread-failed")).toEqual([]);
   });
 
@@ -393,7 +408,7 @@ describe("a paper an older rules version read", () => {
     if (other === undefined) throw new Error("no row for PMC0000002");
     fake.table.rows.set("PMC0000002", {
       ...other,
-      versions: { rules: "rules-9", code: "older" },
+      versions: { rules: "rules-9", code: "older", cutter: CUTTER_VERSION },
     });
     fake.text.delete("cache/PMC0000001.json");
     const before = fake.table.rows.get("PMC0000001");
@@ -420,7 +435,7 @@ describe("a paper an older rules version read", () => {
     if (other === undefined) throw new Error("no row for PMC0000002");
     fake.table.rows.set("PMC0000002", {
       ...other,
-      versions: { rules: "rules-9", code: "older" },
+      versions: { rules: "rules-9", code: "older", cutter: CUTTER_VERSION },
     });
     // As S3 answers a missing key when the run's role may not list cache/
     // (#687).
@@ -451,6 +466,154 @@ describe("a paper an older rules version read", () => {
     expect(fake.table.rows.get("PMC0000002")?.versions?.rules).toBe(
       RULES_VERSION,
     );
+  });
+});
+
+// A run fetches and cuts again, once, a paper an older cutter version cut,
+// or one whose row records none, and processes it as usual. A paper the
+// current cutter cut gets no request (#420, #443).
+describe("a paper an older cutter version cut", () => {
+  const stale = [
+    { asWritten: "C1/A12345", normalised: "C1/A12345", format: "Cn/An" },
+  ];
+  // What cache/ held of the paper before, which a new cut replaces.
+  const oldCut = { text: ["An old cut."], awards: [] };
+
+  // A run over the back catalogue, then `pmcid`'s row as if `cutter` had cut
+  // it and `rules` had read it, finding only the stale reference. With
+  // `cutter` undefined the row records no cutter, and with `rules` null it
+  // records no versions at all.
+  // Europe PMC answers 500 for the full text of each paper in `failing`.
+  const failing = new Set<string>();
+  afterEach(() => {
+    failing.clear();
+  });
+
+  async function cutBy(
+    pmcid: string,
+    cutter: string | undefined,
+    rules: string | null = RULES_VERSION,
+  ) {
+    const fake = fakeDeps({
+      fullText: (asked) => (failing.has(asked) ? reply("", 500) : undefined),
+    });
+    await runWith(fake);
+    const row = fake.table.rows.get(pmcid);
+    if (row === undefined) throw new Error(`no row for ${pmcid}`);
+    fake.table.rows.set(pmcid, {
+      ...row,
+      references: stale,
+      versions:
+        rules === null
+          ? undefined
+          : {
+              rules,
+              code: "older",
+              ...(cutter === undefined ? {} : { cutter }),
+            },
+    });
+    fake.text.set(`cache/${pmcid}.json`, oldCut);
+    fake.requests.length = 0;
+    logs.length = 0;
+    return fake;
+  }
+
+  const fullTextAsked = (fake: ReturnType<typeof fakeDeps>, pmcid: string) =>
+    fake.requests.filter((url) =>
+      url.pathname.endsWith(`/${pmcid}/fullTextXML`),
+    ).length;
+
+  it.each<[string, string | undefined, string | null]>([
+    ["an older cutter version", "cutter-0", RULES_VERSION],
+    ["no cutter version", undefined, RULES_VERSION],
+    ["no versions at all", undefined, null],
+  ])(
+    "fetches and cuts again, once, a paper whose row records %s",
+    async (_case, cutter, rules) => {
+      const fake = await cutBy("PMC0000001", cutter, rules);
+      const again = await runWith(fake);
+      expect(again.status).toBe("SUCCEEDED");
+      expect(again.result).toMatchObject({ read: 1, reread: 0 });
+      expect(fullTextAsked(fake, "PMC0000001")).toBe(1);
+      expect(fake.text.get("cache/PMC0000001.json")).not.toEqual(oldCut);
+      const row = fake.table.rows.get("PMC0000001");
+      expect(row?.references?.map((r) => r.normalised)).toEqual([
+        "C1234/A56789",
+        "CTRQQR-2021/100010",
+        "A28707",
+      ]);
+      expect(row?.versions).toEqual({
+        rules: RULES_VERSION,
+        code: "test",
+        cutter: CUTTER_VERSION,
+      });
+      expect(logged("page-recorded")).toContainEqual(
+        expect.objectContaining({ recut: 1 }),
+      );
+    },
+  );
+
+  it("asks nothing for a paper the current cutter cut", async () => {
+    const fake = await cutBy("PMC0000001", CUTTER_VERSION);
+    const before = fake.table.rows.get("PMC0000001");
+    const again = await runWith(fake);
+    expect(again.status).toBe("SUCCEEDED");
+    expect(again.result).toMatchObject({ read: 0, reread: 0 });
+    expect(fullTextAsked(fake, "PMC0000001")).toBe(0);
+    expect(fake.table.rows.get("PMC0000001")).toEqual(before);
+    expect(fake.text.get("cache/PMC0000001.json")).toEqual(oldCut);
+  });
+
+  it("fetches and cuts once a paper whose cut and rules are both older, and does not also re-run the rules from cache/ (#686)", async () => {
+    const fake = await cutBy("PMC0000001", "cutter-0", "rules-9");
+    const again = await runWith(fake);
+    expect(again.status).toBe("SUCCEEDED");
+    expect(again.result).toMatchObject({ read: 1, reread: 0 });
+    expect(fullTextAsked(fake, "PMC0000001")).toBe(1);
+    expect(logged("paper-reread")).toEqual([]);
+    expect(logged("paper-reread-no-text")).toEqual([]);
+    expect(fake.table.rows.get("PMC0000001")?.versions).toEqual({
+      rules: RULES_VERSION,
+      code: "test",
+      cutter: CUTTER_VERSION,
+    });
+  });
+
+  it("leaves a paper a newer cutter version cut as it is", async () => {
+    const fake = await cutBy("PMC0000001", "cutter-999", "rules-9");
+    const before = fake.table.rows.get("PMC0000001");
+    const again = await runWith(fake);
+    expect(again.status).toBe("SUCCEEDED");
+    expect(again.result).toMatchObject({ read: 0, reread: 0 });
+    expect(fullTextAsked(fake, "PMC0000001")).toBe(0);
+    expect(fake.table.rows.get("PMC0000001")).toEqual(before);
+  });
+
+  it("keeps the old cut and references when the new fetch fails, and marks the paper failed", async () => {
+    const fake = await cutBy("PMC0000001", "cutter-0");
+    const before = fake.table.rows.get("PMC0000001");
+    failing.add("PMC0000001");
+    const again = await runWith(fake);
+    expect(again.status).toBe("SUCCEEDED");
+    expect(fake.table.rows.get("PMC0000001")).toMatchObject({
+      status: "processed",
+      references: before?.references,
+      versions: before?.versions,
+      lastFailure: 500,
+    });
+    expect(fake.text.get("cache/PMC0000001.json")).toEqual(oldCut);
+  });
+
+  // The usual refusal rules: a paper whose full text answered 500 when it
+  // last failed is asked once in a run (#504, europe-pmc.md).
+  it("asks once, with no retry, for a paper to cut again whose full text last answered 500", async () => {
+    const fake = await cutBy("PMC0000001", "cutter-0");
+    await fake.table.markFailed("PMC0000001", 500);
+    failing.add("PMC0000001");
+    const again = await runWith(fake);
+    expect(again.status).toBe("SUCCEEDED");
+    expect(fullTextAsked(fake, "PMC0000001")).toBe(1);
+    expect(again.retryDelays("paper-PMC0000001")).toEqual([]);
   });
 });
 
@@ -1120,7 +1283,7 @@ describe("a failure to write or read the table is retried apart from Europe PMC'
     ).length;
 
   // A table whose `method` fails `times` times, then works as before.
-  function failingTable(method: "addFound" | "rulesRead", times: number) {
+  function failingTable(method: "addFound" | "versionsRead", times: number) {
     const fake = fakeDeps();
     const real = fake.table[method].bind(fake.table) as (
       ...args: never[]
@@ -1150,7 +1313,7 @@ describe("a failure to write or read the table is retried apart from Europe PMC'
     for (const size of sizes) expect(size).toBe("150");
   });
 
-  for (const method of ["addFound", "rulesRead"] as const) {
+  for (const method of ["addFound", "versionsRead"] as const) {
     it(`does not call Europe PMC again or use up its retries when ${method} keeps failing`, async () => {
       const fake = failingTable(method, Infinity);
       const { status, retryDelays } = await runWith(fake);

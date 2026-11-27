@@ -11,6 +11,8 @@ import snapshotFile from "./snapshot.json" with { type: "json" };
 // paper ids, grant ids and labels only, never text.
 
 const SHA256 = z.string().regex(/^[0-9a-f]{64}$/u);
+// A cutter version, as CUTTER_VERSION in src/europepmc/jats.ts names it.
+const CUTTER = z.string().regex(/^cutter-\d+$/u);
 // A grant id as Europe PMC holds it, or a label: the characters a reference
 // is made of, and no space, so no sentence or name fits.
 export const GRANT = z
@@ -65,6 +67,9 @@ export const pinned = z
   .object({
     about: z.string(),
     id: z.string().regex(/^s\d+$/u),
+    // The cutter version that takes the snapshot. A gate test holds it to
+    // CUTTER_VERSION, so a cutter change names a new snapshot (#420).
+    cutter: CUTTER,
     manifestSha256: SHA256.nullable(),
   })
   .strict()
@@ -72,7 +77,9 @@ export const pinned = z
 
 // eval/<id>/manifest.json: each paper in the snapshot, which set it is in,
 // the SHA-256 of its text file, and for gold sets A and A2 Europe PMC's
-// grant ids. A snapshot taken before gold set A2 joined has no draw for it.
+// grant ids, and the cutter version that cut its papers. A snapshot taken
+// before gold set A2 joined has no draw for it, and one taken before #443
+// records no cutter version.
 // Gold sets B and B2 come from their labels, so their papers have no grant
 // ids.
 export const manifest = z
@@ -81,6 +88,7 @@ export const manifest = z
     createdAt: z.iso.datetime(),
     goldA: sampling,
     goldA2: sampling.optional(),
+    cutter: CUTTER.optional(),
     papers: z.array(
       z
         .object({

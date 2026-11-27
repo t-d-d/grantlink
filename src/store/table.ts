@@ -25,6 +25,9 @@ const versions = z
   .object({
     rules: z.string().min(1).max(40),
     code: z.string().min(1).max(40),
+    // The cutter version that cut the paper's funding sections. Rows written
+    // before #443 hold none, and read as cut by an older version.
+    cutter: z.string().min(1).max(40).optional(),
   })
   .strict();
 
@@ -39,30 +42,48 @@ const result = z
 
 export type Result = z.infer<typeof result>;
 
-// The number of a rules version, `rules-<number>`, or null for a version
-// this code cannot read the number of.
-function rulesNumber(version: string): number | null {
-  const match = /^rules-(\d+)$/u.exec(version);
+// The number of a version, `<prefix>-<number>`, or null for a version this
+// code cannot read the number of.
+function versionNumber(prefix: string, version: string): number | null {
+  const match = new RegExp(`^${prefix}-(\\d+)$`, "u").exec(version);
   return match?.[1] === undefined ? null : Number(match[1]);
 }
 
-// Whether the rules version that read a paper, or null for none recorded,
-// is older than `current`. Versions compare by number, not as strings, and
-// a version whose number cannot be read counts as not older, so the row
-// stays as it is (#686).
-export function olderRules(read: string | null, current: string): boolean {
+// Whether a version, or null for none recorded, is older than `current`.
+// Versions compare by number, not as strings, and a version whose number
+// cannot be read counts as not older, so the row stays as it is.
+function older(prefix: string, read: string | null, current: string) {
   if (read === null) return true;
-  const was = rulesNumber(read);
-  const now = rulesNumber(current);
+  const was = versionNumber(prefix, read);
+  const now = versionNumber(prefix, current);
   return was !== null && now !== null && was < now;
 }
 
-// The rules version a row holds, as rulesRead reads it: null for none, or
-// an empty string for versions in a shape this version does not know.
-const heldRules = z
-  .object({ rules: versions.shape.rules })
+// Whether the rules version that read a paper is older than `current`
+// (#686).
+export const olderRules = (read: string | null, current: string): boolean =>
+  older("rules", read, current);
+
+// Whether the cutter version that cut a paper is older than `current`. A
+// run fetches and cuts again a paper an older version cut (#443).
+export const olderCutter = (read: string | null, current: string): boolean =>
+  older("cutter", read, current);
+
+// The versions a processed row holds, as versionsRead reads them: null for
+// none, or an empty string for each when the versions are in a shape this
+// version does not know.
+export interface HeldVersions {
+  rules: string | null;
+  cutter: string | null;
+}
+
+const heldVersions = z
+  .object({
+    rules: versions.shape.rules,
+    cutter: versions.shape.cutter,
+  })
   .optional()
-  .catch({ rules: "" });
+  .catch({ rules: "", cutter: "" });
 
 // The names markProcessed and replaceReferences write a result through.
 // status, references and rules are DynamoDB reserved words, so an
@@ -153,22 +174,24 @@ export interface Table {
   recordSearch(runId: string): Promise<void>;
   // The run whose search is the latest complete one, or null before any.
   latestSearch(): Promise<string | null>;
-  // The rules version that read each processed paper, null for one whose
-  // row records none, or an empty string for one this version cannot read
-  // (#686).
-  rulesRead(pmcids: string[]): Promise<Map<string, string | null>>;
-  // Why each paper not yet processed last failed, for those that hold a
-  // reason this version reads.
+  // The rules version that read each processed paper and the cutter version
+  // that cut it, each null for one whose row records none, or an empty
+  // string for one this version cannot read (#686, #443).
+  versionsRead(pmcids: string[]): Promise<Map<string, HeldVersions>>;
+  // Why each paper last failed, for those that hold a reason this version
+  // reads. A processed paper holds one only if a fetch to cut it again has
+  // failed since it was read, since a read drops it (#443).
   lastFailures(pmcids: string[]): Promise<Map<string, LastFailure>>;
-  // Records a paper's result, unless a rules version newer than the
-  // result's, or one this version cannot read, has read it, whose result
-  // stays and the paper counts as done (#688).
+  // Records a paper's result, and drops why it last failed, unless a rules
+  // version newer than the result's, or one this version cannot read, has
+  // read it, whose result stays and the paper counts as done (#688).
   markProcessed(pmcid: string, result: Result): Promise<void>;
   // Writes the result of re-running the rules on a processed paper, only
   // while the rules version that read it is still `from` (null while the row
-  // holds no versions at all) or already the result's own. Returns false,
-  // and writes nothing, when another version has read it since. Safe to run
-  // twice (#686).
+  // holds no versions at all) or already the result's own, and, when the
+  // result names a cutter version, while the row names that one too.
+  // Returns false, and writes nothing, when another version has read or cut
+  // it since. Safe to run twice (#686, #443).
   replaceReferences(
     pmcid: string,
     from: string | null,
@@ -372,22 +395,26 @@ export function dynamoTable(
       return reply.Item?.runId ?? null;
     },
 
-    async rulesRead(pmcids) {
-      const read = new Map<string, string | null>();
+    async versionsRead(pmcids) {
+      const read = new Map<string, HeldVersions>();
       for (const item of await getMany(pmcids, ["versions"])) {
         const row = z
           .object({
             pmcid: PMCID,
             status: z.string(),
             // A row a later version wrote may hold more, or a shape this
-            // version does not know. That reads as an empty version, which
-            // olderRules counts as not older, so the row stays as it is.
-            // Only a row with no versions at all reads as none.
-            versions: heldRules,
+            // version does not know. That reads as empty versions, which
+            // neither olderRules nor olderCutter counts as older, so the
+            // row stays as it is. A row with no versions at all reads as
+            // none, and one with no cutter version as no cutter.
+            versions: heldVersions,
           })
           .parse(item);
         if (row.status === "processed") {
-          read.set(row.pmcid, row.versions?.rules ?? null);
+          read.set(row.pmcid, {
+            rules: row.versions?.rules ?? null,
+            cutter: row.versions?.cutter ?? null,
+          });
         }
       }
       return read;
@@ -403,7 +430,7 @@ export function dynamoTable(
             lastFailure: lastFailure.optional().catch(undefined),
           })
           .parse(item);
-        if (row.status !== "processed" && row.lastFailure !== undefined) {
+        if (row.lastFailure !== undefined) {
           failed.set(row.pmcid, row.lastFailure);
         }
       }
@@ -428,14 +455,14 @@ export function dynamoTable(
               Key: key,
               // No versions at all, not no versions.rules: a row whose
               // versions are in a shape this version does not know lacks
-              // versions.rules too, and rulesRead reads it as not older.
+              // versions.rules too, and versionsRead reads it as not older.
               ConditionExpression: `attribute_exists(pmcid) AND (${
                 seen === null
                   ? "attribute_not_exists(versions)"
                   : "versions.#rules = :seen"
               } OR versions.#rules = :to)`,
               UpdateExpression:
-                "SET #status = :processed, #references = :references, versions = :versions, processedAt = :processedAt, runId = :runId",
+                "SET #status = :processed, #references = :references, versions = :versions, processedAt = :processedAt, runId = :runId REMOVE lastFailure",
               ExpressionAttributeNames: RESULT_NAMES,
               ExpressionAttributeValues: {
                 ":processed": "processed",
@@ -454,7 +481,9 @@ export function dynamoTable(
           if (tries === MARK_PROCESSED_TRIES) throw error;
           const reply = z
             .object({
-              Item: z.object({ pmcid: PMCID, versions: heldRules }).optional(),
+              Item: z
+                .object({ pmcid: PMCID, versions: heldVersions })
+                .optional(),
             })
             .parse(
               await send(
@@ -486,12 +515,16 @@ export function dynamoTable(
         from === null
           ? "attribute_not_exists(versions)"
           : "versions.#rules = :from";
+      // The text came from cache/, so the row must still name the cut the
+      // result names (#443).
+      const { cutter } = checked.versions;
+      const cut = cutter === undefined ? "" : " AND versions.cutter = :cutter";
       try {
         await send(
           new UpdateCommand({
             TableName: name,
             Key: { pmcid: PMCID.parse(pmcid) },
-            ConditionExpression: `#status = :processed AND (${was} OR versions.#rules = :to)`,
+            ConditionExpression: `#status = :processed AND (${was} OR versions.#rules = :to)${cut}`,
             UpdateExpression:
               "SET #references = :references, versions = :versions, processedAt = :processedAt, runId = :runId",
             ExpressionAttributeNames: RESULT_NAMES,
@@ -501,6 +534,7 @@ export function dynamoTable(
                 ? {}
                 : { ":from": versions.shape.rules.parse(from) }),
               ":to": checked.versions.rules,
+              ...(cutter === undefined ? {} : { ":cutter": cutter }),
               ":references": checked.references,
               ":versions": checked.versions,
               ":processedAt": checked.processedAt,

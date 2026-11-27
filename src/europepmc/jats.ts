@@ -1,4 +1,5 @@
 import { type FundingSections, namesFunder } from "../extract/rules.ts";
+import { latest, type Version } from "../extract/versions.ts";
 import {
   attribute,
   descendants,
@@ -19,6 +20,17 @@ import {
 // the body or the author list.
 // The XML is read through a parser into a tree (#343), so a tag is read as
 // XML reads it, whatever its spacing, quotes or nesting.
+
+// Bump this whenever what the cutter keeps changes, so every row and every
+// snapshot says which cut it holds. A run fetches and cuts again, once, each
+// paper an older version cut, and a bump names a new snapshot id in
+// evals/snapshot.json, whose cutter version must match (#420). To bump, add
+// a line naming your issue at the end of CUTTER_VERSIONS below (see
+// src/extract/versions.ts, #414). The history starts at the cutter that took
+// snapshot s5 on 11 November 2026, with every change up to then in it, #505,
+// #526 and #586 among them.
+export const CUTTER_VERSIONS: readonly Version[] = [{ number: 1, issue: 443 }];
+export const CUTTER_VERSION = latest("cutter", CUTTER_VERSIONS);
 
 const ENTITIES: Record<string, string> = {
   amp: "&",

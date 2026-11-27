@@ -46,6 +46,8 @@ function paperDeps(
         return Promise.resolve(grants);
       },
     },
+    // The table holds none of these papers, so none was cut already.
+    table: { versionsRead: () => Promise.resolve(new Map()) },
     text: {
       putFundingText: () => Promise.resolve(),
       putSnapshotPaper: (_id: string, pmcid: string, body: string) => {

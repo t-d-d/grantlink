@@ -31,8 +31,12 @@ requests.
   failure, and a row that records no reason, keeps the usual tries.
 - Every request carries a User-Agent that names grantlink, its address and
   a contact.
-- The back catalogue goes through the same web services, once. A paper
-  already read is not fetched again.
+- The back catalogue goes through the same web services. A paper is
+  fetched again only when the cutter has changed since it was cut, once,
+  at the usual pace and under the same refusal rules as any request. Each
+  row records the cutter version that cut it, `CUTTER_VERSION` in
+  `src/europepmc/jats.ts`, and a row that records none reads as cut by an
+  older version. A paper the current cutter cut gets no request.
 - The page and the README credit Europe PMC, with links to it and to the
   EMBL-EBI terms of use (licence.md).
 
@@ -51,4 +55,4 @@ Whether the deployed run keeps to the pace across Lambda invocations rests
 on the client being made once per invocation and each batch ending with a
 wait, which is for review.
 
-History: #1, #143, #379
+History: #1, #143, #379, #420
