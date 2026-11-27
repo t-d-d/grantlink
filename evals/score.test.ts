@@ -130,6 +130,23 @@ describe("finding which linked grants a paper prints", () => {
     // ampersand that starts an entity (#597).
     ["A12345", "<p>Cancer Research UK (10.13039/501100000289,12345)</p>"],
     ["A12345", "<p>Data at 10.5061/dryad.1&#x000a0;12345.</p>"],
+    // Only a link's text that is part of the DOI in its href reads as the
+    // DOI, and only an inline tag or a line break after a dot, a slash or a
+    // hyphen keeps a DOI going (#613).
+    [
+      "A12345",
+      '<p><ext-link xlink:href="https://doi.org/10.7554/eLife.1">Data</ext-link> from grant 12345.</p>',
+    ],
+    ["A12345", "<p>Data at 10.7554/eLife.1</p><p>12345 funded it.</p>"],
+    ["A12345", "<p>Data at 10.7554/eLife.1\n12345 funded it.</p>"],
+    // A DOI is not set in superscript or subscript, so a marker in one
+    // after a DOI is not part of it.
+    ["A12345", "<p>Data at 10.7554/eLife.<sup>12345</sup></p>"],
+    // A link's text reads as its DOI only when it is a whole part of it.
+    [
+      "A12345",
+      '<p>Grant <ext-link xlink:href="https://doi.org/10.7554/eLife.123456">12345</ext-link>.</p>',
+    ],
     // A year reads near any name the rules read for the funder (#520).
     ["A2019", "<p>Funded by Cancer Research U.K. grant 2019.</p>"],
     ["A2019", "<p>Funded by CR-UK grant 2019.</p>"],
@@ -170,6 +187,41 @@ describe("finding which linked grants a paper prints", () => {
       "<article><body><p>Data at https://doi.org/10.7554/eLife.12345</p></body></article>",
     ],
     ["A12345", "<p>See DOI 10.7554/ELIFE.12345.sa1 for the review.</p>"],
+    // A link may show only the DOI's last part, with the whole DOI in its
+    // href, and a tag or a line break may split a DOI (#613).
+    [
+      "A12345",
+      '<p>Data at <ext-link ext-link-type="uri" xlink:href="https://doi.org/10.7554/eLife.12345">eLife.12345</ext-link>.</p>',
+    ],
+    [
+      "A12345",
+      "<p>Data at <ext-link xlink:href='https://doi.org/10.7554/eLife.12345'><italic>eLife</italic>.12345</ext-link>.</p>",
+    ],
+    ["A12345", "<p>Data at 10.7554/eLife.<italic>12345</italic>.</p>"],
+    ["A12345", "<p>Data at 10.7554/<italic>eLife</italic>.12345.</p>"],
+    ["A12345", "<p>Data at 10.7554/eLife.\n    12345.</p>"],
+    ["A12345", "<p>Data at <italic>10.7554</italic>/eLife.12345.</p>"],
+    ["A12345", "<p>Data at 10.7554/<italic>eLife.</italic>\n12345.</p>"],
+    // A self-closing link holds no text, so the next link's text is its own.
+    [
+      "A12345",
+      '<p>See <ext-link xlink:href="https://doi.org/10.1/x"/> and <ext-link xlink:href="https://doi.org/10.7554/eLife.12345">eLife.12345</ext-link>.</p>',
+    ],
+    // A link may show a part of its DOI that a further part follows.
+    [
+      "A12345",
+      '<p>See <ext-link xlink:href="https://doi.org/10.7554/eLife.12345.003">eLife.12345</ext-link>.</p>',
+    ],
+    // A link's text may end in a full stop, and its href may encode the
+    // slash.
+    [
+      "A12345",
+      '<p>Data <ext-link xlink:href="https://doi.org/10.7554/eLife.12345">eLife.12345.</ext-link></p>',
+    ],
+    [
+      "A12345",
+      '<p>Data <ext-link xlink:href="https://doi.org/10.7554%2FeLife.12345">eLife.12345</ext-link></p>',
+    ],
     // A bare number that reads as a year counts only near CRUK (#520).
     ["A2019", "<p>Recruited in 2019.</p>"],
     [
